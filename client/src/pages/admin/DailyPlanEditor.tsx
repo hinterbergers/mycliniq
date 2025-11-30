@@ -12,33 +12,27 @@ import { de } from "date-fns/locale";
 // Mock Data
 const ASSIGNMENTS = [
   {
-    area: "HKL (Herzkatheter)",
+    area: "Kreißsaal & OP",
     rooms: [
-      { id: 1, name: "HKL 1", requiredRole: "Oberarzt", assigned: { name: "OA Dr. Klein", role: "OA" } },
-      { id: 2, name: "HKL 2", requiredRole: "Oberarzt", assigned: { name: "OA Dr. Schmidt", role: "1. OA" } },
+      { id: 1, name: "Dienstarzt KS", requiredRole: "Oberarzt", assigned: { name: "OA Dr. Klein", role: "OA" } },
+      { id: 2, name: "Sectio-OP", requiredRole: "Oberarzt", assigned: { name: "OA Dr. Schmidt", role: "1. OA" } },
+      { id: 3, name: "Hebamme 1", requiredRole: "Hebamme", assigned: { name: "H. Maier", role: "HEB" } },
     ]
   },
   {
-    area: "Funktionsdiagnostik",
+    area: "Stationen",
     rooms: [
-      { id: 3, name: "Echo 1", requiredRole: "Facharzt", assigned: { name: "FA Müller", role: "FA" } },
-      { id: 4, name: "Echo 2", requiredRole: "Assistenzarzt", assigned: null }, // Empty slot
-      { id: 5, name: "Ergometrie", requiredRole: "Assistenzarzt", assigned: { name: "AA Bauer", role: "AA" } },
+      { id: 4, name: "Visite Wöchnerinnen", requiredRole: "Facharzt", assigned: { name: "FA Müller", role: "FA" } },
+      { id: 5, name: "Visite Gyn", requiredRole: "Assistenzarzt", assigned: null }, // Empty slot
+      { id: 6, name: "Aufnahme", requiredRole: "Assistenzarzt", assigned: { name: "AA Bauer", role: "AA" } },
     ]
   },
   {
-    area: "Ambulanz",
+    area: "Ambulanzzentrum",
     rooms: [
-      { id: 6, name: "Allg. Amb 1", requiredRole: "Assistenzarzt", assigned: { name: "AA Wagner", role: "AA" } },
-      { id: 7, name: "Allg. Amb 2", requiredRole: "Assistenzarzt", assigned: { name: "AA Weber", role: "AA" } },
-      { id: 8, name: "Schrittmacher", requiredRole: "Facharzt", assigned: { name: "OA Dr. Huber", role: "FOA" } },
-    ]
-  },
-  {
-    area: "Station",
-    rooms: [
-      { id: 9, name: "Visite Station A", requiredRole: "Oberarzt", assigned: { name: "OA Dr. Klein", role: "OA" } },
-      { id: 10, name: "Stationsarzt A", requiredRole: "Assistenzarzt", assigned: { name: "AA Fischer", role: "AA" } },
+      { id: 7, name: "Allg. Gyn-Amb", requiredRole: "Assistenzarzt", assigned: { name: "AA Wagner", role: "AA" } },
+      { id: 8, name: "Schwangeren-Amb", requiredRole: "Facharzt", assigned: { name: "OA Dr. Huber", role: "OA" } },
+      { id: 9, name: "Pränatal-Diag.", requiredRole: "Spezialist", assigned: { name: "OA Dr. Berg", role: "OA" } },
     ]
   }
 ];
@@ -48,6 +42,7 @@ const AVAILABLE_STAFF = [
   { id: 102, name: "AA Schulz", role: "AA", status: "available" },
   { id: 103, name: "KPJ Sarah", role: "KPJ", status: "available" },
   { id: 104, name: "OA Dr. Lang", role: "OA", status: "busy" }, // e.g., night shift before
+  { id: 105, name: "Heb. Anna", role: "HEB", status: "available" },
 ];
 
 export default function DailyPlanEditor() {

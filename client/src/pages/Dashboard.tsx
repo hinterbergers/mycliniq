@@ -2,7 +2,7 @@ import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CalendarDays, Clock, FileText, ArrowRight, AlertCircle, CheckCircle2 } from "lucide-react";
+import { CalendarDays, Clock, FileText, ArrowRight, AlertCircle, CheckCircle2, Baby, Activity } from "lucide-react";
 
 export default function Dashboard() {
   return (
@@ -12,10 +12,15 @@ export default function Dashboard() {
         {/* Welcome Section */}
         <div className="md:col-span-8 space-y-6">
           <div className="bg-gradient-to-br from-primary to-primary/80 rounded-2xl p-8 text-primary-foreground shadow-lg shadow-primary/10">
-            <h2 className="text-3xl font-bold mb-2">Guten Morgen, Dr. Müller</h2>
+            <div className="flex items-center justify-between mb-2">
+               <h2 className="text-3xl font-bold">Guten Morgen, Dr. Müller</h2>
+               <Badge variant="outline" className="text-primary-foreground border-primary-foreground/30 bg-primary-foreground/10">
+                  KABEG Klinikum Klagenfurt
+               </Badge>
+            </div>
             <p className="text-primary-foreground/80 max-w-xl text-lg">
-              Sie haben heute 3 Termine und eine anstehende Schicht. 
-              Der Bereich Kardiologie ist zu 95% ausgelastet.
+              Sie haben heute Dienst im Kreißsaal. Aktuell 3 laufende Geburten.
+              Der Bereich Gyn-Ambulanz ist zu 80% ausgelastet.
             </p>
             <div className="mt-6 flex gap-3">
               <Button variant="secondary" className="text-primary font-medium shadow-none border-0">
@@ -30,9 +35,9 @@ export default function Dashboard() {
           {/* Quick Stats */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {[
-              { label: "Offene Aufgaben", value: "12", icon: AlertCircle, color: "text-orange-500", bg: "bg-orange-500/10" },
-              { label: "Meine Patienten", value: "24", icon: UsersIcon, color: "text-blue-500", bg: "bg-blue-500/10" },
-              { label: "Stunden diese Woche", value: "38.5", icon: Clock, color: "text-emerald-500", bg: "bg-emerald-500/10" },
+              { label: "Aufnahmen heute", value: "8", icon: UsersIcon, color: "text-blue-500", bg: "bg-blue-500/10" },
+              { label: "Geburten lfd.", value: "3", icon: Baby, color: "text-pink-500", bg: "bg-pink-500/10" },
+              { label: "OPs geplant", value: "5", icon: Activity, color: "text-emerald-500", bg: "bg-emerald-500/10" },
             ].map((stat, i) => (
               <Card key={i} className="border-none shadow-sm">
                 <CardContent className="p-4 flex items-center gap-4">
@@ -51,15 +56,15 @@ export default function Dashboard() {
           {/* Recent Guidelines */}
           <Card className="border-none shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-lg">Neue Leitlinien</CardTitle>
+              <CardTitle className="text-lg">Neue Leitlinien Gyn/Geb</CardTitle>
               <Button variant="ghost" size="sm" className="text-muted-foreground">Alle anzeigen</Button>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
                 {[
-                  { title: "Sepsis Update 2025", cat: "Intensivmedizin", date: "Vor 2 Tagen" },
-                  { title: "Hypertonie Management", cat: "Kardiologie", date: "Vor 5 Tagen" },
-                  { title: "Post-OP Schmerztherapie", cat: "Anästhesie", date: "Vor 1 Woche" },
+                  { title: "Präeklampsie Management", cat: "Geburtshilfe", date: "Vor 2 Tagen" },
+                  { title: "Endometriose Diagnostik", cat: "Gynäkologie", date: "Vor 5 Tagen" },
+                  { title: "Postpartale Hämorrhagie", cat: "Notfall", date: "Vor 1 Woche" },
                 ].map((item, i) => (
                   <div key={i} className="flex items-center justify-between p-3 rounded-lg hover:bg-secondary/50 transition-colors border border-transparent hover:border-border group cursor-pointer">
                     <div className="flex items-center gap-3">

@@ -6,7 +6,7 @@ import {
   BookOpen, 
   Settings, 
   LogOut, 
-  Stethoscope 
+  Baby
 } from "lucide-react";
 
 export function Sidebar() {
@@ -23,11 +23,11 @@ export function Sidebar() {
     <aside className="w-64 bg-sidebar border-r border-sidebar-border flex flex-col h-screen sticky top-0">
       <div className="p-6 flex items-center gap-3">
         <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary">
-          <Stethoscope className="w-6 h-6" />
+          <Baby className="w-6 h-6" />
         </div>
         <div>
-          <h1 className="font-bold text-lg tracking-tight text-sidebar-foreground">MediPlan</h1>
-          <p className="text-xs text-muted-foreground font-medium">Clinical OS</p>
+          <h1 className="font-bold text-lg tracking-tight text-sidebar-foreground">cliniq</h1>
+          <p className="text-xs text-muted-foreground font-medium">Klinikum Klagenfurt</p>
         </div>
       </div>
 

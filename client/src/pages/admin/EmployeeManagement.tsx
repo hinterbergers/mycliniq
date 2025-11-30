@@ -24,25 +24,25 @@ const ROLES = [
 ];
 
 const COMPETENCIES = [
-  "Echo Transthorakal",
-  "Echo Transösophageal",
-  "Herzkatheter",
-  "Schrittmacher",
-  "Ergometrie",
-  "Spirometrie",
-  "Notarzt",
-  "Intensivmedizin",
-  "Endoskopie"
+  "Sectio (Kaiserschnitt)",
+  "Spontangeburt Leitung",
+  "Laparoskopie Gyn",
+  "Mammachirurgie",
+  "Pränataldiagnostik (ÖGUM II)",
+  "Gyn-Onkologie",
+  "Urogynäkologie",
+  "Kolposkopie",
+  "Notarzt"
 ];
 
 export default function EmployeeManagement() {
   const [searchTerm, setSearchTerm] = useState("");
 
   const employees = [
-    { id: 1, name: "Prof. Dr. med. Hans Weber", role: "Primararzt", competencies: ["Echo Transthorakal", "Echo Transösophageal", "Herzkatheter", "Schrittmacher"], status: "active" },
-    { id: 2, name: "Dr. Maria Schmidt", role: "1. Oberarzt", competencies: ["Echo Transthorakal", "Echo Transösophageal", "Herzkatheter"], status: "active" },
-    { id: 3, name: "Dr. Thomas Klein", role: "Oberarzt", competencies: ["Echo Transthorakal", "Ergometrie"], status: "active" },
-    { id: 4, name: "Lisa Bauer", role: "Assistenzarzt", competencies: ["Echo Transthorakal (Basis)", "Ergometrie"], status: "active" },
+    { id: 1, name: "Prof. Dr. Hans Weber", role: "Primararzt", competencies: ["Gyn-Onkologie", "Mammachirurgie", "Laparoskopie Gyn"], status: "active" },
+    { id: 2, name: "OA Dr. Maria Schmidt", role: "1. Oberarzt", competencies: ["Pränataldiagnostik (ÖGUM II)", "Sectio (Kaiserschnitt)", "Spontangeburt Leitung"], status: "active" },
+    { id: 3, name: "OA Dr. Thomas Klein", role: "Oberarzt", competencies: ["Urogynäkologie", "Laparoskopie Gyn"], status: "active" },
+    { id: 4, name: "Dr. Lisa Bauer", role: "Assistenzarzt", competencies: ["Spontangeburt Leitung", "Sectio (Kaiserschnitt)"], status: "active" },
     { id: 5, name: "Markus Wolf", role: "Turnusarzt", competencies: [], status: "active" },
     { id: 6, name: "Sarah Connor", role: "Student (KPJ)", competencies: [], status: "temporary", validUntil: "31.12.2025" },
   ];

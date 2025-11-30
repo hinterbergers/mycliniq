@@ -6,47 +6,47 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Search, Book, ArrowRight, Bookmark, Clock, Filter } from "lucide-react";
 
 export default function Guidelines() {
-  const categories = ["Alle", "Kardiologie", "Neurologie", "Notfallmedizin", "Hygiene", "Pharmakologie"];
+  const categories = ["Alle", "Geburtshilfe", "Gynäkologie", "Onkologie", "Notfallmedizin", "Pflege"];
   
   const guidelines = [
     {
-      title: "Akutes Koronarsyndrom (ACS)",
-      category: "Kardiologie",
+      title: "Präeklampsie & Eklampsie",
+      category: "Geburtshilfe",
       updated: "25. Nov 2025",
-      summary: "Aktualisierte Handlungsempfehlungen zur Diagnose und Therapie des ACS mit Fokus auf prähospitale Versorgung.",
-      tags: ["Notfall", "Herz", "EKG"],
+      summary: "Aktualisierte Handlungsempfehlungen zur Diagnose und Therapie hypertensiver Schwangerschaftserkrankungen.",
+      tags: ["Notfall", "Schwangerschaft", "Blutdruck"],
       important: true
     },
     {
-      title: "Sepsis-3 Definition & Management",
-      category: "Intensivmedizin",
+      title: "Postpartale Hämorrhagie (PPH)",
+      category: "Notfallmedizin",
       updated: "12. Okt 2025",
-      summary: "Neues SOFA-Score basierte Definition und Leitlinie zur 'Hour-1 Bundle' Therapie.",
-      tags: ["Sepsis", "Antibiotika", "Volumentherapie"],
+      summary: "Stufenschema zur Versorgung bei verstärkter Blutung post partum. Medikamentöse und interventionelle Schritte.",
+      tags: ["Notfall", "Blutung", "Kreißsaal"],
       important: true
     },
     {
-      title: "Insulintherapie bei Typ-2 Diabetes",
-      category: "Endokrinologie",
+      title: "Endometriose Leitlinie",
+      category: "Gynäkologie",
       updated: "01. Sep 2025",
-      summary: "Stufenschema zur Insulintherapie, Basalinsulin vs. intensivierte Therapie.",
-      tags: ["Diabetes", "Insulin", "Chronisch"],
+      summary: "Diagnostischer Pfad und Therapieoptionen bei Verdacht auf Endometriose.",
+      tags: ["Chronisch", "Schmerz", "Laparoskopie"],
       important: false
     },
     {
-      title: "Schlaganfall - Lysetherapie",
-      category: "Neurologie",
+      title: "Sectio caesarea - OP Ablauf",
+      category: "Geburtshilfe",
       updated: "15. Aug 2025",
-      summary: "Zeitfenster und Kontraindikationen für die systemische Thrombolyse.",
-      tags: ["Stroke", "Lyse", "Notfall"],
+      summary: "Standardablauf für elektive und eilige Sectio. Antibiotikaprophylaxe und Nahttechnik.",
+      tags: ["OP", "Sectio", "Standard"],
       important: false
     },
     {
-      title: "Hygienemaßnahmen MRSA",
-      category: "Hygiene",
+      title: "Mammakarzinom Nachsorge",
+      category: "Onkologie",
       updated: "10. Aug 2025",
-      summary: "Screening, Isolierung und Sanierung bei MRSA-Besiedlung.",
-      tags: ["MRSA", "Isolierung", "Screening"],
+      summary: "Empfehlungen zur Nachsorgeintervalle und Bildgebung.",
+      tags: ["Brustkrebs", "Nachsorge", "Screening"],
       important: false
     }
   ];
@@ -165,7 +165,7 @@ export default function Guidelines() {
                   Schneller Zugriff auf Ihre meistgenutzten Leitlinien.
                 </p>
                 <div className="space-y-2">
-                  {["Antibiotika-Rechner", "Reanimations-Algorithmus", "Triage-Schema"].map(item => (
+                  {["Tokolyse-Schema", "Reanimations-Algorithmus Neugeborene", "Antibiotika in Schwangerschaft"].map(item => (
                     <div key={item} className="flex items-center gap-3 p-2 rounded-lg bg-background border border-border/50 hover:border-primary/30 cursor-pointer transition-colors">
                       <div className="w-1.5 h-1.5 rounded-full bg-primary" />
                       <span className="text-sm font-medium">{item}</span>

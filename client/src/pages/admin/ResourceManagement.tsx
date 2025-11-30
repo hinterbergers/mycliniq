@@ -10,13 +10,13 @@ import { useState } from "react";
 export default function ResourceManagement() {
   // Mock State for rooms
   const [rooms, setRooms] = useState([
-    { id: 1, name: "Echo-Labor 1", type: "Untersuchung", status: "open", message: "" },
-    { id: 2, name: "Echo-Labor 2", type: "Untersuchung", status: "open", message: "" },
-    { id: 3, name: "HKL 1 (Herzkatheter)", type: "Intervention", status: "open", message: "" },
-    { id: 4, name: "HKL 2 (Herzkatheter)", type: "Intervention", status: "closed", message: "Wartung C-Bogen" },
-    { id: 5, name: "Allg. Ambulanz Raum 1", type: "Ambulanz", status: "open", message: "" },
-    { id: 6, name: "Allg. Ambulanz Raum 2", type: "Ambulanz", status: "open", message: "" },
-    { id: 7, name: "Schrittmacher-Ambulanz", type: "Spezialambulanz", status: "open", message: "" },
+    { id: 1, name: "Kreißsaal 1", type: "Geburtshilfe", status: "open", message: "" },
+    { id: 2, name: "Kreißsaal 2 (Wanne)", type: "Geburtshilfe", status: "open", message: "" },
+    { id: 3, name: "Sectio-OP", type: "OP", status: "open", message: "" },
+    { id: 4, name: "Gyn-OP 1", type: "OP", status: "closed", message: "Reinigung" },
+    { id: 5, name: "Ambulanz Raum 1", type: "Ambulanz", status: "open", message: "" },
+    { id: 6, name: "Schwangeren-Amb.", type: "Ambulanz", status: "open", message: "" },
+    { id: 7, name: "Pränatal-Diagnostik", type: "Spezialambulanz", status: "open", message: "" },
   ]);
 
   const toggleRoom = (id: number) => {
@@ -28,7 +28,7 @@ export default function ResourceManagement() {
   };
 
   return (
-    <Layout title="Ressourcen & Räume">
+    <Layout title="Ressourcen & Räume - Frauenheilkunde">
       <div className="max-w-4xl mx-auto space-y-6">
         <div className="bg-orange-50 border border-orange-100 rounded-lg p-4 flex gap-3">
           <AlertCircle className="w-5 h-5 text-orange-600 shrink-0 mt-0.5" />
@@ -42,7 +42,7 @@ export default function ResourceManagement() {
         </div>
 
         <div className="grid gap-6">
-          {["Intervention", "Untersuchung", "Ambulanz", "Spezialambulanz"].map((category) => (
+          {["Geburtshilfe", "OP", "Ambulanz", "Spezialambulanz"].map((category) => (
             <div key={category} className="space-y-3">
               <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
                 <Building className="w-4 h-4 text-muted-foreground" />
