@@ -84,9 +84,9 @@ Each endpoint includes proper error handling, input validation using Zod schemas
 
 **Production Considerations**: The build process bundles frequently-used dependencies into the server bundle to reduce filesystem calls (openat syscalls), improving cold start performance. Less-used dependencies remain external to keep bundle size reasonable.
 
-## Weekly Planning (Wochenplanung)
+## Einsatzplanung (Weekly Assignment Planning)
 
-The weekly planning module (`/admin/weekly`) provides a detailed weekly assignment view based on the department's planning template. Key features:
+The Einsatzplanung module (`/admin/weekly`) provides a detailed weekly assignment view based on the department's planning template. Key features:
 
 **Structure**: Organized by areas matching the department layout:
 - Stationen (Geburtshilfl. Bettenstation, Gynäkologische Bettenstation)

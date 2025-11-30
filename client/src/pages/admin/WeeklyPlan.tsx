@@ -284,7 +284,7 @@ export default function WeeklyPlan() {
 
   if (isLoading) {
     return (
-      <Layout title="Wochenplanung">
+      <Layout title="Einsatzplanung">
         <div className="flex items-center justify-center h-96">
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
         </div>
@@ -293,7 +293,7 @@ export default function WeeklyPlan() {
   }
 
   return (
-    <Layout title="Wochenplanung">
+    <Layout title="Einsatzplanung">
       <div className="space-y-4">
         
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-card p-4 rounded-xl kabeg-shadow">

@@ -34,8 +34,8 @@ export default function PlanningCockpit() {
       bg: "bg-primary/10"
     },
     {
-      title: "Wochenplanung",
-      description: "Detaillierte Wocheneinsätze nach Bereichen",
+      title: "Einsatzplanung",
+      description: "Wöchentliche Zuteilung nach Bereichen (Stationen, Ambulanzen, OP)",
       icon: CalendarRange,
       action: () => setLocation("/admin/weekly"),
       color: "text-primary",
