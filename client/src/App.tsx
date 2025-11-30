@@ -6,6 +6,10 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Dashboard from "@/pages/Dashboard";
 import Personal from "@/pages/Personal";
 import Guidelines from "@/pages/Guidelines";
+import PlanningCockpit from "@/pages/admin/PlanningCockpit";
+import EmployeeManagement from "@/pages/admin/EmployeeManagement";
+import ResourceManagement from "@/pages/admin/ResourceManagement";
+import DailyPlanEditor from "@/pages/admin/DailyPlanEditor";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -14,6 +18,13 @@ function Router() {
       <Route path="/" component={Dashboard} />
       <Route path="/personal" component={Personal} />
       <Route path="/wissen" component={Guidelines} />
+      
+      {/* Admin / Secretary Routes */}
+      <Route path="/admin" component={PlanningCockpit} />
+      <Route path="/admin/employees" component={EmployeeManagement} />
+      <Route path="/admin/resources" component={ResourceManagement} />
+      <Route path="/admin/daily-plan" component={DailyPlanEditor} />
+      
       <Route component={NotFound} />
     </Switch>
   );

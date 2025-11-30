@@ -13,8 +13,8 @@ export function Sidebar() {
   const [location] = useLocation();
 
   const navItems = [
-    { href: "/", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/personal", label: "Personal", icon: Users },
+    { href: "/personal", label: "Dienstplan", icon: Users },
+    { href: "/admin", label: "Verwaltung", icon: LayoutDashboard },
     { href: "/wissen", label: "Wissen", icon: BookOpen },
     { href: "/settings", label: "Einstellungen", icon: Settings },
   ];
