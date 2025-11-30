@@ -651,13 +651,21 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createShiftWish(wish: InsertShiftWish): Promise<ShiftWish> {
-    const result = await db.insert(shiftWishes).values(wish).returning();
+    const wishData = {
+      ...wish,
+      preferredShiftDays: wish.preferredShiftDays ? wish.preferredShiftDays : null,
+      avoidShiftDays: wish.avoidShiftDays ? wish.avoidShiftDays : null,
+      preferredServiceTypes: wish.preferredServiceTypes ? wish.preferredServiceTypes : null,
+      avoidServiceTypes: wish.avoidServiceTypes ? wish.avoidServiceTypes : null
+    };
+    const result = await db.insert(shiftWishes).values(wishData as any).returning();
     return result[0];
   }
 
   async updateShiftWish(id: number, wish: Partial<InsertShiftWish>): Promise<ShiftWish | undefined> {
+    const updateData: any = { ...wish, updatedAt: new Date() };
     const result = await db.update(shiftWishes)
-      .set({ ...wish, updatedAt: new Date() })
+      .set(updateData)
       .where(eq(shiftWishes.id, id))
       .returning();
     return result[0];

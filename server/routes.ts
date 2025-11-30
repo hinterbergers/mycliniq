@@ -954,5 +954,202 @@ export async function registerRoutes(
     }
   });
 
+  // Roster Settings routes
+  app.get("/api/roster-settings", async (req: Request, res: Response) => {
+    try {
+      const settings = await storage.getRosterSettings();
+      if (!settings) {
+        // Default: January 2026 as last approved month
+        return res.json({ lastApprovedYear: 2026, lastApprovedMonth: 1 });
+      }
+      res.json(settings);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch roster settings" });
+    }
+  });
+
+  app.post("/api/roster-settings", async (req: Request, res: Response) => {
+    try {
+      const { lastApprovedYear, lastApprovedMonth, updatedById } = req.body;
+      const settings = await storage.upsertRosterSettings({
+        lastApprovedYear,
+        lastApprovedMonth,
+        updatedById
+      });
+      res.json(settings);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update roster settings" });
+    }
+  });
+
+  // Get the next planning month (month after last approved)
+  app.get("/api/roster-settings/next-planning-month", async (req: Request, res: Response) => {
+    try {
+      const settings = await storage.getRosterSettings();
+      let year = 2026;
+      let month = 2; // February 2026 default
+
+      if (settings) {
+        month = settings.lastApprovedMonth + 1;
+        year = settings.lastApprovedYear;
+        if (month > 12) {
+          month = 1;
+          year += 1;
+        }
+      }
+
+      // Get employee count and submitted wishes count
+      const employees = await storage.getEmployees();
+      const submittedCount = await storage.getSubmittedWishesCount(year, month);
+      const allSubmitted = submittedCount >= employees.length;
+
+      res.json({
+        year,
+        month,
+        totalEmployees: employees.length,
+        submittedCount,
+        allSubmitted
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get next planning month" });
+    }
+  });
+
+  // Shift Wishes routes
+  app.get("/api/shift-wishes", async (req: Request, res: Response) => {
+    try {
+      const { year, month, employeeId } = req.query;
+      
+      if (employeeId && year && month) {
+        const wish = await storage.getShiftWishByEmployeeAndMonth(
+          parseInt(employeeId as string),
+          parseInt(year as string),
+          parseInt(month as string)
+        );
+        return res.json(wish || null);
+      }
+      
+      if (year && month) {
+        const wishes = await storage.getShiftWishesByMonth(
+          parseInt(year as string),
+          parseInt(month as string)
+        );
+        return res.json(wishes);
+      }
+      
+      res.status(400).json({ error: "Jahr und Monat sind erforderlich" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch shift wishes" });
+    }
+  });
+
+  app.post("/api/shift-wishes", async (req: Request, res: Response) => {
+    try {
+      const wish = await storage.createShiftWish(req.body);
+      res.status(201).json(wish);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create shift wish" });
+    }
+  });
+
+  app.patch("/api/shift-wishes/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const wish = await storage.updateShiftWish(id, req.body);
+      if (!wish) {
+        return res.status(404).json({ error: "Shift wish not found" });
+      }
+      res.json(wish);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update shift wish" });
+    }
+  });
+
+  app.post("/api/shift-wishes/:id/submit", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const wish = await storage.updateShiftWish(id, {
+        status: 'Eingereicht',
+        submittedAt: new Date()
+      });
+      if (!wish) {
+        return res.status(404).json({ error: "Shift wish not found" });
+      }
+      res.json(wish);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to submit shift wish" });
+    }
+  });
+
+  app.delete("/api/shift-wishes/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteShiftWish(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete shift wish" });
+    }
+  });
+
+  // Planned Absences routes
+  app.get("/api/planned-absences", async (req: Request, res: Response) => {
+    try {
+      const { year, month, employeeId } = req.query;
+      
+      if (employeeId && year && month) {
+        const absences = await storage.getPlannedAbsencesByEmployee(
+          parseInt(employeeId as string),
+          parseInt(year as string),
+          parseInt(month as string)
+        );
+        return res.json(absences);
+      }
+      
+      if (year && month) {
+        const absences = await storage.getPlannedAbsencesByMonth(
+          parseInt(year as string),
+          parseInt(month as string)
+        );
+        return res.json(absences);
+      }
+      
+      res.status(400).json({ error: "Jahr und Monat sind erforderlich" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch planned absences" });
+    }
+  });
+
+  app.post("/api/planned-absences", async (req: Request, res: Response) => {
+    try {
+      const absence = await storage.createPlannedAbsence(req.body);
+      res.status(201).json(absence);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create planned absence" });
+    }
+  });
+
+  app.patch("/api/planned-absences/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const absence = await storage.updatePlannedAbsence(id, req.body);
+      if (!absence) {
+        return res.status(404).json({ error: "Planned absence not found" });
+      }
+      res.json(absence);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update planned absence" });
+    }
+  });
+
+  app.delete("/api/planned-absences/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deletePlannedAbsence(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete planned absence" });
+    }
+  });
+
   return httpServer;
 }
