@@ -120,3 +120,26 @@ export const insertResourceSchema = createInsertSchema(resources).omit({
 
 export type InsertResource = z.infer<typeof insertResourceSchema>;
 export type Resource = typeof resources.$inferSelect;
+
+// Weekly assignments for detailed week planning
+export const weeklyAssignments = pgTable("weekly_assignments", {
+  id: serial("id").primaryKey(),
+  weekYear: integer("week_year").notNull(),
+  weekNumber: integer("week_number").notNull(),
+  dayOfWeek: integer("day_of_week").notNull(),
+  area: text("area").notNull(),
+  subArea: text("sub_area").notNull(),
+  roleSlot: text("role_slot").notNull(),
+  employeeId: integer("employee_id").references(() => employees.id),
+  notes: text("notes"),
+  isClosed: boolean("is_closed").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+});
+
+export const insertWeeklyAssignmentSchema = createInsertSchema(weeklyAssignments).omit({
+  id: true,
+  createdAt: true
+});
+
+export type InsertWeeklyAssignment = z.infer<typeof insertWeeklyAssignmentSchema>;
+export type WeeklyAssignment = typeof weeklyAssignments.$inferSelect;

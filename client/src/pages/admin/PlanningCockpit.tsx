@@ -2,7 +2,7 @@ import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Users, Building2, CalendarClock, Settings2, ShieldAlert, UserCog } from "lucide-react";
+import { Users, Building2, CalendarClock, Settings2, ShieldAlert, UserCog, CalendarRange } from "lucide-react";
 import { useLocation } from "wouter";
 
 export default function PlanningCockpit() {
@@ -30,8 +30,16 @@ export default function PlanningCockpit() {
       description: "Monatsplanung, Urlaubsübersicht und Statistik",
       icon: CalendarClock,
       action: () => setLocation("/admin/roster"),
-      color: "text-blue-600",
-      bg: "bg-blue-50"
+      color: "text-primary",
+      bg: "bg-primary/10"
+    },
+    {
+      title: "Wochenplanung",
+      description: "Detaillierte Wocheneinsätze nach Bereichen",
+      icon: CalendarRange,
+      action: () => setLocation("/admin/weekly"),
+      color: "text-primary",
+      bg: "bg-primary/10"
     },
     {
       title: "Tageseinsatzplan",
@@ -66,7 +74,7 @@ export default function PlanningCockpit() {
           {modules.map((module, i) => (
             <Card 
               key={i} 
-              className={`border-none shadow-sm hover:shadow-md transition-all cursor-pointer group ${module.disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
+              className={`border-none kabeg-shadow hover:shadow-md transition-all cursor-pointer group ${module.disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
               onClick={!module.disabled ? module.action : undefined}
             >
               <CardContent className="p-6 flex items-start gap-4">
