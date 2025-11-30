@@ -12,14 +12,29 @@ import {
   type InsertResource,
   type WeeklyAssignment,
   type InsertWeeklyAssignment,
+  type ProjectInitiative,
+  type InsertProjectInitiative,
+  type ProjectTask,
+  type InsertProjectTask,
+  type ProjectDocument,
+  type InsertProjectDocument,
+  type Approval,
+  type InsertApproval,
+  type TaskActivity,
+  type InsertTaskActivity,
   users,
   employees,
   rosterShifts,
   absences,
   resources,
-  weeklyAssignments
+  weeklyAssignments,
+  projectInitiatives,
+  projectTasks,
+  projectDocuments,
+  approvals,
+  taskActivities
 } from "@shared/schema";
-import { eq, and, gte, lte } from "drizzle-orm";
+import { eq, and, gte, lte, desc } from "drizzle-orm";
 
 export interface IStorage {
   // User methods
@@ -55,6 +70,34 @@ export interface IStorage {
   upsertWeeklyAssignment(assignment: InsertWeeklyAssignment): Promise<WeeklyAssignment>;
   deleteWeeklyAssignment(id: number): Promise<boolean>;
   bulkUpsertWeeklyAssignments(assignments: InsertWeeklyAssignment[]): Promise<WeeklyAssignment[]>;
+  
+  // Project management methods
+  getProjectInitiatives(): Promise<ProjectInitiative[]>;
+  getProjectInitiative(id: number): Promise<ProjectInitiative | undefined>;
+  createProjectInitiative(initiative: InsertProjectInitiative): Promise<ProjectInitiative>;
+  updateProjectInitiative(id: number, initiative: Partial<InsertProjectInitiative>): Promise<ProjectInitiative | undefined>;
+  deleteProjectInitiative(id: number): Promise<boolean>;
+  
+  getProjectTasks(initiativeId: number): Promise<ProjectTask[]>;
+  getProjectTask(id: number): Promise<ProjectTask | undefined>;
+  createProjectTask(task: InsertProjectTask): Promise<ProjectTask>;
+  updateProjectTask(id: number, task: Partial<InsertProjectTask>): Promise<ProjectTask | undefined>;
+  deleteProjectTask(id: number): Promise<boolean>;
+  
+  getProjectDocuments(initiativeId: number): Promise<ProjectDocument[]>;
+  getProjectDocument(id: number): Promise<ProjectDocument | undefined>;
+  createProjectDocument(doc: InsertProjectDocument): Promise<ProjectDocument>;
+  updateProjectDocument(id: number, doc: Partial<InsertProjectDocument>): Promise<ProjectDocument | undefined>;
+  deleteProjectDocument(id: number): Promise<boolean>;
+  
+  getApprovals(documentId: number): Promise<Approval[]>;
+  createApproval(approval: InsertApproval): Promise<Approval>;
+  updateApproval(id: number, approval: Partial<InsertApproval>): Promise<Approval | undefined>;
+  
+  getTaskActivities(taskId: number): Promise<TaskActivity[]>;
+  createTaskActivity(activity: InsertTaskActivity): Promise<TaskActivity>;
+  
+  getPublishedDocuments(): Promise<ProjectDocument[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -239,6 +282,135 @@ export class DatabaseStorage implements IStorage {
       }
     }
     return results;
+  }
+
+  // Project management methods
+  async getProjectInitiatives(): Promise<ProjectInitiative[]> {
+    return await db.select()
+      .from(projectInitiatives)
+      .orderBy(desc(projectInitiatives.createdAt));
+  }
+
+  async getProjectInitiative(id: number): Promise<ProjectInitiative | undefined> {
+    const result = await db.select().from(projectInitiatives).where(eq(projectInitiatives.id, id));
+    return result[0];
+  }
+
+  async createProjectInitiative(initiative: InsertProjectInitiative): Promise<ProjectInitiative> {
+    const result = await db.insert(projectInitiatives).values(initiative).returning();
+    return result[0];
+  }
+
+  async updateProjectInitiative(id: number, initiative: Partial<InsertProjectInitiative>): Promise<ProjectInitiative | undefined> {
+    const result = await db.update(projectInitiatives)
+      .set({ ...initiative, updatedAt: new Date() })
+      .where(eq(projectInitiatives.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteProjectInitiative(id: number): Promise<boolean> {
+    await db.delete(projectInitiatives).where(eq(projectInitiatives.id, id));
+    return true;
+  }
+
+  async getProjectTasks(initiativeId: number): Promise<ProjectTask[]> {
+    return await db.select()
+      .from(projectTasks)
+      .where(eq(projectTasks.initiativeId, initiativeId))
+      .orderBy(projectTasks.orderIndex);
+  }
+
+  async getProjectTask(id: number): Promise<ProjectTask | undefined> {
+    const result = await db.select().from(projectTasks).where(eq(projectTasks.id, id));
+    return result[0];
+  }
+
+  async createProjectTask(task: InsertProjectTask): Promise<ProjectTask> {
+    const result = await db.insert(projectTasks).values(task).returning();
+    return result[0];
+  }
+
+  async updateProjectTask(id: number, task: Partial<InsertProjectTask>): Promise<ProjectTask | undefined> {
+    const result = await db.update(projectTasks)
+      .set({ ...task, updatedAt: new Date() })
+      .where(eq(projectTasks.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteProjectTask(id: number): Promise<boolean> {
+    await db.delete(projectTasks).where(eq(projectTasks.id, id));
+    return true;
+  }
+
+  async getProjectDocuments(initiativeId: number): Promise<ProjectDocument[]> {
+    return await db.select()
+      .from(projectDocuments)
+      .where(eq(projectDocuments.initiativeId, initiativeId))
+      .orderBy(desc(projectDocuments.updatedAt));
+  }
+
+  async getProjectDocument(id: number): Promise<ProjectDocument | undefined> {
+    const result = await db.select().from(projectDocuments).where(eq(projectDocuments.id, id));
+    return result[0];
+  }
+
+  async createProjectDocument(doc: InsertProjectDocument): Promise<ProjectDocument> {
+    const result = await db.insert(projectDocuments).values(doc).returning();
+    return result[0];
+  }
+
+  async updateProjectDocument(id: number, doc: Partial<InsertProjectDocument>): Promise<ProjectDocument | undefined> {
+    const result = await db.update(projectDocuments)
+      .set({ ...doc, updatedAt: new Date() })
+      .where(eq(projectDocuments.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteProjectDocument(id: number): Promise<boolean> {
+    await db.delete(projectDocuments).where(eq(projectDocuments.id, id));
+    return true;
+  }
+
+  async getApprovals(documentId: number): Promise<Approval[]> {
+    return await db.select()
+      .from(approvals)
+      .where(eq(approvals.documentId, documentId))
+      .orderBy(desc(approvals.requestedAt));
+  }
+
+  async createApproval(approval: InsertApproval): Promise<Approval> {
+    const result = await db.insert(approvals).values(approval).returning();
+    return result[0];
+  }
+
+  async updateApproval(id: number, approval: Partial<InsertApproval>): Promise<Approval | undefined> {
+    const result = await db.update(approvals)
+      .set(approval)
+      .where(eq(approvals.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async getTaskActivities(taskId: number): Promise<TaskActivity[]> {
+    return await db.select()
+      .from(taskActivities)
+      .where(eq(taskActivities.taskId, taskId))
+      .orderBy(desc(taskActivities.createdAt));
+  }
+
+  async createTaskActivity(activity: InsertTaskActivity): Promise<TaskActivity> {
+    const result = await db.insert(taskActivities).values(activity).returning();
+    return result[0];
+  }
+
+  async getPublishedDocuments(): Promise<ProjectDocument[]> {
+    return await db.select()
+      .from(projectDocuments)
+      .where(eq(projectDocuments.isPublished, true))
+      .orderBy(desc(projectDocuments.publishedAt));
   }
 }
 

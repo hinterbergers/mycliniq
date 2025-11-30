@@ -143,3 +143,177 @@ export const insertWeeklyAssignmentSchema = createInsertSchema(weeklyAssignments
 
 export type InsertWeeklyAssignment = z.infer<typeof insertWeeklyAssignmentSchema>;
 export type WeeklyAssignment = typeof weeklyAssignments.$inferSelect;
+
+// Project Management Enums
+export const projectStatusEnum = pgEnum('project_status', [
+  'Entwurf',
+  'Aktiv',
+  'In Prüfung',
+  'Abgeschlossen',
+  'Archiviert'
+]);
+
+export const taskStatusEnum = pgEnum('task_status', [
+  'Offen',
+  'In Bearbeitung',
+  'Zur Prüfung',
+  'Genehmigt',
+  'Veröffentlicht'
+]);
+
+export const documentStatusEnum = pgEnum('document_status', [
+  'Entwurf',
+  'In Bearbeitung',
+  'Zur Prüfung',
+  'Genehmigt',
+  'Veröffentlicht'
+]);
+
+export const approvalDecisionEnum = pgEnum('approval_decision', [
+  'Ausstehend',
+  'Genehmigt',
+  'Abgelehnt',
+  'Überarbeitung nötig'
+]);
+
+export const knowledgeCategoryEnum = pgEnum('knowledge_category', [
+  'SOP',
+  'Leitlinie',
+  'Protokoll',
+  'Checkliste',
+  'Formular',
+  'Schulung',
+  'Sonstiges'
+]);
+
+// Project Initiatives table
+export const projectInitiatives = pgTable("project_initiatives", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description"),
+  status: projectStatusEnum("status").notNull().default('Entwurf'),
+  createdById: integer("created_by_id").references(() => employees.id).notNull(),
+  dueDate: date("due_date"),
+  priority: integer("priority").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+});
+
+export const insertProjectInitiativeSchema = createInsertSchema(projectInitiatives).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export type InsertProjectInitiative = z.infer<typeof insertProjectInitiativeSchema>;
+export type ProjectInitiative = typeof projectInitiatives.$inferSelect;
+
+// Project Tasks table (with hierarchical support via parentTaskId)
+export const projectTasks = pgTable("project_tasks", {
+  id: serial("id").primaryKey(),
+  initiativeId: integer("initiative_id").references(() => projectInitiatives.id).notNull(),
+  parentTaskId: integer("parent_task_id"),
+  title: text("title").notNull(),
+  description: text("description"),
+  status: taskStatusEnum("status").notNull().default('Offen'),
+  assignedToId: integer("assigned_to_id").references(() => employees.id),
+  createdById: integer("created_by_id").references(() => employees.id).notNull(),
+  dueDate: date("due_date"),
+  priority: integer("priority").notNull().default(0),
+  orderIndex: integer("order_index").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+});
+
+export const insertProjectTaskSchema = createInsertSchema(projectTasks).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export type InsertProjectTask = z.infer<typeof insertProjectTaskSchema>;
+export type ProjectTask = typeof projectTasks.$inferSelect;
+
+// Project Documents table
+export const projectDocuments = pgTable("project_documents", {
+  id: serial("id").primaryKey(),
+  initiativeId: integer("initiative_id").references(() => projectInitiatives.id).notNull(),
+  taskId: integer("task_id").references(() => projectTasks.id),
+  title: text("title").notNull(),
+  status: documentStatusEnum("status").notNull().default('Entwurf'),
+  content: text("content"),
+  version: integer("version").notNull().default(1),
+  createdById: integer("created_by_id").references(() => employees.id).notNull(),
+  lastEditedById: integer("last_edited_by_id").references(() => employees.id),
+  category: knowledgeCategoryEnum("category").notNull().default('SOP'),
+  isPublished: boolean("is_published").notNull().default(false),
+  publishedAt: timestamp("published_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+});
+
+export const insertProjectDocumentSchema = createInsertSchema(projectDocuments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export type InsertProjectDocument = z.infer<typeof insertProjectDocumentSchema>;
+export type ProjectDocument = typeof projectDocuments.$inferSelect;
+
+// Document Version History
+export const documentVersions = pgTable("document_versions", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").references(() => projectDocuments.id).notNull(),
+  versionNumber: integer("version_number").notNull(),
+  content: text("content").notNull(),
+  changeSummary: text("change_summary"),
+  authorId: integer("author_id").references(() => employees.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+});
+
+export const insertDocumentVersionSchema = createInsertSchema(documentVersions).omit({
+  id: true,
+  createdAt: true
+});
+
+export type InsertDocumentVersion = z.infer<typeof insertDocumentVersionSchema>;
+export type DocumentVersion = typeof documentVersions.$inferSelect;
+
+// Approvals table
+export const approvals = pgTable("approvals", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").references(() => projectDocuments.id).notNull(),
+  requestedById: integer("requested_by_id").references(() => employees.id).notNull(),
+  approverId: integer("approver_id").references(() => employees.id),
+  decision: approvalDecisionEnum("decision").notNull().default('Ausstehend'),
+  notes: text("notes"),
+  requestedAt: timestamp("requested_at").defaultNow().notNull(),
+  decidedAt: timestamp("decided_at")
+});
+
+export const insertApprovalSchema = createInsertSchema(approvals).omit({
+  id: true,
+  requestedAt: true
+});
+
+export type InsertApproval = z.infer<typeof insertApprovalSchema>;
+export type Approval = typeof approvals.$inferSelect;
+
+// Task Activity/Comments
+export const taskActivities = pgTable("task_activities", {
+  id: serial("id").primaryKey(),
+  taskId: integer("task_id").references(() => projectTasks.id).notNull(),
+  authorId: integer("author_id").references(() => employees.id).notNull(),
+  message: text("message").notNull(),
+  activityType: text("activity_type").notNull().default('comment'),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+});
+
+export const insertTaskActivitySchema = createInsertSchema(taskActivities).omit({
+  id: true,
+  createdAt: true
+});
+
+export type InsertTaskActivity = z.infer<typeof insertTaskActivitySchema>;
+export type TaskActivity = typeof taskActivities.$inferSelect;
