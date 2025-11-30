@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar as CalendarIcon, Download, Filter, Printer, ArrowLeft, ArrowRight, Info, Loader2, Sparkles } from "lucide-react";
+import { Calendar as CalendarIcon, Download, Filter, Printer, ArrowLeft, ArrowRight, Info, Loader2, Sparkles, ArrowRightLeft } from "lucide-react";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { employeeApi, rosterApi, absenceApi } from "@/lib/api";
 import type { Employee, RosterShift, Absence } from "@shared/schema";
@@ -12,6 +12,7 @@ import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterv
 import { de } from "date-fns/locale";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
+import { ShiftSwapDialog } from "@/components/ShiftSwapDialog";
 
 const SERVICE_TYPES = [
   { id: "gyn", label: "Gynäkologie", requiredRole: ["Primararzt", "1. Oberarzt", "Oberarzt", "Oberärztin"], color: "bg-primary/10 text-primary border-primary/20" },
@@ -31,6 +32,8 @@ export default function RosterPlan() {
   const [absences, setAbsences] = useState<Absence[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [swapDialogOpen, setSwapDialogOpen] = useState(false);
+  const [selectedShiftForSwap, setSelectedShiftForSwap] = useState<RosterShift | null>(null);
 
   const canEdit = useMemo(() => {
     if (!currentUser) return false;
@@ -148,6 +151,15 @@ export default function RosterPlan() {
           </div>
 
           <div className="flex gap-2 w-full md:w-auto">
+            <Button 
+              variant="outline" 
+              className="gap-2 flex-1 md:flex-none" 
+              onClick={() => setSwapDialogOpen(true)}
+              data-testid="button-swap-dialog"
+            >
+              <ArrowRightLeft className="w-4 h-4" />
+              Diensttausch
+            </Button>
             <Button variant="outline" className="gap-2 flex-1 md:flex-none" data-testid="button-print">
               <Printer className="w-4 h-4" />
               Drucken
@@ -330,6 +342,16 @@ export default function RosterPlan() {
             </div>
           </CardContent>
         </Card>
+
+        <ShiftSwapDialog
+          open={swapDialogOpen}
+          onOpenChange={setSwapDialogOpen}
+          sourceShift={selectedShiftForSwap}
+          onSwapComplete={() => {
+            loadData();
+            setSelectedShiftForSwap(null);
+          }}
+        />
       </div>
     </Layout>
   );

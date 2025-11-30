@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, serial, integer, date, timestamp, boolean, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, serial, integer, date, timestamp, boolean, pgEnum, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -80,7 +80,7 @@ export const employees = pgTable("employees", {
   role: roleEnum("role").notNull(),
   appRole: appRoleEnum("app_role").notNull().default('User'),
   primaryDeploymentArea: deploymentAreaEnum("primary_deployment_area"),
-  shiftPreferences: text("shift_preferences"),
+  shiftPreferences: jsonb("shift_preferences"),
   competencies: text("competencies").array().notNull().default(sql`ARRAY[]::text[]`),
   email: text("email"),
   emailPrivate: text("email_private"),
