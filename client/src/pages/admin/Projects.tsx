@@ -22,8 +22,12 @@ import {
   AlertCircle,
   MoreHorizontal,
   ArrowRight,
-  Briefcase
+  Briefcase,
+  Trash2,
+  Edit
 } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useState, useEffect } from "react";
 import { projectApi, taskApi, documentApi, employeeApi } from "@/lib/api";
 import type { ProjectInitiative, ProjectTask, ProjectDocument, Employee } from "@shared/schema";
@@ -31,6 +35,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
+import { useAuth } from "@/lib/auth";
 
 const PROJECT_STATUS_COLORS: Record<string, string> = {
   'Entwurf': 'bg-gray-100 text-gray-700 border-gray-200',
@@ -54,8 +59,6 @@ const PRIORITY_COLORS: Record<number, string> = {
   3: 'bg-red-100 text-red-700'
 };
 
-const SIMULATED_USER = { id: 1, name: 'Dr. Hinterberger', role: '1. Oberarzt' };
-
 interface ProjectWithStats extends ProjectInitiative {
   taskCount?: number;
   completedTaskCount?: number;
@@ -63,12 +66,17 @@ interface ProjectWithStats extends ProjectInitiative {
   creatorName?: string;
 }
 
+const PROJECT_STATUS_OPTIONS = ['Entwurf', 'Aktiv', 'In Prüfung', 'Abgeschlossen', 'Archiviert'];
+
 export default function Projects() {
+  const { employee: currentUser, isAdmin } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [projects, setProjects] = useState<ProjectWithStats[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<ProjectWithStats | null>(null);
   const [newProject, setNewProject] = useState({
     title: '',
     description: '',
@@ -123,6 +131,15 @@ export default function Projects() {
   };
 
   const handleCreateProject = async () => {
+    if (!currentUser) {
+      toast({
+        title: "Fehler",
+        description: "Sie müssen angemeldet sein, um ein Projekt zu erstellen",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     try {
       const projectData = {
         title: newProject.title,
@@ -130,7 +147,7 @@ export default function Projects() {
         status: newProject.status,
         priority: newProject.priority,
         dueDate: newProject.dueDate || undefined,
-        createdById: SIMULATED_USER.id
+        createdById: currentUser.id
       };
 
       await projectApi.create(projectData);
@@ -150,6 +167,46 @@ export default function Projects() {
         variant: "destructive"
       });
     }
+  };
+
+  const handleDeleteProject = async () => {
+    if (!projectToDelete) return;
+    
+    try {
+      await projectApi.delete(projectToDelete.id);
+      toast({
+        title: "Projekt gelöscht",
+        description: `${projectToDelete.title} wurde gelöscht`
+      });
+      setDeleteDialogOpen(false);
+      setProjectToDelete(null);
+      loadData();
+    } catch (error) {
+      toast({
+        title: "Fehler",
+        description: "Projekt konnte nicht gelöscht werden",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleUpdateStatus = async (projectId: number, newStatus: string) => {
+    try {
+      await projectApi.update(projectId, { status: newStatus as any });
+      toast({ title: "Status aktualisiert" });
+      loadData();
+    } catch (error) {
+      toast({
+        title: "Fehler",
+        description: "Status konnte nicht aktualisiert werden",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const canDeleteProject = (project: ProjectWithStats) => {
+    if (!currentUser) return false;
+    return isAdmin || project.createdById === currentUser.id;
   };
 
   const filteredProjects = projects.filter(project =>
@@ -356,18 +413,63 @@ export default function Projects() {
                         {PRIORITIES.find(p => p.value === project.priority)?.label}
                       </Badge>
                     )}
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="ml-auto gap-1 group-hover:text-primary"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setLocation(`/admin/projects/${project.id}`);
-                      }}
-                      data-testid={`button-open-project-${project.id}`}
-                    >
-                      Öffnen <ArrowRight className="w-4 h-4" />
-                    </Button>
+                    <div className="flex items-center gap-1 ml-auto">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            onClick={(e) => e.stopPropagation()}
+                            data-testid={`button-menu-project-${project.id}`}
+                          >
+                            <MoreHorizontal className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenuItem 
+                            onClick={() => setLocation(`/projekte/${project.id}`)}
+                          >
+                            <Edit className="w-4 h-4 mr-2" /> Bearbeiten
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          {PROJECT_STATUS_OPTIONS.map(status => (
+                            <DropdownMenuItem 
+                              key={status}
+                              onClick={() => handleUpdateStatus(project.id, status)}
+                              className={project.status === status ? 'bg-accent' : ''}
+                            >
+                              {status}
+                            </DropdownMenuItem>
+                          ))}
+                          {canDeleteProject(project) && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem 
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => {
+                                  setProjectToDelete(project);
+                                  setDeleteDialogOpen(true);
+                                }}
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" /> Löschen
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="gap-1 group-hover:text-primary"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setLocation(`/projekte/${project.id}`);
+                        }}
+                        data-testid={`button-open-project-${project.id}`}
+                      >
+                        Öffnen <ArrowRight className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </div>
                 </CardFooter>
               </Card>
@@ -375,6 +477,30 @@ export default function Projects() {
           </div>
         )}
       </div>
+      
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Projekt löschen?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Möchten Sie das Projekt "{projectToDelete?.title}" wirklich löschen? 
+              Diese Aktion kann nicht rückgängig gemacht werden. Alle zugehörigen 
+              Aufgaben und Dokumente werden ebenfalls gelöscht.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setProjectToDelete(null)}>
+              Abbrechen
+            </AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteProject}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Löschen
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Layout>
   );
 }

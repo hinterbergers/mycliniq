@@ -39,6 +39,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useLocation, useParams } from "wouter";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
+import { useAuth } from "@/lib/auth";
 
 const STATUS_COLORS: Record<string, string> = {
   'Entwurf': 'bg-gray-100 text-gray-700 border-gray-200',
@@ -71,9 +72,8 @@ const DOCUMENT_CATEGORIES = [
   { value: 'Sonstiges', label: 'Sonstiges' }
 ];
 
-const SIMULATED_USER = { id: 1, name: 'Dr. Hinterberger', role: '1. Oberarzt' };
-
 export default function ProjectDetail() {
+  const { employee: currentUser, isAdmin } = useAuth();
   const params = useParams();
   const projectId = parseInt(params.id || '0');
   const [, setLocation] = useLocation();
@@ -134,13 +134,15 @@ export default function ProjectDetail() {
   };
 
   const handleCreateTask = async () => {
+    if (!currentUser) return;
+    
     try {
       await taskApi.create(projectId, {
         title: newTask.title,
         description: newTask.description || undefined,
         assignedToId: newTask.assignedToId || undefined,
         dueDate: newTask.dueDate || undefined,
-        createdById: SIMULATED_USER.id
+        createdById: currentUser.id
       });
       
       toast({ title: "Aufgabe erstellt" });
@@ -185,12 +187,14 @@ export default function ProjectDetail() {
   };
 
   const handleCreateDocument = async () => {
+    if (!currentUser) return;
+    
     try {
       await documentApi.create(projectId, {
         title: newDocument.title,
         content: newDocument.content || undefined,
         category: newDocument.category,
-        createdById: SIMULATED_USER.id
+        createdById: currentUser.id
       });
       
       toast({ title: "Dokument erstellt" });
@@ -207,12 +211,12 @@ export default function ProjectDetail() {
   };
 
   const handleSaveDocument = async () => {
-    if (!editingDocument) return;
+    if (!editingDocument || !currentUser) return;
     
     try {
       await documentApi.update(editingDocument.id, {
         content: editingDocument.content,
-        lastEditedById: SIMULATED_USER.id,
+        lastEditedById: currentUser.id,
         status: 'In Bearbeitung'
       });
       
@@ -229,9 +233,11 @@ export default function ProjectDetail() {
   };
 
   const handleRequestApproval = async (documentId: number) => {
+    if (!currentUser) return;
+    
     try {
       await documentApi.requestApproval(documentId, {
-        requestedById: SIMULATED_USER.id,
+        requestedById: currentUser.id,
         decision: 'Ausstehend'
       });
       
