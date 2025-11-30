@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { startOfWeek, addDays, format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, isToday } from "date-fns";
 import { de } from "date-fns/locale";
+import { MOCK_EMPLOYEES } from "@/lib/mockData";
 
 export default function Personal() {
   return (
@@ -107,8 +108,8 @@ function RosterView() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Alle Abteilungen</SelectItem>
-              <SelectItem value="cardio">Kardiologie</SelectItem>
-              <SelectItem value="neuro">Neurologie</SelectItem>
+              <SelectItem value="cardio">Geburtshilfe</SelectItem>
+              <SelectItem value="neuro">Gynäkologie</SelectItem>
             </SelectContent>
           </Select>
           <Button variant="outline" size="icon">
@@ -157,7 +158,7 @@ function RosterView() {
                     <span className="font-bold text-sm">{shift.type}</span>
                     <span>08:00-16:30</span>
                   </div>
-                  <div className="mt-1 opacity-80 truncate">Kardiologie 1</div>
+                  <div className="mt-1 opacity-80 truncate">Dienst</div>
                 </div>
               )}
               
@@ -173,12 +174,12 @@ function RosterView() {
 }
 
 function VacationView() {
-  const employees = [
-    { name: "Dr. Müller", role: "Oberarzt", vacation: 24 },
-    { name: "Dr. Schmidt", role: "Assistenzarzt", vacation: 12 },
-    { name: "Fr. Weber", role: "Pflegeleitung", vacation: 18 },
-    { name: "Hr. Klein", role: "Pfleger", vacation: 5 },
-  ];
+  // Mock vacation data distribution
+  const getVacationDays = (empId: number) => {
+    if (empId % 3 === 0) return 25;
+    if (empId % 2 === 0) return 15;
+    return 5;
+  };
 
   return (
     <Card className="border-none shadow-sm">
@@ -187,16 +188,16 @@ function VacationView() {
       </CardHeader>
       <CardContent>
         <div className="space-y-6">
-          {employees.map((emp, i) => (
-            <div key={i} className="flex items-center gap-4 p-3 hover:bg-secondary/30 rounded-xl transition-colors">
-              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs">
-                {emp.name.substring(0, 2)}
+          {MOCK_EMPLOYEES.slice(0, 8).map((emp, i) => (
+            <div key={emp.id} className="flex items-center gap-4 p-3 hover:bg-secondary/30 rounded-xl transition-colors">
+              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs shrink-0">
+                {emp.name.split(' ').pop()?.substring(0, 2).toUpperCase()}
               </div>
-              <div className="w-40">
-                <p className="font-medium text-sm">{emp.name}</p>
-                <p className="text-xs text-muted-foreground">{emp.role}</p>
+              <div className="w-40 shrink-0">
+                <p className="font-medium text-sm truncate">{emp.name}</p>
+                <p className="text-xs text-muted-foreground truncate">{emp.role}</p>
               </div>
-              <div className="flex-1 grid grid-cols-12 gap-1 h-8">
+              <div className="flex-1 grid grid-cols-12 gap-1 h-8 min-w-[300px]">
                 {Array.from({ length: 12 }).map((_, m) => (
                   <div key={m} className="bg-secondary rounded-sm relative group cursor-pointer hover:bg-secondary-foreground/10">
                     {/* Mock vacation blocks */}
@@ -209,8 +210,8 @@ function VacationView() {
                   </div>
                 ))}
               </div>
-              <div className="w-20 text-right text-sm">
-                <span className="font-bold text-foreground">{emp.vacation}</span> <span className="text-muted-foreground">Tage</span>
+              <div className="w-20 text-right text-sm shrink-0">
+                <span className="font-bold text-foreground">{getVacationDays(emp.id)}</span> <span className="text-muted-foreground">Tage</span>
               </div>
             </div>
           ))}

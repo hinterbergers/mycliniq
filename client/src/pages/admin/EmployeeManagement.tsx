@@ -10,42 +10,45 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Search, Plus, Filter, MoreHorizontal, UserPlus } from "lucide-react";
 import { useState } from "react";
+import { MOCK_EMPLOYEES } from "@/lib/mockData";
 
 const ROLES = [
   "Primararzt",
   "1. Oberarzt",
-  "Funktionsoberarzt",
   "Oberarzt",
+  "Oberärztin",
   "Facharzt",
   "Assistenzarzt",
+  "Assistenzärztin",
   "Turnusarzt",
   "Student (KPJ)",
   "Student (Famulant)"
 ];
 
 const COMPETENCIES = [
-  "Sectio (Kaiserschnitt)",
-  "Spontangeburt Leitung",
-  "Laparoskopie Gyn",
-  "Mammachirurgie",
-  "Pränataldiagnostik (ÖGUM II)",
+  "Senior Mamma Surgeon",
+  "Endometriose",
   "Gyn-Onkologie",
+  "Geburtshilfe",
   "Urogynäkologie",
-  "Kolposkopie",
-  "Notarzt"
+  "Gynäkologische Chirurgie",
+  "ÖGUM I",
+  "ÖGUM II",
+  "Dysplasie",
+  "Allgemeine Gynäkologie",
+  "Mamma",
+  "Mamma Ambulanz",
+  "Kindergynäkologie"
 ];
 
 export default function EmployeeManagement() {
   const [searchTerm, setSearchTerm] = useState("");
-
-  const employees = [
-    { id: 1, name: "Prof. Dr. Hans Weber", role: "Primararzt", competencies: ["Gyn-Onkologie", "Mammachirurgie", "Laparoskopie Gyn"], status: "active" },
-    { id: 2, name: "OA Dr. Maria Schmidt", role: "1. Oberarzt", competencies: ["Pränataldiagnostik (ÖGUM II)", "Sectio (Kaiserschnitt)", "Spontangeburt Leitung"], status: "active" },
-    { id: 3, name: "OA Dr. Thomas Klein", role: "Oberarzt", competencies: ["Urogynäkologie", "Laparoskopie Gyn"], status: "active" },
-    { id: 4, name: "Dr. Lisa Bauer", role: "Assistenzarzt", competencies: ["Spontangeburt Leitung", "Sectio (Kaiserschnitt)"], status: "active" },
-    { id: 5, name: "Markus Wolf", role: "Turnusarzt", competencies: [], status: "active" },
-    { id: 6, name: "Sarah Connor", role: "Student (KPJ)", competencies: [], status: "temporary", validUntil: "31.12.2025" },
-  ];
+  
+  const filteredEmployees = MOCK_EMPLOYEES.filter(emp => 
+    emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    emp.role.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    emp.competencies.some(c => c.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
 
   return (
     <Layout title="Mitarbeiter & Kompetenzen">
@@ -108,7 +111,7 @@ export default function EmployeeManagement() {
 
                   <div className="space-y-3">
                     <Label>Kompetenzen & Fähigkeiten</Label>
-                    <div className="grid grid-cols-2 gap-3 p-4 border border-border rounded-lg bg-muted/10">
+                    <div className="grid grid-cols-2 gap-3 p-4 border border-border rounded-lg bg-muted/10 h-64 overflow-y-auto">
                       {COMPETENCIES.map(comp => (
                         <div key={comp} className="flex items-center space-x-2">
                           <Checkbox id={comp} />
@@ -146,12 +149,14 @@ export default function EmployeeManagement() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {employees.map((emp) => (
+                {filteredEmployees.map((emp) => (
                   <TableRow key={emp.id}>
                     <TableCell className="font-medium">
                       <div className="flex flex-col">
                         <span>{emp.name}</span>
+                        {/* @ts-ignore */}
                         {emp.validUntil && (
+                          /* @ts-ignore */
                           <span className="text-xs text-orange-600 font-normal">Befristet bis {emp.validUntil}</span>
                         )}
                       </div>
