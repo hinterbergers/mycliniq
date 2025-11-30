@@ -3,53 +3,101 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Search, Book, ArrowRight, Bookmark, Clock, Filter } from "lucide-react";
+import { Search, Book, ArrowRight, Bookmark, Clock, Filter, FileText } from "lucide-react";
+import { useState, useEffect } from "react";
+import { knowledgeApi } from "@/lib/api";
+import type { ProjectDocument } from "@shared/schema";
+import { format } from "date-fns";
+import { de } from "date-fns/locale";
 
 export default function Guidelines() {
-  const categories = ["Alle", "Geburtshilfe", "Gynäkologie", "Onkologie", "Notfallmedizin", "Pflege"];
+  const [publishedDocs, setPublishedDocs] = useState<ProjectDocument[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("Alle");
+
+  useEffect(() => {
+    loadPublishedDocs();
+  }, []);
+
+  const loadPublishedDocs = async () => {
+    try {
+      const docs = await knowledgeApi.getPublished();
+      setPublishedDocs(docs);
+    } catch (error) {
+      console.error("Failed to load published documents:", error);
+    }
+  };
+
+  const categories = ["Alle", "SOP", "Leitlinie", "Protokoll", "Checkliste", "Formular", "Schulung"];
   
-  const guidelines = [
+  const staticGuidelines = [
     {
       title: "Präeklampsie & Eklampsie",
-      category: "Geburtshilfe",
+      category: "Leitlinie",
       updated: "25. Nov 2025",
       summary: "Aktualisierte Handlungsempfehlungen zur Diagnose und Therapie hypertensiver Schwangerschaftserkrankungen.",
       tags: ["Notfall", "Schwangerschaft", "Blutdruck"],
-      important: true
+      important: true,
+      isStatic: true
     },
     {
       title: "Postpartale Hämorrhagie (PPH)",
-      category: "Notfallmedizin",
+      category: "SOP",
       updated: "12. Okt 2025",
       summary: "Stufenschema zur Versorgung bei verstärkter Blutung post partum. Medikamentöse und interventionelle Schritte.",
       tags: ["Notfall", "Blutung", "Kreißsaal"],
-      important: true
+      important: true,
+      isStatic: true
     },
     {
       title: "Endometriose Leitlinie",
-      category: "Gynäkologie",
+      category: "Leitlinie",
       updated: "01. Sep 2025",
       summary: "Diagnostischer Pfad und Therapieoptionen bei Verdacht auf Endometriose.",
       tags: ["Chronisch", "Schmerz", "Laparoskopie"],
-      important: false
+      important: false,
+      isStatic: true
     },
     {
       title: "Sectio caesarea - OP Ablauf",
-      category: "Geburtshilfe",
+      category: "Protokoll",
       updated: "15. Aug 2025",
       summary: "Standardablauf für elektive und eilige Sectio. Antibiotikaprophylaxe und Nahttechnik.",
       tags: ["OP", "Sectio", "Standard"],
-      important: false
+      important: false,
+      isStatic: true
     },
     {
       title: "Mammakarzinom Nachsorge",
-      category: "Onkologie",
+      category: "Leitlinie",
       updated: "10. Aug 2025",
       summary: "Empfehlungen zur Nachsorgeintervalle und Bildgebung.",
       tags: ["Brustkrebs", "Nachsorge", "Screening"],
-      important: false
+      important: false,
+      isStatic: true
     }
   ];
+
+  const dynamicGuidelines = publishedDocs.map(doc => ({
+    id: doc.id,
+    title: doc.title,
+    category: doc.category,
+    updated: doc.publishedAt ? format(new Date(doc.publishedAt), "dd. MMM yyyy", { locale: de }) : '',
+    summary: doc.content?.substring(0, 150) + (doc.content && doc.content.length > 150 ? '...' : '') || 'Kein Inhalt verfügbar',
+    tags: [],
+    important: false,
+    isStatic: false
+  }));
+
+  const allGuidelines = [...dynamicGuidelines, ...staticGuidelines];
+
+  const filteredGuidelines = allGuidelines.filter(guide => {
+    const matchesSearch = searchTerm === '' || 
+      guide.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      guide.summary.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory = selectedCategory === 'Alle' || guide.category === selectedCategory;
+    return matchesSearch && matchesCategory;
+  });
 
   return (
     <Layout title="Wissensmanagement">
@@ -73,7 +121,10 @@ export default function Guidelines() {
                 </div>
                 <Input 
                   className="h-14 border-0 shadow-none focus-visible:ring-0 text-lg bg-transparent" 
-                  placeholder="Suche nach Diagnose, Symptom oder Medikament..." 
+                  placeholder="Suche nach Diagnose, Symptom oder Medikament..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  data-testid="input-search-guidelines"
                 />
                 <div className="pr-2 flex items-center">
                    <Button size="sm" className="h-10 rounded-lg px-6">Suchen</Button>
@@ -83,12 +134,14 @@ export default function Guidelines() {
           </div>
 
           <div className="flex flex-wrap justify-center gap-2">
-            {categories.map((cat, i) => (
+            {categories.map((cat) => (
               <Button 
                 key={cat} 
-                variant={i === 0 ? "default" : "outline"} 
-                className={`rounded-full ${i !== 0 ? "bg-background/50 backdrop-blur-sm" : ""}`}
+                variant={selectedCategory === cat ? "default" : "outline"} 
+                className={`rounded-full ${selectedCategory !== cat ? "bg-background/50 backdrop-blur-sm" : ""}`}
                 size="sm"
+                onClick={() => setSelectedCategory(cat)}
+                data-testid={`button-category-${cat.toLowerCase()}`}
               >
                 {cat}
               </Button>
@@ -107,8 +160,8 @@ export default function Guidelines() {
               </Button>
             </div>
 
-            {guidelines.map((guide, i) => (
-              <Card key={i} className="group hover:shadow-md transition-all duration-200 border-border/60 hover:border-primary/30 cursor-pointer">
+            {filteredGuidelines.map((guide, i) => (
+              <Card key={i} className="group hover:shadow-md transition-all duration-200 border-border/60 hover:border-primary/30 cursor-pointer" data-testid={`card-guideline-${i}`}>
                 <CardContent className="p-5">
                   <div className="flex justify-between items-start gap-4">
                     <div className="space-y-3 flex-1">
@@ -119,6 +172,11 @@ export default function Guidelines() {
                         {guide.important && (
                           <Badge variant="destructive" className="bg-red-50 text-red-600 border-red-100 shadow-none hover:bg-red-100">
                             Wichtig
+                          </Badge>
+                        )}
+                        {!guide.isStatic && (
+                          <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">
+                            Intern
                           </Badge>
                         )}
                         <span className="text-xs text-muted-foreground flex items-center gap-1 ml-auto sm:ml-0">
@@ -136,7 +194,7 @@ export default function Guidelines() {
                       </div>
 
                       <div className="flex flex-wrap gap-2 pt-1">
-                        {guide.tags.map(tag => (
+                        {guide.tags.map((tag: string) => (
                           <span key={tag} className="text-xs font-medium text-primary/70 bg-primary/5 px-2 py-0.5 rounded">
                             #{tag}
                           </span>

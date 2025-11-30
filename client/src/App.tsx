@@ -12,6 +12,8 @@ import ResourceManagement from "@/pages/admin/ResourceManagement";
 import DailyPlanEditor from "@/pages/admin/DailyPlanEditor";
 import RosterPlan from "@/pages/admin/RosterPlan";
 import WeeklyPlan from "@/pages/admin/WeeklyPlan";
+import Projects from "@/pages/admin/Projects";
+import ProjectDetail from "@/pages/admin/ProjectDetail";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -28,6 +30,8 @@ function Router() {
       <Route path="/admin/daily-plan" component={DailyPlanEditor} />
       <Route path="/admin/roster" component={RosterPlan} />
       <Route path="/admin/weekly" component={WeeklyPlan} />
+      <Route path="/admin/projects" component={Projects} />
+      <Route path="/admin/projects/:id" component={ProjectDetail} />
       
       <Route component={NotFound} />
     </Switch>

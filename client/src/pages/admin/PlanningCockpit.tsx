@@ -2,7 +2,7 @@ import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Users, Building2, CalendarClock, Settings2, ShieldAlert, UserCog, CalendarRange } from "lucide-react";
+import { Users, Building2, CalendarClock, Settings2, ShieldAlert, UserCog, CalendarRange, Briefcase } from "lucide-react";
 import { useLocation } from "wouter";
 
 export default function PlanningCockpit() {
@@ -48,6 +48,14 @@ export default function PlanningCockpit() {
       action: () => setLocation("/admin/daily-plan"),
       color: "text-purple-600",
       bg: "bg-purple-50"
+    },
+    {
+      title: "Projektmanagement",
+      description: "SOPs, Leitlinien und Dokumente erstellen, delegieren und freigeben",
+      icon: Briefcase,
+      action: () => setLocation("/admin/projects"),
+      color: "text-amber-600",
+      bg: "bg-amber-50"
     },
     {
       title: "Berechtigungen",

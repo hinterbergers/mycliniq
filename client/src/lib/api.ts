@@ -1,4 +1,21 @@
-import type { Employee, RosterShift, Absence, Resource, WeeklyAssignment, InsertWeeklyAssignment } from "@shared/schema";
+import type { 
+  Employee, 
+  RosterShift, 
+  Absence, 
+  Resource, 
+  WeeklyAssignment, 
+  InsertWeeklyAssignment,
+  ProjectInitiative,
+  InsertProjectInitiative,
+  ProjectTask,
+  InsertProjectTask,
+  ProjectDocument,
+  InsertProjectDocument,
+  Approval,
+  InsertApproval,
+  TaskActivity,
+  InsertTaskActivity
+} from "@shared/schema";
 
 const API_BASE = "/api";
 
@@ -158,5 +175,174 @@ export const weeklyAssignmentApi = {
       method: "DELETE"
     });
     return handleResponse<void>(response);
+  }
+};
+
+// Project Initiative API
+export const projectApi = {
+  getAll: async (): Promise<ProjectInitiative[]> => {
+    const response = await fetch(`${API_BASE}/projects`);
+    return handleResponse<ProjectInitiative[]>(response);
+  },
+
+  getById: async (id: number): Promise<ProjectInitiative> => {
+    const response = await fetch(`${API_BASE}/projects/${id}`);
+    return handleResponse<ProjectInitiative>(response);
+  },
+
+  create: async (data: InsertProjectInitiative): Promise<ProjectInitiative> => {
+    const response = await fetch(`${API_BASE}/projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<ProjectInitiative>(response);
+  },
+
+  update: async (id: number, data: Partial<InsertProjectInitiative>): Promise<ProjectInitiative> => {
+    const response = await fetch(`${API_BASE}/projects/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<ProjectInitiative>(response);
+  },
+
+  delete: async (id: number): Promise<void> => {
+    const response = await fetch(`${API_BASE}/projects/${id}`, {
+      method: "DELETE"
+    });
+    return handleResponse<void>(response);
+  }
+};
+
+// Project Tasks API
+export const taskApi = {
+  getByProject: async (projectId: number): Promise<ProjectTask[]> => {
+    const response = await fetch(`${API_BASE}/projects/${projectId}/tasks`);
+    return handleResponse<ProjectTask[]>(response);
+  },
+
+  getById: async (id: number): Promise<ProjectTask> => {
+    const response = await fetch(`${API_BASE}/tasks/${id}`);
+    return handleResponse<ProjectTask>(response);
+  },
+
+  create: async (projectId: number, data: Omit<InsertProjectTask, 'initiativeId'>): Promise<ProjectTask> => {
+    const response = await fetch(`${API_BASE}/projects/${projectId}/tasks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<ProjectTask>(response);
+  },
+
+  update: async (id: number, data: Partial<InsertProjectTask>): Promise<ProjectTask> => {
+    const response = await fetch(`${API_BASE}/tasks/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<ProjectTask>(response);
+  },
+
+  delete: async (id: number): Promise<void> => {
+    const response = await fetch(`${API_BASE}/tasks/${id}`, {
+      method: "DELETE"
+    });
+    return handleResponse<void>(response);
+  },
+
+  getActivities: async (taskId: number): Promise<TaskActivity[]> => {
+    const response = await fetch(`${API_BASE}/tasks/${taskId}/activities`);
+    return handleResponse<TaskActivity[]>(response);
+  },
+
+  addActivity: async (taskId: number, data: Omit<InsertTaskActivity, 'taskId'>): Promise<TaskActivity> => {
+    const response = await fetch(`${API_BASE}/tasks/${taskId}/activities`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<TaskActivity>(response);
+  }
+};
+
+// Project Documents API
+export const documentApi = {
+  getByProject: async (projectId: number): Promise<ProjectDocument[]> => {
+    const response = await fetch(`${API_BASE}/projects/${projectId}/documents`);
+    return handleResponse<ProjectDocument[]>(response);
+  },
+
+  getById: async (id: number): Promise<ProjectDocument> => {
+    const response = await fetch(`${API_BASE}/documents/${id}`);
+    return handleResponse<ProjectDocument>(response);
+  },
+
+  create: async (projectId: number, data: Omit<InsertProjectDocument, 'initiativeId'>): Promise<ProjectDocument> => {
+    const response = await fetch(`${API_BASE}/projects/${projectId}/documents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<ProjectDocument>(response);
+  },
+
+  update: async (id: number, data: Partial<InsertProjectDocument>): Promise<ProjectDocument> => {
+    const response = await fetch(`${API_BASE}/documents/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<ProjectDocument>(response);
+  },
+
+  delete: async (id: number): Promise<void> => {
+    const response = await fetch(`${API_BASE}/documents/${id}`, {
+      method: "DELETE"
+    });
+    return handleResponse<void>(response);
+  },
+
+  publish: async (id: number): Promise<ProjectDocument> => {
+    const response = await fetch(`${API_BASE}/documents/${id}/publish`, {
+      method: "POST"
+    });
+    return handleResponse<ProjectDocument>(response);
+  },
+
+  getApprovals: async (documentId: number): Promise<Approval[]> => {
+    const response = await fetch(`${API_BASE}/documents/${documentId}/approvals`);
+    return handleResponse<Approval[]>(response);
+  },
+
+  requestApproval: async (documentId: number, data: Omit<InsertApproval, 'documentId'>): Promise<Approval> => {
+    const response = await fetch(`${API_BASE}/documents/${documentId}/approvals`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<Approval>(response);
+  }
+};
+
+// Approval API
+export const approvalApi = {
+  update: async (id: number, data: Partial<InsertApproval>): Promise<Approval> => {
+    const response = await fetch(`${API_BASE}/approvals/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<Approval>(response);
+  }
+};
+
+// Knowledge Base API (published documents)
+export const knowledgeApi = {
+  getPublished: async (): Promise<ProjectDocument[]> => {
+    const response = await fetch(`${API_BASE}/knowledge/documents`);
+    return handleResponse<ProjectDocument[]>(response);
   }
 };
