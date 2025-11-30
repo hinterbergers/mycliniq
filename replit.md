@@ -106,3 +106,42 @@ The permission system currently uses a simulated user context. Full role-based e
 1. Replace CURRENT_USER constant with real user context from auth
 2. Add backend middleware to verify user role on write operations
 3. Consider adding audit logging for plan changes
+
+## Projektmanagement (Project Management)
+
+The Projektmanagement module (`/admin/projects`) enables collaborative creation, review, and publication of clinical documents (SOPs, guidelines, protocols, etc.). Key features:
+
+**Workflow**:
+1. Create a project/initiative (e.g., "SOP PPROM")
+2. Add tasks and delegate to team members
+3. Create and edit documents collaboratively
+4. Request approval from senior physicians
+5. Publish approved documents to the Wissen (knowledge) section
+
+**Database Tables**:
+- `projectInitiatives` - Main project container with status tracking
+- `projectTasks` - Tasks with hierarchy support (parentTaskId), assignment, and status
+- `projectDocuments` - Documents with version tracking and category (SOP, Leitlinie, Protokoll, etc.)
+- `approvals` - Approval requests with decision workflow
+- `taskActivities` - Comments and activity log for tasks
+
+**Status Workflow**:
+- Projects: Entwurf → Aktiv → In Prüfung → Abgeschlossen → Archiviert
+- Tasks: Offen → In Bearbeitung → Zur Prüfung → Genehmigt → Veröffentlicht
+- Documents: Entwurf → In Bearbeitung → Zur Prüfung → Genehmigt → Veröffentlicht
+
+**API Endpoints**:
+- `/api/projects` - CRUD for project initiatives
+- `/api/projects/:id/tasks` - Tasks within a project
+- `/api/projects/:id/documents` - Documents within a project
+- `/api/documents/:id/approvals` - Approval requests for documents
+- `/api/documents/:id/publish` - Publish approved documents to knowledge base
+- `/api/knowledge/documents` - Published documents for Wissen section
+
+**Integration with Wissen**:
+Published documents appear in the Wissen (Guidelines) page alongside static guidelines, marked with "Intern" badge. The Wissen page filters by category (SOP, Leitlinie, Protokoll, etc.) and supports search.
+
+**Edit Permissions** (same as Einsatzplanung - simulated user context):
+- Primararzt
+- 1. Oberarzt
+- Sekretariat
