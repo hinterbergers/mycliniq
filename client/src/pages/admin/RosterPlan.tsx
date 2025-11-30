@@ -57,9 +57,9 @@ export default function RosterPlan() {
   };
 
   // Mock absences logic
-  const getAbsences = (date: Date) => {
+  const getAbsences = (date: Date): { empId: number; name: string; reason: string }[] => {
     const day = date.getDate();
-    const absences = [];
+    const absences: { empId: number; name: string; reason: string }[] = [];
     
     if (day <= 6) {
       // Example: Some doctors on holiday
