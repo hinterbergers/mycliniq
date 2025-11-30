@@ -13,7 +13,7 @@ export default function Dashboard() {
         <div className="md:col-span-8 space-y-6">
           <div className="bg-gradient-to-br from-primary to-primary/80 rounded-2xl p-8 text-primary-foreground shadow-lg shadow-primary/10">
             <div className="flex items-center justify-between mb-2">
-               <h2 className="text-3xl font-bold text-white">Guten Morgen, Dr. Müller</h2>
+               <h2 className="text-3xl font-bold text-white">Guten Morgen, Dr. Hinterberger</h2>
                <Badge variant="outline" className="text-primary-foreground border-primary-foreground/30 bg-primary-foreground/10">
                   KABEG Klinikum Klagenfurt
                </Badge>

@@ -60,11 +60,11 @@ export function Sidebar() {
       <div className="p-4 border-t border-sidebar-border">
         <div className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-white/10 transition-colors cursor-pointer">
           <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white font-bold text-xs">
-            DM
+            SH
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate text-white">Dr. Müller</p>
-            <p className="text-xs text-white/60 truncate">Oberarzt</p>
+            <p className="text-sm font-medium truncate text-white">Dr. Hinterberger</p>
+            <p className="text-xs text-white/60 truncate">1. Oberarzt</p>
           </div>
           <LogOut className="w-4 h-4 text-white/60" />
         </div>
