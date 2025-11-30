@@ -1,0 +1,191 @@
+import OpenAI from "openai";
+import type { Employee, RosterShift, Absence } from "@shared/schema";
+import { format, eachDayOfInterval, isWeekend, startOfMonth, endOfMonth } from "date-fns";
+
+// the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+interface ShiftPreferences {
+  preferredDaysOff?: string[];
+  maxShiftsPerWeek?: number;
+  preferredAreas?: string[];
+  notes?: string;
+}
+
+interface GeneratedShift {
+  date: string;
+  serviceType: 'gyn' | 'kreiszimmer' | 'turnus';
+  employeeId: number;
+  employeeName: string;
+}
+
+interface GenerationResult {
+  shifts: GeneratedShift[];
+  reasoning: string;
+  warnings: string[];
+}
+
+const SERVICE_CAPABILITIES: Record<string, string[]> = {
+  gyn: ["Primararzt", "1. Oberarzt", "Oberarzt", "Oberärztin"],
+  kreiszimmer: ["Assistenzarzt", "Assistenzärztin"],
+  turnus: ["Assistenzarzt", "Assistenzärztin", "Turnusarzt"]
+};
+
+export async function generateRosterPlan(
+  employees: Employee[],
+  existingAbsences: Absence[],
+  year: number,
+  month: number
+): Promise<GenerationResult> {
+  const startDate = startOfMonth(new Date(year, month - 1));
+  const endDate = endOfMonth(new Date(year, month - 1));
+  const days = eachDayOfInterval({ start: startDate, end: endDate });
+
+  const activeEmployees = employees.filter(e => e.isActive);
+  
+  const gynCapable = activeEmployees.filter(e => SERVICE_CAPABILITIES.gyn.includes(e.role));
+  const kreiszimmerCapable = activeEmployees.filter(e => SERVICE_CAPABILITIES.kreiszimmer.includes(e.role));
+  const turnusCapable = activeEmployees.filter(e => SERVICE_CAPABILITIES.turnus.includes(e.role));
+
+  const employeeData = activeEmployees.map(e => {
+    const prefs = e.shiftPreferences as ShiftPreferences | null;
+    const absenceDates = existingAbsences
+      .filter(a => a.employeeId === e.id)
+      .map(a => `${a.startDate} bis ${a.endDate} (${a.reason})`);
+    
+    return {
+      id: e.id,
+      name: e.name,
+      role: e.role,
+      primaryArea: e.primaryDeploymentArea,
+      competencies: e.competencies,
+      preferredDaysOff: prefs?.preferredDaysOff || [],
+      maxShiftsPerWeek: prefs?.maxShiftsPerWeek || 5,
+      notes: prefs?.notes || "",
+      absences: absenceDates
+    };
+  });
+
+  const daysData = days.map(d => ({
+    date: format(d, 'yyyy-MM-dd'),
+    dayName: format(d, 'EEEE'),
+    isWeekend: isWeekend(d)
+  }));
+
+  const prompt = `Du bist ein Dienstplan-Experte für eine gynäkologische Abteilung eines Krankenhauses.
+
+Erstelle einen optimalen Dienstplan für ${format(startDate, 'MMMM yyyy')}.
+
+## Verfügbare Mitarbeiter:
+${JSON.stringify(employeeData, null, 2)}
+
+## Zu besetzende Tage:
+${JSON.stringify(daysData, null, 2)}
+
+## Diensttypen und berechtigte Rollen:
+- gyn (Gynäkologie-Dienst): Primararzt, 1. Oberarzt, Oberarzt, Oberärztin
+- kreiszimmer (Kreißzimmer): Assistenzarzt, Assistenzärztin
+- turnus (Turnus): Assistenzarzt, Assistenzärztin, Turnusarzt
+
+## Regeln:
+1. Jeder Tag muss einen gyn-Dienst und einen kreiszimmer-Dienst haben
+2. Turnus-Dienste sind optional, aber erwünscht wenn Personal verfügbar
+3. Respektiere Abwesenheiten - kein Mitarbeiter darf an Tagen eingeteilt werden, an denen er/sie abwesend ist
+4. Respektiere bevorzugte freie Tage der Mitarbeiter
+5. Maximale Dienste pro Woche pro Mitarbeiter beachten
+6. Gleichmäßige Verteilung der Dienste anstreben
+7. Wochenenden fair verteilen
+8. Kompetenzen berücksichtigen für komplexe Fälle
+
+Antworte mit folgendem JSON-Format:
+{
+  "shifts": [
+    {"date": "2026-01-01", "serviceType": "gyn", "employeeId": 1, "employeeName": "Dr. Name"},
+    ...
+  ],
+  "reasoning": "Kurze Erklärung der Planungsentscheidungen",
+  "warnings": ["Liste von Warnungen oder Konflikten"]
+}`;
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-5",
+      messages: [
+        { 
+          role: "system", 
+          content: "Du bist ein Experte für Krankenhausdienstplanung. Antworte immer auf Deutsch und im angeforderten JSON-Format." 
+        },
+        { role: "user", content: prompt }
+      ],
+      response_format: { type: "json_object" },
+      max_completion_tokens: 8192
+    });
+
+    const content = response.choices[0].message.content;
+    if (!content) {
+      throw new Error("Keine Antwort vom KI-Modell erhalten");
+    }
+
+    const result = JSON.parse(content) as GenerationResult;
+    
+    const validatedShifts = result.shifts.filter(shift => {
+      const employee = activeEmployees.find(e => e.id === shift.employeeId);
+      if (!employee) {
+        console.warn(`Mitarbeiter ${shift.employeeId} nicht gefunden`);
+        return false;
+      }
+      
+      const capabilities = SERVICE_CAPABILITIES[shift.serviceType];
+      if (!capabilities?.includes(employee.role)) {
+        console.warn(`${employee.name} ist nicht berechtigt für ${shift.serviceType}`);
+        return false;
+      }
+      
+      const isAbsent = existingAbsences.some(a => 
+        a.employeeId === shift.employeeId &&
+        a.startDate <= shift.date &&
+        a.endDate >= shift.date
+      );
+      if (isAbsent) {
+        console.warn(`${employee.name} ist am ${shift.date} abwesend`);
+        return false;
+      }
+      
+      return true;
+    });
+
+    return {
+      shifts: validatedShifts,
+      reasoning: result.reasoning || "Dienstplan erfolgreich generiert",
+      warnings: result.warnings || []
+    };
+
+  } catch (error) {
+    console.error("Fehler bei der Dienstplan-Generierung:", error);
+    throw new Error(`Dienstplan-Generierung fehlgeschlagen: ${error instanceof Error ? error.message : 'Unbekannter Fehler'}`);
+  }
+}
+
+export async function validateShiftAssignment(
+  employee: Employee,
+  date: string,
+  serviceType: string,
+  existingAbsences: Absence[]
+): Promise<{ valid: boolean; reason?: string }> {
+  const capabilities = SERVICE_CAPABILITIES[serviceType];
+  if (!capabilities?.includes(employee.role)) {
+    return { valid: false, reason: `${employee.name} ist nicht berechtigt für ${serviceType}-Dienste` };
+  }
+
+  const isAbsent = existingAbsences.some(a => 
+    a.employeeId === employee.id &&
+    a.startDate <= date &&
+    a.endDate >= date
+  );
+  if (isAbsent) {
+    return { valid: false, reason: `${employee.name} ist am ${date} abwesend` };
+  }
+
+  return { valid: true };
+}

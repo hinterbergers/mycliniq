@@ -569,8 +569,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteRosterShiftsByMonth(year: number, month: number): Promise<boolean> {
+    const lastDayOfMonth = new Date(year, month, 0).getDate();
     const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-    const endDate = `${year}-${String(month).padStart(2, '0')}-31`;
+    const endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDayOfMonth).padStart(2, '0')}`;
     
     await db.delete(rosterShifts)
       .where(and(

@@ -129,6 +129,39 @@ export const rosterApi = {
       method: "DELETE"
     });
     return handleResponse<void>(response);
+  },
+  
+  generate: async (year: number, month: number): Promise<{
+    success: boolean;
+    generatedShifts: number;
+    reasoning: string;
+    warnings: string[];
+    shifts: Array<{
+      date: string;
+      serviceType: string;
+      employeeId: number;
+      employeeName: string;
+    }>;
+  }> => {
+    const response = await fetch(`${API_BASE}/roster/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ year, month })
+    });
+    return handleResponse(response);
+  },
+  
+  applyGenerated: async (year: number, month: number, shifts: any[], replaceExisting: boolean = true): Promise<{
+    success: boolean;
+    savedShifts: number;
+    message: string;
+  }> => {
+    const response = await fetch(`${API_BASE}/roster/apply-generated`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ year, month, shifts, replaceExisting })
+    });
+    return handleResponse(response);
   }
 };
 

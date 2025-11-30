@@ -16,6 +16,7 @@ import {
 import { fromZodError } from "zod-validation-error";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
+import { generateRosterPlan } from "./services/rosterGenerator";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -351,6 +352,74 @@ export async function registerRoutes(
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete roster shifts" });
+    }
+  });
+
+  // AI Roster Generation
+  app.post("/api/roster/generate", async (req: Request, res: Response) => {
+    try {
+      const { year, month } = req.body;
+      
+      if (!year || !month) {
+        return res.status(400).json({ error: "Jahr und Monat sind erforderlich" });
+      }
+
+      const employees = await storage.getEmployees();
+      const lastDayOfMonth = new Date(year, month, 0).getDate();
+      const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+      const endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDayOfMonth).padStart(2, '0')}`;
+      const absences = await storage.getAbsencesByDateRange(startDate, endDate);
+
+      const result = await generateRosterPlan(employees, absences, year, month);
+
+      res.json({
+        success: true,
+        generatedShifts: result.shifts.length,
+        reasoning: result.reasoning,
+        warnings: result.warnings,
+        shifts: result.shifts
+      });
+    } catch (error: any) {
+      console.error("Roster generation error:", error);
+      res.status(500).json({ 
+        error: "Dienstplan-Generierung fehlgeschlagen", 
+        details: error.message 
+      });
+    }
+  });
+
+  // Apply generated roster (save to database)
+  app.post("/api/roster/apply-generated", async (req: Request, res: Response) => {
+    try {
+      const { year, month, shifts, replaceExisting } = req.body;
+
+      if (!shifts || !Array.isArray(shifts)) {
+        return res.status(400).json({ error: "Keine Dienste zum Speichern" });
+      }
+
+      if (replaceExisting) {
+        await storage.deleteRosterShiftsByMonth(year, month);
+      }
+
+      const shiftData = shifts.map((s: any) => ({
+        employeeId: s.employeeId,
+        date: s.date,
+        serviceType: s.serviceType
+      }));
+
+      const results = await storage.bulkCreateRosterShifts(shiftData);
+
+      res.json({
+        success: true,
+        savedShifts: results.length,
+        message: `${results.length} Dienste erfolgreich gespeichert`
+      });
+    } catch (error: any) {
+      console.error("Apply generated roster error:", error);
+      res.status(500).json({ 
+        error: "Speichern fehlgeschlagen", 
+        details: error.message 
+      });
     }
   });
 

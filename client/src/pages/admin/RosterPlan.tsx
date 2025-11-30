@@ -4,7 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar as CalendarIcon, Download, Filter, Printer, ArrowLeft, ArrowRight, Info, Loader2, Sparkles, ArrowRightLeft } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Calendar as CalendarIcon, Download, Filter, Printer, ArrowLeft, ArrowRight, Info, Loader2, Sparkles, ArrowRightLeft, CheckCircle2, AlertTriangle, Brain } from "lucide-react";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { employeeApi, rosterApi, absenceApi } from "@/lib/api";
 import type { Employee, RosterShift, Absence } from "@shared/schema";
@@ -13,6 +16,13 @@ import { de } from "date-fns/locale";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { ShiftSwapDialog } from "@/components/ShiftSwapDialog";
+
+interface GeneratedShift {
+  date: string;
+  serviceType: string;
+  employeeId: number;
+  employeeName: string;
+}
 
 const SERVICE_TYPES = [
   { id: "gyn", label: "Gynäkologie", requiredRole: ["Primararzt", "1. Oberarzt", "Oberarzt", "Oberärztin"], color: "bg-primary/10 text-primary border-primary/20" },
@@ -34,6 +44,12 @@ export default function RosterPlan() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [swapDialogOpen, setSwapDialogOpen] = useState(false);
   const [selectedShiftForSwap, setSelectedShiftForSwap] = useState<RosterShift | null>(null);
+  
+  const [generationDialogOpen, setGenerationDialogOpen] = useState(false);
+  const [generatedShifts, setGeneratedShifts] = useState<GeneratedShift[]>([]);
+  const [generationReasoning, setGenerationReasoning] = useState("");
+  const [generationWarnings, setGenerationWarnings] = useState<string[]>([]);
+  const [isApplying, setIsApplying] = useState(false);
 
   const canEdit = useMemo(() => {
     if (!currentUser) return false;
@@ -112,10 +128,61 @@ export default function RosterPlan() {
   const handleAutoGenerate = async () => {
     setIsGenerating(true);
     toast({ title: "KI-Generierung", description: "Dienstplan wird automatisch erstellt..." });
-    setTimeout(() => {
+    
+    try {
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth() + 1;
+      
+      const result = await rosterApi.generate(year, month);
+      
+      if (result.success) {
+        setGeneratedShifts(result.shifts);
+        setGenerationReasoning(result.reasoning);
+        setGenerationWarnings(result.warnings);
+        setGenerationDialogOpen(true);
+        toast({ 
+          title: "Generierung erfolgreich", 
+          description: `${result.generatedShifts} Dienste wurden erstellt` 
+        });
+      }
+    } catch (error: any) {
+      console.error("Generation failed:", error);
+      toast({ 
+        title: "Generierung fehlgeschlagen", 
+        description: error.message || "Bitte später erneut versuchen",
+        variant: "destructive"
+      });
+    } finally {
       setIsGenerating(false);
-      toast({ title: "Hinweis", description: "OpenAI-Integration wird implementiert. Bitte API-Key hinzufügen." });
-    }, 2000);
+    }
+  };
+
+  const handleApplyGenerated = async () => {
+    setIsApplying(true);
+    
+    try {
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth() + 1;
+      
+      const result = await rosterApi.applyGenerated(year, month, generatedShifts, true);
+      
+      if (result.success) {
+        toast({ 
+          title: "Dienstplan übernommen", 
+          description: result.message 
+        });
+        setGenerationDialogOpen(false);
+        loadData();
+      }
+    } catch (error: any) {
+      toast({ 
+        title: "Übernahme fehlgeschlagen", 
+        description: error.message || "Bitte später erneut versuchen",
+        variant: "destructive"
+      });
+    } finally {
+      setIsApplying(false);
+    }
   };
 
   if (isLoading) {
@@ -352,6 +419,106 @@ export default function RosterPlan() {
             setSelectedShiftForSwap(null);
           }}
         />
+
+        {/* AI Generation Results Dialog */}
+        <Dialog open={generationDialogOpen} onOpenChange={setGenerationDialogOpen}>
+          <DialogContent className="max-w-4xl max-h-[85vh]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Brain className="w-5 h-5 text-primary" />
+                KI-generierter Dienstplan - {format(currentDate, 'MMMM yyyy', { locale: de })}
+              </DialogTitle>
+              <DialogDescription>
+                Überprüfen Sie den generierten Plan und übernehmen Sie ihn in den Dienstplan
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              {/* Reasoning */}
+              {generationReasoning && (
+                <Alert className="bg-primary/5 border-primary/20">
+                  <Brain className="w-4 h-4" />
+                  <AlertDescription>{generationReasoning}</AlertDescription>
+                </Alert>
+              )}
+
+              {/* Warnings */}
+              {generationWarnings.length > 0 && (
+                <Alert className="bg-amber-50 border-amber-200">
+                  <AlertTriangle className="w-4 h-4 text-amber-600" />
+                  <AlertDescription>
+                    <ul className="list-disc list-inside text-sm">
+                      {generationWarnings.map((warning, i) => (
+                        <li key={i}>{warning}</li>
+                      ))}
+                    </ul>
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {/* Generated Shifts Preview */}
+              <div className="border rounded-lg">
+                <div className="p-3 bg-muted/30 border-b flex justify-between items-center">
+                  <span className="font-medium">Generierte Dienste</span>
+                  <Badge variant="secondary">{generatedShifts.length} Dienste</Badge>
+                </div>
+                <ScrollArea className="h-[300px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Datum</TableHead>
+                        <TableHead>Dienst</TableHead>
+                        <TableHead>Mitarbeiter</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {generatedShifts.map((shift, i) => (
+                        <TableRow key={i}>
+                          <TableCell className="font-mono text-sm">
+                            {shift.date}
+                          </TableCell>
+                          <TableCell>
+                            <Badge 
+                              variant="outline" 
+                              className={
+                                shift.serviceType === 'gyn' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                shift.serviceType === 'kreiszimmer' ? 'bg-pink-50 text-pink-700 border-pink-200' :
+                                'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              }
+                            >
+                              {shift.serviceType === 'gyn' ? 'Gynäkologie' :
+                               shift.serviceType === 'kreiszimmer' ? 'Kreißzimmer' : 'Turnus'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{shift.employeeName}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setGenerationDialogOpen(false)}>
+                Abbrechen
+              </Button>
+              <Button 
+                onClick={handleApplyGenerated} 
+                disabled={isApplying || generatedShifts.length === 0}
+                className="gap-2"
+                data-testid="button-apply-generated"
+              >
+                {isApplying ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4" />
+                )}
+                Plan übernehmen
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );
