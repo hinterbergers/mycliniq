@@ -1,4 +1,4 @@
-import type { Employee, RosterShift, Absence, Resource } from "@shared/schema";
+import type { Employee, RosterShift, Absence, Resource, WeeklyAssignment, InsertWeeklyAssignment } from "@shared/schema";
 
 const API_BASE = "/api";
 
@@ -125,5 +125,38 @@ export const resourceApi = {
       body: JSON.stringify(data)
     });
     return handleResponse<Resource>(response);
+  }
+};
+
+// Weekly Assignment API
+export const weeklyAssignmentApi = {
+  getByWeek: async (year: number, week: number): Promise<WeeklyAssignment[]> => {
+    const response = await fetch(`${API_BASE}/weekly-assignments/${year}/${week}`);
+    return handleResponse<WeeklyAssignment[]>(response);
+  },
+  
+  create: async (data: InsertWeeklyAssignment): Promise<WeeklyAssignment> => {
+    const response = await fetch(`${API_BASE}/weekly-assignments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<WeeklyAssignment>(response);
+  },
+  
+  bulkSave: async (assignments: InsertWeeklyAssignment[]): Promise<WeeklyAssignment[]> => {
+    const response = await fetch(`${API_BASE}/weekly-assignments/bulk`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assignments })
+    });
+    return handleResponse<WeeklyAssignment[]>(response);
+  },
+  
+  delete: async (id: number): Promise<void> => {
+    const response = await fetch(`${API_BASE}/weekly-assignments/${id}`, {
+      method: "DELETE"
+    });
+    return handleResponse<void>(response);
   }
 };

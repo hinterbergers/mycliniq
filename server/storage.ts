@@ -10,11 +10,14 @@ import {
   type InsertAbsence,
   type Resource,
   type InsertResource,
+  type WeeklyAssignment,
+  type InsertWeeklyAssignment,
   users,
   employees,
   rosterShifts,
   absences,
-  resources
+  resources,
+  weeklyAssignments
 } from "@shared/schema";
 import { eq, and, gte, lte } from "drizzle-orm";
 
@@ -46,6 +49,12 @@ export interface IStorage {
   // Resource methods
   getResources(): Promise<Resource[]>;
   updateResource(id: number, resource: Partial<InsertResource>): Promise<Resource | undefined>;
+  
+  // Weekly assignment methods
+  getWeeklyAssignments(weekYear: number, weekNumber: number): Promise<WeeklyAssignment[]>;
+  upsertWeeklyAssignment(assignment: InsertWeeklyAssignment): Promise<WeeklyAssignment>;
+  deleteWeeklyAssignment(id: number): Promise<boolean>;
+  bulkUpsertWeeklyAssignments(assignments: InsertWeeklyAssignment[]): Promise<WeeklyAssignment[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -161,6 +170,75 @@ export class DatabaseStorage implements IStorage {
       .where(eq(resources.id, id))
       .returning();
     return result[0];
+  }
+
+  // Weekly assignment methods
+  async getWeeklyAssignments(weekYear: number, weekNumber: number): Promise<WeeklyAssignment[]> {
+    return await db.select()
+      .from(weeklyAssignments)
+      .where(and(
+        eq(weeklyAssignments.weekYear, weekYear),
+        eq(weeklyAssignments.weekNumber, weekNumber)
+      ));
+  }
+
+  async upsertWeeklyAssignment(assignment: InsertWeeklyAssignment): Promise<WeeklyAssignment> {
+    const existing = await db.select()
+      .from(weeklyAssignments)
+      .where(and(
+        eq(weeklyAssignments.weekYear, assignment.weekYear),
+        eq(weeklyAssignments.weekNumber, assignment.weekNumber),
+        eq(weeklyAssignments.dayOfWeek, assignment.dayOfWeek),
+        eq(weeklyAssignments.area, assignment.area),
+        eq(weeklyAssignments.subArea, assignment.subArea),
+        eq(weeklyAssignments.roleSlot, assignment.roleSlot)
+      ));
+
+    if (existing.length > 0) {
+      const result = await db.update(weeklyAssignments)
+        .set({ employeeId: assignment.employeeId, notes: assignment.notes, isClosed: assignment.isClosed })
+        .where(eq(weeklyAssignments.id, existing[0].id))
+        .returning();
+      return result[0];
+    }
+
+    const result = await db.insert(weeklyAssignments).values(assignment).returning();
+    return result[0];
+  }
+
+  async deleteWeeklyAssignment(id: number): Promise<boolean> {
+    await db.delete(weeklyAssignments).where(eq(weeklyAssignments.id, id));
+    return true;
+  }
+
+  async bulkUpsertWeeklyAssignments(assignments: InsertWeeklyAssignment[]): Promise<WeeklyAssignment[]> {
+    const results: WeeklyAssignment[] = [];
+    for (const assignment of assignments) {
+      const isEmpty = assignment.employeeId === null && 
+                      (assignment.notes === null || assignment.notes === "") && 
+                      !assignment.isClosed;
+      
+      if (isEmpty) {
+        const existing = await db.select()
+          .from(weeklyAssignments)
+          .where(and(
+            eq(weeklyAssignments.weekYear, assignment.weekYear),
+            eq(weeklyAssignments.weekNumber, assignment.weekNumber),
+            eq(weeklyAssignments.dayOfWeek, assignment.dayOfWeek),
+            eq(weeklyAssignments.area, assignment.area),
+            eq(weeklyAssignments.subArea, assignment.subArea),
+            eq(weeklyAssignments.roleSlot, assignment.roleSlot)
+          ));
+        
+        if (existing.length > 0) {
+          await db.delete(weeklyAssignments).where(eq(weeklyAssignments.id, existing[0].id));
+        }
+      } else {
+        const result = await this.upsertWeeklyAssignment(assignment);
+        results.push(result);
+      }
+    }
+    return results;
   }
 }
 

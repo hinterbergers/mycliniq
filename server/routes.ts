@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertEmployeeSchema, insertRosterShiftSchema, insertAbsenceSchema, insertResourceSchema } from "@shared/schema";
+import { insertEmployeeSchema, insertRosterShiftSchema, insertAbsenceSchema, insertResourceSchema, insertWeeklyAssignmentSchema } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
 
 export async function registerRoutes(
@@ -180,6 +180,55 @@ export async function registerRoutes(
       res.json(resource);
     } catch (error) {
       res.status(500).json({ error: "Failed to update resource" });
+    }
+  });
+
+  // Weekly assignment routes
+  app.get("/api/weekly-assignments/:year/:week", async (req: Request, res: Response) => {
+    try {
+      const year = parseInt(req.params.year);
+      const week = parseInt(req.params.week);
+      const assignments = await storage.getWeeklyAssignments(year, week);
+      res.json(assignments);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch weekly assignments" });
+    }
+  });
+
+  app.post("/api/weekly-assignments", async (req: Request, res: Response) => {
+    try {
+      const validatedData = insertWeeklyAssignmentSchema.parse(req.body);
+      const assignment = await storage.upsertWeeklyAssignment(validatedData);
+      res.status(201).json(assignment);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        const validationError = fromZodError(error);
+        return res.status(400).json({ error: validationError.message });
+      }
+      res.status(500).json({ error: "Failed to create weekly assignment" });
+    }
+  });
+
+  app.post("/api/weekly-assignments/bulk", async (req: Request, res: Response) => {
+    try {
+      const assignments = req.body.assignments;
+      if (!Array.isArray(assignments)) {
+        return res.status(400).json({ error: "Assignments must be an array" });
+      }
+      const results = await storage.bulkUpsertWeeklyAssignments(assignments);
+      res.status(201).json(results);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to save weekly assignments" });
+    }
+  });
+
+  app.delete("/api/weekly-assignments/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteWeeklyAssignment(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete weekly assignment" });
     }
   });
 
