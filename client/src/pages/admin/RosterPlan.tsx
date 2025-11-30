@@ -4,85 +4,126 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar as CalendarIcon, Download, Filter, Printer, ArrowLeft, ArrowRight, Info } from "lucide-react";
-import { useState } from "react";
-import { MOCK_EMPLOYEES } from "@/lib/mockData";
-import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, isWeekend, getDay } from "date-fns";
+import { Calendar as CalendarIcon, Download, Filter, Printer, ArrowLeft, ArrowRight, Info, Loader2, Sparkles } from "lucide-react";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { employeeApi, rosterApi, absenceApi } from "@/lib/api";
+import type { Employee, RosterShift, Absence } from "@shared/schema";
+import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, isWeekend, getDay, getWeek } from "date-fns";
 import { de } from "date-fns/locale";
+import { useAuth } from "@/lib/auth";
+import { useToast } from "@/hooks/use-toast";
 
-// Define service types based on user input
 const SERVICE_TYPES = [
   { id: "gyn", label: "Gynäkologie", requiredRole: ["Primararzt", "1. Oberarzt", "Oberarzt", "Oberärztin"], color: "bg-primary/10 text-primary border-primary/20" },
   { id: "kreiszimmer", label: "Kreißzimmer", requiredRole: ["Assistenzarzt", "Assistenzärztin"], color: "bg-pink-100 text-pink-700 border-pink-200" },
   { id: "turnus", label: "Turnus", requiredRole: ["Assistenzarzt", "Assistenzärztin", "Turnusarzt"], color: "bg-emerald-100 text-emerald-700 border-emerald-200" }
 ];
 
-// Mock roster data structure based on the PDF example
-interface DailyRoster {
-  date: Date;
-  gyn?: number; // Employee ID
-  kreiszimmer?: number; // Employee ID
-  turnus?: number; // Employee ID
-  absences: { empId: number, reason: string }[];
-}
+const EDIT_ALLOWED_ROLES = ["Primararzt", "1. Oberarzt", "Sekretariat"];
+const EDIT_ALLOWED_APP_ROLES = ["Admin", "Editor"];
 
 export default function RosterPlan() {
-  const [currentDate, setCurrentDate] = useState(new Date(2026, 0, 1)); // Jan 2026 as per PDF example
+  const { employee: currentUser } = useAuth();
+  const { toast } = useToast();
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [shifts, setShifts] = useState<RosterShift[]>([]);
+  const [absences, setAbsences] = useState<Absence[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const canEdit = useMemo(() => {
+    if (!currentUser) return false;
+    return EDIT_ALLOWED_ROLES.includes(currentUser.role) || 
+           EDIT_ALLOWED_APP_ROLES.includes(currentUser.appRole);
+  }, [currentUser]);
 
   const days = eachDayOfInterval({
     start: startOfMonth(currentDate),
     end: endOfMonth(currentDate)
   });
 
-  // Mock assignment logic (simplified for visualization)
-  const getAssignment = (date: Date, type: 'gyn' | 'kreiszimmer' | 'turnus') => {
-    const day = date.getDate();
-    
-    // Example data based on PDF snippet (approximate)
-    if (day === 1) {
-      if (type === 'kreiszimmer') return MOCK_EMPLOYEES.find(e => e.name.includes("Rosenkranz"));
-      if (type === 'gyn') return MOCK_EMPLOYEES.find(e => e.name.includes("Lermann"));
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth() + 1;
+      const startDate = format(startOfMonth(currentDate), 'yyyy-MM-dd');
+      const endDate = format(endOfMonth(currentDate), 'yyyy-MM-dd');
+      
+      const [empData, shiftData, absenceData] = await Promise.all([
+        employeeApi.getAll(),
+        rosterApi.getByMonth(year, month),
+        absenceApi.getByDateRange(startDate, endDate)
+      ]);
+      
+      setEmployees(empData);
+      setShifts(shiftData);
+      setAbsences(absenceData);
+    } catch (error) {
+      console.error("Failed to load data:", error);
+      toast({ title: "Fehler beim Laden", description: "Daten konnten nicht geladen werden", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
     }
-    if (day === 2) {
-      if (type === 'kreiszimmer') return MOCK_EMPLOYEES.find(e => e.name.includes("Stöger"));
-      if (type === 'gyn') return MOCK_EMPLOYEES.find(e => e.name.includes("Markota"));
-    }
-    if (day === 3) {
-      if (type === 'kreiszimmer') return MOCK_EMPLOYEES.find(e => e.name.includes("Gruber"));
-      if (type === 'gyn') return MOCK_EMPLOYEES.find(e => e.name.includes("Lermann"));
-      if (type === 'turnus') return MOCK_EMPLOYEES.find(e => e.name.includes("Rosenkranz"));
-    }
+  }, [currentDate, toast]);
 
-    return null; // Empty slot
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const getAssignment = (date: Date, type: 'gyn' | 'kreiszimmer' | 'turnus') => {
+    const dateStr = format(date, 'yyyy-MM-dd');
+    const shift = shifts.find(s => s.date === dateStr && s.serviceType === type);
+    if (!shift) return null;
+    return employees.find(e => e.id === shift.employeeId);
   };
 
-  // Mock absences logic
   const getAbsences = (date: Date): { empId: number; name: string; reason: string }[] => {
-    const day = date.getDate();
-    const absences: { empId: number; name: string; reason: string }[] = [];
-    
-    if (day <= 6) {
-      // Example: Some doctors on holiday
-      const absentDocs = MOCK_EMPLOYEES.filter(e => e.name.includes("Köck") || e.name.includes("Gornjec"));
-      absentDocs.forEach(doc => absences.push({ empId: doc.id, name: doc.name, reason: "Urlaub" }));
-    }
-    
-    return absences;
+    const dateStr = format(date, 'yyyy-MM-dd');
+    return absences
+      .filter(a => a.startDate <= dateStr && a.endDate >= dateStr)
+      .map(a => {
+        const emp = employees.find(e => e.id === a.employeeId);
+        return { empId: a.employeeId, name: emp?.name || 'Unbekannt', reason: a.reason };
+      });
   };
   
-  // Statistics calculation
-  const stats = MOCK_EMPLOYEES.map(emp => {
-    return {
-      ...emp,
-      stats: {
-        gyn: Math.floor(Math.random() * 5), // Mock stats
-        geb: Math.floor(Math.random() * 5),
-        tu: Math.floor(Math.random() * 2),
-        sum: 0,
-        abw: Math.floor(Math.random() * 5)
-      }
-    };
-  }).map(s => ({...s, stats: {...s.stats, sum: s.stats.gyn + s.stats.geb + s.stats.tu}}));
+  const stats = useMemo(() => {
+    return employees.map(emp => {
+      const empShifts = shifts.filter(s => s.employeeId === emp.id);
+      const empAbsences = absences.filter(a => a.employeeId === emp.id);
+      return {
+        ...emp,
+        stats: {
+          gyn: empShifts.filter(s => s.serviceType === 'gyn').length,
+          geb: empShifts.filter(s => s.serviceType === 'kreiszimmer').length,
+          tu: empShifts.filter(s => s.serviceType === 'turnus').length,
+          sum: empShifts.length,
+          abw: empAbsences.length
+        }
+      };
+    });
+  }, [employees, shifts, absences]);
+
+  const handleAutoGenerate = async () => {
+    setIsGenerating(true);
+    toast({ title: "KI-Generierung", description: "Dienstplan wird automatisch erstellt..." });
+    setTimeout(() => {
+      setIsGenerating(false);
+      toast({ title: "Hinweis", description: "OpenAI-Integration wird implementiert. Bitte API-Key hinzufügen." });
+    }, 2000);
+  };
+
+  if (isLoading) {
+    return (
+      <Layout title="Dienstplan">
+        <div className="flex items-center justify-center h-96">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout title="Dienstplan">
@@ -107,17 +148,29 @@ export default function RosterPlan() {
           </div>
 
           <div className="flex gap-2 w-full md:w-auto">
-            <Button variant="outline" className="gap-2 flex-1 md:flex-none">
+            <Button variant="outline" className="gap-2 flex-1 md:flex-none" data-testid="button-print">
               <Printer className="w-4 h-4" />
               Drucken
             </Button>
-            <Button variant="outline" className="gap-2 flex-1 md:flex-none">
+            <Button variant="outline" className="gap-2 flex-1 md:flex-none" data-testid="button-export-pdf">
               <Download className="w-4 h-4" />
               Export PDF
             </Button>
-            <Button className="gap-2 flex-1 md:flex-none">
-              Auto-Generieren
-            </Button>
+            {canEdit && (
+              <Button 
+                className="gap-2 flex-1 md:flex-none" 
+                onClick={handleAutoGenerate}
+                disabled={isGenerating}
+                data-testid="button-auto-generate"
+              >
+                {isGenerating ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4" />
+                )}
+                Auto-Generieren
+              </Button>
+            )}
           </div>
         </div>
 

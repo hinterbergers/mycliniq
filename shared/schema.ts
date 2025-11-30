@@ -47,6 +47,30 @@ export const absenceReasonEnum = pgEnum('absence_reason', [
   'Quarantäne'
 ]);
 
+// App-wide role system (separate from medical roles)
+export const appRoleEnum = pgEnum('app_role', [
+  'Admin',
+  'Editor', 
+  'User'
+]);
+
+// Deployment areas for employees
+export const deploymentAreaEnum = pgEnum('deployment_area', [
+  'Kreißsaal',
+  'Gynäkologische Station',
+  'Gynäkologische Ambulanz',
+  'Schwangerenambulanz',
+  'OP',
+  'Verwaltung'
+]);
+
+// Shift swap request status
+export const swapRequestStatusEnum = pgEnum('swap_request_status', [
+  'Ausstehend',
+  'Genehmigt',
+  'Abgelehnt'
+]);
+
 // Employees table
 export const employees = pgTable("employees", {
   id: serial("id").primaryKey(),
@@ -54,6 +78,9 @@ export const employees = pgTable("employees", {
   firstName: text("first_name"),
   lastName: text("last_name"),
   role: roleEnum("role").notNull(),
+  appRole: appRoleEnum("app_role").notNull().default('User'),
+  primaryDeploymentArea: deploymentAreaEnum("primary_deployment_area"),
+  shiftPreferences: text("shift_preferences"),
   competencies: text("competencies").array().notNull().default(sql`ARRAY[]::text[]`),
   email: text("email"),
   emailPrivate: text("email_private"),
@@ -347,3 +374,28 @@ export const insertTaskActivitySchema = createInsertSchema(taskActivities).omit(
 
 export type InsertTaskActivity = z.infer<typeof insertTaskActivitySchema>;
 export type TaskActivity = typeof taskActivities.$inferSelect;
+
+// Shift Swap Requests table
+export const shiftSwapRequests = pgTable("shift_swap_requests", {
+  id: serial("id").primaryKey(),
+  requesterShiftId: integer("requester_shift_id").references(() => rosterShifts.id).notNull(),
+  targetShiftId: integer("target_shift_id").references(() => rosterShifts.id),
+  requesterId: integer("requester_id").references(() => employees.id).notNull(),
+  targetEmployeeId: integer("target_employee_id").references(() => employees.id),
+  status: swapRequestStatusEnum("status").notNull().default('Ausstehend'),
+  reason: text("reason"),
+  approverId: integer("approver_id").references(() => employees.id),
+  approverNotes: text("approver_notes"),
+  hasCompetencyConflict: boolean("has_competency_conflict").notNull().default(false),
+  competencyConflictDetails: text("competency_conflict_details"),
+  requestedAt: timestamp("requested_at").defaultNow().notNull(),
+  decidedAt: timestamp("decided_at")
+});
+
+export const insertShiftSwapRequestSchema = createInsertSchema(shiftSwapRequests).omit({
+  id: true,
+  requestedAt: true
+});
+
+export type InsertShiftSwapRequest = z.infer<typeof insertShiftSwapRequestSchema>;
+export type ShiftSwapRequest = typeof shiftSwapRequests.$inferSelect;

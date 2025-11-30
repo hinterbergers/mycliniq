@@ -304,6 +304,178 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/roster/shift/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const shift = await storage.getRosterShift(id);
+      if (!shift) {
+        return res.status(404).json({ error: "Shift not found" });
+      }
+      res.json(shift);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch shift" });
+    }
+  });
+
+  app.patch("/api/roster/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const shift = await storage.updateRosterShift(id, req.body);
+      if (!shift) {
+        return res.status(404).json({ error: "Shift not found" });
+      }
+      res.json(shift);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update shift" });
+    }
+  });
+
+  app.post("/api/roster/bulk", async (req: Request, res: Response) => {
+    try {
+      const shifts = req.body.shifts;
+      if (!Array.isArray(shifts)) {
+        return res.status(400).json({ error: "Shifts must be an array" });
+      }
+      const results = await storage.bulkCreateRosterShifts(shifts);
+      res.status(201).json(results);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create roster shifts" });
+    }
+  });
+
+  app.delete("/api/roster/month/:year/:month", async (req: Request, res: Response) => {
+    try {
+      const year = parseInt(req.params.year);
+      const month = parseInt(req.params.month);
+      await storage.deleteRosterShiftsByMonth(year, month);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete roster shifts" });
+    }
+  });
+
+  // Shift swap request routes
+  app.get("/api/shift-swaps", async (req: Request, res: Response) => {
+    try {
+      const { status, employeeId } = req.query;
+      
+      if (status === 'Ausstehend') {
+        const requests = await storage.getPendingShiftSwapRequests();
+        return res.json(requests);
+      }
+      
+      if (employeeId) {
+        const requests = await storage.getShiftSwapRequestsByEmployee(parseInt(employeeId as string));
+        return res.json(requests);
+      }
+      
+      const requests = await storage.getShiftSwapRequests();
+      res.json(requests);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch shift swap requests" });
+    }
+  });
+
+  app.get("/api/shift-swaps/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const request = await storage.getShiftSwapRequest(id);
+      if (!request) {
+        return res.status(404).json({ error: "Shift swap request not found" });
+      }
+      res.json(request);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch shift swap request" });
+    }
+  });
+
+  app.post("/api/shift-swaps", async (req: Request, res: Response) => {
+    try {
+      const request = await storage.createShiftSwapRequest(req.body);
+      res.status(201).json(request);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create shift swap request" });
+    }
+  });
+
+  app.patch("/api/shift-swaps/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const request = await storage.updateShiftSwapRequest(id, req.body);
+      if (!request) {
+        return res.status(404).json({ error: "Shift swap request not found" });
+      }
+      res.json(request);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update shift swap request" });
+    }
+  });
+
+  app.post("/api/shift-swaps/:id/approve", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { approverId, notes } = req.body;
+      
+      const request = await storage.updateShiftSwapRequest(id, {
+        status: 'Genehmigt',
+        approverId,
+        approverNotes: notes,
+        decidedAt: new Date()
+      });
+      
+      if (!request) {
+        return res.status(404).json({ error: "Shift swap request not found" });
+      }
+      
+      // If approved, swap the employees in the shifts
+      if (request.targetShiftId && request.targetEmployeeId) {
+        const requesterShift = await storage.getRosterShift(request.requesterShiftId);
+        const targetShift = await storage.getRosterShift(request.targetShiftId);
+        
+        if (requesterShift && targetShift) {
+          await storage.updateRosterShift(request.requesterShiftId, { employeeId: request.targetEmployeeId });
+          await storage.updateRosterShift(request.targetShiftId, { employeeId: request.requesterId });
+        }
+      }
+      
+      res.json(request);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to approve shift swap request" });
+    }
+  });
+
+  app.post("/api/shift-swaps/:id/reject", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { approverId, notes } = req.body;
+      
+      const request = await storage.updateShiftSwapRequest(id, {
+        status: 'Abgelehnt',
+        approverId,
+        approverNotes: notes,
+        decidedAt: new Date()
+      });
+      
+      if (!request) {
+        return res.status(404).json({ error: "Shift swap request not found" });
+      }
+      
+      res.json(request);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to reject shift swap request" });
+    }
+  });
+
+  app.delete("/api/shift-swaps/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteShiftSwapRequest(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete shift swap request" });
+    }
+  });
+
   // Absence routes
   app.get("/api/absences", async (req: Request, res: Response) => {
     try {

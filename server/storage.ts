@@ -24,6 +24,8 @@ import {
   type InsertTaskActivity,
   type Session,
   type InsertSession,
+  type ShiftSwapRequest,
+  type InsertShiftSwapRequest,
   users,
   employees,
   rosterShifts,
@@ -35,7 +37,8 @@ import {
   projectDocuments,
   approvals,
   taskActivities,
-  sessions
+  sessions,
+  shiftSwapRequests
 } from "@shared/schema";
 import { eq, and, gte, lte, desc, gt } from "drizzle-orm";
 
@@ -113,6 +116,21 @@ export interface IStorage {
   deleteSession(token: string): Promise<boolean>;
   deleteSessionsByEmployee(employeeId: number): Promise<boolean>;
   cleanupExpiredSessions(): Promise<number>;
+  
+  // Shift swap request methods
+  getShiftSwapRequests(): Promise<ShiftSwapRequest[]>;
+  getShiftSwapRequestsByEmployee(employeeId: number): Promise<ShiftSwapRequest[]>;
+  getPendingShiftSwapRequests(): Promise<ShiftSwapRequest[]>;
+  getShiftSwapRequest(id: number): Promise<ShiftSwapRequest | undefined>;
+  createShiftSwapRequest(request: InsertShiftSwapRequest): Promise<ShiftSwapRequest>;
+  updateShiftSwapRequest(id: number, request: Partial<InsertShiftSwapRequest>): Promise<ShiftSwapRequest | undefined>;
+  deleteShiftSwapRequest(id: number): Promise<boolean>;
+  
+  // Roster methods extended
+  getRosterShift(id: number): Promise<RosterShift | undefined>;
+  updateRosterShift(id: number, shift: Partial<InsertRosterShift>): Promise<RosterShift | undefined>;
+  bulkCreateRosterShifts(shifts: InsertRosterShift[]): Promise<RosterShift[]>;
+  deleteRosterShiftsByMonth(year: number, month: number): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -484,6 +502,82 @@ export class DatabaseStorage implements IStorage {
       .where(lte(sessions.expiresAt, new Date()))
       .returning();
     return result.length;
+  }
+  
+  // Shift swap request methods
+  async getShiftSwapRequests(): Promise<ShiftSwapRequest[]> {
+    return await db.select()
+      .from(shiftSwapRequests)
+      .orderBy(desc(shiftSwapRequests.requestedAt));
+  }
+
+  async getShiftSwapRequestsByEmployee(employeeId: number): Promise<ShiftSwapRequest[]> {
+    return await db.select()
+      .from(shiftSwapRequests)
+      .where(eq(shiftSwapRequests.requesterId, employeeId))
+      .orderBy(desc(shiftSwapRequests.requestedAt));
+  }
+
+  async getPendingShiftSwapRequests(): Promise<ShiftSwapRequest[]> {
+    return await db.select()
+      .from(shiftSwapRequests)
+      .where(eq(shiftSwapRequests.status, 'Ausstehend'))
+      .orderBy(desc(shiftSwapRequests.requestedAt));
+  }
+
+  async getShiftSwapRequest(id: number): Promise<ShiftSwapRequest | undefined> {
+    const result = await db.select().from(shiftSwapRequests).where(eq(shiftSwapRequests.id, id));
+    return result[0];
+  }
+
+  async createShiftSwapRequest(request: InsertShiftSwapRequest): Promise<ShiftSwapRequest> {
+    const result = await db.insert(shiftSwapRequests).values(request).returning();
+    return result[0];
+  }
+
+  async updateShiftSwapRequest(id: number, request: Partial<InsertShiftSwapRequest>): Promise<ShiftSwapRequest | undefined> {
+    const result = await db.update(shiftSwapRequests)
+      .set(request)
+      .where(eq(shiftSwapRequests.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteShiftSwapRequest(id: number): Promise<boolean> {
+    await db.delete(shiftSwapRequests).where(eq(shiftSwapRequests.id, id));
+    return true;
+  }
+  
+  // Roster methods extended
+  async getRosterShift(id: number): Promise<RosterShift | undefined> {
+    const result = await db.select().from(rosterShifts).where(eq(rosterShifts.id, id));
+    return result[0];
+  }
+
+  async updateRosterShift(id: number, shift: Partial<InsertRosterShift>): Promise<RosterShift | undefined> {
+    const result = await db.update(rosterShifts)
+      .set(shift)
+      .where(eq(rosterShifts.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async bulkCreateRosterShifts(shifts: InsertRosterShift[]): Promise<RosterShift[]> {
+    if (shifts.length === 0) return [];
+    const result = await db.insert(rosterShifts).values(shifts).returning();
+    return result;
+  }
+
+  async deleteRosterShiftsByMonth(year: number, month: number): Promise<boolean> {
+    const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+    const endDate = `${year}-${String(month).padStart(2, '0')}-31`;
+    
+    await db.delete(rosterShifts)
+      .where(and(
+        gte(rosterShifts.date, startDate),
+        lte(rosterShifts.date, endDate)
+      ));
+    return true;
   }
 }
 

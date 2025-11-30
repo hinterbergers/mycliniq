@@ -1,6 +1,7 @@
 import type { 
   Employee, 
   RosterShift, 
+  InsertRosterShift,
   Absence, 
   Resource, 
   WeeklyAssignment, 
@@ -14,7 +15,9 @@ import type {
   Approval,
   InsertApproval,
   TaskActivity,
-  InsertTaskActivity
+  InsertTaskActivity,
+  ShiftSwapRequest,
+  InsertShiftSwapRequest
 } from "@shared/schema";
 
 const API_BASE = "/api";
@@ -82,6 +85,11 @@ export const rosterApi = {
     return handleResponse<RosterShift[]>(response);
   },
   
+  getById: async (id: number): Promise<RosterShift> => {
+    const response = await fetch(`${API_BASE}/roster/shift/${id}`);
+    return handleResponse<RosterShift>(response);
+  },
+  
   create: async (data: Omit<RosterShift, "id" | "createdAt">): Promise<RosterShift> => {
     const response = await fetch(`${API_BASE}/roster`, {
       method: "POST",
@@ -91,8 +99,33 @@ export const rosterApi = {
     return handleResponse<RosterShift>(response);
   },
   
+  update: async (id: number, data: Partial<InsertRosterShift>): Promise<RosterShift> => {
+    const response = await fetch(`${API_BASE}/roster/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<RosterShift>(response);
+  },
+  
+  bulkCreate: async (shifts: InsertRosterShift[]): Promise<RosterShift[]> => {
+    const response = await fetch(`${API_BASE}/roster/bulk`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ shifts })
+    });
+    return handleResponse<RosterShift[]>(response);
+  },
+  
   delete: async (id: number): Promise<void> => {
     const response = await fetch(`${API_BASE}/roster/${id}`, {
+      method: "DELETE"
+    });
+    return handleResponse<void>(response);
+  },
+  
+  deleteByMonth: async (year: number, month: number): Promise<void> => {
+    const response = await fetch(`${API_BASE}/roster/month/${year}/${month}`, {
       method: "DELETE"
     });
     return handleResponse<void>(response);
@@ -344,5 +377,71 @@ export const knowledgeApi = {
   getPublished: async (): Promise<ProjectDocument[]> => {
     const response = await fetch(`${API_BASE}/knowledge/documents`);
     return handleResponse<ProjectDocument[]>(response);
+  }
+};
+
+// Shift Swap Request API
+export const shiftSwapApi = {
+  getAll: async (): Promise<ShiftSwapRequest[]> => {
+    const response = await fetch(`${API_BASE}/shift-swaps`);
+    return handleResponse<ShiftSwapRequest[]>(response);
+  },
+  
+  getPending: async (): Promise<ShiftSwapRequest[]> => {
+    const response = await fetch(`${API_BASE}/shift-swaps?status=Ausstehend`);
+    return handleResponse<ShiftSwapRequest[]>(response);
+  },
+  
+  getByEmployee: async (employeeId: number): Promise<ShiftSwapRequest[]> => {
+    const response = await fetch(`${API_BASE}/shift-swaps?employeeId=${employeeId}`);
+    return handleResponse<ShiftSwapRequest[]>(response);
+  },
+  
+  getById: async (id: number): Promise<ShiftSwapRequest> => {
+    const response = await fetch(`${API_BASE}/shift-swaps/${id}`);
+    return handleResponse<ShiftSwapRequest>(response);
+  },
+  
+  create: async (data: InsertShiftSwapRequest): Promise<ShiftSwapRequest> => {
+    const response = await fetch(`${API_BASE}/shift-swaps`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<ShiftSwapRequest>(response);
+  },
+  
+  update: async (id: number, data: Partial<InsertShiftSwapRequest>): Promise<ShiftSwapRequest> => {
+    const response = await fetch(`${API_BASE}/shift-swaps/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<ShiftSwapRequest>(response);
+  },
+  
+  approve: async (id: number, approverId: number, notes?: string): Promise<ShiftSwapRequest> => {
+    const response = await fetch(`${API_BASE}/shift-swaps/${id}/approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approverId, notes })
+    });
+    return handleResponse<ShiftSwapRequest>(response);
+  },
+  
+  reject: async (id: number, approverId: number, notes?: string): Promise<ShiftSwapRequest> => {
+    const response = await fetch(`${API_BASE}/shift-swaps/${id}/reject`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approverId, notes })
+    });
+    return handleResponse<ShiftSwapRequest>(response);
+  },
+  
+  delete: async (id: number): Promise<void> => {
+    const response = await fetch(`${API_BASE}/shift-swaps/${id}`, {
+      method: "DELETE"
+    });
+    return handleResponse<void>(response);
   }
 };

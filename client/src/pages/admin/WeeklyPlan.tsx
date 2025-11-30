@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowLeft, ArrowRight, Download, Printer, Edit2, Lock, Loader2, Check } from "lucide-react";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { format, startOfWeek, endOfWeek, addWeeks, subWeeks, getWeek, getYear, eachDayOfInterval, isWeekend } from "date-fns";
 import { de } from "date-fns/locale";
 import { employeeApi, weeklyAssignmentApi } from "@/lib/api";
@@ -13,17 +13,12 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Info } from "lucide-react";
+import { useAuth } from "@/lib/auth";
 
 const WEEK_DAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
 
 const EDIT_ALLOWED_ROLES = ["Primararzt", "1. Oberarzt", "Sekretariat"];
-
-const CURRENT_USER = {
-  name: "Dr. Stefan Hinterberger",
-  role: "1. Oberarzt"
-};
-
-const canEdit = EDIT_ALLOWED_ROLES.includes(CURRENT_USER.role);
+const EDIT_ALLOWED_APP_ROLES = ["Admin", "Editor"];
 
 interface SlotDef {
   id: string;
@@ -144,6 +139,7 @@ const parseKey = (key: string) => {
 };
 
 export default function WeeklyPlan() {
+  const { employee: currentUser } = useAuth();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [assignments, setAssignments] = useState<AssignmentMap>({});
@@ -153,6 +149,12 @@ export default function WeeklyPlan() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const { toast } = useToast();
+  
+  const canEdit = useMemo(() => {
+    if (!currentUser) return false;
+    return EDIT_ALLOWED_ROLES.includes(currentUser.role) || 
+           EDIT_ALLOWED_APP_ROLES.includes(currentUser.appRole);
+  }, [currentUser]);
 
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
   const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
@@ -505,10 +507,14 @@ export default function WeeklyPlan() {
             </Tooltip>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-muted-foreground">
-              Angemeldet als: <span className="font-medium text-foreground">{CURRENT_USER.name}</span> ({CURRENT_USER.role})
-            </span>
-            <span>•</span>
+            {currentUser && (
+              <>
+                <span className="text-muted-foreground">
+                  Angemeldet als: <span className="font-medium text-foreground">{currentUser.name}</span> ({currentUser.role})
+                </span>
+                <span>•</span>
+              </>
+            )}
             <span>Prim. PD Dr. Johannes Lermann • Erstellt: {format(new Date(), "dd.MM.yyyy", { locale: de })}</span>
           </div>
         </div>
