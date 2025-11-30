@@ -11,8 +11,19 @@ import { employeeApi, weeklyAssignmentApi } from "@/lib/api";
 import type { Employee, WeeklyAssignment, InsertWeeklyAssignment } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Info } from "lucide-react";
 
 const WEEK_DAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
+
+const EDIT_ALLOWED_ROLES = ["Primararzt", "1. Oberarzt", "Sekretariat"];
+
+const CURRENT_USER = {
+  name: "Dr. Stefan Hinterberger",
+  role: "1. Oberarzt"
+};
+
+const canEdit = EDIT_ALLOWED_ROLES.includes(CURRENT_USER.role);
 
 interface SlotDef {
   id: string;
@@ -331,15 +342,34 @@ export default function WeeklyPlan() {
               </>
             ) : (
               <>
-                <Button 
-                  variant="outline" 
-                  className="gap-2 flex-1 lg:flex-none"
-                  onClick={() => setIsEditing(true)}
-                  data-testid="button-edit"
-                >
-                  <Edit2 className="w-4 h-4" />
-                  Bearbeiten
-                </Button>
+                {canEdit ? (
+                  <Button 
+                    variant="outline" 
+                    className="gap-2 flex-1 lg:flex-none"
+                    onClick={() => setIsEditing(true)}
+                    data-testid="button-edit"
+                  >
+                    <Edit2 className="w-4 h-4" />
+                    Bearbeiten
+                  </Button>
+                ) : (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button 
+                        variant="outline" 
+                        className="gap-2 flex-1 lg:flex-none opacity-50 cursor-not-allowed"
+                        disabled
+                        data-testid="button-edit-disabled"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                        Bearbeiten
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Nur Primar, 1. Oberarzt und Sekretariat können bearbeiten</p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
                 <Button variant="outline" className="gap-2 flex-1 lg:flex-none" data-testid="button-print">
                   <Printer className="w-4 h-4" />
                   Drucken
@@ -449,17 +479,37 @@ export default function WeeklyPlan() {
           </div>
         </Card>
 
-        <div className="flex items-center justify-between text-xs text-muted-foreground p-2">
-          <div className="flex gap-4">
+        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between text-xs text-muted-foreground p-2 gap-2">
+          <div className="flex flex-wrap gap-4">
             <span className="flex items-center gap-1">
               <span className="w-3 h-3 bg-pink-100 rounded"></span> Diensthabende/r
             </span>
             <span className="flex items-center gap-1">
               <span className="w-3 h-3 bg-primary/20 rounded"></span> TB-Leiter
             </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex items-center gap-1 cursor-help text-primary">
+                  <Info className="w-3 h-3" />
+                  Bearbeitungsrechte
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs">
+                <p className="font-medium mb-1">Wer kann bearbeiten:</p>
+                <ul className="list-disc list-inside text-xs">
+                  <li>Primararzt</li>
+                  <li>1. Oberarzt</li>
+                  <li>Sekretariat</li>
+                </ul>
+              </TooltipContent>
+            </Tooltip>
           </div>
-          <div>
-            Prim. PD Dr. Johannes Lermann • Erstellt: {format(new Date(), "dd.MM.yyyy", { locale: de })}
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground">
+              Angemeldet als: <span className="font-medium text-foreground">{CURRENT_USER.name}</span> ({CURRENT_USER.role})
+            </span>
+            <span>•</span>
+            <span>Prim. PD Dr. Johannes Lermann • Erstellt: {format(new Date(), "dd.MM.yyyy", { locale: de })}</span>
           </div>
         </div>
 

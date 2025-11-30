@@ -83,3 +83,26 @@ Each endpoint includes proper error handling, input validation using Zod schemas
 - Custom vite-plugin-meta-images.ts updates OpenGraph meta tags for deployment URLs
 
 **Production Considerations**: The build process bundles frequently-used dependencies into the server bundle to reduce filesystem calls (openat syscalls), improving cold start performance. Less-used dependencies remain external to keep bundle size reasonable.
+
+## Weekly Planning (Wochenplanung)
+
+The weekly planning module (`/admin/weekly`) provides a detailed weekly assignment view based on the department's planning template. Key features:
+
+**Structure**: Organized by areas matching the department layout:
+- Stationen (Geburtshilfl. Bettenstation, Gynäkologische Bettenstation)
+- Schwangerenambulanz (Risikoambulanz 1 & 2, Schwangerensprechstunde)
+- Gynäkologische Ambulanz (GYN 1-3, TU/KPJ, Mamma)
+- OP (OP 1 TCH, OP 2)
+- Verwaltung / Organisation (Teamleitung, OP-Koordination, QM)
+- Abwesenheiten (Urlaub, RZ, ZA, Fortbildung)
+- Dienstfrei (Frei nach Dienst)
+
+**Edit Permissions** (UI-prepared, requires authentication for enforcement):
+- Primararzt
+- 1. Oberarzt
+- Sekretariat
+
+The permission system currently uses a simulated user context. Full role-based enforcement requires implementing user authentication with passport.js (existing session infrastructure supports this). When auth is added:
+1. Replace CURRENT_USER constant with real user context from auth
+2. Add backend middleware to verify user role on write operations
+3. Consider adding audit logging for plan changes
