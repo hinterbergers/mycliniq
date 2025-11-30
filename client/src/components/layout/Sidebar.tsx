@@ -25,7 +25,16 @@ export function Sidebar() {
 
   return (
     <aside className="w-64 bg-sidebar flex flex-col h-screen sticky top-0">
-      <div className="p-6 flex items-center gap-3 border-b border-sidebar-border">
+      <a 
+        href="/"
+        onClick={(e) => {
+          e.preventDefault();
+          window.history.pushState({}, '', '/');
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        }}
+        className="p-6 flex items-center gap-3 border-b border-sidebar-border hover:bg-white/5 transition-colors cursor-pointer"
+        data-testid="link-home"
+      >
         <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center text-white">
           <Stethoscope className="w-6 h-6" />
         </div>
@@ -33,7 +42,7 @@ export function Sidebar() {
           <h1 className="font-bold text-lg tracking-tight text-white">cliniq</h1>
           <p className="text-xs text-white/70 font-medium">Klinikum Klagenfurt</p>
         </div>
-      </div>
+      </a>
 
       <nav className="flex-1 px-3 py-4 space-y-1">
         {navItems.map((item) => {
