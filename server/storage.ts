@@ -26,6 +26,12 @@ import {
   type InsertSession,
   type ShiftSwapRequest,
   type InsertShiftSwapRequest,
+  type RosterSettings,
+  type InsertRosterSettings,
+  type ShiftWish,
+  type InsertShiftWish,
+  type PlannedAbsence,
+  type InsertPlannedAbsence,
   users,
   employees,
   rosterShifts,
@@ -38,7 +44,10 @@ import {
   approvals,
   taskActivities,
   sessions,
-  shiftSwapRequests
+  shiftSwapRequests,
+  rosterSettings,
+  shiftWishes,
+  plannedAbsences
 } from "@shared/schema";
 import { eq, and, gte, lte, desc, gt } from "drizzle-orm";
 
@@ -131,6 +140,25 @@ export interface IStorage {
   updateRosterShift(id: number, shift: Partial<InsertRosterShift>): Promise<RosterShift | undefined>;
   bulkCreateRosterShifts(shifts: InsertRosterShift[]): Promise<RosterShift[]>;
   deleteRosterShiftsByMonth(year: number, month: number): Promise<boolean>;
+  
+  // Roster settings methods
+  getRosterSettings(): Promise<RosterSettings | undefined>;
+  upsertRosterSettings(settings: InsertRosterSettings): Promise<RosterSettings>;
+  
+  // Shift wishes methods
+  getShiftWishesByMonth(year: number, month: number): Promise<ShiftWish[]>;
+  getShiftWishByEmployeeAndMonth(employeeId: number, year: number, month: number): Promise<ShiftWish | undefined>;
+  createShiftWish(wish: InsertShiftWish): Promise<ShiftWish>;
+  updateShiftWish(id: number, wish: Partial<InsertShiftWish>): Promise<ShiftWish | undefined>;
+  deleteShiftWish(id: number): Promise<boolean>;
+  getSubmittedWishesCount(year: number, month: number): Promise<number>;
+  
+  // Planned absences methods
+  getPlannedAbsencesByMonth(year: number, month: number): Promise<PlannedAbsence[]>;
+  getPlannedAbsencesByEmployee(employeeId: number, year: number, month: number): Promise<PlannedAbsence[]>;
+  createPlannedAbsence(absence: InsertPlannedAbsence): Promise<PlannedAbsence>;
+  updatePlannedAbsence(id: number, absence: Partial<InsertPlannedAbsence>): Promise<PlannedAbsence | undefined>;
+  deletePlannedAbsence(id: number): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -578,6 +606,114 @@ export class DatabaseStorage implements IStorage {
         gte(rosterShifts.date, startDate),
         lte(rosterShifts.date, endDate)
       ));
+    return true;
+  }
+
+  // Roster settings methods
+  async getRosterSettings(): Promise<RosterSettings | undefined> {
+    const result = await db.select().from(rosterSettings);
+    return result[0];
+  }
+
+  async upsertRosterSettings(settings: InsertRosterSettings): Promise<RosterSettings> {
+    const existing = await this.getRosterSettings();
+    if (existing) {
+      const result = await db.update(rosterSettings)
+        .set({ ...settings, updatedAt: new Date() })
+        .where(eq(rosterSettings.id, existing.id))
+        .returning();
+      return result[0];
+    } else {
+      const result = await db.insert(rosterSettings).values(settings).returning();
+      return result[0];
+    }
+  }
+
+  // Shift wishes methods
+  async getShiftWishesByMonth(year: number, month: number): Promise<ShiftWish[]> {
+    return await db.select()
+      .from(shiftWishes)
+      .where(and(
+        eq(shiftWishes.year, year),
+        eq(shiftWishes.month, month)
+      ));
+  }
+
+  async getShiftWishByEmployeeAndMonth(employeeId: number, year: number, month: number): Promise<ShiftWish | undefined> {
+    const result = await db.select()
+      .from(shiftWishes)
+      .where(and(
+        eq(shiftWishes.employeeId, employeeId),
+        eq(shiftWishes.year, year),
+        eq(shiftWishes.month, month)
+      ));
+    return result[0];
+  }
+
+  async createShiftWish(wish: InsertShiftWish): Promise<ShiftWish> {
+    const result = await db.insert(shiftWishes).values(wish).returning();
+    return result[0];
+  }
+
+  async updateShiftWish(id: number, wish: Partial<InsertShiftWish>): Promise<ShiftWish | undefined> {
+    const result = await db.update(shiftWishes)
+      .set({ ...wish, updatedAt: new Date() })
+      .where(eq(shiftWishes.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteShiftWish(id: number): Promise<boolean> {
+    await db.delete(shiftWishes).where(eq(shiftWishes.id, id));
+    return true;
+  }
+
+  async getSubmittedWishesCount(year: number, month: number): Promise<number> {
+    const result = await db.select()
+      .from(shiftWishes)
+      .where(and(
+        eq(shiftWishes.year, year),
+        eq(shiftWishes.month, month),
+        eq(shiftWishes.status, 'Eingereicht')
+      ));
+    return result.length;
+  }
+
+  // Planned absences methods
+  async getPlannedAbsencesByMonth(year: number, month: number): Promise<PlannedAbsence[]> {
+    return await db.select()
+      .from(plannedAbsences)
+      .where(and(
+        eq(plannedAbsences.year, year),
+        eq(plannedAbsences.month, month)
+      ));
+  }
+
+  async getPlannedAbsencesByEmployee(employeeId: number, year: number, month: number): Promise<PlannedAbsence[]> {
+    return await db.select()
+      .from(plannedAbsences)
+      .where(and(
+        eq(plannedAbsences.employeeId, employeeId),
+        eq(plannedAbsences.year, year),
+        eq(plannedAbsences.month, month)
+      ));
+  }
+
+  async createPlannedAbsence(absence: InsertPlannedAbsence): Promise<PlannedAbsence> {
+    const result = await db.insert(plannedAbsences).values(absence).returning();
+    return result[0];
+  }
+
+  async updatePlannedAbsence(id: number, absence: Partial<InsertPlannedAbsence>): Promise<PlannedAbsence | undefined> {
+    const result = await db.update(plannedAbsences)
+      .set(absence)
+      .where(eq(plannedAbsences.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deletePlannedAbsence(id: number): Promise<boolean> {
+    await db.delete(plannedAbsences).where(eq(plannedAbsences.id, id));
     return true;
   }
 }

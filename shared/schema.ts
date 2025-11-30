@@ -399,3 +399,76 @@ export const insertShiftSwapRequestSchema = createInsertSchema(shiftSwapRequests
 
 export type InsertShiftSwapRequest = z.infer<typeof insertShiftSwapRequestSchema>;
 export type ShiftSwapRequest = typeof shiftSwapRequests.$inferSelect;
+
+// Roster Settings table - tracks which month is currently approved and open for planning
+export const rosterSettings = pgTable("roster_settings", {
+  id: serial("id").primaryKey(),
+  lastApprovedYear: integer("last_approved_year").notNull(),
+  lastApprovedMonth: integer("last_approved_month").notNull(),
+  updatedById: integer("updated_by_id").references(() => employees.id),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+});
+
+export const insertRosterSettingsSchema = createInsertSchema(rosterSettings).omit({
+  id: true,
+  updatedAt: true
+});
+
+export type InsertRosterSettings = z.infer<typeof insertRosterSettingsSchema>;
+export type RosterSettings = typeof rosterSettings.$inferSelect;
+
+// Shift wish status
+export const wishStatusEnum = pgEnum('wish_status', [
+  'Entwurf',
+  'Eingereicht'
+]);
+
+// Shift Wishes table - employee preferences for upcoming roster planning month
+export const shiftWishes = pgTable("shift_wishes", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").references(() => employees.id).notNull(),
+  year: integer("year").notNull(),
+  month: integer("month").notNull(),
+  status: wishStatusEnum("status").notNull().default('Entwurf'),
+  preferredShiftDays: jsonb("preferred_shift_days").$type<number[]>(),
+  avoidShiftDays: jsonb("avoid_shift_days").$type<number[]>(),
+  preferredServiceTypes: jsonb("preferred_service_types").$type<string[]>(),
+  avoidServiceTypes: jsonb("avoid_service_types").$type<string[]>(),
+  maxShiftsPerWeek: integer("max_shifts_per_week"),
+  notes: text("notes"),
+  submittedAt: timestamp("submitted_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+});
+
+export const insertShiftWishSchema = createInsertSchema(shiftWishes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export type InsertShiftWish = z.infer<typeof insertShiftWishSchema>;
+export type ShiftWish = typeof shiftWishes.$inferSelect;
+
+// Planned Absences table - for requesting time off for the planning month
+export const plannedAbsences = pgTable("planned_absences", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").references(() => employees.id).notNull(),
+  year: integer("year").notNull(),
+  month: integer("month").notNull(),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  reason: absenceReasonEnum("reason").notNull(),
+  notes: text("notes"),
+  isApproved: boolean("is_approved"),
+  approvedById: integer("approved_by_id").references(() => employees.id),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+});
+
+export const insertPlannedAbsenceSchema = createInsertSchema(plannedAbsences).omit({
+  id: true,
+  createdAt: true
+});
+
+export type InsertPlannedAbsence = z.infer<typeof insertPlannedAbsenceSchema>;
+export type PlannedAbsence = typeof plannedAbsences.$inferSelect;
