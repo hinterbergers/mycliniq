@@ -3,6 +3,8 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 
+export { db } from "./db";
+
 const app = express();
 const httpServer = createServer(app);
 

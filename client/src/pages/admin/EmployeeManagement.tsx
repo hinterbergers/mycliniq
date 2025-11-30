@@ -9,8 +9,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Search, Plus, Filter, MoreHorizontal, UserPlus } from "lucide-react";
-import { useState } from "react";
-import { MOCK_EMPLOYEES } from "@/lib/mockData";
+import { useState, useEffect } from "react";
+import { employeeApi } from "@/lib/api";
+import type { Employee } from "@shared/schema";
+import { useToast } from "@/hooks/use-toast";
 
 const ROLES = [
   "Primararzt",
@@ -50,8 +52,30 @@ const SERVICE_CAPABILITIES = {
 
 export default function EmployeeManagement() {
   const [searchTerm, setSearchTerm] = useState("");
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
   
-  const filteredEmployees = MOCK_EMPLOYEES.filter(emp => 
+  useEffect(() => {
+    loadEmployees();
+  }, []);
+  
+  const loadEmployees = async () => {
+    try {
+      const data = await employeeApi.getAll();
+      setEmployees(data);
+    } catch (error) {
+      toast({
+        title: "Fehler",
+        description: "Mitarbeiter konnten nicht geladen werden",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const filteredEmployees = employees.filter(emp => 
     emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     emp.role.toLowerCase().includes(searchTerm.toLowerCase()) ||
     emp.competencies.some(c => c.toLowerCase().includes(searchTerm.toLowerCase()))
