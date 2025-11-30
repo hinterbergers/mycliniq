@@ -10,6 +10,7 @@ import PlanningCockpit from "@/pages/admin/PlanningCockpit";
 import EmployeeManagement from "@/pages/admin/EmployeeManagement";
 import ResourceManagement from "@/pages/admin/ResourceManagement";
 import DailyPlanEditor from "@/pages/admin/DailyPlanEditor";
+import RosterPlan from "@/pages/admin/RosterPlan";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -24,6 +25,7 @@ function Router() {
       <Route path="/admin/employees" component={EmployeeManagement} />
       <Route path="/admin/resources" component={ResourceManagement} />
       <Route path="/admin/daily-plan" component={DailyPlanEditor} />
+      <Route path="/admin/roster" component={RosterPlan} />
       
       <Route component={NotFound} />
     </Switch>

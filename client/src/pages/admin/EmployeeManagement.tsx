@@ -41,6 +41,13 @@ const COMPETENCIES = [
   "Kindergynäkologie"
 ];
 
+// Define which roles can do which service
+const SERVICE_CAPABILITIES = {
+  gyn: ["Primararzt", "1. Oberarzt", "Oberarzt", "Oberärztin"],
+  kreiszimmer: ["Assistenzarzt", "Assistenzärztin"],
+  turnus: ["Assistenzarzt", "Assistenzärztin", "Turnusarzt"]
+};
+
 export default function EmployeeManagement() {
   const [searchTerm, setSearchTerm] = useState("");
   
@@ -49,6 +56,14 @@ export default function EmployeeManagement() {
     emp.role.toLowerCase().includes(searchTerm.toLowerCase()) ||
     emp.competencies.some(c => c.toLowerCase().includes(searchTerm.toLowerCase()))
   );
+
+  const getCapabilities = (role: string) => {
+    const caps = [];
+    if (SERVICE_CAPABILITIES.gyn.includes(role)) caps.push({ label: "Gyn-Dienst", color: "bg-blue-100 text-blue-700 border-blue-200" });
+    if (SERVICE_CAPABILITIES.kreiszimmer.includes(role)) caps.push({ label: "Kreißzimmer", color: "bg-pink-100 text-pink-700 border-pink-200" });
+    if (SERVICE_CAPABILITIES.turnus.includes(role)) caps.push({ label: "Turnus", color: "bg-emerald-100 text-emerald-700 border-emerald-200" });
+    return caps;
+  };
 
   return (
     <Layout title="Mitarbeiter & Kompetenzen">
@@ -143,56 +158,60 @@ export default function EmployeeManagement() {
                 <TableRow>
                   <TableHead className="w-[250px]">Name</TableHead>
                   <TableHead>Rolle</TableHead>
-                  <TableHead>Kompetenzen</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Einsetzbar für</TableHead>
+                  <TableHead>Spezial-Kompetenzen</TableHead>
                   <TableHead className="text-right">Aktionen</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredEmployees.map((emp) => (
-                  <TableRow key={emp.id}>
-                    <TableCell className="font-medium">
-                      <div className="flex flex-col">
-                        <span>{emp.name}</span>
-                        {/* @ts-ignore */}
-                        {emp.validUntil && (
-                          /* @ts-ignore */
-                          <span className="text-xs text-orange-600 font-normal">Befristet bis {emp.validUntil}</span>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="secondary" className="font-normal">{emp.role}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {emp.competencies.length > 0 ? (
-                          emp.competencies.slice(0, 2).map(comp => (
-                            <Badge key={comp} variant="outline" className="text-xs bg-background">{comp}</Badge>
-                          ))
-                        ) : (
-                          <span className="text-xs text-muted-foreground">-</span>
-                        )}
-                        {emp.competencies.length > 2 && (
-                          <Badge variant="outline" className="text-xs bg-background">+{emp.competencies.length - 2}</Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${emp.status === 'active' ? 'bg-green-500' : 'bg-orange-500'}`} />
-                        <span className="text-sm text-muted-foreground capitalize">
-                          {emp.status === 'active' ? 'Aktiv' : 'Befristet'}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="icon">
-                        <MoreHorizontal className="w-4 h-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {filteredEmployees.map((emp) => {
+                  const capabilities = getCapabilities(emp.role);
+                  return (
+                    <TableRow key={emp.id}>
+                      <TableCell className="font-medium">
+                        <div className="flex flex-col">
+                          <span>{emp.name}</span>
+                          {/* @ts-ignore */}
+                          {emp.validUntil && (
+                            /* @ts-ignore */
+                            <span className="text-xs text-orange-600 font-normal">Befristet bis {emp.validUntil}</span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary" className="font-normal">{emp.role}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          {capabilities.map((cap, i) => (
+                            <Badge key={i} variant="outline" className={`text-xs font-medium border ${cap.color}`}>
+                              {cap.label}
+                            </Badge>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1">
+                          {emp.competencies.length > 0 ? (
+                            emp.competencies.slice(0, 2).map(comp => (
+                              <Badge key={comp} variant="outline" className="text-xs bg-background text-muted-foreground border-border font-normal">{comp}</Badge>
+                            ))
+                          ) : (
+                            <span className="text-xs text-muted-foreground">-</span>
+                          )}
+                          {emp.competencies.length > 2 && (
+                            <Badge variant="outline" className="text-xs bg-background text-muted-foreground border-border font-normal">+{emp.competencies.length - 2}</Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="icon">
+                          <MoreHorizontal className="w-4 h-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </CardContent>

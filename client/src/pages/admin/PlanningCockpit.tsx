@@ -26,6 +26,14 @@ export default function PlanningCockpit() {
       bg: "bg-emerald-50"
     },
     {
+      title: "Dienstplan Editor",
+      description: "Monatsplanung, Urlaubsübersicht und Statistik",
+      icon: CalendarClock,
+      action: () => setLocation("/admin/roster"),
+      color: "text-blue-600",
+      bg: "bg-blue-50"
+    },
+    {
       title: "Tageseinsatzplan",
       description: "Manuelle Zuteilung und Korrektur des Tagesplans",
       icon: CalendarClock,
