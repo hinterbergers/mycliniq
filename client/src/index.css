@@ -9,54 +9,54 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   
-  /* Medical Teal Theme - Clean, Trustworthy, Calm */
-  --color-background: hsl(210 40% 98%);
-  --color-foreground: hsl(215 25% 27%);
+  /* KABEG Corporate Design - Professional Healthcare Blue */
+  --color-background: hsl(218 25% 96%);
+  --color-foreground: hsl(217 18% 23%);
   
   --color-card: hsl(0 0% 100%);
-  --color-card-foreground: hsl(215 25% 27%);
+  --color-card-foreground: hsl(217 18% 23%);
   
   --color-popover: hsl(0 0% 100%);
-  --color-popover-foreground: hsl(215 25% 27%);
+  --color-popover-foreground: hsl(217 18% 23%);
   
-  --color-primary: hsl(185 64% 38%); /* Teal 700 */
+  --color-primary: hsl(212 84% 36%);
   --color-primary-foreground: hsl(0 0% 100%);
   
-  --color-secondary: hsl(210 40% 96.1%);
-  --color-secondary-foreground: hsl(222.2 47.4% 11.2%);
+  --color-secondary: hsl(212 30% 92%);
+  --color-secondary-foreground: hsl(212 84% 30%);
   
-  --color-muted: hsl(210 40% 96.1%);
-  --color-muted-foreground: hsl(215.4 16.3% 46.9%);
+  --color-muted: hsl(216 28% 94%);
+  --color-muted-foreground: hsl(213 14% 42%);
   
-  --color-accent: hsl(185 64% 95%); /* Very light Teal */
-  --color-accent-foreground: hsl(185 64% 30%);
+  --color-accent: hsl(212 60% 95%);
+  --color-accent-foreground: hsl(211 85% 29%);
   
-  --color-destructive: hsl(0 84.2% 60.2%);
-  --color-destructive-foreground: hsl(210 40% 98%);
+  --color-destructive: hsl(4 72% 45%);
+  --color-destructive-foreground: hsl(0 0% 100%);
   
-  --color-border: hsl(214.3 31.8% 91.4%);
-  --color-input: hsl(214.3 31.8% 91.4%);
-  --color-ring: hsl(185 64% 38%);
+  --color-border: hsl(216 28% 87%);
+  --color-input: hsl(216 28% 87%);
+  --color-ring: hsl(212 84% 36%);
   
-  --color-chart-1: hsl(12 76% 61%);
-  --color-chart-2: hsl(173 58% 39%);
-  --color-chart-3: hsl(197 37% 24%);
-  --color-chart-4: hsl(43 74% 66%);
-  --color-chart-5: hsl(27 87% 67%);
+  --color-chart-1: hsl(212 84% 36%);
+  --color-chart-2: hsl(213 54% 56%);
+  --color-chart-3: hsl(211 85% 29%);
+  --color-chart-4: hsl(45 93% 47%);
+  --color-chart-5: hsl(4 72% 45%);
   
-  --color-sidebar: hsl(0 0% 100%);
-  --color-sidebar-foreground: hsl(215 25% 27%);
-  --color-sidebar-primary: hsl(185 64% 38%);
-  --color-sidebar-primary-foreground: hsl(0 0% 100%);
-  --color-sidebar-accent: hsl(185 64% 95%);
-  --color-sidebar-accent-foreground: hsl(185 64% 30%);
-  --color-sidebar-border: hsl(220 13% 91%);
-  --color-sidebar-ring: hsl(185 64% 38%);
+  --color-sidebar: hsl(211 85% 29%);
+  --color-sidebar-foreground: hsl(0 0% 100%);
+  --color-sidebar-primary: hsl(0 0% 100%);
+  --color-sidebar-primary-foreground: hsl(211 85% 29%);
+  --color-sidebar-accent: hsl(212 84% 36%);
+  --color-sidebar-accent-foreground: hsl(0 0% 100%);
+  --color-sidebar-border: hsl(211 70% 25%);
+  --color-sidebar-ring: hsl(213 54% 56%);
 
   --font-sans: "Plus Jakarta Sans", sans-serif;
   --font-serif: "Source Serif 4", serif;
   
-  --radius: 0.75rem;
+  --radius: 0.5rem;
 }
 
 @layer base {
@@ -64,9 +64,23 @@
     @apply border-border;
   }
   body {
-    @apply font-sans antialiased bg-background text-foreground selection:bg-primary/10 selection:text-primary;
+    @apply font-sans antialiased bg-background text-foreground selection:bg-primary/20 selection:text-primary;
   }
   h1, h2, h3, h4, h5, h6 {
-    @apply font-semibold tracking-tight text-slate-900;
+    @apply font-semibold tracking-tight;
+    color: hsl(212 84% 36%);
+  }
+}
+
+/* KABEG specific utilities */
+@layer utilities {
+  .kabeg-gradient {
+    background: linear-gradient(135deg, hsl(213 40% 72%) 0%, hsl(212 84% 36%) 100%);
+  }
+  .kabeg-shadow {
+    box-shadow: 0 2px 8px rgba(15, 91, 167, 0.08);
+  }
+  .kabeg-header {
+    background: linear-gradient(90deg, hsl(213 40% 72%) 0%, hsl(212 84% 36%) 100%);
   }
 }

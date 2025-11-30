@@ -1,4 +1,4 @@
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { 
   LayoutDashboard, 
@@ -6,7 +6,7 @@ import {
   BookOpen, 
   Settings, 
   LogOut, 
-  Baby
+  Stethoscope
 } from "lucide-react";
 
 export function Sidebar() {
@@ -20,46 +20,53 @@ export function Sidebar() {
   ];
 
   return (
-    <aside className="w-64 bg-sidebar border-r border-sidebar-border flex flex-col h-screen sticky top-0">
-      <div className="p-6 flex items-center gap-3">
-        <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary">
-          <Baby className="w-6 h-6" />
+    <aside className="w-64 bg-sidebar flex flex-col h-screen sticky top-0">
+      <div className="p-6 flex items-center gap-3 border-b border-sidebar-border">
+        <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center text-white">
+          <Stethoscope className="w-6 h-6" />
         </div>
         <div>
-          <h1 className="font-bold text-lg tracking-tight text-sidebar-foreground">cliniq</h1>
-          <p className="text-xs text-muted-foreground font-medium">Klinikum Klagenfurt</p>
+          <h1 className="font-bold text-lg tracking-tight text-white">cliniq</h1>
+          <p className="text-xs text-white/70 font-medium">Klinikum Klagenfurt</p>
         </div>
       </div>
 
-      <nav className="flex-1 px-4 py-4 space-y-1">
+      <nav className="flex-1 px-3 py-4 space-y-1">
         {navItems.map((item) => {
           const isActive = location === item.href || (item.href !== "/" && location.startsWith(item.href));
           return (
-            <Link key={item.href} href={item.href}>
-              <a className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group",
+            <a 
+              key={item.href} 
+              href={item.href}
+              onClick={(e) => {
+                e.preventDefault();
+                window.history.pushState({}, '', item.href);
+                window.dispatchEvent(new PopStateEvent('popstate'));
+              }}
+              className={cn(
+                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
                 isActive 
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm" 
-                  : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-              )}>
-                <item.icon className={cn("w-5 h-5", isActive ? "text-primary" : "text-muted-foreground group-hover:text-sidebar-foreground")} />
-                {item.label}
-              </a>
-            </Link>
+                  ? "bg-sidebar-accent text-white" 
+                  : "text-white/80 hover:bg-white/10 hover:text-white"
+              )}
+            >
+              <item.icon className="w-5 h-5" />
+              {item.label}
+            </a>
           );
         })}
       </nav>
 
       <div className="p-4 border-t border-sidebar-border">
-        <div className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-sidebar-accent/50 transition-colors cursor-pointer">
-          <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-xs">
+        <div className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-white/10 transition-colors cursor-pointer">
+          <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white font-bold text-xs">
             DM
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate text-sidebar-foreground">Dr. Müller</p>
-            <p className="text-xs text-muted-foreground truncate">Oberarzt Kardiologie</p>
+            <p className="text-sm font-medium truncate text-white">Dr. Müller</p>
+            <p className="text-xs text-white/60 truncate">Oberarzt</p>
           </div>
-          <LogOut className="w-4 h-4 text-muted-foreground" />
+          <LogOut className="w-4 h-4 text-white/60" />
         </div>
       </div>
     </aside>

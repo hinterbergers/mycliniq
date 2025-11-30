@@ -13,7 +13,7 @@ export default function Dashboard() {
         <div className="md:col-span-8 space-y-6">
           <div className="bg-gradient-to-br from-primary to-primary/80 rounded-2xl p-8 text-primary-foreground shadow-lg shadow-primary/10">
             <div className="flex items-center justify-between mb-2">
-               <h2 className="text-3xl font-bold">Guten Morgen, Dr. Müller</h2>
+               <h2 className="text-3xl font-bold text-white">Guten Morgen, Dr. Müller</h2>
                <Badge variant="outline" className="text-primary-foreground border-primary-foreground/30 bg-primary-foreground/10">
                   KABEG Klinikum Klagenfurt
                </Badge>
@@ -35,11 +35,11 @@ export default function Dashboard() {
           {/* Quick Stats */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {[
-              { label: "Aufnahmen heute", value: "8", icon: UsersIcon, color: "text-blue-500", bg: "bg-blue-500/10" },
-              { label: "Geburten lfd.", value: "3", icon: Baby, color: "text-pink-500", bg: "bg-pink-500/10" },
-              { label: "OPs geplant", value: "5", icon: Activity, color: "text-emerald-500", bg: "bg-emerald-500/10" },
+              { label: "Aufnahmen heute", value: "8", icon: UsersIcon, color: "text-primary", bg: "bg-primary/10" },
+              { label: "Geburten lfd.", value: "3", icon: Baby, color: "text-pink-600", bg: "bg-pink-100" },
+              { label: "OPs geplant", value: "5", icon: Activity, color: "text-emerald-600", bg: "bg-emerald-100" },
             ].map((stat, i) => (
-              <Card key={i} className="border-none shadow-sm">
+              <Card key={i} className="border-none kabeg-shadow">
                 <CardContent className="p-4 flex items-center gap-4">
                   <div className={`w-12 h-12 rounded-xl ${stat.bg} flex items-center justify-center`}>
                     <stat.icon className={`w-6 h-6 ${stat.color}`} />
@@ -54,7 +54,7 @@ export default function Dashboard() {
           </div>
 
           {/* Recent Guidelines */}
-          <Card className="border-none shadow-sm">
+          <Card className="border-none kabeg-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-lg">Neue Leitlinien Gyn/Geb</CardTitle>
               <Button variant="ghost" size="sm" className="text-muted-foreground">Alle anzeigen</Button>
@@ -89,7 +89,7 @@ export default function Dashboard() {
 
         {/* Sidebar Right - Schedule */}
         <div className="md:col-span-4 space-y-6">
-          <Card className="h-full border-none shadow-sm flex flex-col">
+          <Card className="h-full border-none kabeg-shadow flex flex-col">
             <CardHeader>
               <CardTitle className="text-lg">Mein Dienstplan</CardTitle>
               <CardDescription>Nächste 7 Tage</CardDescription>

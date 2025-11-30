@@ -12,7 +12,7 @@ import { de } from "date-fns/locale";
 
 // Define service types based on user input
 const SERVICE_TYPES = [
-  { id: "gyn", label: "Gynäkologie", requiredRole: ["Primararzt", "1. Oberarzt", "Oberarzt", "Oberärztin"], color: "bg-blue-100 text-blue-700 border-blue-200" },
+  { id: "gyn", label: "Gynäkologie", requiredRole: ["Primararzt", "1. Oberarzt", "Oberarzt", "Oberärztin"], color: "bg-primary/10 text-primary border-primary/20" },
   { id: "kreiszimmer", label: "Kreißzimmer", requiredRole: ["Assistenzarzt", "Assistenzärztin"], color: "bg-pink-100 text-pink-700 border-pink-200" },
   { id: "turnus", label: "Turnus", requiredRole: ["Assistenzarzt", "Assistenzärztin", "Turnusarzt"], color: "bg-emerald-100 text-emerald-700 border-emerald-200" }
 ];
@@ -89,7 +89,7 @@ export default function RosterPlan() {
       <div className="space-y-6">
         
         {/* Controls Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-card p-4 rounded-xl border border-border shadow-sm">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-card p-4 rounded-xl kabeg-shadow">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-1 bg-secondary rounded-lg p-1">
               <Button variant="ghost" size="icon" onClick={() => setCurrentDate(subMonths(currentDate, 1))}>
@@ -100,7 +100,7 @@ export default function RosterPlan() {
                 <ArrowRight className="w-4 h-4" />
               </Button>
             </div>
-            <Badge variant="outline" className="hidden md:flex gap-1 bg-blue-50 text-blue-700 border-blue-200">
+            <Badge variant="outline" className="hidden md:flex gap-1 bg-primary/10 text-primary border-primary/20">
               <Info className="w-3 h-3" /> 
               <span>Planungsstatus: Entwurf</span>
             </Badge>
@@ -122,7 +122,7 @@ export default function RosterPlan() {
         </div>
 
         {/* Main Roster Table */}
-        <Card className="border-none shadow-sm overflow-hidden">
+        <Card className="border-none kabeg-shadow overflow-hidden">
           <div className="overflow-x-auto">
             <Table className="border-collapse w-full min-w-[1200px]">
               <TableHeader>
