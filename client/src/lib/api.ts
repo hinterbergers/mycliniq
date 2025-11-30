@@ -17,7 +17,13 @@ import type {
   TaskActivity,
   InsertTaskActivity,
   ShiftSwapRequest,
-  InsertShiftSwapRequest
+  InsertShiftSwapRequest,
+  RosterSettings,
+  InsertRosterSettings,
+  ShiftWish,
+  InsertShiftWish,
+  PlannedAbsence,
+  InsertPlannedAbsence
 } from "@shared/schema";
 
 const API_BASE = "/api";
@@ -473,6 +479,119 @@ export const shiftSwapApi = {
   
   delete: async (id: number): Promise<void> => {
     const response = await fetch(`${API_BASE}/shift-swaps/${id}`, {
+      method: "DELETE"
+    });
+    return handleResponse<void>(response);
+  }
+};
+
+// Roster Settings API
+export interface NextPlanningMonth {
+  year: number;
+  month: number;
+  totalEmployees: number;
+  submittedCount: number;
+  allSubmitted: boolean;
+}
+
+export const rosterSettingsApi = {
+  get: async (): Promise<RosterSettings> => {
+    const response = await fetch(`${API_BASE}/roster-settings`);
+    return handleResponse<RosterSettings>(response);
+  },
+  
+  update: async (data: InsertRosterSettings): Promise<RosterSettings> => {
+    const response = await fetch(`${API_BASE}/roster-settings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<RosterSettings>(response);
+  },
+  
+  getNextPlanningMonth: async (): Promise<NextPlanningMonth> => {
+    const response = await fetch(`${API_BASE}/roster-settings/next-planning-month`);
+    return handleResponse<NextPlanningMonth>(response);
+  }
+};
+
+// Shift Wishes API
+export const shiftWishesApi = {
+  getByMonth: async (year: number, month: number): Promise<ShiftWish[]> => {
+    const response = await fetch(`${API_BASE}/shift-wishes?year=${year}&month=${month}`);
+    return handleResponse<ShiftWish[]>(response);
+  },
+  
+  getByEmployeeAndMonth: async (employeeId: number, year: number, month: number): Promise<ShiftWish | null> => {
+    const response = await fetch(`${API_BASE}/shift-wishes?employeeId=${employeeId}&year=${year}&month=${month}`);
+    return handleResponse<ShiftWish | null>(response);
+  },
+  
+  create: async (data: InsertShiftWish): Promise<ShiftWish> => {
+    const response = await fetch(`${API_BASE}/shift-wishes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<ShiftWish>(response);
+  },
+  
+  update: async (id: number, data: Partial<InsertShiftWish>): Promise<ShiftWish> => {
+    const response = await fetch(`${API_BASE}/shift-wishes/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<ShiftWish>(response);
+  },
+  
+  submit: async (id: number): Promise<ShiftWish> => {
+    const response = await fetch(`${API_BASE}/shift-wishes/${id}/submit`, {
+      method: "POST"
+    });
+    return handleResponse<ShiftWish>(response);
+  },
+  
+  delete: async (id: number): Promise<void> => {
+    const response = await fetch(`${API_BASE}/shift-wishes/${id}`, {
+      method: "DELETE"
+    });
+    return handleResponse<void>(response);
+  }
+};
+
+// Planned Absences API
+export const plannedAbsencesApi = {
+  getByMonth: async (year: number, month: number): Promise<PlannedAbsence[]> => {
+    const response = await fetch(`${API_BASE}/planned-absences?year=${year}&month=${month}`);
+    return handleResponse<PlannedAbsence[]>(response);
+  },
+  
+  getByEmployeeAndMonth: async (employeeId: number, year: number, month: number): Promise<PlannedAbsence[]> => {
+    const response = await fetch(`${API_BASE}/planned-absences?employeeId=${employeeId}&year=${year}&month=${month}`);
+    return handleResponse<PlannedAbsence[]>(response);
+  },
+  
+  create: async (data: InsertPlannedAbsence): Promise<PlannedAbsence> => {
+    const response = await fetch(`${API_BASE}/planned-absences`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<PlannedAbsence>(response);
+  },
+  
+  update: async (id: number, data: Partial<InsertPlannedAbsence>): Promise<PlannedAbsence> => {
+    const response = await fetch(`${API_BASE}/planned-absences/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<PlannedAbsence>(response);
+  },
+  
+  delete: async (id: number): Promise<void> => {
+    const response = await fetch(`${API_BASE}/planned-absences/${id}`, {
       method: "DELETE"
     });
     return handleResponse<void>(response);

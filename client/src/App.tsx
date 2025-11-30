@@ -9,6 +9,7 @@ import Personal from "@/pages/Personal";
 import Guidelines from "@/pages/Guidelines";
 import Settings from "@/pages/Settings";
 import Login from "@/pages/Login";
+import ShiftWishes from "@/pages/ShiftWishes";
 import PlanningCockpit from "@/pages/admin/PlanningCockpit";
 import EmployeeManagement from "@/pages/admin/EmployeeManagement";
 import ResourceManagement from "@/pages/admin/ResourceManagement";
@@ -68,6 +69,11 @@ function Router() {
       </Route>
       <Route path="/einstellungen/:userId">
         {() => <ProtectedRoute component={Settings} />}
+      </Route>
+      
+      {/* Shift Wishes */}
+      <Route path="/dienstwuensche">
+        {() => <ProtectedRoute component={ShiftWishes} />}
       </Route>
       
       {/* Legacy routes redirect */}

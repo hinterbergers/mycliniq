@@ -10,7 +10,8 @@ import {
   Stethoscope,
   CalendarDays,
   FileText,
-  Briefcase
+  Briefcase,
+  Heart
 } from "lucide-react";
 
 export function Sidebar() {
@@ -19,6 +20,7 @@ export function Sidebar() {
 
   const navItems = [
     { href: "/dienstplaene", label: "Dienstpläne", icon: CalendarDays },
+    { href: "/dienstwuensche", label: "Dienstwünsche", icon: Heart },
     { href: "/wissen", label: "SOPs", icon: FileText },
     { href: "/projekte", label: "Projekte", icon: Briefcase },
     { href: "/admin", label: "Verwaltung", icon: LayoutDashboard, adminOnly: true },
