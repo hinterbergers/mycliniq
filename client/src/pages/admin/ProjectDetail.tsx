@@ -300,7 +300,7 @@ export default function ProjectDetail() {
           <CardContent className="flex flex-col items-center justify-center py-16">
             <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
             <h3 className="text-lg font-medium mb-2">Projekt nicht gefunden</h3>
-            <Button onClick={() => setLocation('/admin/projects')}>
+            <Button onClick={() => setLocation('/projekte')}>
               <ArrowLeft className="w-4 h-4 mr-2" /> Zurück zur Übersicht
             </Button>
           </CardContent>
@@ -316,7 +316,7 @@ export default function ProjectDetail() {
           <Button 
             variant="ghost" 
             size="sm" 
-            onClick={() => setLocation('/admin/projects')}
+            onClick={() => setLocation('/projekte')}
             data-testid="button-back"
           >
             <ArrowLeft className="w-4 h-4 mr-2" /> Zurück

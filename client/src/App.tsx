@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Dashboard from "@/pages/Dashboard";
 import Personal from "@/pages/Personal";
 import Guidelines from "@/pages/Guidelines";
+import Settings from "@/pages/Settings";
 import PlanningCockpit from "@/pages/admin/PlanningCockpit";
 import EmployeeManagement from "@/pages/admin/EmployeeManagement";
 import ResourceManagement from "@/pages/admin/ResourceManagement";
@@ -20,10 +21,19 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
-      <Route path="/personal" component={Personal} />
-      <Route path="/wissen" component={Guidelines} />
       
-      {/* Admin / Secretary Routes */}
+      {/* Main Navigation */}
+      <Route path="/dienstplaene" component={Personal} />
+      <Route path="/wissen" component={Guidelines} />
+      <Route path="/projekte" component={Projects} />
+      <Route path="/projekte/:id" component={ProjectDetail} />
+      <Route path="/einstellungen" component={Settings} />
+      <Route path="/einstellungen/:userId" component={Settings} />
+      
+      {/* Legacy routes redirect */}
+      <Route path="/personal" component={Personal} />
+      
+      {/* Admin / Verwaltung Routes */}
       <Route path="/admin" component={PlanningCockpit} />
       <Route path="/admin/employees" component={EmployeeManagement} />
       <Route path="/admin/resources" component={ResourceManagement} />

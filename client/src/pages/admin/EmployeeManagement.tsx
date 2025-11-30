@@ -24,7 +24,8 @@ const ROLES = [
   "Assistenzärztin",
   "Turnusarzt",
   "Student (KPJ)",
-  "Student (Famulant)"
+  "Student (Famulant)",
+  "Sekretariat"
 ];
 
 const COMPETENCIES = [

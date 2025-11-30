@@ -28,7 +28,8 @@ export const roleEnum = pgEnum('role', [
   'Assistenzärztin',
   'Turnusarzt',
   'Student (KPJ)',
-  'Student (Famulant)'
+  'Student (Famulant)',
+  'Sekretariat'
 ]);
 
 export const serviceTypeEnum = pgEnum('service_type', ['gyn', 'kreiszimmer', 'turnus']);
@@ -50,9 +51,17 @@ export const absenceReasonEnum = pgEnum('absence_reason', [
 export const employees = pgTable("employees", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
+  firstName: text("first_name"),
+  lastName: text("last_name"),
   role: roleEnum("role").notNull(),
   competencies: text("competencies").array().notNull().default(sql`ARRAY[]::text[]`),
   email: text("email"),
+  emailPrivate: text("email_private"),
+  phoneWork: text("phone_work"),
+  phonePrivate: text("phone_private"),
+  showPrivateContact: boolean("show_private_contact").notNull().default(false),
+  diplomas: text("diplomas").array().notNull().default(sql`ARRAY[]::text[]`),
+  isAdmin: boolean("is_admin").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
   validUntil: date("valid_until"),
   createdAt: timestamp("created_at").defaultNow().notNull()

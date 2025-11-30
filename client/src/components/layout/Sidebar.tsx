@@ -6,17 +6,21 @@ import {
   BookOpen, 
   Settings, 
   LogOut, 
-  Stethoscope
+  Stethoscope,
+  CalendarDays,
+  FileText,
+  Briefcase
 } from "lucide-react";
 
 export function Sidebar() {
   const [location] = useLocation();
 
   const navItems = [
-    { href: "/personal", label: "Dienstplan", icon: Users },
+    { href: "/dienstplaene", label: "Dienstpläne", icon: CalendarDays },
+    { href: "/wissen", label: "SOPs", icon: FileText },
+    { href: "/projekte", label: "Projekte", icon: Briefcase },
     { href: "/admin", label: "Verwaltung", icon: LayoutDashboard },
-    { href: "/wissen", label: "Wissen", icon: BookOpen },
-    { href: "/settings", label: "Einstellungen", icon: Settings },
+    { href: "/einstellungen", label: "Einstellungen", icon: Settings },
   ];
 
   return (

@@ -53,7 +53,7 @@ export default function PlanningCockpit() {
       title: "Projektmanagement",
       description: "SOPs, Leitlinien und Dokumente erstellen, delegieren und freigeben",
       icon: Briefcase,
-      action: () => setLocation("/admin/projects"),
+      action: () => setLocation("/projekte"),
       color: "text-amber-600",
       bg: "bg-amber-50"
     },

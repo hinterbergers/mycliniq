@@ -289,7 +289,7 @@ export default function Projects() {
               <Card 
                 key={project.id} 
                 className="group hover:shadow-md transition-shadow cursor-pointer"
-                onClick={() => setLocation(`/admin/projects/${project.id}`)}
+                onClick={() => setLocation(`/projekte/${project.id}`)}
                 data-testid={`card-project-${project.id}`}
               >
                 <CardHeader className="pb-3">
