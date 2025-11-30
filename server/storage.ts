@@ -22,6 +22,8 @@ import {
   type InsertApproval,
   type TaskActivity,
   type InsertTaskActivity,
+  type Session,
+  type InsertSession,
   users,
   employees,
   rosterShifts,
@@ -32,9 +34,10 @@ import {
   projectTasks,
   projectDocuments,
   approvals,
-  taskActivities
+  taskActivities,
+  sessions
 } from "@shared/schema";
-import { eq, and, gte, lte, desc } from "drizzle-orm";
+import { eq, and, gte, lte, desc, gt } from "drizzle-orm";
 
 export interface IStorage {
   // User methods
@@ -98,6 +101,18 @@ export interface IStorage {
   createTaskActivity(activity: InsertTaskActivity): Promise<TaskActivity>;
   
   getPublishedDocuments(): Promise<ProjectDocument[]>;
+  
+  // Auth methods
+  getEmployeeByEmail(email: string): Promise<Employee | undefined>;
+  setEmployeePassword(employeeId: number, passwordHash: string): Promise<Employee | undefined>;
+  updateEmployeeLastLogin(employeeId: number): Promise<void>;
+  
+  // Session methods
+  createSession(session: InsertSession): Promise<Session>;
+  getSessionByToken(token: string): Promise<Session | undefined>;
+  deleteSession(token: string): Promise<boolean>;
+  deleteSessionsByEmployee(employeeId: number): Promise<boolean>;
+  cleanupExpiredSessions(): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -411,6 +426,64 @@ export class DatabaseStorage implements IStorage {
       .from(projectDocuments)
       .where(eq(projectDocuments.isPublished, true))
       .orderBy(desc(projectDocuments.publishedAt));
+  }
+
+  // Auth methods
+  async getEmployeeByEmail(email: string): Promise<Employee | undefined> {
+    const result = await db.select()
+      .from(employees)
+      .where(and(
+        eq(employees.email, email),
+        eq(employees.isActive, true)
+      ));
+    return result[0];
+  }
+
+  async setEmployeePassword(employeeId: number, passwordHash: string): Promise<Employee | undefined> {
+    const result = await db.update(employees)
+      .set({ passwordHash })
+      .where(eq(employees.id, employeeId))
+      .returning();
+    return result[0];
+  }
+
+  async updateEmployeeLastLogin(employeeId: number): Promise<void> {
+    await db.update(employees)
+      .set({ lastLoginAt: new Date() })
+      .where(eq(employees.id, employeeId));
+  }
+
+  // Session methods
+  async createSession(session: InsertSession): Promise<Session> {
+    const result = await db.insert(sessions).values(session).returning();
+    return result[0];
+  }
+
+  async getSessionByToken(token: string): Promise<Session | undefined> {
+    const result = await db.select()
+      .from(sessions)
+      .where(and(
+        eq(sessions.token, token),
+        gt(sessions.expiresAt, new Date())
+      ));
+    return result[0];
+  }
+
+  async deleteSession(token: string): Promise<boolean> {
+    await db.delete(sessions).where(eq(sessions.token, token));
+    return true;
+  }
+
+  async deleteSessionsByEmployee(employeeId: number): Promise<boolean> {
+    await db.delete(sessions).where(eq(sessions.employeeId, employeeId));
+    return true;
+  }
+
+  async cleanupExpiredSessions(): Promise<number> {
+    const result = await db.delete(sessions)
+      .where(lte(sessions.expiresAt, new Date()))
+      .returning();
+    return result.length;
   }
 }
 

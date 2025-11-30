@@ -14,12 +14,190 @@ import {
   insertTaskActivitySchema
 } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
+import bcrypt from "bcryptjs";
+import crypto from "crypto";
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
   
+  // Auth routes
+  app.post("/api/auth/login", async (req: Request, res: Response) => {
+    try {
+      const { email, password, rememberMe } = req.body;
+      
+      if (!email || !password) {
+        return res.status(400).json({ error: "E-Mail und Passwort sind erforderlich" });
+      }
+      
+      const employee = await storage.getEmployeeByEmail(email);
+      if (!employee) {
+        return res.status(401).json({ error: "Ungültige Anmeldedaten" });
+      }
+      
+      if (!employee.passwordHash) {
+        return res.status(401).json({ error: "Kein Passwort gesetzt. Bitte kontaktieren Sie das Sekretariat." });
+      }
+      
+      const isValidPassword = await bcrypt.compare(password, employee.passwordHash);
+      if (!isValidPassword) {
+        return res.status(401).json({ error: "Ungültige Anmeldedaten" });
+      }
+      
+      const token = crypto.randomBytes(32).toString('hex');
+      const expiresAt = new Date();
+      if (rememberMe) {
+        expiresAt.setDate(expiresAt.getDate() + 30);
+      } else {
+        expiresAt.setHours(expiresAt.getHours() + 8);
+      }
+      
+      await storage.createSession({
+        employeeId: employee.id,
+        token,
+        isRemembered: !!rememberMe,
+        expiresAt,
+        deviceName: req.headers['user-agent'] || 'Unknown'
+      });
+      
+      await storage.updateEmployeeLastLogin(employee.id);
+      
+      const { passwordHash, ...safeEmployee } = employee;
+      
+      res.json({
+        token,
+        employee: safeEmployee,
+        expiresAt
+      });
+    } catch (error) {
+      console.error('Login error:', error);
+      res.status(500).json({ error: "Anmeldung fehlgeschlagen" });
+    }
+  });
+
+  app.post("/api/auth/logout", async (req: Request, res: Response) => {
+    try {
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith('Bearer ')) {
+        const token = authHeader.substring(7);
+        await storage.deleteSession(token);
+      }
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Abmeldung fehlgeschlagen" });
+    }
+  });
+
+  app.get("/api/auth/me", async (req: Request, res: Response) => {
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) {
+        return res.status(401).json({ error: "Nicht authentifiziert" });
+      }
+      
+      const token = authHeader.substring(7);
+      const session = await storage.getSessionByToken(token);
+      
+      if (!session) {
+        return res.status(401).json({ error: "Sitzung abgelaufen" });
+      }
+      
+      const employee = await storage.getEmployee(session.employeeId);
+      if (!employee) {
+        return res.status(401).json({ error: "Benutzer nicht gefunden" });
+      }
+      
+      const { passwordHash, ...safeEmployee } = employee;
+      res.json({ employee: safeEmployee });
+    } catch (error) {
+      res.status(500).json({ error: "Fehler beim Abrufen des Benutzers" });
+    }
+  });
+
+  app.post("/api/auth/set-password", async (req: Request, res: Response) => {
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) {
+        return res.status(401).json({ error: "Nicht authentifiziert" });
+      }
+      
+      const token = authHeader.substring(7);
+      const session = await storage.getSessionByToken(token);
+      if (!session) {
+        return res.status(401).json({ error: "Sitzung abgelaufen" });
+      }
+      
+      const currentEmployee = await storage.getEmployee(session.employeeId);
+      if (!currentEmployee) {
+        return res.status(401).json({ error: "Benutzer nicht gefunden" });
+      }
+      
+      const { employeeId, newPassword, currentPassword } = req.body;
+      const targetEmployeeId = employeeId || session.employeeId;
+      
+      const isAdmin = currentEmployee.isAdmin || 
+        ['Primararzt', '1. Oberarzt', 'Sekretariat'].includes(currentEmployee.role);
+      
+      if (targetEmployeeId !== session.employeeId && !isAdmin) {
+        return res.status(403).json({ error: "Keine Berechtigung" });
+      }
+      
+      if (targetEmployeeId === session.employeeId && currentEmployee.passwordHash) {
+        if (!currentPassword) {
+          return res.status(400).json({ error: "Aktuelles Passwort erforderlich" });
+        }
+        const isValid = await bcrypt.compare(currentPassword, currentEmployee.passwordHash);
+        if (!isValid) {
+          return res.status(401).json({ error: "Aktuelles Passwort ist falsch" });
+        }
+      }
+      
+      if (!newPassword || newPassword.length < 6) {
+        return res.status(400).json({ error: "Passwort muss mindestens 6 Zeichen haben" });
+      }
+      
+      const passwordHash = await bcrypt.hash(newPassword, 10);
+      await storage.setEmployeePassword(targetEmployeeId, passwordHash);
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Set password error:', error);
+      res.status(500).json({ error: "Passwort konnte nicht gesetzt werden" });
+    }
+  });
+
+  app.post("/api/auth/init-password", async (req: Request, res: Response) => {
+    try {
+      const { email, password } = req.body;
+      
+      if (!email || !password) {
+        return res.status(400).json({ error: "E-Mail und Passwort erforderlich" });
+      }
+      
+      const employee = await storage.getEmployeeByEmail(email);
+      if (!employee) {
+        return res.status(404).json({ error: "Mitarbeiter nicht gefunden" });
+      }
+      
+      if (employee.passwordHash) {
+        return res.status(400).json({ error: "Passwort bereits gesetzt" });
+      }
+      
+      if (password.length < 6) {
+        return res.status(400).json({ error: "Passwort muss mindestens 6 Zeichen haben" });
+      }
+      
+      const passwordHash = await bcrypt.hash(password, 10);
+      await storage.setEmployeePassword(employee.id, passwordHash);
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Init password error:', error);
+      res.status(500).json({ error: "Passwort konnte nicht initialisiert werden" });
+    }
+  });
+
   // Employee routes
   app.get("/api/employees", async (req: Request, res: Response) => {
     try {

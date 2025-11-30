@@ -64,8 +64,29 @@ export const employees = pgTable("employees", {
   isAdmin: boolean("is_admin").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
   validUntil: date("valid_until"),
+  passwordHash: text("password_hash"),
+  lastLoginAt: timestamp("last_login_at"),
   createdAt: timestamp("created_at").defaultNow().notNull()
 });
+
+// User sessions for "stay logged in" functionality
+export const sessions = pgTable("sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  employeeId: integer("employee_id").references(() => employees.id).notNull(),
+  token: text("token").notNull().unique(),
+  deviceName: text("device_name"),
+  isRemembered: boolean("is_remembered").notNull().default(false),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+});
+
+export const insertSessionSchema = createInsertSchema(sessions).omit({
+  id: true,
+  createdAt: true
+});
+
+export type InsertSession = z.infer<typeof insertSessionSchema>;
+export type Session = typeof sessions.$inferSelect;
 
 export const insertEmployeeSchema = createInsertSchema(employees).omit({
   id: true,

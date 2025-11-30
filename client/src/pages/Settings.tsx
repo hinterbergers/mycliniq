@@ -32,19 +32,15 @@ import { employeeApi } from "@/lib/api";
 import type { Employee } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useParams, useLocation } from "wouter";
-
-const ADMIN_ROLES = ['Primararzt', '1. Oberarzt', 'Sekretariat'];
-
-const SIMULATED_CURRENT_USER_ID = 1;
+import { useAuth } from "@/lib/auth";
 
 export default function Settings() {
   const params = useParams();
   const [, setLocation] = useLocation();
-  const [currentUser, setCurrentUser] = useState<Employee | null>(null);
+  const { employee: currentUser, isAdmin } = useAuth();
   
-  const viewingUserId = params.userId ? parseInt(params.userId) : SIMULATED_CURRENT_USER_ID;
+  const viewingUserId = params.userId ? parseInt(params.userId) : (currentUser?.id || 0);
   
-  const isAdmin = currentUser ? (currentUser.isAdmin || ADMIN_ROLES.includes(currentUser.role)) : false;
   const isViewingOwnProfile = currentUser ? viewingUserId === currentUser.id : false;
   const canEditBasicInfo = isViewingOwnProfile || isAdmin;
   const canEditPrivateInfo = isAdmin;
@@ -83,11 +79,6 @@ export default function Settings() {
     try {
       const employees = await employeeApi.getAll();
       setAllEmployees(employees);
-      
-      const current = employees.find(e => e.id === SIMULATED_CURRENT_USER_ID);
-      if (current) {
-        setCurrentUser(current);
-      }
       
       const emp = employees.find(e => e.id === viewingUserId);
       if (emp) {

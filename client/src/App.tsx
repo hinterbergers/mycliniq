@@ -1,12 +1,14 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { AuthProvider, useAuth } from "@/lib/auth";
 import Dashboard from "@/pages/Dashboard";
 import Personal from "@/pages/Personal";
 import Guidelines from "@/pages/Guidelines";
 import Settings from "@/pages/Settings";
+import Login from "@/pages/Login";
 import PlanningCockpit from "@/pages/admin/PlanningCockpit";
 import EmployeeManagement from "@/pages/admin/EmployeeManagement";
 import ResourceManagement from "@/pages/admin/ResourceManagement";
@@ -16,32 +18,88 @@ import WeeklyPlan from "@/pages/admin/WeeklyPlan";
 import Projects from "@/pages/admin/Projects";
 import ProjectDetail from "@/pages/admin/ProjectDetail";
 import NotFound from "@/pages/not-found";
+import { Loader2 } from "lucide-react";
+
+function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
+  const { isAuthenticated, isLoading } = useAuth();
+  
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-8 h-8 animate-spin text-[#0F5BA7]" />
+          <p className="text-muted-foreground">Lade...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  if (!isAuthenticated) {
+    return <Redirect to="/login" />;
+  }
+  
+  return <Component />;
+}
 
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Dashboard} />
+      <Route path="/login" component={Login} />
+      
+      <Route path="/">
+        {() => <ProtectedRoute component={Dashboard} />}
+      </Route>
       
       {/* Main Navigation */}
-      <Route path="/dienstplaene" component={Personal} />
-      <Route path="/wissen" component={Guidelines} />
-      <Route path="/projekte" component={Projects} />
-      <Route path="/projekte/:id" component={ProjectDetail} />
-      <Route path="/einstellungen" component={Settings} />
-      <Route path="/einstellungen/:userId" component={Settings} />
+      <Route path="/dienstplaene">
+        {() => <ProtectedRoute component={Personal} />}
+      </Route>
+      <Route path="/wissen">
+        {() => <ProtectedRoute component={Guidelines} />}
+      </Route>
+      <Route path="/projekte">
+        {() => <ProtectedRoute component={Projects} />}
+      </Route>
+      <Route path="/projekte/:id">
+        {() => <ProtectedRoute component={ProjectDetail} />}
+      </Route>
+      <Route path="/einstellungen">
+        {() => <ProtectedRoute component={Settings} />}
+      </Route>
+      <Route path="/einstellungen/:userId">
+        {() => <ProtectedRoute component={Settings} />}
+      </Route>
       
       {/* Legacy routes redirect */}
-      <Route path="/personal" component={Personal} />
+      <Route path="/personal">
+        {() => <ProtectedRoute component={Personal} />}
+      </Route>
       
       {/* Admin / Verwaltung Routes */}
-      <Route path="/admin" component={PlanningCockpit} />
-      <Route path="/admin/employees" component={EmployeeManagement} />
-      <Route path="/admin/resources" component={ResourceManagement} />
-      <Route path="/admin/daily-plan" component={DailyPlanEditor} />
-      <Route path="/admin/roster" component={RosterPlan} />
-      <Route path="/admin/weekly" component={WeeklyPlan} />
-      <Route path="/admin/projects" component={Projects} />
-      <Route path="/admin/projects/:id" component={ProjectDetail} />
+      <Route path="/admin">
+        {() => <ProtectedRoute component={PlanningCockpit} />}
+      </Route>
+      <Route path="/admin/employees">
+        {() => <ProtectedRoute component={EmployeeManagement} />}
+      </Route>
+      <Route path="/admin/resources">
+        {() => <ProtectedRoute component={ResourceManagement} />}
+      </Route>
+      <Route path="/admin/daily-plan">
+        {() => <ProtectedRoute component={DailyPlanEditor} />}
+      </Route>
+      <Route path="/admin/roster">
+        {() => <ProtectedRoute component={RosterPlan} />}
+      </Route>
+      <Route path="/admin/weekly">
+        {() => <ProtectedRoute component={WeeklyPlan} />}
+      </Route>
+      <Route path="/admin/projects">
+        {() => <ProtectedRoute component={Projects} />}
+      </Route>
+      <Route path="/admin/projects/:id">
+        {() => <ProtectedRoute component={ProjectDetail} />}
+      </Route>
       
       <Route component={NotFound} />
     </Switch>
@@ -51,10 +109,12 @@ function Router() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <Router />
-      </TooltipProvider>
+      <AuthProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Router />
+        </TooltipProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }
