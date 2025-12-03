@@ -1,0 +1,42 @@
+Du bearbeitest die Admin-Seite für den Wochenplan-Editor (früher Einsatzplanung). Layout mit Spalten für Bereiche und einer rechten Spalte mit verfügbarem Personal soll beibehalten, aber an folgendes Konzept angepasst werden.
+
+Ziel: UI für Wochenplan, später per KI befüllbar, mit Drag & Drop vorbereitet (aber aktuell nur visuell).
+
+1. Kopfbereich:
+   - Titel: „Wochenplan-Editor“
+   - Untertitel: „Wocheneinsatzpläne nach Bereichen erstellen und anpassen.“
+   - Dropdown für Woche (z. B. „KW 49 / 2025“) + Buttons:
+     * „KI-Vorschlag generieren“ (onClick: console.log als Platzhalter)
+     * „Prüfung“ (öffnet später Modal, jetzt nur Placeholder)
+     * „Plan als vorläufig freigeben“
+     * „Plan endgültig freigeben“ (zunächst disabled)
+
+2. Hauptansicht:
+   - Linke Seite: Grid mit Bereichen (aus Ressourcen & Räume), gruppiert z. B.:
+     * Kreißsaal & OP
+     * Stationen
+     * Ambulanzzentrum
+   - Jede „Bereichs-Kachel“:
+     * Titel: Name des Bereichs + evtl. Tag (Mo, Di, …) falls Tagesansicht; du kannst wahlweise:
+       - entweder einen Wochentags-Switch (Mo–Fr) oben einbauen
+       - oder eine Wochenübersicht mit Spalten für Tage
+     * In der Kachel Slots für Personal:
+       - z. B. „1. OA“, „FA“, „Assistent:in“, „Turnusarzt“ – als kleine Boxen mit „+ Zuweisung“-Platzhalter.
+       - Aufgefüllte Slots zeigen Name und Kürzel (z. B. „Hinterberger (gyn)“).
+   - Rechte Seite: „Verfügbares Personal“
+     * Liste von Mitarbeitenden mit Badge für Rolle (OA, FA, AA, TA, KPJ).
+     * Einträge visuell drag&drop-fähig gestalten (CSS-States, evt. `draggable`-Attribut); tatsächliche Logik kann später kommen.
+
+3. Status-Indikatoren:
+   - Unter dem Titel des Bereichs kleine Chips:
+     * Grün: alle vorgeschriebenen Kompetenzen erfüllt.
+     * Gelb: optionaler Need nicht erfüllt.
+     * Rot: Pflichtkompetenz fehlt (aktuell per Dummy-Bedingung, z. B. random oder statisch).
+
+4. Hinweis unten auf der Seite:
+   - „Wochenpläne werden automatisch aus dem freigegebenen Dienstplan vorgeschlagen. Manuelle Änderungen überschreiben den Vorschlag, bleiben aber im Verlauf nachvollziehbar.“ – nur Text.
+
+Wichtig:
+- Rein UI, keinerlei echte KI- oder Prüf-Logik.
+- Nutze bestehende Card-, Badge- und Layout-Komponenten.
+- Keine globale Reorganisation; nur Inhalte anpassen und Komponenten zusammensetzen.
