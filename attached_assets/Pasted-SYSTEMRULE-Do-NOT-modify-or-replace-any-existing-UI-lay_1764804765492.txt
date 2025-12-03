@@ -1,0 +1,365 @@
+SYSTEMRULE: Do NOT modify or replace any existing UI layout, styles, navigation, Tailwind classes, ShadCN components, color schemes, or page structures. Only ADD new functions, ADD logic, FIX bugs, EXTEND modules. Never redesign or restructure existing components. Never remove functionality. Maintain strict backward compatibility.
+
+APP NAME: The entire project MUST consistently use the name “MyCliniQ”.  
+Internal shorthand: "MCQ".  
+All components, comments, build names, mobile build identifiers, and generated files must reflect this name.
+
+PLATFORM REQUIREMENTS:
+MyCliniQ must support:
+1) Web (Next.js + React)
+2) iOS App (Capacitor build, identifier: at.kabeg.mycliniq)
+3) Android App (Capacitor build, identifier: at.kabeg.mycliniq)
+Mobile app uses the SAME codebase as the Web App.  
+All UI components must be mobile-compatible (tap instead of hover where necessary).  
+All navigation must function in Capacitor builds.
+
+MOBILE FEATURES:
+- ICS calendar subscription
+- Notifications
+- Offline caching (optional)
+- Deep links: mycliniq://
+- No desktop-only APIs
+
+GLOBAL ARCHITECTURE:
+Frontend = React/Next.js  
+Mobile = Capacitor wrapper  
+Backend = Node / Next.js API Routes / Express (consistent style)  
+Database = SQL (PostgreSQL preferred; Supabase/Neon/PlanetScale compatible)  
+All modules must communicate via clean API endpoints.  
+All planning logic must use the CENTRAL RULE ENGINE.
+
+MODULE OVERVIEW (MUST BE IMPLEMENTED & MAINTAINED):
+1. Dashboard  
+2. Dienstplan (Monatsplan)  
+3. Wochenplan  
+4. Tageseinsatzplan  
+5. Dienstwünsche  
+6. Urlaubsplanung  
+7. Verwaltung: Mitarbeiter  
+8. Verwaltung: Kompetenzen  
+9. Verwaltung: Ressourcen & Räume  
+10. Schnellerfassung (Krankmeldung, Raum sperren, User anlegen)  
+11. Projekte (SOP, Studien, Admin…)  
+12. SOP-System  
+13. Benutzer-Einstellungen  
+14. Export-System (Excel, ICS)  
+15. Notifications  
+16. Audit-Log  
+17. Zentrale KI-Regeln  
+18. Cross-Platform Requirements  
+19. MyCliniQ Branding  
+20. Manual Override Support (Dienstplan & Wochenplan)
+
+=================================
+CENTRAL RULE ENGINE (MANDATORY)
+=================================
+All planning modules (Dienstplan, Wochenplan, Tageseinsatzplan) MUST use the same validation and scoring logic.
+
+HARTE REGELN (must NEVER be violated by automated planning):
+- No two services on consecutive days.
+- Dienst = 25 hours; afterwards minimum 11 hours rest.
+- Weekend logic:
+  * Saturday = 1 weekend
+  * Sunday = 1 weekend
+  * Friday + Sunday = 1 weekend
+  * Sunday alone = 1 weekend
+- Fortbildung > Urlaub (priority)
+- Raum-Sperre removes personnel automatically.
+- Users without Dienstberechtigung cannot be assigned.
+- Competence requirements must be met (UND/ODER combinations).
+
+WEICHE REGELN (scored):
+- Dienstwünsche
+- Fairness distribution
+- Balanced weekends over months
+- Ausbildungsschwerpunkte (OP vs Ambulanz)
+- “Von Vorteil”-Rule: KI may deviate if system-wide benefit.
+
+Manual overrides are ALWAYS allowed. Show warnings but do NOT block saving.
+
+=================================
+DIENSTPLAN (MONTHLY)
+=================================
+Functions:
+- KI proposal generation
+- COMPLETE manual editing supported
+- Drag & Drop everywhere
+- Validation warnings but manual saving possible
+- Status: Draft → Preliminary → Released
+- Diensttausch available after release
+- Konfliktlogik must notify involved users
+- Dienstwünsche integrated
+
+Exports:
+- Excel (.xlsx)
+- ICS calendar subscription
+
+=================================
+WOCHENPLAN (WEEKLY ASSIGNMENT)
+=================================
+Requires released Dienstplan.
+Functions:
+- KI proposal
+- Complete manual override
+- Drag & Drop between all positions
+- Drag to Zeitausgleich
+- Real-time validation
+- Competence requirements (UND/ODER)
+- Raumtemplate integration
+- Regular events (Visiten, Besprechungen)
+
+Status: Draft → Preliminary → Released  
+Export: Excel
+
+=================================
+TAGESEINSATZPLAN
+=================================
+Derived from Wochenplan, but supports manual overrides:
+- Krankmeldungen
+- Room closures
+- Personnel adjustments
+
+Dashboard message format:
+"Du bist heute im Bereich X mit Nachname (badge), Nachname (badge) eingeteilt."
+
+Name format ALWAYS:
+Nachname (gyn)
+Nachname (geb)
+Nachname (ta)
+etc.
+
+Exports:
+- Excel
+- ICS optional
+
+=================================
+DIENSTWÜNSCHE
+=================================
+Popup input:
+- preferred days
+- avoid days
+- preferred service types
+- max services per week
+- notes
+Status: Draft / Submitted
+Admins see submission overview.
+
+=================================
+URLAUBSPLANUNG
+=================================
+User:
+- Submit requests
+- See conflicts
+Admin:
+- approve / reject
+- mark periods as blocked
+
+Export: Excel
+
+=================================
+VERWALTUNG – MITARBEITER
+=================================
+Mandatory fields:
+- First name
+- Last name
+- Title
+- Official phone
+- Official email
+- Birthday
+
+Optional:
+- private email
+- private phone (visibility controlled)
+
+Settings:
+- Dienstberechtigung
+- Kompetenzen (multi-select)
+- Einsatzbereiche
+- Hauptbereich
+- Befristungen (Turnus/Karenz)
+- Roles: Admin, Primar, Sekretariat, User
+
+=================================
+VERWALTUNG – KOMPETENZEN
+=================================
+Each competence:
+- Unique badge code (must be unique!)
+- Name
+- Description
+- Optional prerequisites
+- Assigned to rooms/areas
+
+=================================
+VERWALTUNG – RESSOURCEN & RÄUME
+=================================
+Each room defines:
+- Name
+- Weekly schedule (Mo–So)
+- Required competencies (UND/ODER)
+- Required roles
+- Regular events (Visiten etc.)
+- Room closures
+- Description for dashboard
+
+=================================
+SCHNELLERFASSUNG
+=================================
+1. Krankmeldung:
+- user
+- date range
+- reason
+→ user set to "absent"
+
+2. Raum sperren:
+- room
+- date range
+- reason
+
+3. Benutzer anlegen:
+- name
+- title
+- role
+- date range
+Auto-login:
+vorname.nachname@kabeg.at
+password: wilkommen123
+
+=================================
+PROJEKTE
+=================================
+Project fields:
+- Category (editable list: SOP, Studie, Admin, ...)
+- Owner
+- Contributors
+- Tasks (Kanban)
+- Files
+- Comments
+- Due date
+
+SOP workflow:
+Draft → OA Review → Primar Approval → Auto-publish to SOP-System
+
+Export: Excel
+
+=================================
+SOP-SYSTEM
+=================================
+Mandatory fields:
+- Title
+- Category
+- Keywords
+- Version
+- Authors
+- Primar approval
+- Markdown text
+
+Automatic:
+- Internal SOP linking (keyword match)
+- AWMF guideline linking
+- PubMed article suggestions (top 3)
+
+Export: Excel (metadata)
+
+=================================
+BENUTZEREINSTELLUNGEN
+=================================
+User can modify:
+- Profile
+- Visibility settings
+- Birthday
+- Badges visibility
+- Contact data
+- Password
+
+Admin can:
+- set roles
+- set competencies
+- modify data
+
+=================================
+BADGE MANAGEMENT
+=================================
+Badges must be unique.
+Admins can edit badges.
+Display format ALWAYS: Nachname (badge)
+
+=================================
+EXPORT SYSTEM (MANDATORY)
+=================================
+All of the following MUST export to .xlsx:
+- Dienstplan (month)
+- Wochenplan
+- Tagesplan
+- Urlaubsliste
+- Mitarbeiterliste
+- Räume
+- Kompetenzen
+- SOP metadata
+- Projektliste
+
+=================================
+ICS CALENDAR SUBSCRIPTIONS (MANDATORY)
+=================================
+Every user gets token-protected ICS feeds:
+- Dienstplan
+- Wochenplan
+- Combined
+
+ICS entries must contain:
+- title
+- date/time
+- location
+- colleagues
+- comments
+
+Must sync with:
+iOS, Google Calendar, Outlook, Android.
+
+=================================
+NOTIFICATIONS
+=================================
+Notification types:
+- Plan changes
+- Requests approved/denied
+- Project updates
+- New SOP
+- Birthdays
+Shown in bell icon.
+
+=================================
+AUDIT LOG
+=================================
+Log every change to:
+- Dienstplan
+- Wochenplan
+- Tagesplan
+- Mitarbeiter
+- Räume
+- Projekte
+- SOPs
+
+=================================
+DATA & DATABASE
+=================================
+Backend must be SQL-based.
+Support PostgreSQL (Supabase/Neon/PlanetScale compatible).
+All modules must use consistent relational schema.
+
+=================================
+CROSS-PLATFORM / CAPACITOR RULES
+=================================
+- No desktop-only APIs
+- Must run in Capacitor on iOS & Android
+- Navigation must be compatible
+- Touch interactions required
+- Build-ready frontend
+
+=================================
+FINAL RULE
+=================================
+Do not alter existing layout.  
+Only extend logically.  
+All new features must fit seamlessly into MyCliniQ’s architecture.  
+Follow the rule engine.  
+Maintain full cross-platform compatibility.  
+Apply MyCliniQ branding consistently.

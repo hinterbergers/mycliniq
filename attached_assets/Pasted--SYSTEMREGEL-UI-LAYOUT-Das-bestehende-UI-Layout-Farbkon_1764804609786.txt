@@ -1,0 +1,437 @@
+🔷 SYSTEMREGEL – UI & LAYOUT
+
+Das bestehende UI, Layout, Farbkonzept, Komponentenstil (ShadCN/Tailwind/React) und die gesamte Navigationsstruktur dürfen NICHT verändert werden.
+
+Erlaubte Änderungen:
+	•	neue Funktionen ergänzen
+	•	Logik ergänzen
+	•	Backend erweitern
+	•	Popups / Dialoge ergänzen
+	•	UI-Elemente hinzufügen, aber nie ersetzen
+	•	Fehlerkorrekturen
+
+Verboten:
+	•	Redesign
+	•	Navigation verändern
+	•	bestehende Komponenten ersetzen
+	•	Layout umbauen
+
+⸻
+
+🔷 NAME DER APP
+
+Offizieller App-Name:
+👉 MyCliniQ
+Alle Dateien, Komponenten, Texte, Kommentare und Build-Konfigurationen müssen diesen Namen verwenden.
+
+Kurzname intern: MCQ.
+Mögliche Domains: mycliniq.at, mycliniq.app.
+
+⸻
+
+🔷 PLATTFORMÜBERGREIFENDE ANFORDERUNGEN
+
+MyCliniQ muss vollständig funktionieren als:
+
+1. Web-App
+
+React + Next.js (bestehend).
+
+2. iOS-App
+
+Verpackt mit Capacitor, mit:
+	•	iOS Bundle Identifier: at.kabeg.mycliniq
+	•	Kalenderzugriff (ICS-Feeds)
+	•	Push Notifications
+	•	Deep Links (mycliniq://)
+
+3. Android-App
+
+Capacitor Build:
+	•	Android Package Name: at.kabeg.mycliniq
+	•	Notifications
+	•	Kalender-Integration
+	•	Deep Links
+
+Capacitor-Pflichtregeln
+	•	Nur Browser-APIs verwenden, die auch mobil funktionieren
+	•	Keine Funktionen einbauen, die nur im Desktop-Browser laufen
+	•	Navigation muss in Capacitor funktionieren
+	•	Alles responsive
+
+⸻
+
+🔷 ÜBERSICHT ÜBER ALLE MODULE
+	1.	Dashboard
+	2.	Dienstplan (Monatsplan)
+	3.	Wochenplan
+	4.	Tageseinsatzplan
+	5.	Dienstwünsche
+	6.	Urlaubsplanung
+	7.	Verwaltung: Mitarbeiter & Kompetenzen
+	8.	Verwaltung: Ressourcen & Räume
+	9.	Schnellerfassung
+	10.	Projekte & Aufgaben
+	11.	SOP-System
+	12.	Benutzer-Einstellungen
+	13.	Export (Excel)
+	14.	Kalender-Abonnements (ICS)
+	15.	Notifications
+	16.	Audit-Log
+	17.	zentraler KI-Regelsatz
+	18.	plattformübergreifender Build
+	19.	MyCliniQ Naming
+	20.	Projekt-Integrität
+
+Alle Module müssen kompatibel, konsistent und miteinander synchronisiert bleiben.
+
+⸻
+
+🔷 1. ZENTRALES REGEL- & KI-MODUL
+
+Alle Planungen (Monat, Woche, Tag) müssen über dieselbe Engine validiert werden.
+
+HARTE REGELN
+	•	Keine zwei Dienste an aufeinanderfolgenden Tagen
+	•	Dienst = 25h, danach 11h Ruhezeit
+	•	Wochenende:
+	•	Sa = 1 Wochenende
+	•	So = 1 Wochenende
+	•	Fr+So = 1 Wochenende
+	•	So alleine = 1 Woche
+	•	Fortbildung vor Urlaub
+	•	Räume mit Sperre → Personal automatisch freigeben
+	•	Mitarbeiter ohne Dienstberechtigung → nie verplanen
+
+WEICHE REGELN (SCORING)
+	•	Gleichmäßige Dienstverteilung
+	•	Berücksichtigung von Dienstwünschen
+	•	Ausbildungsschwerpunkte
+	•	Fairness-Regeln
+	•	„Von Vorteil“-Regel: KI darf abweichen, wenn Gesamtqualität steigt
+
+⸻
+
+🔷 2. DIENSTPLAN (MONAT)
+
+Funktionen:
+	•	KI-Vorschlag generieren
+	•	komplett manuell editierbar (Pflicht!)
+	•	Drag & Drop
+	•	Konflikte anzeigen
+	•	Warnungen bei Regelverletzungen
+	•	Status: Entwurf → Vorläufig → Freigegeben
+
+Diensttausch:
+	•	Benutzer können tauschen
+	•	Admin prüft
+	•	KI evaluiert Konflikte
+
+Export:
+	•	.xlsx – Excel
+	•	.ics – abonnierbarer Dienstplan
+
+⸻
+
+🔷 3. WOCHENPLAN (Einsatzplanung)
+
+Kann erst erstellt werden, wenn Monats-Dienstplan freigegeben ist.
+
+Funktionen:
+	•	KI generiert Vorschlag
+	•	vollständig manuell korrigierbar
+	•	Drag & Drop
+	•	Zeitausgleich per Drop
+	•	Echtzeitwarnungen
+	•	UND/ODER-Kompetenzregeln müssen erfüllt oder markiert werden
+
+Status:
+Entwurf → Vorläufig → Freigegeben
+
+Export:
+	•	Excel
+
+⸻
+
+🔷 4. TAGESEINSATZPLAN
+
+Automatisch aus Wochenplan, aber manuelle Overrides erlaubt, z. B.:
+	•	Krankmeldung
+	•	Raum gesperrt
+	•	Personalwechsel
+
+Dashboard-Anzeige:
+
+„Heute bist du im Bereich Geburtshilfe mit Sellner (ass) und Huber (ta) eingeteilt.“
+
+Format IMMER:
+Nachname (gyn/geb/ta/etc.)
+
+Export:
+	•	Excel
+	•	ICS optional
+
+⸻
+
+🔷 5. DIENSTWÜNSCHE
+
+Popup-Formular mit:
+	•	bevorzugten Tagen
+	•	zu vermeidenden Tagen
+	•	bevorzugten Dienstarten
+	•	max. Dienste pro Woche
+	•	Notizen
+
+Status:
+Entwurf → Eingereicht
+
+Admin sieht Übersicht: wer hat eingereicht?
+
+⸻
+
+🔷 6. URLAUBSPLANUNG
+
+User:
+	•	Urlaubswünsche eintragen
+	•	Konflikte werden angezeigt
+	•	Antrag einreichen
+
+Admin:
+	•	kann Zeiträume sperren
+	•	genehmigt/ablehnt
+	•	sieht Konflikte (kompetenzbezogen)
+
+Export:
+	•	Excel
+
+⸻
+
+🔷 7. VERWALTUNG – MITARBEITER
+
+Pflichtfelder:
+	•	Vorname
+	•	Nachname
+	•	Titel
+	•	dienstliche E-Mail
+	•	dienstliches Telefon
+	•	Geburtstag
+
+Optional (mit Sichtbarkeit):
+	•	private Telefonnummer
+	•	private E-Mail
+
+Weitere Einstellungen:
+	•	Dienstberechtigung (ja/nein)
+	•	Kompetenzen (Multi-Select)
+	•	Einsatzbereiche
+	•	Hauptbereich
+	•	Befristungen (Turnus, Karenz)
+	•	Rollen: Admin, Primar, Sekretariat, User
+
+⸻
+
+🔷 8. VERWALTUNG – KOMPETENZEN
+
+Kompetenzliste:
+	•	editierbar
+	•	eindeutige Kürzel notwendig
+	•	Kompetenz hat:
+	•	Beschreibung
+	•	optionale Voraussetzungen
+	•	verknüpfte Bereiche
+
+⸻
+
+🔷 9. VERWALTUNG – RESSOURCEN & RÄUME
+
+Ein Raum enthält:
+	•	Name
+	•	Wochennutzung (Mo–So)
+	•	Kompetenzen (UND/ODER)
+	•	notwendige Rollen
+	•	regelmäßige Events
+	•	Sperrzeiten
+	•	Kurztext für Dashboard
+
+Beispiele:
+	•	Montag: Chefsprechstunde → nur Primarius
+	•	Dienstag: Vulva-Sprechstunde → Kompetenz „Vulva“
+	•	Pränatal: OGUM II oder Assistent mit erweitertem US-Badge
+
+⸻
+
+🔷 10. SCHNELLERFASSUNG
+
+Krankmeldung
+	•	Mitarbeiter
+	•	Zeitraum
+	•	Grund
+	•	setzt Status „abwesend“
+
+Raum sperren
+	•	Ressource
+	•	Zeitraum
+	•	Grund
+
+Benutzer anlegen
+	•	Name
+	•	Titel
+	•	Funktion
+	•	Zeitraum von–bis
+	•	automatisch Login erzeugen:
+vorname.nachname@kabeg.at
+Passwort: wilkommen123
+
+⸻
+
+🔷 11. PROJEKTE
+
+Projekt enthält:
+	•	Kategorie (SOP, Studie, Admin …)
+	•	Verantwortlicher
+	•	Mitwirkende
+	•	Aufgaben (Kanban)
+	•	Dateien
+	•	Kommentare
+	•	Fälligkeitsdatum
+
+Workflow SOP-Projekt:
+Erstellt → Bearbeitung → OA-Review → Primar-Freigabe → SOP veröffentlicht
+
+Export:
+	•	Excel
+
+⸻
+
+🔷 12. SOP-SYSTEM
+
+SOP enthält:
+	•	Titel
+	•	Kategorie
+	•	Schlagworte
+	•	Version
+	•	Autoren
+	•	Freigabe Primar
+	•	Markdown-Text
+	•	Dateien
+
+Automatische Verlinkungen:
+	•	interne SOPs (Keyword-Matching)
+	•	AWMF-Leitlinie (Auto-Search)
+	•	relevante Studien (PubMed API)
+
+Export:
+	•	Excel (Metadaten)
+
+⸻
+
+🔷 13. BENUTZER-EINSTELLUNGEN
+
+User kann:
+	•	Profil ändern
+	•	Badge-Sichtbarkeit ändern
+	•	Geburtstag (Dashboard)
+	•	Kontakt
+	•	Passwort
+
+Admin zusätzlich:
+	•	Rollen
+	•	Kompetenzen
+	•	Datenschutzeinstellungen
+
+⸻
+
+🔷 14. BADGE-MANAGEMENT
+
+Badges müssen eindeutig sein.
+Erlaubt:
+	•	Kürzel ändern
+	•	neue Kompetenzen hinzufügen
+
+Format überall:
+Nachname (badge)
+
+⸻
+
+🔷 15. EXPORT-FUNKTIONEN (PFLICHT)
+
+Alle folgenden Listen müssen nach Excel exportierbar sein:
+	•	Monats-Dienstplan
+	•	Wochenplan
+	•	Tageseinsatz
+	•	Urlaubsübersicht
+	•	Mitarbeiterliste
+	•	Räume & Ressourcen
+	•	Kompetenzenliste
+	•	SOP-Liste
+	•	Projekte
+
+Format .xlsx.
+
+⸻
+
+🔷 16. KALENDER-ABONNEMENTS (ICS)
+
+Jeder Benutzer erhält ICS-Links für:
+	•	Dienstplan
+	•	Wochenplan
+	•	kombiniert
+
+Einträge müssen enthalten:
+	•	Titel
+	•	Zeitraum
+	•	Ort
+	•	Kollegen
+	•	Notizen
+
+Kompatibel mit:
+	•	iOS Calendar
+	•	Google Calendar
+	•	Outlook
+	•	Android
+
+⸻
+
+🔷 17. NOTIFICATIONS
+
+Typen:
+	•	Planänderung
+	•	Urlaubsstatus
+	•	Dienstanfragen
+	•	Projektupdates
+	•	neue SOP
+	•	Geburtstage
+
+Anzeige im Glockensymbol.
+
+⸻
+
+🔷 18. AUDIT-LOG
+
+Jede Änderung wird protokolliert:
+	•	Dienstplan
+	•	Wochenplan
+	•	Tagesplan
+	•	Räume
+	•	Mitarbeiter
+	•	SOPs
+	•	Projekte
+
+⸻
+
+🔷 19. PLATTFORMÜBERGREIFENDE BUILD-REGELN (CAPACITOR)
+	•	code muss mobil funktionieren
+	•	Touch-optimiertes Verhalten
+	•	keine Hover-only Interaktionen
+	•	Navigation kompatibel
+	•	Zeitangaben mit Zeitzonen korrekt
+
+⸻
+
+🔷 20. PROJEKT-INTEGRITÄT
+
+Ghostwriter/Replit muss immer sicherstellen, dass:
+	•	keine bestehenden Komponenten beschädigt werden
+	•	keine Layouts überschrieben werden
+	•	nur Ergänzungen vorgenommen werden
+	•	Regeln und Module durchgängig berücksichtigt werden

@@ -55,7 +55,7 @@ export default function Login() {
             <Stethoscope className="w-8 h-8 text-white" />
           </div>
           <div>
-            <CardTitle className="text-2xl font-bold">cliniq</CardTitle>
+            <CardTitle className="text-2xl font-bold">MyCliniQ</CardTitle>
             <CardDescription className="text-base">
               Klinikum Klagenfurt - Abteilung für Frauenheilkunde
             </CardDescription>

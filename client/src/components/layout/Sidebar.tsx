@@ -56,7 +56,7 @@ export function Sidebar() {
           <Stethoscope className="w-6 h-6" />
         </div>
         <div>
-          <h1 className="font-bold text-lg tracking-tight text-white">cliniq</h1>
+          <h1 className="font-bold text-lg tracking-tight text-white">MyCliniQ</h1>
           <p className="text-xs text-white/70 font-medium">Klinikum Klagenfurt</p>
         </div>
       </a>
