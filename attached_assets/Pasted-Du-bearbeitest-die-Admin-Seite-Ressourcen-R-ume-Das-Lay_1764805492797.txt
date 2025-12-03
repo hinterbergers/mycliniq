@@ -1,0 +1,43 @@
+Du bearbeitest die Admin-Seite „Ressourcen & Räume“. Das Layout mit den Karten für Kreißsaal, OP, Ambulanzen etc. soll erhalten bleiben, aber inhaltlich erweitert werden.
+
+Ziel: Räume als planungsrelevante Ressourcen abbilden, mit Wochenstruktur und Kompetenzanforderungen. Bitte nur UI, Dummy-Daten sind erlaubt.
+
+1. Oben auf der Seite:
+   - Titel: „Ressourcen & Räume“
+   - Untertitel: „Bereiche des Wochenplans, Verfügbarkeiten und Kompetenzanforderungen verwalten.“
+   - Hinweis-Alert (wie im Screenshot): 
+     Text: „Gesperrte Räume werden im Wochen- und Tageseinsatzplan automatisch als ‚nicht verfügbar‘ markiert. Bitte bei längeren Sperren einen Grund angeben.“
+
+2. Raumübersicht:
+   - Gruppen wie bisher (z. B. Geburtshilfe, OP, Ambulanz, Spezialambulanz).
+   - Jede Raum-Karte:
+     - Name (z. B. „Kreißsaal 1“)
+     - Status-Badge: „Aktiv“ / „Inaktiv“
+     - Untertitel: „Verfügbar“ oder „Gesperrt: <Grund>“ (Dummy)
+     - Toggle für aktiv/inaktiv (nur UI, onChange aktuell console.log).
+
+3. Modal „Raum bearbeiten“ (beim Klick auf Raum oder Icon):
+   - Tabs: „Allgemein“ | „Wochenplan“ | „Kompetenzen“.
+   - Tab „Allgemein“:
+     * Felder: Name, Kategorie (z. B. Geburtshilfe/OP/Ambulanz), Beschreibung.
+     * Checkbox „Im Wochenplan verwenden“.
+   - Tab „Wochenplan“:
+     * Wochen-Tabelle oder Grid mit 7 Spalten (Mo–So).
+     * Pro Tag:
+       - Textfeld „Nutzung/Beschreibung“ (z. B. „Chefsprechstunde“, „Vulvasprechstunde“).
+       - Optionaler Zeitbereich (von/bis).
+       - Checkbox „an diesem Tag gesperrt“ + Textfeld „Grund“.
+     * Für das UX reicht ein einfaches Grid; Daten sind noch statisch bzw. lokal im State.
+   - Tab „Kompetenzen“:
+     * Mehrfachauswahl „Benötigte Kompetenzen (AND)“ – d. h. alle müssen erfüllt sein.
+     * Mehrfachauswahl „Alternativ-Kompetenzen (ODER)“ – z. B. „FA_Gyn oder Ass_Gyn“.
+     * Hinweistext: 
+       „Die Kombination aus AND/OR wird später von der KI bei der Wochen- und Tageseinsatzplanung berücksichtigt.“
+
+4. Kurze Info unter der Liste:
+   - „Regelmäßige Events (z. B. Chefvisite, Besprechungen) werden im Wochenplan-Editor konfiguriert und hier nur angezeigt.“ – vorerst nur als Text.
+
+Wichtig:
+- Bestehendes Layout und Styling wiederverwenden.
+- Keine echte Persistenz; reagierende UI mit React-States reicht.
+- Texte in Du-Form sind hier nicht nötig, da es eine Admin-Konsole ist; neutrale Form reicht.
