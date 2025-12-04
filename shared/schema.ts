@@ -619,12 +619,68 @@ export const knowledgeCategoryEnum = pgEnum('knowledge_category', [
   'Sonstiges'
 ]);
 
-// Project Initiatives table
+// SOP-specific enums
+export const sopCategoryEnum = pgEnum('sop_category', [
+  'SOP',
+  'Checkliste',
+  'Formular',
+  'Leitlinie'
+]);
+
+export const sopStatusEnum = pgEnum('sop_status', [
+  'Entwurf',
+  'In Review',
+  'Freigegeben'
+]);
+
+// Project category enum
+export const projectCategoryEnum = pgEnum('project_category', [
+  'SOP',
+  'Studie',
+  'Administrativ',
+  'Qualitätsprojekt'
+]);
+
+// Project member role enum
+export const projectMemberRoleEnum = pgEnum('project_member_role', [
+  'Mitarbeit',
+  'Review',
+  'Leitung'
+]);
+
+// SOPs table - standalone SOPs and clinical documents
+export const sops = pgTable("sops", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  category: sopCategoryEnum("category").notNull().default('SOP'),
+  version: text("version").notNull().default('1.0'),
+  status: sopStatusEnum("status").notNull().default('Entwurf'),
+  contentMarkdown: text("content_markdown"),
+  keywords: jsonb("keywords").$type<string[]>(),
+  awmfLink: text("awmf_link"),
+  createdById: integer("created_by_id").references(() => employees.id).notNull(),
+  approvedById: integer("approved_by_id").references(() => employees.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+});
+
+export const insertSopSchema = createInsertSchema(sops).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export type InsertSop = z.infer<typeof insertSopSchema>;
+export type Sop = typeof sops.$inferSelect;
+
+// Project Initiatives table (extended with category and owner)
 export const projectInitiatives = pgTable("project_initiatives", {
   id: serial("id").primaryKey(),
   title: text("title").notNull(),
   description: text("description"),
+  category: projectCategoryEnum("category").notNull().default('SOP'),
   status: projectStatusEnum("status").notNull().default('Entwurf'),
+  ownerId: integer("owner_id").references(() => employees.id),
   createdById: integer("created_by_id").references(() => employees.id).notNull(),
   dueDate: date("due_date"),
   priority: integer("priority").notNull().default(0),
@@ -640,6 +696,23 @@ export const insertProjectInitiativeSchema = createInsertSchema(projectInitiativ
 
 export type InsertProjectInitiative = z.infer<typeof insertProjectInitiativeSchema>;
 export type ProjectInitiative = typeof projectInitiatives.$inferSelect;
+
+// Project Members junction table
+export const projectMembers = pgTable("project_members", {
+  projectId: integer("project_id").references(() => projectInitiatives.id, { onDelete: 'cascade' }).notNull(),
+  employeeId: integer("employee_id").references(() => employees.id, { onDelete: 'cascade' }).notNull(),
+  role: projectMemberRoleEnum("role").notNull().default('Mitarbeit'),
+  joinedAt: timestamp("joined_at").defaultNow().notNull()
+}, (table) => [
+  primaryKey({ columns: [table.projectId, table.employeeId] })
+]);
+
+export const insertProjectMemberSchema = createInsertSchema(projectMembers).omit({
+  joinedAt: true
+});
+
+export type InsertProjectMember = z.infer<typeof insertProjectMemberSchema>;
+export type ProjectMember = typeof projectMembers.$inferSelect;
 
 // Project Tasks table (with hierarchical support via parentTaskId)
 export const projectTasks = pgTable("project_tasks", {
