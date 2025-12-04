@@ -19,11 +19,12 @@ export function Sidebar() {
   const { employee, logout, isAdmin } = useAuth();
 
   const navItems = [
+    { href: "/", label: "Dashboard", icon: LayoutDashboard },
     { href: "/dienstplaene", label: "Dienstpläne", icon: CalendarDays },
     { href: "/dienstwuensche", label: "Dienstwünsche", icon: Heart },
     { href: "/wissen", label: "SOPs", icon: FileText },
     { href: "/projekte", label: "Projekte", icon: Briefcase },
-    { href: "/admin", label: "Verwaltung", icon: LayoutDashboard, adminOnly: true },
+    { href: "/admin", label: "Verwaltung", icon: Users, adminOnly: true },
     { href: "/einstellungen", label: "Einstellungen", icon: Settings },
   ];
 
