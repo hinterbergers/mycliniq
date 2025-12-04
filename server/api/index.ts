@@ -7,6 +7,7 @@ import { registerCompetencyRoutes } from "./competencies";
 import { registerRoomRoutes } from "./rooms";
 import { registerDutyPlanRoutes } from "./duty-plans";
 import { registerWeeklyPlanRoutes } from "./weekly-plans";
+import { registerDailyOverrideRoutes } from "./daily-overrides";
 import { registerAbsenceRoutes } from "./absences";
 import { registerProjectRoutes } from "./projects";
 import { registerSopRoutes } from "./sops";
@@ -42,6 +43,11 @@ export function registerModularApiRoutes(app: Express): void {
   const weeklyPlansRouter = Router();
   registerWeeklyPlanRoutes(weeklyPlansRouter);
   app.use("/api/weekly-plans", weeklyPlansRouter);
+
+  // Daily Overrides API (Tagesplan-Korrekturen)
+  const dailyOverridesRouter = Router();
+  registerDailyOverrideRoutes(dailyOverridesRouter);
+  app.use("/api/daily-overrides", dailyOverridesRouter);
 
   // Absences API (Abwesenheiten)
   const absencesRouter = Router();
@@ -102,10 +108,18 @@ export function registerModularApiRoutes(app: Express): void {
  *   GET    /:id              - Get weekly plan with assignments
  *   GET    /week/:year/:week - Get plan for specific week
  *   POST   /                 - Create weekly plan
- *   PUT    /:id              - Update weekly plan
+ *   PUT    /:id/status       - Update weekly plan status
  *   DELETE /:id              - Delete weekly plan
- *   POST   /:id/generate-from-duty - Generate from duty plan
- *   PUT    /:id/assignments  - Bulk update assignments
+ *   POST   /:id/assign       - Add assignment
+ *   GET    /:id/assignments  - Get assignments
+ *   DELETE /assignments/:id  - Remove assignment
+ * 
+ * /api/daily-overrides
+ *   GET    /                 - List overrides (filter by date/from/to/roomId)
+ *   GET    /:id              - Get override by ID
+ *   GET    /date/:date       - Get overrides for specific date
+ *   POST   /                 - Create override
+ *   DELETE /:id              - Delete override
  * 
  * /api/absences
  *   GET    /                 - List absences (filter by date/employee)
