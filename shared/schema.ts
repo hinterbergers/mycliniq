@@ -1,17 +1,34 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, serial, integer, date, timestamp, boolean, pgEnum, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, serial, integer, date, timestamp, boolean, pgEnum, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+
+// User App Role Enum (for authentication/authorization)
+export const userAppRoleEnum = pgEnum('user_app_role', [
+  'User',
+  'Admin',
+  'Primararzt',
+  '1. Oberarzt',
+  'Sekretariat'
+]);
 
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   username: text("username").notNull().unique(),
+  email: text("email").unique(),
   password: text("password").notNull(),
-});
+  passwordHash: text("password_hash"),
+  appRole: userAppRoleEnum("app_role").notNull().default('User'),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (table) => [
+  uniqueIndex("users_email_idx").on(table.email)
+]);
 
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -74,12 +91,16 @@ export const swapRequestStatusEnum = pgEnum('swap_request_status', [
 // Employees table
 export const employees = pgTable("employees", {
   id: serial("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id),
   name: text("name").notNull(),
+  title: text("title"),
   firstName: text("first_name"),
   lastName: text("last_name"),
+  birthday: date("birthday"),
   role: roleEnum("role").notNull(),
   appRole: appRoleEnum("app_role").notNull().default('User'),
   primaryDeploymentArea: deploymentAreaEnum("primary_deployment_area"),
+  mainAssignmentAreaId: integer("main_assignment_area_id"),
   shiftPreferences: jsonb("shift_preferences"),
   competencies: text("competencies").array().notNull().default(sql`ARRAY[]::text[]`),
   email: text("email"),
@@ -88,13 +109,21 @@ export const employees = pgTable("employees", {
   phonePrivate: text("phone_private"),
   showPrivateContact: boolean("show_private_contact").notNull().default(false),
   diplomas: text("diplomas").array().notNull().default(sql`ARRAY[]::text[]`),
+  takesShifts: boolean("takes_shifts").notNull().default(true),
+  maxShiftsPerWeek: integer("max_shifts_per_week"),
+  employmentFrom: date("employment_from"),
+  employmentUntil: date("employment_until"),
   isAdmin: boolean("is_admin").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
   validUntil: date("valid_until"),
   passwordHash: text("password_hash"),
   lastLoginAt: timestamp("last_login_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull()
-});
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (table) => [
+  index("employees_user_id_idx").on(table.userId),
+  index("employees_is_active_idx").on(table.isActive)
+]);
 
 // User sessions for "stay logged in" functionality
 export const sessions = pgTable("sessions", {
@@ -117,11 +146,33 @@ export type Session = typeof sessions.$inferSelect;
 
 export const insertEmployeeSchema = createInsertSchema(employees).omit({
   id: true,
-  createdAt: true
+  createdAt: true,
+  updatedAt: true
 });
 
 export type InsertEmployee = z.infer<typeof insertEmployeeSchema>;
 export type Employee = typeof employees.$inferSelect;
+
+// Employee Preferences table - for recurring scheduling preferences
+export const employeePreferences = pgTable("employee_preferences", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").references(() => employees.id).notNull().unique(),
+  preferredOffDays: jsonb("preferred_off_days").$type<number[]>().default(sql`'[]'::jsonb`),
+  notesForPlanning: text("notes_for_planning"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (table) => [
+  index("employee_preferences_employee_id_idx").on(table.employeeId)
+]);
+
+export const insertEmployeePreferencesSchema = createInsertSchema(employeePreferences).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export type InsertEmployeePreferences = z.infer<typeof insertEmployeePreferencesSchema>;
+export type EmployeePreferences = typeof employeePreferences.$inferSelect;
 
 // Roster shifts table
 export const rosterShifts = pgTable("roster_shifts", {
