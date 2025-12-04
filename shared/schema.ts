@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, serial, integer, date, timestamp, boolean, pgEnum, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, serial, integer, date, timestamp, boolean, pgEnum, jsonb, index, uniqueIndex, time, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -88,6 +88,22 @@ export const swapRequestStatusEnum = pgEnum('swap_request_status', [
   'Abgelehnt'
 ]);
 
+// Room category enum
+export const roomCategoryEnum = pgEnum('room_category', [
+  'Geburtshilfe',
+  'OP',
+  'Ambulanz',
+  'Station',
+  'Verwaltung',
+  'Sonstiges'
+]);
+
+// Competency relation type enum (for room requirements)
+export const competencyRelationTypeEnum = pgEnum('competency_relation_type', [
+  'AND',
+  'OR'
+]);
+
 // Employees table
 export const employees = pgTable("employees", {
   id: serial("id").primaryKey(),
@@ -174,6 +190,44 @@ export const insertEmployeePreferencesSchema = createInsertSchema(employeePrefer
 export type InsertEmployeePreferences = z.infer<typeof insertEmployeePreferencesSchema>;
 export type EmployeePreferences = typeof employeePreferences.$inferSelect;
 
+// Competencies table - medical qualifications and certifications
+export const competencies = pgTable("competencies", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull().unique(),
+  name: text("name").notNull(),
+  description: text("description"),
+  prerequisites: text("prerequisites"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (table) => [
+  uniqueIndex("competencies_code_idx").on(table.code)
+]);
+
+export const insertCompetencySchema = createInsertSchema(competencies).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export type InsertCompetency = z.infer<typeof insertCompetencySchema>;
+export type Competency = typeof competencies.$inferSelect;
+
+// Employee Competencies junction table (many-to-many)
+export const employeeCompetencies = pgTable("employee_competencies", {
+  employeeId: integer("employee_id").references(() => employees.id).notNull(),
+  competencyId: integer("competency_id").references(() => competencies.id).notNull()
+}, (table) => [
+  primaryKey({ columns: [table.employeeId, table.competencyId] }),
+  index("employee_competencies_employee_id_idx").on(table.employeeId),
+  index("employee_competencies_competency_id_idx").on(table.competencyId)
+]);
+
+export const insertEmployeeCompetencySchema = createInsertSchema(employeeCompetencies);
+
+export type InsertEmployeeCompetency = z.infer<typeof insertEmployeeCompetencySchema>;
+export type EmployeeCompetency = typeof employeeCompetencies.$inferSelect;
+
 // Roster shifts table
 export const rosterShifts = pgTable("roster_shifts", {
   id: serial("id").primaryKey(),
@@ -211,23 +265,85 @@ export const insertAbsenceSchema = createInsertSchema(absences).omit({
 export type InsertAbsence = z.infer<typeof insertAbsenceSchema>;
 export type Absence = typeof absences.$inferSelect;
 
-// Resources/Rooms table
-export const resources = pgTable("resources", {
+// Rooms table (extended resources)
+export const rooms = pgTable("rooms", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  type: text("type").notNull(),
+  category: roomCategoryEnum("category").notNull().default('Sonstiges'),
+  description: text("description"),
+  useInWeeklyPlan: boolean("use_in_weekly_plan").notNull().default(true),
   isAvailable: boolean("is_available").notNull().default(true),
   blockReason: text("block_reason"),
-  createdAt: timestamp("created_at").defaultNow().notNull()
-});
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (table) => [
+  index("rooms_category_idx").on(table.category),
+  index("rooms_is_active_idx").on(table.isActive)
+]);
 
-export const insertResourceSchema = createInsertSchema(resources).omit({
+export const insertRoomSchema = createInsertSchema(rooms).omit({
   id: true,
-  createdAt: true
+  createdAt: true,
+  updatedAt: true
 });
 
-export type InsertResource = z.infer<typeof insertResourceSchema>;
-export type Resource = typeof resources.$inferSelect;
+export type InsertRoom = z.infer<typeof insertRoomSchema>;
+export type Room = typeof rooms.$inferSelect;
+
+// Legacy alias for backward compatibility
+export const resources = rooms;
+export const insertResourceSchema = insertRoomSchema;
+export type InsertResource = InsertRoom;
+export type Resource = Room;
+
+// Room weekday settings - recurring schedules per room
+export const roomWeekdaySettings = pgTable("room_weekday_settings", {
+  id: serial("id").primaryKey(),
+  roomId: integer("room_id").references(() => rooms.id).notNull(),
+  weekday: integer("weekday").notNull(),
+  usageLabel: text("usage_label"),
+  timeFrom: time("time_from"),
+  timeTo: time("time_to"),
+  isClosed: boolean("is_closed").notNull().default(false),
+  closedReason: text("closed_reason"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (table) => [
+  index("room_weekday_settings_room_id_idx").on(table.roomId),
+  index("room_weekday_settings_weekday_idx").on(table.weekday)
+]);
+
+export const insertRoomWeekdaySettingSchema = createInsertSchema(roomWeekdaySettings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export type InsertRoomWeekdaySetting = z.infer<typeof insertRoomWeekdaySettingSchema>;
+export type RoomWeekdaySetting = typeof roomWeekdaySettings.$inferSelect;
+
+// Room required competencies - which competencies are needed for a room
+export const roomRequiredCompetencies = pgTable("room_required_competencies", {
+  id: serial("id").primaryKey(),
+  roomId: integer("room_id").references(() => rooms.id).notNull(),
+  competencyId: integer("competency_id").references(() => competencies.id).notNull(),
+  relationType: competencyRelationTypeEnum("relation_type").notNull().default('AND'),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (table) => [
+  index("room_required_competencies_room_id_idx").on(table.roomId),
+  index("room_required_competencies_competency_id_idx").on(table.competencyId)
+]);
+
+export const insertRoomRequiredCompetencySchema = createInsertSchema(roomRequiredCompetencies).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export type InsertRoomRequiredCompetency = z.infer<typeof insertRoomRequiredCompetencySchema>;
+export type RoomRequiredCompetency = typeof roomRequiredCompetencies.$inferSelect;
 
 // Weekly assignments for detailed week planning
 export const weeklyAssignments = pgTable("weekly_assignments", {
