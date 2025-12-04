@@ -104,6 +104,38 @@ export const competencyRelationTypeEnum = pgEnum('competency_relation_type', [
   'OR'
 ]);
 
+// Duty plan status enum
+export const dutyPlanStatusEnum = pgEnum('duty_plan_status', [
+  'Entwurf',
+  'Vorläufig',
+  'Freigegeben'
+]);
+
+// Weekly plan status enum
+export const weeklyPlanStatusEnum = pgEnum('weekly_plan_status', [
+  'Entwurf',
+  'Vorläufig',
+  'Freigegeben'
+]);
+
+// Duty slot service type enum
+export const dutySlotServiceTypeEnum = pgEnum('duty_slot_service_type', [
+  'gyn',
+  'kreiszimmer',
+  'turnus',
+  'oa_dienst',
+  'fa_dienst',
+  'tagdienst',
+  'nachtdienst'
+]);
+
+// Weekly assignment type enum
+export const weeklyAssignmentTypeEnum = pgEnum('weekly_assignment_type', [
+  'Plan',
+  'Zeitausgleich',
+  'Fortbildung'
+]);
+
 // Employees table
 export const employees = pgTable("employees", {
   id: serial("id").primaryKey(),
@@ -345,7 +377,177 @@ export const insertRoomRequiredCompetencySchema = createInsertSchema(roomRequire
 export type InsertRoomRequiredCompetency = z.infer<typeof insertRoomRequiredCompetencySchema>;
 export type RoomRequiredCompetency = typeof roomRequiredCompetencies.$inferSelect;
 
-// Weekly assignments for detailed week planning
+// ============================================================================
+// DUTY PLANNING TABLES (Dienstplan)
+// ============================================================================
+
+// Monthly duty plans container
+export const dutyPlans = pgTable("duty_plans", {
+  id: serial("id").primaryKey(),
+  year: integer("year").notNull(),
+  month: integer("month").notNull(),
+  status: dutyPlanStatusEnum("status").notNull().default('Entwurf'),
+  generatedById: integer("generated_by_id").references(() => employees.id),
+  releasedById: integer("released_by_id").references(() => employees.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (table) => [
+  uniqueIndex("duty_plans_year_month_idx").on(table.year, table.month),
+  index("duty_plans_status_idx").on(table.status)
+]);
+
+export const insertDutyPlanSchema = createInsertSchema(dutyPlans).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export type InsertDutyPlan = z.infer<typeof insertDutyPlanSchema>;
+export type DutyPlan = typeof dutyPlans.$inferSelect;
+
+// Days within a duty plan
+export const dutyDays = pgTable("duty_days", {
+  id: serial("id").primaryKey(),
+  dutyPlanId: integer("duty_plan_id").references(() => dutyPlans.id).notNull(),
+  date: date("date").notNull()
+}, (table) => [
+  uniqueIndex("duty_days_plan_date_idx").on(table.dutyPlanId, table.date),
+  index("duty_days_date_idx").on(table.date)
+]);
+
+export const insertDutyDaySchema = createInsertSchema(dutyDays).omit({
+  id: true
+});
+
+export type InsertDutyDay = z.infer<typeof insertDutyDaySchema>;
+export type DutyDay = typeof dutyDays.$inferSelect;
+
+// Time slots within duty days
+export const dutySlots = pgTable("duty_slots", {
+  id: serial("id").primaryKey(),
+  dutyDayId: integer("duty_day_id").references(() => dutyDays.id).notNull(),
+  serviceType: dutySlotServiceTypeEnum("service_type").notNull(),
+  label: text("label").notNull(),
+  startTime: time("start_time").notNull(),
+  endTime: time("end_time").notNull()
+}, (table) => [
+  index("duty_slots_duty_day_id_idx").on(table.dutyDayId),
+  index("duty_slots_service_type_idx").on(table.serviceType)
+]);
+
+export const insertDutySlotSchema = createInsertSchema(dutySlots).omit({
+  id: true
+});
+
+export type InsertDutySlot = z.infer<typeof insertDutySlotSchema>;
+export type DutySlot = typeof dutySlots.$inferSelect;
+
+// Employee assignments to duty slots
+export const dutyAssignments = pgTable("duty_assignments", {
+  id: serial("id").primaryKey(),
+  dutySlotId: integer("duty_slot_id").references(() => dutySlots.id).notNull(),
+  employeeId: integer("employee_id").references(() => employees.id).notNull(),
+  roleBadge: text("role_badge"),
+  isPrimary: boolean("is_primary").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+}, (table) => [
+  index("duty_assignments_slot_id_idx").on(table.dutySlotId),
+  index("duty_assignments_employee_id_idx").on(table.employeeId)
+]);
+
+export const insertDutyAssignmentSchema = createInsertSchema(dutyAssignments).omit({
+  id: true,
+  createdAt: true
+});
+
+export type InsertDutyAssignment = z.infer<typeof insertDutyAssignmentSchema>;
+export type DutyAssignment = typeof dutyAssignments.$inferSelect;
+
+// ============================================================================
+// WEEKLY PLANNING TABLES (Wochenplan)
+// ============================================================================
+
+// Weekly plans container
+export const weeklyPlans = pgTable("weekly_plans", {
+  id: serial("id").primaryKey(),
+  year: integer("year").notNull(),
+  weekNumber: integer("week_number").notNull(),
+  status: weeklyPlanStatusEnum("status").notNull().default('Entwurf'),
+  generatedFromDutyPlanId: integer("generated_from_duty_plan_id").references(() => dutyPlans.id),
+  createdById: integer("created_by_id").references(() => employees.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (table) => [
+  uniqueIndex("weekly_plans_year_week_idx").on(table.year, table.weekNumber),
+  index("weekly_plans_status_idx").on(table.status)
+]);
+
+export const insertWeeklyPlanSchema = createInsertSchema(weeklyPlans).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export type InsertWeeklyPlan = z.infer<typeof insertWeeklyPlanSchema>;
+export type WeeklyPlan = typeof weeklyPlans.$inferSelect;
+
+// Weekly plan assignments (new structured version)
+export const weeklyPlanAssignments = pgTable("weekly_plan_assignments", {
+  id: serial("id").primaryKey(),
+  weeklyPlanId: integer("weekly_plan_id").references(() => weeklyPlans.id).notNull(),
+  roomId: integer("room_id").references(() => rooms.id).notNull(),
+  weekday: integer("weekday").notNull(),
+  employeeId: integer("employee_id").references(() => employees.id).notNull(),
+  roleLabel: text("role_label"),
+  assignmentType: weeklyAssignmentTypeEnum("assignment_type").notNull().default('Plan'),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (table) => [
+  index("weekly_plan_assignments_plan_id_idx").on(table.weeklyPlanId),
+  index("weekly_plan_assignments_room_id_idx").on(table.roomId),
+  index("weekly_plan_assignments_employee_id_idx").on(table.employeeId),
+  index("weekly_plan_assignments_weekday_idx").on(table.weekday)
+]);
+
+export const insertWeeklyPlanAssignmentSchema = createInsertSchema(weeklyPlanAssignments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export type InsertWeeklyPlanAssignment = z.infer<typeof insertWeeklyPlanAssignmentSchema>;
+export type WeeklyPlanAssignment = typeof weeklyPlanAssignments.$inferSelect;
+
+// ============================================================================
+// DAILY OVERRIDES (Tages-Overrides)
+// ============================================================================
+
+// Daily overrides for ad-hoc changes
+export const dailyOverrides = pgTable("daily_overrides", {
+  id: serial("id").primaryKey(),
+  date: date("date").notNull(),
+  roomId: integer("room_id").references(() => rooms.id).notNull(),
+  originalEmployeeId: integer("original_employee_id").references(() => employees.id),
+  newEmployeeId: integer("new_employee_id").references(() => employees.id),
+  reason: text("reason"),
+  createdById: integer("created_by_id").references(() => employees.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+}, (table) => [
+  index("daily_overrides_date_idx").on(table.date),
+  index("daily_overrides_room_id_idx").on(table.roomId),
+  index("daily_overrides_original_employee_idx").on(table.originalEmployeeId),
+  index("daily_overrides_new_employee_idx").on(table.newEmployeeId)
+]);
+
+export const insertDailyOverrideSchema = createInsertSchema(dailyOverrides).omit({
+  id: true,
+  createdAt: true
+});
+
+export type InsertDailyOverride = z.infer<typeof insertDailyOverrideSchema>;
+export type DailyOverride = typeof dailyOverrides.$inferSelect;
+
+// Legacy weekly assignments for detailed week planning (kept for backward compatibility)
 export const weeklyAssignments = pgTable("weekly_assignments", {
   id: serial("id").primaryKey(),
   weekYear: integer("week_year").notNull(),
