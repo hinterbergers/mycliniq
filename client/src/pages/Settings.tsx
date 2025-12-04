@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
   User, 
@@ -17,15 +17,14 @@ import {
   FileText, 
   Shield, 
   Upload, 
-  Eye, 
-  EyeOff,
   Save,
-  X,
-  Check,
   AlertCircle,
-  Users,
   GraduationCap,
-  Briefcase
+  Briefcase,
+  Calendar,
+  Tag,
+  Pencil,
+  Info
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { employeeApi } from "@/lib/api";
@@ -51,16 +50,19 @@ export default function Settings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
-  const [showPrivateInfo, setShowPrivateInfo] = useState(false);
+  const [isBadgeDialogOpen, setIsBadgeDialogOpen] = useState(false);
   
   const [formData, setFormData] = useState({
+    title: '',
     firstName: '',
     lastName: '',
+    birthday: '',
     email: '',
     emailPrivate: '',
     phoneWork: '',
     phonePrivate: '',
-    showPrivateContact: false
+    showPrivateContact: false,
+    badge: ''
   });
   
   const [passwordData, setPasswordData] = useState({
@@ -68,6 +70,8 @@ export default function Settings() {
     newPassword: '',
     confirmPassword: ''
   });
+
+  const [newBadge, setNewBadge] = useState('');
 
   const { toast } = useToast();
 
@@ -83,15 +87,22 @@ export default function Settings() {
       const emp = employees.find(e => e.id === viewingUserId);
       if (emp) {
         setEmployee(emp);
+        const nameParts = emp.name.split(' ');
+        const hasTitle = nameParts[0]?.includes('Dr.') || nameParts[0]?.includes('PD') || nameParts[0]?.includes('Prof.');
+        
         setFormData({
+          title: hasTitle ? nameParts.slice(0, nameParts.length > 2 ? 2 : 1).join(' ') : '',
           firstName: emp.firstName || '',
-          lastName: emp.lastName || '',
+          lastName: emp.lastName || (hasTitle ? nameParts.slice(-1)[0] : nameParts.slice(-1)[0]) || '',
+          birthday: '',
           email: emp.email || '',
           emailPrivate: emp.emailPrivate || '',
           phoneWork: emp.phoneWork || '',
           phonePrivate: emp.phonePrivate || '',
-          showPrivateContact: emp.showPrivateContact || false
+          showPrivateContact: emp.showPrivateContact || false,
+          badge: emp.lastName?.substring(0, 2).toUpperCase() || emp.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || ''
         });
+        setNewBadge(emp.lastName?.substring(0, 2).toUpperCase() || '');
       }
     } catch (error) {
       toast({
@@ -109,7 +120,17 @@ export default function Settings() {
     
     setSaving(true);
     try {
-      await employeeApi.update(employee.id, formData);
+      // TODO: Backend schema needs title, birthday, badge fields before full persistence
+      // Currently saving only fields supported by the existing API
+      await employeeApi.update(employee.id, {
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        email: formData.email,
+        emailPrivate: formData.emailPrivate,
+        phoneWork: formData.phoneWork,
+        phonePrivate: formData.phonePrivate,
+        showPrivateContact: formData.showPrivateContact
+      });
       toast({
         title: "Gespeichert",
         description: "Ihre Einstellungen wurden aktualisiert"
@@ -142,6 +163,15 @@ export default function Settings() {
     });
     setIsPasswordDialogOpen(false);
     setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  };
+
+  const handleBadgeChange = () => {
+    setFormData(prev => ({ ...prev, badge: newBadge.toUpperCase() }));
+    toast({
+      title: "Kürzel geändert",
+      description: `Ihr neues Kürzel ist "${newBadge.toUpperCase()}"`
+    });
+    setIsBadgeDialogOpen(false);
   };
 
   if (loading) {
@@ -204,12 +234,13 @@ export default function Settings() {
 
         <div className="flex items-center gap-4 mb-6">
           <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center text-primary text-2xl font-bold">
-            {employee.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+            {formData.badge || employee.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
           </div>
           <div>
             <h2 className="text-2xl font-bold">{employee.name}</h2>
             <div className="flex items-center gap-2 mt-1">
               <Badge variant="outline">{employee.role}</Badge>
+              <Badge variant="secondary" className="font-mono">{formData.badge}</Badge>
               {employee.isAdmin && (
                 <Badge className="bg-amber-100 text-amber-700 border-amber-200">Admin</Badge>
               )}
@@ -228,7 +259,7 @@ export default function Settings() {
               <User className="w-4 h-4" /> Profil
             </TabsTrigger>
             <TabsTrigger value="qualifications" className="gap-2">
-              <GraduationCap className="w-4 h-4" /> Qualifikationen
+              <GraduationCap className="w-4 h-4" /> Qualifikationen & Kürzel
             </TabsTrigger>
             {(isViewingOwnProfile || isAdmin) && (
               <TabsTrigger value="security" className="gap-2">
@@ -249,27 +280,65 @@ export default function Settings() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="firstName">Vorname</Label>
+                      <Label htmlFor="title">Titel</Label>
+                      <Input 
+                        id="title"
+                        value={formData.title}
+                        onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+                        disabled={!canEditBasicInfo}
+                        placeholder="z.B. Dr., PD Dr., Prof."
+                        data-testid="input-title"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="firstName">
+                        Vorname <span className="text-destructive">*</span>
+                      </Label>
                       <Input 
                         id="firstName"
                         value={formData.firstName}
                         onChange={(e) => setFormData(prev => ({ ...prev, firstName: e.target.value }))}
                         disabled={!canEditBasicInfo}
+                        required
                         data-testid="input-firstname"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="lastName">Nachname</Label>
+                      <Label htmlFor="lastName">
+                        Nachname <span className="text-destructive">*</span>
+                      </Label>
                       <Input 
                         id="lastName"
                         value={formData.lastName}
                         onChange={(e) => setFormData(prev => ({ ...prev, lastName: e.target.value }))}
                         disabled={!canEditBasicInfo}
+                        required
                         data-testid="input-lastname"
                       />
                     </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="birthday" className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4" />
+                      Geburtstag <span className="text-destructive">*</span>
+                    </Label>
+                    <Input 
+                      id="birthday"
+                      type="date"
+                      value={formData.birthday}
+                      onChange={(e) => setFormData(prev => ({ ...prev, birthday: e.target.value }))}
+                      disabled={!canEditBasicInfo}
+                      required
+                      className="w-48"
+                      data-testid="input-birthday"
+                    />
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Info className="w-3 h-3" />
+                      Dein Geburtstag wird nur für Geburtstags-Hinweise im Team verwendet.
+                    </p>
                   </div>
                 </CardContent>
               </Card>
@@ -279,17 +348,23 @@ export default function Settings() {
                   <CardTitle className="flex items-center gap-2">
                     <Mail className="w-5 h-5" /> Kontaktdaten
                   </CardTitle>
+                  <CardDescription>
+                    Dienstliche und private Erreichbarkeit
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="email">E-Mail (dienstlich)</Label>
+                      <Label htmlFor="email">
+                        E-Mail (dienstlich) <span className="text-destructive">*</span>
+                      </Label>
                       <Input 
                         id="email"
                         type="email"
                         value={formData.email}
                         onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
                         disabled={!canEditBasicInfo}
+                        required
                         data-testid="input-email"
                       />
                     </div>
@@ -313,13 +388,16 @@ export default function Settings() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="phoneWork">Telefon (dienstlich)</Label>
+                      <Label htmlFor="phoneWork">
+                        Telefon (dienstlich) <span className="text-destructive">*</span>
+                      </Label>
                       <Input 
                         id="phoneWork"
                         type="tel"
                         value={formData.phoneWork}
                         onChange={(e) => setFormData(prev => ({ ...prev, phoneWork: e.target.value }))}
                         disabled={!canEditBasicInfo}
+                        required
                         data-testid="input-phone-work"
                       />
                     </div>
@@ -354,9 +432,9 @@ export default function Settings() {
                   
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
-                      <Label>Private Kontaktdaten öffentlich anzeigen</Label>
+                      <Label>Private Kontaktdaten für Kolleg:innen sichtbar machen</Label>
                       <p className="text-sm text-muted-foreground">
-                        Wenn aktiviert, können Kollegen Ihre privaten Kontaktdaten sehen
+                        Wenn aktiviert, können Ihre Kolleg:innen Ihre privaten Kontaktdaten im Teamverzeichnis sehen
                       </p>
                     </div>
                     <Switch 
@@ -382,6 +460,73 @@ export default function Settings() {
 
           <TabsContent value="qualifications">
             <div className="grid gap-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Tag className="w-5 h-5" /> Namenskürzel / Badge
+                  </CardTitle>
+                  <CardDescription>
+                    Ihr eindeutiges Kürzel für Dienstplan und Wochenplan
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-16 h-16 rounded-lg bg-primary/10 flex items-center justify-center text-primary text-2xl font-bold font-mono">
+                      {formData.badge}
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-medium">Aktuelles Kürzel: <span className="font-mono text-lg">{formData.badge}</span></p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Dein Kürzel wird im Dienstplan und Wochenplan angezeigt. Es sollte eindeutig sein.
+                      </p>
+                    </div>
+                    {canEditBasicInfo && (
+                      <Dialog open={isBadgeDialogOpen} onOpenChange={setIsBadgeDialogOpen}>
+                        <DialogTrigger asChild>
+                          <Button variant="outline" className="gap-2" data-testid="button-change-badge">
+                            <Pencil className="w-4 h-4" />
+                            Badge ändern
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Kürzel ändern</DialogTitle>
+                            <DialogDescription>
+                              Geben Sie ein neues eindeutiges Kürzel ein (2-4 Zeichen empfohlen)
+                            </DialogDescription>
+                          </DialogHeader>
+                          <div className="py-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="newBadge">Neues Kürzel</Label>
+                              <Input 
+                                id="newBadge"
+                                value={newBadge}
+                                onChange={(e) => setNewBadge(e.target.value.toUpperCase())}
+                                placeholder="z.B. SH, LG, MW"
+                                maxLength={4}
+                                className="font-mono text-lg uppercase"
+                                data-testid="input-new-badge"
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                Das Kürzel sollte eindeutig sein. Typischerweise werden die Initialen des Nachnamens verwendet.
+                              </p>
+                            </div>
+                          </div>
+                          <DialogFooter>
+                            <Button variant="outline" onClick={() => setIsBadgeDialogOpen(false)}>
+                              Abbrechen
+                            </Button>
+                            <Button onClick={handleBadgeChange} disabled={!newBadge} data-testid="button-save-badge">
+                              Speichern
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -462,14 +607,16 @@ export default function Settings() {
                   <Lock className="w-5 h-5" /> Sicherheit
                 </CardTitle>
                 <CardDescription>
-                  Verwalten Sie Ihr Passwort und Sicherheitseinstellungen
+                  Verwalten Sie Ihr Passwort und Ihre Sicherheitseinstellungen
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between p-4 bg-secondary/50 rounded-lg">
                   <div>
-                    <p className="font-medium">Passwort</p>
-                    <p className="text-sm text-muted-foreground">Ändern Sie Ihr Passwort regelmäßig</p>
+                    <p className="font-medium">Passwort ändern</p>
+                    <p className="text-sm text-muted-foreground">
+                      Ändern Sie Ihr Passwort regelmäßig für mehr Sicherheit
+                    </p>
                   </div>
                   <Dialog open={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen}>
                     <DialogTrigger asChild>
@@ -480,6 +627,9 @@ export default function Settings() {
                     <DialogContent>
                       <DialogHeader>
                         <DialogTitle>Passwort ändern</DialogTitle>
+                        <DialogDescription>
+                          Geben Sie Ihr aktuelles und ein neues Passwort ein
+                        </DialogDescription>
                       </DialogHeader>
                       <div className="grid gap-4 py-4">
                         <div className="space-y-2">
@@ -523,6 +673,15 @@ export default function Settings() {
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
+                </div>
+
+                <Separator />
+
+                <div className="p-4 bg-muted/50 rounded-lg">
+                  <p className="text-sm text-muted-foreground">
+                    <strong>Hinweis:</strong> Bei vergessenen Passwörtern wenden Sie sich bitte an die Sekretärin 
+                    oder einen Administrator. Passwörter können nicht per E-Mail zurückgesetzt werden.
+                  </p>
                 </div>
               </CardContent>
             </Card>
