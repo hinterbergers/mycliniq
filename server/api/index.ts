@@ -1,6 +1,9 @@
 import { Router } from "express";
 import type { Express } from "express";
 
+// Import auth middleware
+import { authenticate } from "./middleware/auth";
+
 // Import route modules
 import { registerEmployeeRoutes } from "./employees";
 import { registerCompetencyRoutes } from "./competencies";
@@ -17,54 +20,82 @@ import { registerSopRoutes } from "./sops";
  * 
  * This function mounts all API route modules under their respective paths.
  * Each module handles its own CRUD operations and sub-routes.
+ * 
+ * Authentication:
+ *   - All routes go through `authenticate` middleware
+ *   - In DEV mode, unauthenticated access is allowed with warnings
+ *   - In PROD mode, valid token is required (TODO: enable strict mode)
+ * 
+ * Authorization Levels:
+ *   - requireAdmin: Employee CRUD, Room CRUD, Plan releases
+ *   - requireEditor: Duty plan edit, Weekly plan edit, Daily overrides
+ *   - requireOwnerOrAdmin: Own absences, shift wishes, preferences
  */
 export function registerModularApiRoutes(app: Express): void {
+  // Apply authentication middleware to all /api routes
+  // TODO: In production, enable strict authentication
+  app.use("/api", authenticate);
+  
   // Employees API
+  // TODO: Add requireAdmin for POST, PUT, DELETE
   const employeesRouter = Router();
   registerEmployeeRoutes(employeesRouter);
   app.use("/api/employees", employeesRouter);
 
   // Competencies API
+  // TODO: Add requireAdmin for POST, PUT, DELETE
   const competenciesRouter = Router();
   registerCompetencyRoutes(competenciesRouter);
   app.use("/api/competencies", competenciesRouter);
 
   // Rooms API
+  // TODO: Add requireAdmin for POST, PUT, DELETE, close, open
   const roomsRouter = Router();
   registerRoomRoutes(roomsRouter);
   app.use("/api/rooms", roomsRouter);
 
   // Duty Plans API (Dienstplan)
+  // TODO: Add requireEditor for POST, PUT slots
+  // TODO: Add requireAdmin for DELETE, status change to 'Freigegeben'
   const dutyPlansRouter = Router();
   registerDutyPlanRoutes(dutyPlansRouter);
   app.use("/api/duty-plans", dutyPlansRouter);
 
   // Weekly Plans API (Wochenplan)
+  // TODO: Add requireEditor for POST, PUT, assign
+  // TODO: Add requireAdmin for DELETE, status change to 'Freigegeben'
   const weeklyPlansRouter = Router();
   registerWeeklyPlanRoutes(weeklyPlansRouter);
   app.use("/api/weekly-plans", weeklyPlansRouter);
 
   // Daily Overrides API (Tagesplan-Korrekturen)
+  // TODO: Add requireEditor for POST, DELETE
   const dailyOverridesRouter = Router();
   registerDailyOverrideRoutes(dailyOverridesRouter);
   app.use("/api/daily-overrides", dailyOverridesRouter);
 
   // Absences API (Abwesenheiten)
+  // TODO: Add requireOwnerOrAdmin for POST, PUT, DELETE (own absences only)
+  // TODO: Add requireAdmin for status change to 'Genehmigt'/'Abgelehnt'
   const absencesRouter = Router();
   registerAbsenceRoutes(absencesRouter);
   app.use("/api/absences", absencesRouter);
 
   // Projects API (Projekte)
+  // TODO: Check project membership for access
+  // TODO: Add requireAdmin for DELETE
   const projectsRouter = Router();
   registerProjectRoutes(projectsRouter);
   app.use("/api/projects", projectsRouter);
 
   // SOPs API
+  // TODO: Add requireEditor for POST, PUT
+  // TODO: Add requireAdmin for DELETE, status change to 'Freigegeben'
   const sopsRouter = Router();
   registerSopRoutes(sopsRouter);
   app.use("/api/sops", sopsRouter);
 
-  console.log("✓ Modular API routes registered");
+  console.log("✓ Modular API routes registered (with authentication)");
 }
 
 /**
