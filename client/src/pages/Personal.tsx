@@ -1,222 +1,431 @@
 import { Layout } from "@/components/layout/Layout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Download, Plus, Filter } from "lucide-react";
+import { 
+  Calendar as CalendarIcon, ChevronLeft, ChevronRight, Download, 
+  Rss, RefreshCw, Heart, Info, CheckCircle2, Clock, XCircle
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
-import { startOfWeek, addDays, format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, isToday } from "date-fns";
+import { format, addMonths, subMonths, getWeek } from "date-fns";
 import { de } from "date-fns/locale";
-import { MOCK_EMPLOYEES } from "@/lib/mockData";
+import { useLocation } from "wouter";
+
+const DUMMY_ROSTER_DATA = [
+  { kw: 49, day: "Mo", date: "02.12.", kreisszimmer: "Hinterberger", gyn: "Wagner", turnus: "Lang", absences: "" },
+  { kw: 49, day: "Di", date: "03.12.", kreisszimmer: "Brunner", gyn: "Fischer", turnus: "Hofer", absences: "Müller (U)" },
+  { kw: 49, day: "Mi", date: "04.12.", kreisszimmer: "Wagner", gyn: "Hinterberger", turnus: "Lang", absences: "" },
+  { kw: 49, day: "Do", date: "05.12.", kreisszimmer: "Fischer", gyn: "Brunner", turnus: "Hofer", absences: "Gruber (FB)" },
+  { kw: 49, day: "Fr", date: "06.12.", kreisszimmer: "Hinterberger", gyn: "Wagner", turnus: "Lang", absences: "" },
+  { kw: 49, day: "Sa", date: "07.12.", kreisszimmer: "Brunner", gyn: "-", turnus: "-", absences: "" },
+  { kw: 49, day: "So", date: "08.12.", kreisszimmer: "Fischer", gyn: "-", turnus: "-", absences: "" },
+  { kw: 50, day: "Mo", date: "09.12.", kreisszimmer: "Wagner", gyn: "Hinterberger", turnus: "Hofer", absences: "" },
+  { kw: 50, day: "Di", date: "10.12.", kreisszimmer: "Hinterberger", gyn: "Fischer", turnus: "Lang", absences: "Berger (ZA)" },
+  { kw: 50, day: "Mi", date: "11.12.", kreisszimmer: "Brunner", gyn: "Wagner", turnus: "Hofer", absences: "" },
+  { kw: 50, day: "Do", date: "12.12.", kreisszimmer: "Fischer", gyn: "Brunner", turnus: "Lang", absences: "" },
+  { kw: 50, day: "Fr", date: "13.12.", kreisszimmer: "Wagner", gyn: "Hinterberger", turnus: "Hofer", absences: "Krenn (U)" },
+];
+
+const DUMMY_WEEK_AREAS = [
+  { area: "Kreißsaal 1", mon: "Hinterberger", tue: "Brunner", wed: "Wagner", thu: "Fischer", fri: "Hinterberger" },
+  { area: "Sectio-OP", mon: "Wagner", tue: "Fischer", wed: "Brunner", thu: "Hinterberger", fri: "Wagner" },
+  { area: "Gyn-Ambulanz 1", mon: "Müller", tue: "Gruber", wed: "Müller", thu: "Gruber", fri: "Müller" },
+  { area: "Gyn-Ambulanz 2", mon: "Krenn", tue: "Hofer", wed: "Krenn", thu: "Hofer", fri: "Krenn" },
+  { area: "Station Geb", mon: "Lang", tue: "Lang", wed: "Berger", thu: "Berger", fri: "Lang" },
+  { area: "Station Gyn", mon: "Berger", tue: "Berger", wed: "Lang", thu: "Lang", fri: "Berger" },
+];
+
+const DUMMY_APPROVED_VACATIONS = [
+  { id: 1, name: "Dr. Müller", from: "23.12.2024", to: "02.01.2025", days: 8, type: "Urlaub" },
+  { id: 2, name: "Dr. Krenn", from: "27.12.2024", to: "31.12.2024", days: 4, type: "Urlaub" },
+  { id: 3, name: "Dr. Gruber", from: "16.12.2024", to: "18.12.2024", days: 3, type: "Fortbildung" },
+  { id: 4, name: "Dr. Hofer", from: "06.01.2025", to: "10.01.2025", days: 5, type: "Urlaub" },
+];
+
+const DUMMY_MY_REQUESTS = [
+  { id: 1, from: "23.12.2024", to: "27.12.2024", days: 4, type: "Urlaub", status: "approved" },
+  { id: 2, from: "03.02.2025", to: "07.02.2025", days: 5, type: "Urlaub", status: "pending" },
+  { id: 3, from: "15.01.2025", to: "15.01.2025", days: 1, type: "Zeitausgleich", status: "rejected" },
+];
 
 export default function Personal() {
-  return (
-    <Layout title="Personalmanagement">
-      <Tabs defaultValue="roster" className="space-y-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <TabsList className="bg-background border border-border p-1 h-12 rounded-xl shadow-sm">
-            <TabsTrigger value="roster" className="rounded-lg px-6 h-10">Dienstplan</TabsTrigger>
-            <TabsTrigger value="vacation" className="rounded-lg px-6 h-10">Urlaubsplanung</TabsTrigger>
-            <TabsTrigger value="assignment" className="rounded-lg px-6 h-10">Einsatzplanung</TabsTrigger>
-          </TabsList>
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [, setLocation] = useLocation();
+  const currentMonth = format(currentDate, "MMMM yyyy", { locale: de });
+  const nextMonth = format(addMonths(new Date(), 1), "MMMM", { locale: de });
 
-          <div className="flex gap-2">
-             <Button variant="outline" className="gap-2">
-               <Download className="w-4 h-4" />
-               Export
-             </Button>
-             <Button className="gap-2">
-               <Plus className="w-4 h-4" />
-               Neuer Eintrag
-             </Button>
+  return (
+    <Layout title="Dienstpläne">
+      <div className="space-y-6">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Dienstpläne</h1>
+            <p className="text-muted-foreground">Monatsdienstplan, Wochenplan und Urlaubsplanung.</p>
+          </div>
+          
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" className="gap-2" data-testid="button-subscribe">
+              <Rss className="w-4 h-4" />
+              Abonnieren
+            </Button>
+            <Button variant="outline" className="gap-2" data-testid="button-export">
+              <Download className="w-4 h-4" />
+              Export
+            </Button>
+            <Button variant="outline" className="gap-2" data-testid="button-swap">
+              <RefreshCw className="w-4 h-4" />
+              Diensttausch
+            </Button>
+            <Button className="gap-2" onClick={() => setLocation('/dienstwuensche')} data-testid="button-wishes">
+              <Heart className="w-4 h-4" />
+              Dienstwünsche für {nextMonth}
+            </Button>
           </div>
         </div>
 
-        <TabsContent value="roster" className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-          <RosterView />
-        </TabsContent>
+        <Tabs defaultValue="roster" className="space-y-6">
+          <TabsList className="bg-background border border-border p-1 h-12 rounded-xl shadow-sm">
+            <TabsTrigger value="roster" className="rounded-lg px-6 h-10" data-testid="tab-roster">
+              Dienstplan
+            </TabsTrigger>
+            <TabsTrigger value="weekly" className="rounded-lg px-6 h-10" data-testid="tab-weekly">
+              Wochenplan
+            </TabsTrigger>
+            <TabsTrigger value="vacation" className="rounded-lg px-6 h-10" data-testid="tab-vacation">
+              Urlaubsplanung
+            </TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="vacation" className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-          <VacationView />
-        </TabsContent>
-        
-        <TabsContent value="assignment">
-           <div className="flex items-center justify-center h-96 text-muted-foreground border-2 border-dashed rounded-xl">
-             Einsatzplanung Modul
-           </div>
-        </TabsContent>
-      </Tabs>
+          <TabsContent value="roster" className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <RosterView currentDate={currentDate} setCurrentDate={setCurrentDate} />
+          </TabsContent>
+
+          <TabsContent value="weekly" className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <WeeklyView />
+          </TabsContent>
+
+          <TabsContent value="vacation" className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <VacationView />
+          </TabsContent>
+        </Tabs>
+      </div>
     </Layout>
   );
 }
 
-function RosterView() {
-  const [currentDate, setCurrentDate] = useState(new Date());
-  
-  const days = eachDayOfInterval({
-    start: startOfWeek(startOfMonth(currentDate), { weekStartsOn: 1 }),
-    end: endOfMonth(currentDate)
-  });
-
-  // Mock shifts
-  const shifts = [
-    { date: 1, type: 'F', color: 'bg-blue-100 text-blue-700 border-blue-200' },
-    { date: 2, type: 'F', color: 'bg-blue-100 text-blue-700 border-blue-200' },
-    { date: 3, type: 'S', color: 'bg-orange-100 text-orange-700 border-orange-200' },
-    { date: 4, type: 'N', color: 'bg-purple-100 text-purple-700 border-purple-200' },
-    { date: 5, type: '-', color: 'bg-slate-100 text-slate-500' },
-    { date: 12, type: 'F', color: 'bg-blue-100 text-blue-700 border-blue-200' },
-  ];
-
-  const getShift = (day: Date) => {
-    const dayNum = day.getDate();
-    // Simple mock logic for demo
-    if (!isSameMonth(day, currentDate)) return null;
-    const shift = shifts.find(s => s.date === dayNum);
-    if (shift) return shift;
-    
-    // Random filler for visuals
-    if (dayNum % 4 === 0) return { type: 'F', color: 'bg-blue-100 text-blue-700 border-blue-200' };
-    if (dayNum % 4 === 1) return { type: 'S', color: 'bg-orange-100 text-orange-700 border-orange-200' };
-    if (dayNum % 4 === 2) return { type: 'N', color: 'bg-purple-100 text-purple-700 border-purple-200' };
-    return { type: 'Frei', color: 'bg-slate-50 text-slate-400 border-slate-100' };
-  };
-
+function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCurrentDate: (d: Date) => void }) {
   return (
-    <Card className="border-none shadow-sm overflow-hidden">
-      <div className="p-4 border-b border-border flex items-center justify-between bg-card">
-        <div className="flex items-center gap-4">
-          <h3 className="text-lg font-semibold flex items-center gap-2">
-            <CalendarIcon className="w-5 h-5 text-primary" />
-            {format(currentDate, 'MMMM yyyy', { locale: de })}
-          </h3>
-          <div className="flex items-center gap-1 bg-secondary rounded-lg p-1">
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1))}>
-              <ChevronLeft className="w-4 h-4" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1))}>
-              <ChevronRight className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-        
-        <div className="flex gap-2">
-          <Select defaultValue="all">
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Abteilung" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Alle Abteilungen</SelectItem>
-              <SelectItem value="cardio">Geburtshilfe</SelectItem>
-              <SelectItem value="neuro">Gynäkologie</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button variant="outline" size="icon">
-            <Filter className="w-4 h-4" />
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-7 border-b border-border bg-muted/30">
-        {['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map(day => (
-          <div key={day} className="p-3 text-center text-sm font-medium text-muted-foreground border-r border-border last:border-r-0">
-            {day}
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-7 auto-rows-fr bg-background">
-        {days.map((day, i) => {
-          const isCurrentMonth = isSameMonth(day, currentDate);
-          const shift = getShift(day);
-          
-          return (
-            <div 
-              key={i} 
-              className={cn(
-                "min-h-[120px] p-2 border-b border-r border-border last:border-r-0 hover:bg-secondary/20 transition-colors group relative",
-                !isCurrentMonth && "bg-muted/10 text-muted-foreground"
-              )}
-            >
-              <div className="flex justify-between items-start mb-2">
-                <span className={cn(
-                  "text-sm font-medium w-7 h-7 flex items-center justify-center rounded-full",
-                  isToday(day) ? "bg-primary text-primary-foreground" : "text-muted-foreground"
-                )}>
-                  {format(day, 'd')}
-                </span>
-                {isToday(day) && <span className="text-[10px] font-bold text-primary uppercase tracking-wider">Heute</span>}
-              </div>
-
-              {isCurrentMonth && shift && (
-                <div className={cn(
-                  "p-2 rounded-md border text-xs font-medium mb-1 cursor-pointer hover:brightness-95 transition-all",
-                  shift.color
-                )}>
-                  <div className="flex justify-between items-center">
-                    <span className="font-bold text-sm">{shift.type}</span>
-                    <span>08:00-16:30</span>
-                  </div>
-                  <div className="mt-1 opacity-80 truncate">Dienst</div>
-                </div>
-              )}
-              
-              <Button variant="ghost" size="icon" className="absolute bottom-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Plus className="w-3 h-3" />
+    <div className="space-y-6">
+      <Card className="border-none kabeg-shadow overflow-hidden">
+        <div className="p-4 border-b border-border flex items-center justify-between bg-card">
+          <div className="flex items-center gap-4">
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <CalendarIcon className="w-5 h-5 text-primary" />
+              {format(currentDate, 'MMMM yyyy', { locale: de })}
+            </h3>
+            <div className="flex items-center gap-1 bg-secondary rounded-lg p-1">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-7 w-7" 
+                onClick={() => setCurrentDate(subMonths(currentDate, 1))}
+                data-testid="button-prev-month"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-7 w-7" 
+                onClick={() => setCurrentDate(addMonths(currentDate, 1))}
+                data-testid="button-next-month"
+              >
+                <ChevronRight className="w-4 h-4" />
               </Button>
             </div>
-          );
-        })}
+          </div>
+          
+          <Select defaultValue="all">
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Bereich" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Alle Bereiche</SelectItem>
+              <SelectItem value="geb">Geburtshilfe</SelectItem>
+              <SelectItem value="gyn">Gynäkologie</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[800px] text-sm">
+            <thead>
+              <tr className="bg-primary text-white">
+                <th className="p-3 text-left font-medium w-16">KW</th>
+                <th className="p-3 text-left font-medium w-12">Tag</th>
+                <th className="p-3 text-left font-medium w-24">Datum</th>
+                <th className="p-3 text-left font-medium">Kreißzimmer</th>
+                <th className="p-3 text-left font-medium">Gynäkologie</th>
+                <th className="p-3 text-left font-medium">Turnus</th>
+                <th className="p-3 text-left font-medium">Abwesenheiten</th>
+              </tr>
+            </thead>
+            <tbody>
+              {DUMMY_ROSTER_DATA.map((row, i) => {
+                const isWeekend = row.day === "Sa" || row.day === "So";
+                const showKW = i === 0 || DUMMY_ROSTER_DATA[i - 1].kw !== row.kw;
+                
+                return (
+                  <tr 
+                    key={i} 
+                    className={cn(
+                      "border-b border-border hover:bg-muted/30 transition-colors",
+                      isWeekend && "bg-muted/20"
+                    )}
+                    data-testid={`roster-row-${i}`}
+                  >
+                    <td className="p-3 font-medium text-primary">
+                      {showKW ? row.kw : ""}
+                    </td>
+                    <td className={cn("p-3 font-medium", isWeekend && "text-primary")}>
+                      {row.day}
+                    </td>
+                    <td className="p-3 text-muted-foreground">{row.date}</td>
+                    <td className="p-3">
+                      <Badge variant="outline" className="bg-pink-50 text-pink-700 border-pink-200">
+                        {row.kreisszimmer}
+                      </Badge>
+                    </td>
+                    <td className="p-3">
+                      {row.gyn !== "-" ? (
+                        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                          {row.gyn}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </td>
+                    <td className="p-3">
+                      {row.turnus !== "-" ? (
+                        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                          {row.turnus}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </td>
+                    <td className="p-3 text-muted-foreground text-xs">
+                      {row.absences || "-"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <Card className="border-none kabeg-shadow">
+        <CardHeader>
+          <CardTitle className="text-base">Monatsübersicht</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="p-4 bg-primary/5 rounded-lg border border-primary/10">
+              <p className="text-sm text-muted-foreground">Anzahl Dienste</p>
+              <p className="text-2xl font-bold text-primary">8</p>
+            </div>
+            <div className="p-4 bg-amber-50 rounded-lg border border-amber-100">
+              <p className="text-sm text-muted-foreground">Abwesenheiten</p>
+              <p className="text-2xl font-bold text-amber-700">2</p>
+            </div>
+            <div className="p-4 bg-pink-50 rounded-lg border border-pink-100">
+              <p className="text-sm text-muted-foreground">Wochenenddienste</p>
+              <p className="text-2xl font-bold text-pink-700">3</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function WeeklyView() {
+  return (
+    <div className="space-y-6">
+      <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 flex gap-3">
+        <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+        <p className="text-sm text-blue-700">
+          Der Wochenplan wird automatisch aus dem freigegebenen Dienstplan erzeugt. 
+          Kurzfristige Änderungen können von berechtigten Personen vorgenommen werden.
+        </p>
       </div>
-    </Card>
+
+      <Card className="border-none kabeg-shadow overflow-hidden">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2">
+            <CalendarIcon className="w-5 h-5" />
+            Wochenplan KW 49
+          </CardTitle>
+          <CardDescription>02.12. – 06.12.2024</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[700px] text-sm">
+              <thead>
+                <tr className="bg-muted/50 border-b border-border">
+                  <th className="p-3 text-left font-medium w-40">Bereich</th>
+                  <th className="p-3 text-center font-medium">Mo</th>
+                  <th className="p-3 text-center font-medium">Di</th>
+                  <th className="p-3 text-center font-medium">Mi</th>
+                  <th className="p-3 text-center font-medium">Do</th>
+                  <th className="p-3 text-center font-medium">Fr</th>
+                </tr>
+              </thead>
+              <tbody>
+                {DUMMY_WEEK_AREAS.map((row, i) => (
+                  <tr key={i} className="border-b border-border hover:bg-muted/30 transition-colors">
+                    <td className="p-3 font-medium">{row.area}</td>
+                    <td className="p-3 text-center">
+                      <Badge variant="secondary">{row.mon}</Badge>
+                    </td>
+                    <td className="p-3 text-center">
+                      <Badge variant="secondary">{row.tue}</Badge>
+                    </td>
+                    <td className="p-3 text-center">
+                      <Badge variant="secondary">{row.wed}</Badge>
+                    </td>
+                    <td className="p-3 text-center">
+                      <Badge variant="secondary">{row.thu}</Badge>
+                    </td>
+                    <td className="p-3 text-center">
+                      <Badge variant="secondary">{row.fri}</Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
 function VacationView() {
-  // Mock vacation data distribution
-  const getVacationDays = (empId: number) => {
-    if (empId % 3 === 0) return 25;
-    if (empId % 2 === 0) return 15;
-    return 5;
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "approved":
+        return (
+          <Badge className="bg-green-100 text-green-700 border-green-200 gap-1">
+            <CheckCircle2 className="w-3 h-3" />
+            Genehmigt
+          </Badge>
+        );
+      case "pending":
+        return (
+          <Badge className="bg-amber-100 text-amber-700 border-amber-200 gap-1">
+            <Clock className="w-3 h-3" />
+            Eingereicht
+          </Badge>
+        );
+      case "rejected":
+        return (
+          <Badge className="bg-red-100 text-red-700 border-red-200 gap-1">
+            <XCircle className="w-3 h-3" />
+            Abgelehnt
+          </Badge>
+        );
+      default:
+        return null;
+    }
   };
 
   return (
-    <Card className="border-none shadow-sm">
-      <CardHeader>
-        <CardTitle>Urlaubsübersicht 2025</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-6">
-          {MOCK_EMPLOYEES.slice(0, 8).map((emp, i) => (
-            <div key={emp.id} className="flex items-center gap-4 p-3 hover:bg-secondary/30 rounded-xl transition-colors">
-              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs shrink-0">
-                {emp.name.split(' ').pop()?.substring(0, 2).toUpperCase()}
-              </div>
-              <div className="w-40 shrink-0">
-                <p className="font-medium text-sm truncate">{emp.name}</p>
-                <p className="text-xs text-muted-foreground truncate">{emp.role}</p>
-              </div>
-              <div className="flex-1 grid grid-cols-12 gap-1 h-8 min-w-[300px]">
-                {Array.from({ length: 12 }).map((_, m) => (
-                  <div key={m} className="bg-secondary rounded-sm relative group cursor-pointer hover:bg-secondary-foreground/10">
-                    {/* Mock vacation blocks */}
-                    {(i === 0 && m === 6) && <div className="absolute inset-y-1 inset-x-0 bg-green-400/50 rounded-sm border border-green-500/50" />}
-                    {(i === 1 && (m === 2 || m === 8)) && <div className="absolute inset-y-1 inset-x-0 bg-green-400/50 rounded-sm border border-green-500/50" />}
-                    
-                    <div className="opacity-0 group-hover:opacity-100 absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-popover text-popover-foreground text-[10px] px-2 py-1 rounded shadow-sm border whitespace-nowrap z-10">
-                      {format(new Date(2025, m, 1), 'MMM')}
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="border-none kabeg-shadow">
+          <CardHeader>
+            <CardTitle className="text-base">Genehmigte Urlaube (Team)</CardTitle>
+            <CardDescription>Übersicht der kommenden Abwesenheiten</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {DUMMY_APPROVED_VACATIONS.map((vacation) => (
+                <div 
+                  key={vacation.id} 
+                  className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border border-border"
+                  data-testid={`vacation-approved-${vacation.id}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs">
+                      {vacation.name.split(" ").pop()?.substring(0, 2).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="font-medium text-sm">{vacation.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {vacation.from} – {vacation.to}
+                      </p>
                     </div>
                   </div>
-                ))}
-              </div>
-              <div className="w-20 text-right text-sm shrink-0">
-                <span className="font-bold text-foreground">{getVacationDays(emp.id)}</span> <span className="text-muted-foreground">Tage</span>
-              </div>
+                  <div className="text-right">
+                    <Badge variant="outline" className={cn(
+                      vacation.type === "Fortbildung" 
+                        ? "bg-purple-50 text-purple-700 border-purple-200" 
+                        : "bg-green-50 text-green-700 border-green-200"
+                    )}>
+                      {vacation.type}
+                    </Badge>
+                    <p className="text-xs text-muted-foreground mt-1">{vacation.days} Tage</p>
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  )
+          </CardContent>
+        </Card>
+
+        <Card className="border-none kabeg-shadow">
+          <CardHeader>
+            <CardTitle className="text-base">Meine Urlaubsanträge</CardTitle>
+            <CardDescription>Status deiner eingereichten Anträge</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {DUMMY_MY_REQUESTS.map((request) => (
+                <div 
+                  key={request.id} 
+                  className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border border-border"
+                  data-testid={`vacation-request-${request.id}`}
+                >
+                  <div>
+                    <p className="font-medium text-sm">{request.from} – {request.to}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {request.days} Tag(e) • {request.type}
+                    </p>
+                  </div>
+                  {getStatusBadge(request.status)}
+                </div>
+              ))}
+            </div>
+            
+            <Button variant="outline" className="w-full mt-4 gap-2">
+              <CalendarIcon className="w-4 h-4" />
+              Neuen Antrag stellen
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="bg-amber-50 border border-amber-100 rounded-lg p-4 flex gap-3">
+        <Info className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+        <p className="text-sm text-amber-700">
+          Admins können Zeitfenster sperren. Fortbildungen haben Priorität vor Urlaub. 
+          Bei Überschneidungen werden Sie automatisch benachrichtigt.
+        </p>
+      </div>
+    </div>
+  );
 }
