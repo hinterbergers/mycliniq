@@ -88,6 +88,13 @@ export const swapRequestStatusEnum = pgEnum('swap_request_status', [
   'Abgelehnt'
 ]);
 
+// Planned absence status enum
+export const plannedAbsenceStatusEnum = pgEnum('planned_absence_status', [
+  'Geplant',
+  'Genehmigt',
+  'Abgelehnt'
+]);
+
 // Room category enum
 export const roomCategoryEnum = pgEnum('room_category', [
   'Geburtshilfe',
@@ -829,14 +836,18 @@ export const plannedAbsences = pgTable("planned_absences", {
   endDate: date("end_date").notNull(),
   reason: absenceReasonEnum("reason").notNull(),
   notes: text("notes"),
+  status: plannedAbsenceStatusEnum("status").notNull().default('Geplant'),
   isApproved: boolean("is_approved"),
   approvedById: integer("approved_by_id").references(() => employees.id),
-  createdAt: timestamp("created_at").defaultNow().notNull()
+  createdById: integer("created_by_id").references(() => employees.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
 });
 
 export const insertPlannedAbsenceSchema = createInsertSchema(plannedAbsences).omit({
   id: true,
-  createdAt: true
+  createdAt: true,
+  updatedAt: true
 });
 
 export type InsertPlannedAbsence = z.infer<typeof insertPlannedAbsenceSchema>;
