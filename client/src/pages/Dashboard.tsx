@@ -2,132 +2,285 @@ import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CalendarDays, Clock, FileText, ArrowRight, AlertCircle, CheckCircle2, Baby, Activity } from "lucide-react";
+import { 
+  CalendarDays, FileText, ArrowRight, Star, Cake, 
+  Users, Clock, BookOpen, TrendingUp
+} from "lucide-react";
+import { useAuth } from "@/lib/auth";
+import { useLocation } from "wouter";
+import { format } from "date-fns";
+import { de } from "date-fns/locale";
+
+const getGreeting = () => {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Guten Morgen";
+  if (hour < 18) return "Hallo";
+  return "Guten Abend";
+};
+
+const DUMMY_NEW_SOPS = [
+  { id: 1, title: "PPROM Management", category: "Geburtshilfe", date: "Vor 2 Tagen", isNew: true },
+  { id: 2, title: "Präeklampsie Leitlinie", category: "Geburtshilfe", date: "Vor 4 Tagen", isNew: true },
+  { id: 3, title: "Sectio-Indikationen", category: "OP", date: "Vor 1 Woche", isNew: true },
+];
+
+const DUMMY_POPULAR_SOPS = [
+  { id: 4, title: "CTG-Beurteilung", category: "Geburtshilfe", views: 128 },
+  { id: 5, title: "Postpartale Hämorrhagie", category: "Notfall", views: 96 },
+  { id: 6, title: "Endometriose Diagnostik", category: "Gynäkologie", views: 84 },
+];
+
+const DUMMY_WEEK_SCHEDULE = [
+  { day: "Heute", date: "04. Dez", shift: "Kreißsaal", team: ["Hinterberger (gyn)", "Brunner (geb)", "Lang (ta)"] },
+  { day: "Morgen", date: "05. Dez", shift: "Gyn-Ambulanz", team: ["Wagner (gyn)", "Fischer (geb)"] },
+  { day: "Freitag", date: "06. Dez", shift: "Frei", team: [] },
+  { day: "Samstag", date: "07. Dez", shift: "Bereitschaft", team: ["Müller (gyn)", "Hofer (ta)"] },
+  { day: "Sonntag", date: "08. Dez", shift: "Frei", team: [] },
+];
+
+const DUMMY_PRESENT_STAFF = [
+  { name: "Dr. Hinterberger", area: "Kreißsaal" },
+  { name: "Dr. Wagner", area: "Gyn-Ambulanz" },
+  { name: "Dr. Brunner", area: "Station" },
+  { name: "Dr. Fischer", area: "OP 1" },
+  { name: "Hofer (TA)", area: "Kreißsaal" },
+];
+
+const DUMMY_BIRTHDAY = { name: "Dr. Martina Krenn", hasBirthday: true };
 
 export default function Dashboard() {
+  const { employee, isAdmin } = useAuth();
+  const [, setLocation] = useLocation();
+  
+  const firstName = employee?.firstName || employee?.name?.split(' ').pop() || "Kolleg:in";
+  const greeting = getGreeting();
+
   return (
     <Layout title="Dashboard">
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
         
-        {/* Welcome Section */}
         <div className="md:col-span-8 space-y-6">
           <div className="bg-gradient-to-br from-primary to-primary/80 rounded-2xl p-8 text-primary-foreground shadow-lg shadow-primary/10">
             <div className="flex items-center justify-between mb-2">
-               <h2 className="text-3xl font-bold text-white">Guten Morgen, Dr. Hinterberger</h2>
-               <Badge variant="outline" className="text-primary-foreground border-primary-foreground/30 bg-primary-foreground/10">
-                  KABEG Klinikum Klagenfurt
-               </Badge>
+              <h2 className="text-3xl font-bold text-white" data-testid="text-greeting">
+                {greeting}, {firstName}
+              </h2>
+              <Badge variant="outline" className="text-primary-foreground border-primary-foreground/30 bg-primary-foreground/10">
+                KABEG Klinikum Klagenfurt
+              </Badge>
             </div>
             <p className="text-primary-foreground/80 max-w-xl text-lg">
-              Sie haben heute Dienst im Kreißsaal. Aktuell 3 laufende Geburten.
-              Der Bereich Gyn-Ambulanz ist zu 80% ausgelastet.
+              Dein heutiger Einsatz wird geladen, sobald Dienstplan und Wochenplan verfügbar sind.
             </p>
             <div className="mt-6 flex gap-3">
-              <Button variant="secondary" className="text-primary font-medium shadow-none border-0">
+              <Button 
+                variant="secondary" 
+                className="text-primary font-medium shadow-none border-0"
+                onClick={() => setLocation('/dienstplaene')}
+                data-testid="button-to-roster"
+              >
                 Zum Dienstplan
               </Button>
-              <Button variant="outline" className="bg-transparent border-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground">
+              <Button 
+                variant="outline" 
+                className="bg-transparent border-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"
+                onClick={() => setLocation('/dienstwuensche')}
+                data-testid="button-request-vacation"
+              >
                 Urlaub beantragen
               </Button>
             </div>
           </div>
 
-          {/* Quick Stats */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {[
-              { label: "Aufnahmen heute", value: "8", icon: UsersIcon, color: "text-primary", bg: "bg-primary/10" },
-              { label: "Geburten lfd.", value: "3", icon: Baby, color: "text-pink-600", bg: "bg-pink-100" },
-              { label: "OPs geplant", value: "5", icon: Activity, color: "text-emerald-600", bg: "bg-emerald-100" },
-            ].map((stat, i) => (
-              <Card key={i} className="border-none kabeg-shadow">
-                <CardContent className="p-4 flex items-center gap-4">
-                  <div className={`w-12 h-12 rounded-xl ${stat.bg} flex items-center justify-center`}>
-                    <stat.icon className={`w-6 h-6 ${stat.color}`} />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground font-medium">{stat.label}</p>
-                    <p className="text-2xl font-bold text-foreground">{stat.value}</p>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Card className="border-none kabeg-shadow">
+              <CardContent className="p-4 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <BookOpen className="w-6 h-6 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground font-medium">Neue SOPs</p>
+                  <p className="text-2xl font-bold text-foreground">3</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-none kabeg-shadow">
+              <CardContent className="p-4 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center">
+                  <Star className="w-6 h-6 text-amber-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground font-medium">Meine Favoriten</p>
+                  <p className="text-2xl font-bold text-foreground">5</p>
+                </div>
+              </CardContent>
+            </Card>
           </div>
 
-          {/* Recent Guidelines */}
           <Card className="border-none kabeg-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-lg">Neue Leitlinien Gyn/Geb</CardTitle>
-              <Button variant="ghost" size="sm" className="text-muted-foreground">Alle anzeigen</Button>
+              <CardTitle className="text-lg">SOPs & Leitlinien</CardTitle>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="text-muted-foreground"
+                onClick={() => setLocation('/wissen')}
+              >
+                Alle anzeigen
+              </Button>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {[
-                  { title: "Präeklampsie Management", cat: "Geburtshilfe", date: "Vor 2 Tagen" },
-                  { title: "Endometriose Diagnostik", cat: "Gynäkologie", date: "Vor 5 Tagen" },
-                  { title: "Postpartale Hämorrhagie", cat: "Notfall", date: "Vor 1 Woche" },
-                ].map((item, i) => (
-                  <div key={i} className="flex items-center justify-between p-3 rounded-lg hover:bg-secondary/50 transition-colors border border-transparent hover:border-border group cursor-pointer">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
-                        <FileText className="w-5 h-5" />
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                  <h4 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4" />
+                    Neu hinzugefügt
+                  </h4>
+                  <div className="space-y-2">
+                    {DUMMY_NEW_SOPS.map((sop) => (
+                      <div 
+                        key={sop.id} 
+                        className="flex items-center justify-between p-3 rounded-lg hover:bg-secondary/50 transition-colors border border-transparent hover:border-border group cursor-pointer"
+                        data-testid={`sop-new-${sop.id}`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                            <FileText className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="font-medium text-foreground text-sm">{sop.title}</h4>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0">{sop.category}</Badge>
+                              <span className="text-[10px] text-muted-foreground">{sop.date}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
                       </div>
-                      <div>
-                        <h4 className="font-medium text-foreground">{item.title}</h4>
-                        <p className="text-xs text-muted-foreground">{item.cat}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-muted-foreground">{item.date}</span>
-                      <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
-                    </div>
+                    ))}
                   </div>
-                ))}
+                </div>
+                
+                <div>
+                  <h4 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
+                    <Star className="w-4 h-4" />
+                    Meist genutzt
+                  </h4>
+                  <div className="space-y-2">
+                    {DUMMY_POPULAR_SOPS.map((sop) => (
+                      <div 
+                        key={sop.id} 
+                        className="flex items-center justify-between p-3 rounded-lg hover:bg-secondary/50 transition-colors border border-transparent hover:border-border group cursor-pointer"
+                        data-testid={`sop-popular-${sop.id}`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600 group-hover:bg-amber-500 group-hover:text-white transition-colors">
+                            <FileText className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="font-medium text-foreground text-sm">{sop.title}</h4>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0">{sop.category}</Badge>
+                              <span className="text-[10px] text-muted-foreground">{sop.views} Aufrufe</span>
+                            </div>
+                          </div>
+                        </div>
+                        <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-amber-600 transition-colors" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
+
+          {isAdmin && (
+            <Card className="border-none kabeg-shadow border-l-4 border-l-amber-400">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Users className="w-5 h-5 text-amber-600" />
+                  Heute anwesend
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {DUMMY_PRESENT_STAFF.map((staff, i) => (
+                    <Badge key={i} variant="secondary" className="py-1.5" data-testid={`staff-present-${i}`}>
+                      {staff.name} <span className="text-muted-foreground ml-1">({staff.area})</span>
+                    </Badge>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Clock className="w-4 h-4" />
+                  <span>3 Abwesenheiten heute</span>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
-        {/* Sidebar Right - Schedule */}
         <div className="md:col-span-4 space-y-6">
-          <Card className="h-full border-none kabeg-shadow flex flex-col">
+          {DUMMY_BIRTHDAY.hasBirthday && (
+            <Card className="border-none kabeg-shadow bg-gradient-to-br from-pink-50 to-orange-50">
+              <CardContent className="p-4 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-pink-100 flex items-center justify-center">
+                  <Cake className="w-6 h-6 text-pink-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-foreground">Heute hat Geburtstag:</p>
+                  <p className="text-base font-bold text-pink-700" data-testid="text-birthday">{DUMMY_BIRTHDAY.name}</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          <Card className="border-none kabeg-shadow flex flex-col">
             <CardHeader>
-              <CardTitle className="text-lg">Mein Dienstplan</CardTitle>
-              <CardDescription>Nächste 7 Tage</CardDescription>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <CalendarDays className="w-5 h-5" />
+                Wochenvorschau
+              </CardTitle>
+              <CardDescription>Deine nächsten Einsätze</CardDescription>
             </CardHeader>
             <CardContent className="flex-1">
-              <div className="relative border-l-2 border-border ml-3 space-y-8 pb-4">
-                {[
-                  { day: "Heute", date: "30. Nov", shift: "Frühdienst", time: "07:00 - 15:30", type: "current" },
-                  { day: "Morgen", date: "01. Dez", shift: "Spätdienst", time: "14:30 - 23:00", type: "upcoming" },
-                  { day: "Dienstag", date: "02. Dez", shift: "Nachtdienst", time: "22:30 - 07:00", type: "upcoming" },
-                  { day: "Mittwoch", date: "03. Dez", shift: "Frei", time: "-", type: "off" },
-                ].map((item, i) => (
-                  <div key={i} className="relative pl-6">
-                    <div className={`absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 border-background ${
-                      item.type === 'current' ? 'bg-primary' : 
-                      item.type === 'off' ? 'bg-muted-foreground/30' : 'bg-primary/40'
-                    }`} />
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="text-sm font-medium text-foreground">{item.day}, <span className="text-muted-foreground">{item.date}</span></p>
-                        <h4 className={`text-base font-semibold mt-1 ${item.type === 'off' ? 'text-muted-foreground' : 'text-primary'}`}>
-                          {item.shift}
-                        </h4>
-                      </div>
-                      <Badge variant="secondary" className="font-mono text-xs">{item.time}</Badge>
+              <div className="space-y-4">
+                {DUMMY_WEEK_SCHEDULE.map((item, i) => (
+                  <div 
+                    key={i} 
+                    className={`p-3 rounded-lg border ${
+                      i === 0 ? 'bg-primary/5 border-primary/20' : 
+                      item.shift === 'Frei' ? 'bg-muted/30 border-muted' : 'border-border'
+                    }`}
+                    data-testid={`schedule-day-${i}`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-medium text-sm">
+                        {item.day} <span className="text-muted-foreground">– {item.date}</span>
+                      </span>
+                      <Badge 
+                        variant={item.shift === 'Frei' ? 'secondary' : 'default'}
+                        className={item.shift === 'Frei' ? 'bg-muted text-muted-foreground' : ''}
+                      >
+                        {item.shift}
+                      </Badge>
                     </div>
+                    {item.team.length > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        Mit: {item.team.join(', ')}
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>
               
-              <div className="mt-6 pt-6 border-t border-border">
-                 <div className="flex items-center justify-between mb-4">
-                   <span className="text-sm font-medium text-muted-foreground">Urlaubstage 2025</span>
-                   <span className="text-sm font-bold text-foreground">24 / 30</span>
-                 </div>
-                 <div className="h-2 bg-secondary rounded-full overflow-hidden">
-                   <div className="h-full bg-primary w-[80%] rounded-full" />
-                 </div>
+              <div className="mt-6 pt-4 border-t border-border">
+                <Button 
+                  variant="outline" 
+                  className="w-full"
+                  onClick={() => setLocation('/dienstplaene')}
+                >
+                  Kompletten Dienstplan anzeigen
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -135,26 +288,4 @@ export default function Dashboard() {
       </div>
     </Layout>
   );
-}
-
-function UsersIcon(props: any) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-    </svg>
-  )
 }
