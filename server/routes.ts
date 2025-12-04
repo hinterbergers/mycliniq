@@ -17,11 +17,15 @@ import { fromZodError } from "zod-validation-error";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { generateRosterPlan } from "./services/rosterGenerator";
+import { registerModularApiRoutes } from "./api";
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  
+  // Register modular API routes (employees, competencies, rooms, duty-plans, etc.)
+  registerModularApiRoutes(app);
   
   // Auth routes
   app.post("/api/auth/login", async (req: Request, res: Response) => {
