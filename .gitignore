@@ -3,9 +3,6 @@ dist
 .DS_Store
 server/public
 vite.config.ts.*
-<<<<<<< HEAD
-*.tar.gz
-=======
 *.tar.gz
 
 # env files
@@ -18,4 +15,3 @@ vite.config.ts.*
 *.png
 *.jpg
 *.jpeg
->>>>>>> 6aa13f6 (Update .gitignore to include additional line for improved file exclusion)
