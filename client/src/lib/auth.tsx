@@ -73,16 +73,22 @@ async function safeJson(res: Response): Promise<any | null> {
   }
 }
 
+/**
+ * Wichtig: In deiner aktuellen DB gibt es in employees KEIN system_role Feld.
+ * Daher leiten wir systemRole für technische Rechte aus isAdmin ab.
+ * Später (wenn system_role Spalte/Logik existiert) kannst du das wieder umstellen.
+ */
 function buildUserFromEmployee(emp: any): UserData {
+  const isAdmin = !!emp?.isAdmin;
   return {
     id: emp.id,
     employeeId: emp.id,
     name: emp.name ?? '',
     lastName: emp.lastName ?? '',
     email: emp.email,
-    systemRole: ((emp.systemRole ?? 'department_admin' : 'employee')) as SystemRole,
+    systemRole: (isAdmin ? 'department_admin' : 'employee') as SystemRole,
     appRole: emp.appRole ?? 'User',
-    isAdmin: !!emp.isAdmin,
+    isAdmin,
   };
 }
 
@@ -93,11 +99,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const isAuthenticated = useMemo(() => !!token && (!!employee !!user), [token, employee, user]);
+  // ✅ Fix: OR statt "!!employee !!user"
+  const isAuthenticated = useMemo(() => !!token && (!!employee || !!user), [token, employee, user]);
 
   const isAdmin = useMemo(() => {
     if (!employee) return false;
-    // employee.role könnte string/enum sein -> defensive
     const role = (employee as any).role;
     return !!employee.isAdmin || (typeof role === 'string' && (ADMIN_ROLES as readonly string[]).includes(role));
   }, [employee]);
@@ -145,7 +151,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const verifyToken = async (authToken: string) => {
     try {
-      // 1) Primär /api/me (neues Format)
       const primary = await fetchMe(authToken);
 
       if (primary.ok && primary.data) {
@@ -155,16 +160,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (result.success && result.data) {
           const u = result.data.user as UserData | undefined;
           const caps = Array.isArray(result.data.capabilities) ? result.data.capabilities : [];
-
-          // employee optional (falls server liefert)
           const emp = (result.data.employee ?? null) as Omit<Employee, 'passwordHash'> | null;
 
           if (u) {
-            applyAuthState({
-              user: u,
-              capabilities: caps,
-              employee: emp, // wenn null => wir versuchen /api/auth/me
-            });
+            applyAuthState({ user: u, capabilities: caps, employee: emp });
 
             // Wenn kein employee im /api/me: hole ihn von /api/auth/me
             if (!emp) {
@@ -173,13 +172,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 const fbEmp = fallback.data.employee as Omit<Employee, 'passwordHash'>;
                 applyAuthState({ employee: fbEmp });
 
-                // Falls server /api/me keinen user korrekt geliefert hat: zur Sicherheit user aus employee ableiten
-                if (!u?.systemRole) {
+                // Falls u keine brauchbaren Admin-Felder hat -> aus employee ableiten
+                if (!u?.systemRole || typeof u.isAdmin === 'undefined') {
                   applyAuthState({ user: buildUserFromEmployee(fbEmp) });
                 }
-              } else {
-                // not fatal, aber Admin-Menü könnte ohne employee.role fehlen
-                // Wir lassen user drin, employee bleibt null -> isAuthenticated false.
               }
             }
 
@@ -196,13 +192,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // 2) Fallback /api/auth/me
+      // Fallback /api/auth/me
       const fallback = await fetchAuthMe(authToken);
       if (fallback.ok && fallback.data?.employee) {
         const emp = fallback.data.employee as Omit<Employee, 'passwordHash'>;
-        const u = fallback.data.user
-          ? (fallback.data.user as UserData)
-          : buildUserFromEmployee(emp);
+        const u = fallback.data.user ? (fallback.data.user as UserData) : buildUserFromEmployee(emp);
 
         applyAuthState({
           employee: emp,
@@ -212,7 +206,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Wenn alles fehlschlägt -> ausloggen
       resetAuthState();
     } catch (err) {
       console.error('[Auth] verification failed:', err);
@@ -250,9 +243,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const authToken = data?.token as string | undefined;
-      if (!authToken) {
-        throw new Error('Login: token fehlt in Response');
-      }
+      if (!authToken) throw new Error('Login: token fehlt in Response');
 
       setToken(authToken);
       writeToken(authToken);
@@ -260,11 +251,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Optional employee direkt aus Login response (schneller UI)
       if (data?.employee) {
         const emp = data.employee as Omit<Employee, 'passwordHash'>;
-        applyAuthState({
-          employee: emp,
-          user: buildUserFromEmployee(emp),
-          capabilities: [],
-        });
+        applyAuthState({ employee: emp, user: buildUserFromEmployee(emp), capabilities: [] });
       }
 
       // Danach “single source of truth”: verifyToken
