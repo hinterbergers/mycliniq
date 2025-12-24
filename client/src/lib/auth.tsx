@@ -80,7 +80,7 @@ function buildUserFromEmployee(emp: any): UserData {
     name: emp.name ?? '',
     lastName: emp.lastName ?? '',
     email: emp.email,
-    systemRole: (emp.systemRole ?? 'employee') as SystemRole,
+    systemRole: ((emp.systemRole ?? 'department_admin' : 'employee')) as SystemRole,
     appRole: emp.appRole ?? 'User',
     isAdmin: !!emp.isAdmin,
   };
@@ -93,7 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const isAuthenticated = useMemo(() => !!token && !!employee, [token, employee]);
+  const isAuthenticated = useMemo(() => !!token && (!!employee !!user), [token, employee, user]);
 
   const isAdmin = useMemo(() => {
     if (!employee) return false;
