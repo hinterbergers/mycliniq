@@ -13,6 +13,7 @@ import {
   plannedAbsences,
   employees
 } from "@shared/schema";
+import { registerAdminRoutes } from "./admin";
 
 /**
  * Schema for creating a planned absence
