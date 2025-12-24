@@ -71,6 +71,14 @@ export const appRoleEnum = pgEnum('app_role', [
   'User'
 ]);
 
+// System roles for two-tier permission system
+export const systemRoleEnum = pgEnum('system_role', [
+  'employee',
+  'department_admin',
+  'clinic_admin',
+  'system_admin'
+]);
+
 // Deployment areas for employees
 export const deploymentAreaEnum = pgEnum('deployment_area', [
   'Kreißsaal',
@@ -143,10 +151,56 @@ export const weeklyAssignmentTypeEnum = pgEnum('weekly_assignment_type', [
   'Fortbildung'
 ]);
 
+// Clinics table
+export const clinics = pgTable("clinics", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  slug: text("slug").notNull().unique(),
+  timezone: text("timezone").notNull().default('Europe/Vienna'),
+  logoUrl: text("logo_url"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (table) => [
+  uniqueIndex("clinics_slug_idx").on(table.slug)
+]);
+
+export const insertClinicSchema = createInsertSchema(clinics).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export type InsertClinic = z.infer<typeof insertClinicSchema>;
+export type Clinic = typeof clinics.$inferSelect;
+
+// Departments table
+export const departments = pgTable("departments", {
+  id: serial("id").primaryKey(),
+  clinicId: integer("clinic_id").references(() => clinics.id).notNull(),
+  name: text("name").notNull(),
+  slug: text("slug").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (table) => [
+  index("departments_clinic_id_idx").on(table.clinicId),
+  uniqueIndex("departments_clinic_slug_idx").on(table.clinicId, table.slug)
+]);
+
+export const insertDepartmentSchema = createInsertSchema(departments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export type InsertDepartment = z.infer<typeof insertDepartmentSchema>;
+export type Department = typeof departments.$inferSelect;
+
 // Employees table
 export const employees = pgTable("employees", {
   id: serial("id").primaryKey(),
   userId: varchar("user_id").references(() => users.id),
+  departmentId: integer("department_id").references(() => departments.id),
+  systemRole: systemRoleEnum("system_role").notNull().default('employee'),
   name: text("name").notNull(),
   title: text("title"),
   firstName: text("first_name"),
@@ -177,8 +231,51 @@ export const employees = pgTable("employees", {
   updatedAt: timestamp("updated_at").defaultNow().notNull()
 }, (table) => [
   index("employees_user_id_idx").on(table.userId),
+  index("employees_department_id_idx").on(table.departmentId),
   index("employees_is_active_idx").on(table.isActive)
 ]);
+
+// Permissions table
+export const permissions = pgTable("permissions", {
+  id: serial("id").primaryKey(),
+  key: text("key").notNull().unique(),
+  label: text("label").notNull(),
+  scope: text("scope").notNull().default('department'), // 'department' or 'clinic'
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (table) => [
+  uniqueIndex("permissions_key_idx").on(table.key)
+]);
+
+export const insertPermissionSchema = createInsertSchema(permissions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export type InsertPermission = z.infer<typeof insertPermissionSchema>;
+export type Permission = typeof permissions.$inferSelect;
+
+// User permissions junction table (many-to-many with department context)
+export const userPermissions = pgTable("user_permissions", {
+  userId: integer("user_id").references(() => employees.id, { onDelete: 'cascade' }).notNull(),
+  departmentId: integer("department_id").references(() => departments.id, { onDelete: 'cascade' }).notNull(),
+  permissionId: integer("permission_id").references(() => permissions.id, { onDelete: 'cascade' }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.departmentId, table.permissionId] }),
+  index("user_permissions_user_id_idx").on(table.userId),
+  index("user_permissions_department_id_idx").on(table.departmentId),
+  index("user_permissions_permission_id_idx").on(table.permissionId)
+]);
+
+export const insertUserPermissionSchema = createInsertSchema(userPermissions).omit({
+  createdAt: true
+});
+
+export type InsertUserPermission = z.infer<typeof insertUserPermissionSchema>;
+export type UserPermission = typeof userPermissions.$inferSelect;
 
 // User sessions for "stay logged in" functionality
 export const sessions = pgTable("sessions", {
