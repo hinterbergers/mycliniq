@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
-import { db, eq } from "../../lib/db";
-import { employees, sessions } from "@shared/schema";
+import { db, eq, and } from "../../lib/db";
+import { employees, sessions, departments, userPermissions, permissions } from "@shared/schema";
 
 /**
  * User context attached to authenticated requests
@@ -10,9 +10,13 @@ export interface AuthUser {
   oderId?: string;
   employeeId: number;
   appRole: 'Admin' | 'Editor' | 'User';
+  systemRole: 'employee' | 'department_admin' | 'clinic_admin' | 'system_admin';
   isAdmin: boolean;
   name: string;
   lastName: string;
+  departmentId?: number;
+  clinicId?: number;
+  capabilities: string[]; // Permission keys for current department
 }
 
 /**
@@ -48,7 +52,7 @@ function extractToken(req: Request): string | null {
 }
 
 /**
- * Get AuthUser from employee ID
+ * Get AuthUser from employee ID with capabilities
  */
 async function getAuthUserByEmployeeId(employeeId: number): Promise<AuthUser | null> {
   try {
@@ -61,13 +65,56 @@ async function getAuthUserByEmployeeId(employeeId: number): Promise<AuthUser | n
       return null;
     }
     
+    // Get department and clinic info
+    let departmentId: number | undefined;
+    let clinicId: number | undefined;
+    
+    if (employee.departmentId) {
+      departmentId = employee.departmentId;
+      const [department] = await db
+        .select()
+        .from(departments)
+        .where(eq(departments.id, employee.departmentId));
+      
+      if (department) {
+        clinicId = department.clinicId;
+      }
+    }
+    
+    // Get user capabilities for current department
+    let capabilities: string[] = [];
+    if (departmentId) {
+      const userPerms = await db
+        .select({
+          key: permissions.key
+        })
+        .from(userPermissions)
+        .innerJoin(permissions, eq(userPermissions.permissionId, permissions.id))
+        .where(
+          and(
+            eq(userPermissions.userId, employeeId),
+            eq(userPermissions.departmentId, departmentId)
+          )
+        );
+      
+      capabilities = userPerms.map(p => p.key);
+    }
+    
+    // Determine system role and if user is technical admin
+    const systemRole = (employee.systemRole || 'employee') as 'employee' | 'department_admin' | 'clinic_admin' | 'system_admin';
+    const isTechnicalAdmin = systemRole !== 'employee';
+    
     return {
       id: employee.userId ? parseInt(employee.userId) : employee.id,
       employeeId: employee.id,
       appRole: employee.appRole as 'Admin' | 'Editor' | 'User',
-      isAdmin: employee.isAdmin || employee.appRole === 'Admin',
+      systemRole,
+      isAdmin: employee.isAdmin || employee.appRole === 'Admin' || isTechnicalAdmin,
       name: employee.name,
-      lastName: employee.lastName || ''
+      lastName: employee.lastName || '',
+      departmentId,
+      clinicId,
+      capabilities
     };
   } catch (error) {
     console.error('[Auth] Error fetching employee:', error);
@@ -172,7 +219,57 @@ export function requireAuth(
 }
 
 /**
- * Require admin role
+ * Require technical admin role (department_admin or higher)
+ * Returns 403 if user is not technical admin
+ */
+export function requireTechnicalAdmin(
+  req: Request, 
+  res: Response, 
+  next: NextFunction
+): void {
+  if (!req.user) {
+    res.status(401).json({ success: false, error: "Anmeldung erforderlich" });
+    return;
+  }
+  
+  const isTechnicalAdmin = req.user.systemRole === 'department_admin' || 
+                          req.user.systemRole === 'clinic_admin' || 
+                          req.user.systemRole === 'system_admin';
+  
+  if (!isTechnicalAdmin) {
+    res.status(403).json({ success: false, error: "Technische Admin-Berechtigung erforderlich" });
+    return;
+  }
+  
+  next();
+}
+
+/**
+ * Require clinic admin or system admin
+ */
+export function requireClinicAdmin(
+  req: Request, 
+  res: Response, 
+  next: NextFunction
+): void {
+  if (!req.user) {
+    res.status(401).json({ success: false, error: "Anmeldung erforderlich" });
+    return;
+  }
+  
+  const isClinicAdmin = req.user.systemRole === 'clinic_admin' || 
+                       req.user.systemRole === 'system_admin';
+  
+  if (!isClinicAdmin) {
+    res.status(403).json({ success: false, error: "Klinik-Admin-Berechtigung erforderlich" });
+    return;
+  }
+  
+  next();
+}
+
+/**
+ * Require admin role (legacy - for backward compatibility)
  * Returns 403 if user is not admin
  * 
  * Use for: employee management, room management, plan releases
@@ -255,7 +352,27 @@ export function requireOwnerOrAdmin(getOwnerId: (req: Request) => number) {
 }
 
 /**
- * Helper to check if current user is admin
+ * Helper to check if current user is technical admin
+ */
+export function isTechnicalAdmin(req: Request): boolean {
+  if (!req.user) return false;
+  return req.user.systemRole === 'department_admin' || 
+         req.user.systemRole === 'clinic_admin' || 
+         req.user.systemRole === 'system_admin';
+}
+
+/**
+ * Helper to check if current user has capability
+ */
+export function hasCapability(req: Request, capability: string): boolean {
+  if (!req.user) return false;
+  // Technical admins have all capabilities implicitly
+  if (isTechnicalAdmin(req)) return true;
+  return req.user.capabilities.includes(capability);
+}
+
+/**
+ * Helper to check if current user is admin (legacy)
  */
 export function isAdmin(req: Request): boolean {
   return req.user?.isAdmin || req.user?.appRole === 'Admin' || false;
