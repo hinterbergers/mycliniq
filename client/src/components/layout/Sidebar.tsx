@@ -16,7 +16,7 @@ import {
 
 export function Sidebar() {
   const [location, setLocation] = useLocation();
-  const { employee, logout, isAdmin } = useAuth();
+  const { employee, logout, isAdmin, isTechnicalAdmin } = useAuth();
 
   const navItems = [
     { href: "/dienstplaene", label: "Dienstpläne", icon: CalendarDays },
@@ -62,7 +62,7 @@ export function Sidebar() {
 
       <nav className="flex-1 px-3 py-4 space-y-1">
         {navItems
-          .filter(item => !item.adminOnly || isAdmin)
+          .filter(item => !item.adminOnly || isTechnicalAdmin)
           .map((item) => {
             const isActive = location === item.href || (item.href !== "/" && location.startsWith(item.href));
             return (

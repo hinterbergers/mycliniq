@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { employees, resources } from "@shared/schema";
+import { employees, resources, clinics, departments, permissions } from "@shared/schema";
 
 const TEAM_DATA = [
   { 
@@ -114,9 +114,43 @@ async function seed() {
   try {
     console.log("Seeding database...");
     
-    // Seed employees
+    // Seed clinic
+    const [clinic] = await db.insert(clinics).values({
+      name: "Klinikum Klagenfurt",
+      slug: "klinikum-klagenfurt",
+      timezone: "Europe/Vienna"
+    }).returning();
+    console.log("✓ Seeded clinic");
+    
+    // Seed department
+    const [department] = await db.insert(departments).values({
+      clinicId: clinic.id,
+      name: "Gynäkologie und Geburtshilfe",
+      slug: "gyn-geb"
+    }).returning();
+    console.log("✓ Seeded department");
+    
+    // Seed permissions
+    const permissionData = [
+      { key: "dutyplan.edit", label: "Dienstplan bearbeiten", scope: "department" },
+      { key: "dutyplan.publish", label: "Dienstplan veröffentlichen", scope: "department" },
+      { key: "vacation.approve", label: "Urlaub genehmigen", scope: "department" },
+      { key: "sop.edit", label: "SOPs bearbeiten", scope: "department" },
+      { key: "sop.approve", label: "SOPs genehmigen", scope: "department" },
+      { key: "project.manage", label: "Projekte verwalten", scope: "department" }
+    ];
+    
+    for (const perm of permissionData) {
+      await db.insert(permissions).values(perm);
+    }
+    console.log(`✓ Seeded ${permissionData.length} permissions`);
+    
+    // Seed employees with department
     for (const emp of TEAM_DATA) {
-      await db.insert(employees).values(emp);
+      await db.insert(employees).values({
+        ...emp,
+        departmentId: department.id
+      });
     }
     console.log(`✓ Seeded ${TEAM_DATA.length} employees`);
     

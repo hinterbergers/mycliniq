@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
-import { Search, Plus, Filter, UserPlus, Pencil, Loader2, Shield, MapPin, Calendar, Trash2, Award, Building } from "lucide-react";
+import { Search, Plus, Filter, UserPlus, Pencil, Loader2, Shield, MapPin, Calendar, Trash2, Award, Building, Key } from "lucide-react";
 import { useState, useEffect } from "react";
 import { employeeApi } from "@/lib/api";
 import type { Employee } from "@shared/schema";
@@ -118,6 +118,11 @@ export default function EmployeeManagement() {
   const [saving, setSaving] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
+  const [availablePermissions, setAvailablePermissions] = useState<Array<{key: string, label: string, scope: string}>>([]);
+  const [userPermissions, setUserPermissions] = useState<string[]>([]);
+  const [loadingPermissions, setLoadingPermissions] = useState(false);
   const { toast } = useToast();
   
   const [competencies, setCompetencies] = useState<CompetencyData[]>(DUMMY_COMPETENCY_DATA);
@@ -262,6 +267,96 @@ export default function EmployeeManagement() {
   const handleDeleteCompetency = (id: number) => {
     setCompetencies(prev => prev.filter(c => c.id !== id));
     toast({ title: "Gelöscht", description: "Kompetenz wurde entfernt" });
+  };
+
+  const loadPermissions = async (userId: number) => {
+    setLoadingPermissions(true);
+    try {
+      const token = localStorage.getItem('cliniq_auth_token');
+      const response = await fetch(`/api/admin/users/${userId}/permissions`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error("Fehler beim Laden der Berechtigungen");
+      }
+
+      const result = await response.json();
+      if (result.success && result.data) {
+        setAvailablePermissions(result.data.availablePermissions || []);
+        setUserPermissions(result.data.permissions || []);
+      }
+    } catch (error) {
+      console.error("Error loading permissions:", error);
+      toast({
+        title: "Fehler",
+        description: "Berechtigungen konnten nicht geladen werden",
+        variant: "destructive"
+      });
+    } finally {
+      setLoadingPermissions(false);
+    }
+  };
+
+  const handleSavePermissions = async () => {
+    if (!selectedEmployeeId) return;
+
+    setSaving(true);
+    try {
+      const token = localStorage.getItem('cliniq_auth_token');
+      const employee = employees.find(e => e.id === selectedEmployeeId);
+      if (!employee) {
+        throw new Error("Mitarbeiter nicht gefunden");
+      }
+
+      // Use employee's department or current user's department
+      const departmentId = employee.departmentId || currentUser?.departmentId;
+      if (!departmentId) {
+        throw new Error("Keine Abteilung zugeordnet");
+      }
+
+      const response = await fetch(`/api/admin/users/${selectedEmployeeId}/permissions`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          departmentId,
+          permissionKeys: userPermissions
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Fehler beim Speichern");
+      }
+
+      toast({
+        title: "Erfolgreich",
+        description: "Berechtigungen wurden gespeichert"
+      });
+      setPermissionsDialogOpen(false);
+    } catch (error: any) {
+      console.error("Error saving permissions:", error);
+      toast({
+        title: "Fehler",
+        description: error.message || "Berechtigungen konnten nicht gespeichert werden",
+        variant: "destructive"
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const togglePermission = (key: string) => {
+    setUserPermissions(prev =>
+      prev.includes(key)
+        ? prev.filter(p => p !== key)
+        : [...prev, key]
+    );
   };
 
   return (
@@ -417,14 +512,29 @@ export default function EmployeeManagement() {
                           </TableCell>
                           <TableCell className="text-right">
                             {canManageEmployees && (
-                              <Button 
-                                variant="ghost" 
-                                size="icon"
-                                onClick={() => handleEditEmployee(emp)}
-                                data-testid={`button-edit-employee-${emp.id}`}
-                              >
-                                <Pencil className="w-4 h-4" />
-                              </Button>
+                              <div className="flex gap-1 justify-end">
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon"
+                                  onClick={() => {
+                                    setSelectedEmployeeId(emp.id);
+                                    loadPermissions(emp.id);
+                                    setPermissionsDialogOpen(true);
+                                  }}
+                                  data-testid={`button-permissions-employee-${emp.id}`}
+                                  title="Berechtigungen verwalten"
+                                >
+                                  <Key className="w-4 h-4" />
+                                </Button>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon"
+                                  onClick={() => handleEditEmployee(emp)}
+                                  data-testid={`button-edit-employee-${emp.id}`}
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </Button>
+                              </div>
                             )}
                           </TableCell>
                         </TableRow>
@@ -848,6 +958,56 @@ export default function EmployeeManagement() {
               </DialogClose>
               <Button onClick={handleSaveCompetency} data-testid="button-save-competency">
                 Speichern
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Permissions Dialog */}
+        <Dialog open={permissionsDialogOpen} onOpenChange={setPermissionsDialogOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Berechtigungen verwalten</DialogTitle>
+            </DialogHeader>
+            {loadingPermissions ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-[#0F5BA7]" />
+              </div>
+            ) : (
+              <div className="space-y-4 py-4">
+                <p className="text-sm text-muted-foreground">
+                  Wählen Sie die Berechtigungen, die dieser Benutzer für die aktuelle Abteilung haben soll.
+                </p>
+                <div className="space-y-3 max-h-96 overflow-y-auto border rounded-lg p-4">
+                  {availablePermissions.map((perm) => (
+                    <div key={perm.key} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={perm.key}
+                        checked={userPermissions.includes(perm.key)}
+                        onCheckedChange={() => togglePermission(perm.key)}
+                      />
+                      <Label htmlFor={perm.key} className="text-sm font-normal cursor-pointer flex-1">
+                        {perm.label}
+                        <span className="text-xs text-muted-foreground ml-2">({perm.scope})</span>
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button variant="outline">Abbrechen</Button>
+              </DialogClose>
+              <Button onClick={handleSavePermissions} disabled={saving || loadingPermissions}>
+                {saving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Speichern...
+                  </>
+                ) : (
+                  "Speichern"
+                )}
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -36,6 +36,9 @@ export function registerModularApiRoutes(app: Express): void {
   // TODO: In production, enable strict authentication
   app.use("/api", authenticate);
   
+  // Register admin routes (includes /api/me)
+  registerAdminRoutes(app);
+  
   // Employees API
   // TODO: Add requireAdmin for POST, PUT, DELETE
   const employeesRouter = Router();
