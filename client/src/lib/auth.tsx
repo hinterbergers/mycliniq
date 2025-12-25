@@ -1,4 +1,11 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 import type { Employee } from '@shared/schema';
 
 type SystemRole = 'employee' | 'department_admin' | 'clinic_admin' | 'system_admin';
@@ -74,19 +81,24 @@ async function safeJson(res: Response): Promise<any | null> {
 }
 
 /**
- * Wichtig: In deiner aktuellen DB gibt es in employees KEIN system_role Feld.
- * Daher leiten wir systemRole für technische Rechte aus isAdmin ab.
- * Später (wenn system_role Spalte/Logik existiert) kannst du das wieder umstellen.
+ * Baut ein "UserData" Objekt aus Employee Daten.
+ * WICHTIG: Wenn backend systemRole/system_role liefert, übernehmen wir es (statt aus isAdmin zu raten).
  */
 function buildUserFromEmployee(emp: any): UserData {
   const isAdmin = !!emp?.isAdmin;
+
+  const sr =
+    (emp?.systemRole as SystemRole | undefined) ??
+    (emp?.system_role as SystemRole | undefined) ??
+    (isAdmin ? 'department_admin' : 'employee');
+
   return {
     id: emp.id,
     employeeId: emp.id,
     name: emp.name ?? '',
     lastName: emp.lastName ?? '',
     email: emp.email,
-    systemRole: (isAdmin ? 'department_admin' : 'employee') as SystemRole,
+    systemRole: sr,
     appRole: emp.appRole ?? 'User',
     isAdmin,
   };
@@ -99,19 +111,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // ✅ Fix: OR statt "!!employee !!user"
-  const isAuthenticated = useMemo(() => !!token && (!!employee || !!user), [token, employee, user]);
+  // ✅ OR statt "!!employee && !!user"
+  const isAuthenticated = useMemo(
+    () => !!token && (!!employee || !!user),
+    [token, employee, user]
+  );
 
+  // ✅ Admin darf NICHT nur von employee abhängen (fallback über user)
   const isAdmin = useMemo(() => {
-    if (!employee) return false;
-    const role = (employee as any).role;
-    return !!employee.isAdmin || (typeof role === 'string' && (ADMIN_ROLES as readonly string[]).includes(role));
-  }, [employee]);
+    if (employee) {
+      const role = (employee as any).role;
+      return (
+        !!employee.isAdmin ||
+        (typeof role === 'string' && (ADMIN_ROLES as readonly string[]).includes(role))
+      );
+    }
 
+    if (user) {
+      return !!user.isAdmin || user.systemRole === 'system_admin';
+    }
+
+    return false;
+  }, [employee, user]);
+
+  // ✅ technische Admin-Rechte: primär aus user, fallback aus employee.systemRole falls vorhanden
   const isTechnicalAdmin = useMemo(() => {
-    if (!user) return false;
-    return user.systemRole !== 'employee';
-  }, [user]);
+    if (user) return user.systemRole !== 'employee';
+
+    if (employee) {
+      const sr = ((employee as any).systemRole ?? (employee as any).system_role) as
+        | SystemRole
+        | undefined;
+      return !!sr && sr !== 'employee';
+    }
+
+    return false;
+  }, [user, employee]);
 
   const resetAuthState = () => {
     clearToken();
@@ -172,7 +207,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 const fbEmp = fallback.data.employee as Omit<Employee, 'passwordHash'>;
                 applyAuthState({ employee: fbEmp });
 
-                // Falls u keine brauchbaren Admin-Felder hat -> aus employee ableiten
+                // Falls u keine brauchbaren Felder hat -> aus employee ableiten
                 if (!u?.systemRole || typeof u.isAdmin === 'undefined') {
                   applyAuthState({ user: buildUserFromEmployee(fbEmp) });
                 }
