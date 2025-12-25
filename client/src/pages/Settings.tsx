@@ -81,10 +81,16 @@ export default function Settings() {
 
   const loadData = async () => {
     try {
-      const employees = await employeeApi.getAll();
-      setAllEmployees(employees);
-      
-      const emp = employees.find(e => e.id === viewingUserId);
+      const res = await employeeApi.getAll();
+
+// getAll kann 2 Formen liefern:
+// 1) Employee[]
+// 2) { success: true, data: Employee[] }
+const employees: Employee[] = Array.isArray(res) ? res : (res?.data ?? []);
+
+setAllEmployees(employees);
+
+const emp = employees.find(e => e.id === viewingUserId);
       if (emp) {
         setEmployee(emp);
         const nameParts = emp.name.split(' ');
