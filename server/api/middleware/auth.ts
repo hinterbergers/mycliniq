@@ -178,8 +178,8 @@ export async function authenticate(
       if (process.env.NODE_ENV !== 'production') {
         // Don't spam logs for common endpoints
         const skipLogPaths = ['/api/auth/me', '/api/roster-settings'];
-        if (!skipLogPaths.some(p => req.path.startsWith(p))) {
-          console.warn(`[Auth] Unauthenticated access to ${req.method} ${req.path}`);
+        if (!skipLogPaths.some(p => req.originalUrl.startsWith(p))) {
+          console.warn(`[Auth] Unauthenticated access to ${req.method} ${req.originalUrl}`);
         }
       }
       return next();
