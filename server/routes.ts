@@ -102,6 +102,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  // Me -> gibt den aktuell eingeloggten User zurück
+  app.get("/api/auth/me", authenticate, requireAuth, async (req: Request, res: Response) => {
+  // req.user kommt aus authenticate
+    return res.json({
+      success: true,
+      user: req.user,
+  });
+});
+
   // Passwort setzen/ändern (self oder admin)
   app.post("/api/auth/set-password", authenticate, requireAuth, async (req: Request, res: Response) => {
     try {
