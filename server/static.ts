@@ -13,13 +13,16 @@ export function serveStatic(app: Express) {
   // 1) Static assets
   app.use(express.static(distPath));
 
-  // 2) SPA fallback ONLY for non-API routes
+  // 2) Dedicated API 404 fallback (after API routes!)
+  app.use("/api", (_req, res) => {
+    res.status(404).json({ success: false, error: "API endpoint not found" });
+  });
+
+  // 3) SPA fallback only for GET/HEAD and never for /api
   app.get("*", (req, res) => {
-    // If request is for an API endpoint that wasn't handled, return JSON 404
-    if (req.path.startsWith("/api")) {
+    if (req.originalUrl.startsWith("/api")) {
       return res.status(404).json({ success: false, error: "API endpoint not found" });
     }
-    // Otherwise, serve the SPA
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }
