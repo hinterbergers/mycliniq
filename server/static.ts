@@ -14,8 +14,12 @@ export function serveStatic(app: Express) {
   app.use(express.static(distPath));
 
   // 2) SPA fallback ONLY for non-API routes
-  // Note: API-404-Guard is handled in server/index.ts before serveStatic is called
-  app.get("*", (_req, res) => {
+  app.get("*", (req, res) => {
+    // If request is for an API endpoint that wasn't handled, return JSON 404
+    if (req.path.startsWith("/api")) {
+      return res.status(404).json({ success: false, error: "API endpoint not found" });
+    }
+    // Otherwise, serve the SPA
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }
