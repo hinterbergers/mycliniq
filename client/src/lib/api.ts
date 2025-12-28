@@ -127,11 +127,21 @@ async function apiFetch<T>(
     throw new ApiError(msg, res.status, "REQUEST_FAILED", data);
   }
 
-  // Envelope entpacken
-  if (unwrap && isEnvelope(data)) {
-    if (data.success === true) return data.data as T;
-    throw new ApiError(data.error || "Request failed", res.status, "REQUEST_FAILED", data);
+ // Envelope entpacken (unterstützt sowohl {success:true,data:...} als auch {success:true,user:...})
+if (unwrap && isEnvelope(data)) {
+  if (data.success === true) {
+    if ("data" in data) return (data as any).data as T;
+    // wenn der Endpoint kein data hat, gib einfach den Body zurück
+    return data as T;
   }
+
+  throw new ApiError(
+    (data as any).error || "Request failed",
+    res.status,
+    "REQUEST_FAILED",
+    data
+  );
+}
 
   return data as T;
 }
@@ -596,5 +606,17 @@ export const plannedAbsencesApi = {
 
   delete: async (id: number): Promise<void> => {
     return apiFetch<void>(`/planned-absences/${id}`, { method: "DELETE" });
+  },
+};
+
+export type MeResponse = {
+  success: true;
+  user: any;
+};
+
+eexport const authApi = {
+  me: async (): Promise<any> => {
+    const res = await apiFetch<MeResponse>("/auth/me", { method: "GET" });
+    return res.user;
   },
 };
