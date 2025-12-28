@@ -82,6 +82,11 @@ function writeToken(token: string) {
   }
 }
 
+// Legacy helper used by some admin pages
+export function getAuthToken() {
+  return readToken();
+}
+
 async function safeJson(res: Response): Promise<any | null> {
   try {
     return await res.json();
