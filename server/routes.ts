@@ -5,15 +5,11 @@ import type { Server } from "http";
 import { storage } from "./storage";
 import { registerModularApiRoutes } from "./api";
 
-import { authenticate, requireAuth } from "./api/middleware/auth";
-
 import { generateRosterPlan } from "./services/rosterGenerator";
 
-import {
-  insertRosterShiftSchema,
-} from "@shared/schema";
-
+import { insertRosterShiftSchema } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
+
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 
@@ -22,6 +18,7 @@ import crypto from "crypto";
  * - Alles was schon in registerModularApiRoutes(app) definiert ist (z.B. /api/me, /api/employees, /api/admin, ...)
  *   NICHT nochmal hier definieren -> sonst Konflikte/Überschreiben.
  * - routes.ts hält nur "legacy" + auth + roster-legacy Endpunkte.
+ * - /api/auth/me ist entfernt. Frontend muss /api/me verwenden.
  */
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
   // 1) Modular API (source of truth)
@@ -32,9 +29,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
    * 2) AUTH (Session Token)
    * =========================
    */
+
+  // LOGIN
   app.post("/api/auth/login", async (req: Request, res: Response) => {
     try {
-      const { email, password, rememberMe } = req.body;
+      const { email, password, rememberMe } = req.body ?? {};
 
       if (!email || !password) {
         return res.status(400).json({ error: "E-Mail und Passwort sind erforderlich" });
@@ -57,6 +56,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       }
 
       const token = crypto.randomBytes(32).toString("hex");
+
       const expiresAt = new Date();
       if (rememberMe) {
         expiresAt.setDate(expiresAt.getDate() + 30);
@@ -74,7 +74,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       await storage.updateEmployeeLastLogin(employee.id);
 
-      const { passwordHash, ...safeEmployee } = employee;
+      // don't leak hash
+      const { passwordHash, ...safeEmployee } = employee as any;
 
       return res.json({
         token,
@@ -87,6 +88,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  // LOGOUT
   app.post("/api/auth/logout", async (req: Request, res: Response) => {
     try {
       const authHeader = req.headers.authorization;
@@ -96,29 +98,17 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       }
       return res.json({ success: true });
     } catch (error) {
+      console.error("Logout error:", error);
       return res.status(500).json({ error: "Abmeldung fehlgeschlagen" });
     }
   });
 
   /**
-   * Legacy endpoint: /api/auth/me
-   * -> Liefert die gleiche Shape wie /api/me (success/data/user/...)
-   * -> Damit dein Frontend-Fallback sauber funktioniert.
+   * /api/auth/me ist ABSICHTLICH ENTFERNT.
+   * Verwende /api/me (kommt aus registerModularApiRoutes).
    */
-  app.get("/api/auth/me", authenticate, requireAuth, async (req: Request, res: Response) => {
-    return res.json({
-      success: true,
-      data: {
-        user: req.user,
-        // /api/me liefert bei dir zusätzlich department/clinic.
-        // Wenn du es 1:1 brauchst, bauen wir das noch dazu.
-        department: null,
-        clinic: null,
-        capabilities: req.user?.capabilities ?? [],
-      },
-    });
-  });
 
+  // SET PASSWORD (admin or self)
   app.post("/api/auth/set-password", async (req: Request, res: Response) => {
     try {
       const authHeader = req.headers.authorization;
@@ -137,7 +127,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         return res.status(401).json({ error: "Benutzer nicht gefunden" });
       }
 
-      const { employeeId, newPassword, currentPassword } = req.body;
+      const { employeeId, newPassword, currentPassword } = req.body ?? {};
       const targetEmployeeId = employeeId || session.employeeId;
 
       const isAdmin =
@@ -148,6 +138,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         return res.status(403).json({ error: "Keine Berechtigung" });
       }
 
+      // self-change: require current password if already set
       if (targetEmployeeId === session.employeeId && currentEmployee.passwordHash) {
         if (!currentPassword) {
           return res.status(400).json({ error: "Aktuelles Passwort erforderlich" });
@@ -172,9 +163,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  // INIT PASSWORD (first time)
   app.post("/api/auth/init-password", async (req: Request, res: Response) => {
     try {
-      const { email, password } = req.body;
+      const { email, password } = req.body ?? {};
 
       if (!email || !password) {
         return res.status(400).json({ error: "E-Mail und Passwort erforderlich" });
@@ -217,6 +209,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const shifts = await storage.getRosterShiftsByMonth(year, month);
       return res.json(shifts);
     } catch (error) {
+      console.error("Fetch roster error:", error);
       return res.status(500).json({ error: "Failed to fetch roster" });
     }
   });
@@ -227,6 +220,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const shifts = await storage.getRosterShiftsByDate(date);
       return res.json(shifts);
     } catch (error) {
+      console.error("Fetch roster date error:", error);
       return res.status(500).json({ error: "Failed to fetch roster for date" });
     }
   });
@@ -238,6 +232,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!shift) return res.status(404).json({ error: "Shift not found" });
       return res.json(shift);
     } catch (error) {
+      console.error("Fetch shift error:", error);
       return res.status(500).json({ error: "Failed to fetch shift" });
     }
   });
@@ -252,6 +247,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         const validationError = fromZodError(error);
         return res.status(400).json({ error: validationError.message });
       }
+      console.error("Create roster shift error:", error);
       return res.status(500).json({ error: "Failed to create roster shift" });
     }
   });
@@ -263,6 +259,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!shift) return res.status(404).json({ error: "Shift not found" });
       return res.json(shift);
     } catch (error) {
+      console.error("Update roster shift error:", error);
       return res.status(500).json({ error: "Failed to update shift" });
     }
   });
@@ -273,19 +270,21 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       await storage.deleteRosterShift(id);
       return res.status(204).send();
     } catch (error) {
+      console.error("Delete roster shift error:", error);
       return res.status(500).json({ error: "Failed to delete roster shift" });
     }
   });
 
   app.post("/api/roster/bulk", async (req: Request, res: Response) => {
     try {
-      const shifts = req.body.shifts;
+      const shifts = req.body?.shifts;
       if (!Array.isArray(shifts)) {
         return res.status(400).json({ error: "Shifts must be an array" });
       }
       const results = await storage.bulkCreateRosterShifts(shifts);
       return res.status(201).json(results);
     } catch (error) {
+      console.error("Bulk create roster shifts error:", error);
       return res.status(500).json({ error: "Failed to create roster shifts" });
     }
   });
@@ -297,6 +296,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       await storage.deleteRosterShiftsByMonth(year, month);
       return res.status(204).send();
     } catch (error) {
+      console.error("Delete roster month error:", error);
       return res.status(500).json({ error: "Failed to delete roster shifts" });
     }
   });
@@ -304,7 +304,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // AI Roster Generation
   app.post("/api/roster/generate", async (req: Request, res: Response) => {
     try {
-      const { year, month } = req.body;
+      const { year, month } = req.body ?? {};
       if (!year || !month) {
         return res.status(400).json({ error: "Jahr und Monat sind erforderlich" });
       }
@@ -336,7 +336,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Apply generated roster (save to database)
   app.post("/api/roster/apply-generated", async (req: Request, res: Response) => {
     try {
-      const { year, month, shifts, replaceExisting } = req.body;
+      const { year, month, shifts, replaceExisting } = req.body ?? {};
 
       if (!shifts || !Array.isArray(shifts)) {
         return res.status(400).json({ error: "Keine Dienste zum Speichern" });
@@ -367,25 +367,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       });
     }
   });
-
-  /**
-   * =========================
-   * 4) Restliche Legacy-Endpunkte
-   * =========================
-   * Wenn du sie noch brauchst, lass sie hier (unverändert) drin.
-   * In deinem Repo sind das u.a.:
-   * - shift-swaps
-   * - roster-settings
-   * - shift-wishes
-   * - planned-absences
-   * - knowledge/documents
-   *
-   * Ich habe sie hier bewusst weggelassen, weil einige davon inzwischen
-   * wahrscheinlich schon modular existieren -> sonst Route-Konflikte.
-   *
-   * Wenn du willst: sag mir kurz, welche Endpunkte aktuell 404 geben,
-   * dann füge ich GENAU die fehlenden Legacy-Routen wieder sauber ein.
-   */
 
   return httpServer;
 }
