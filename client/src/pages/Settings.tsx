@@ -36,11 +36,17 @@ import { useAuth } from "@/lib/auth";
 export default function Settings() {
   const params = useParams();
   const [, setLocation] = useLocation();
-  const { employee: currentUser, isAdmin } = useAuth();
+  const { employee: currentUser, user, isAdmin } = useAuth();
   
-  const viewingUserId = params.userId ? parseInt(params.userId) : (currentUser?.id || 0);
+  const viewingUserId = params.userId
+    ? parseInt(params.userId)
+    : user?.employeeId || currentUser?.id || 0;
   
-  const isViewingOwnProfile = currentUser ? viewingUserId === currentUser.id : false;
+  const isViewingOwnProfile = currentUser
+    ? viewingUserId === currentUser.id
+    : user
+    ? viewingUserId === user.employeeId
+    : false;
   const canEditBasicInfo = isViewingOwnProfile || isAdmin;
   const canEditPrivateInfo = isAdmin;
   const canEditRoleAndCompetencies = isAdmin;
@@ -238,450 +244,234 @@ export default function Settings() {
           </div>
           <div>
             <h2 className="text-2xl font-bold">{employee.name}</h2>
-            <div className="flex items-center gap-2 mt-1">
-              <Badge variant="outline">{employee.role}</Badge>
-              <Badge variant="secondary" className="font-mono">{formData.badge}</Badge>
-              {employee.isAdmin && (
-                <Badge className="bg-amber-100 text-amber-700 border-amber-200">Admin</Badge>
-              )}
-              {employee.isActive ? (
-                <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">Aktiv</Badge>
-              ) : (
-                <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">Inaktiv</Badge>
-              )}
-            </div>
+            <p className="text-muted-foreground flex items-center gap-2">
+              <User className="w-4 h-4" /> {employee.role}
+            </p>
           </div>
         </div>
 
-        <Tabs defaultValue="profile">
-          <TabsList className="mb-6">
-            <TabsTrigger value="profile" className="gap-2">
-              <User className="w-4 h-4" /> Profil
-            </TabsTrigger>
-            <TabsTrigger value="qualifications" className="gap-2">
-              <GraduationCap className="w-4 h-4" /> Qualifikationen & Kürzel
-            </TabsTrigger>
-            {(isViewingOwnProfile || isAdmin) && (
-              <TabsTrigger value="security" className="gap-2">
-                <Lock className="w-4 h-4" /> Sicherheit
-              </TabsTrigger>
-            )}
+        <Tabs defaultValue="profile" className="space-y-6">
+          <TabsList>
+            <TabsTrigger value="profile">Profil</TabsTrigger>
+            <TabsTrigger value="security">Sicherheit</TabsTrigger>
+            <TabsTrigger value="roles">Rollen & Kompetenzen</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="profile">
-            <div className="grid gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <User className="w-5 h-5" /> Persönliche Daten
-                  </CardTitle>
-                  <CardDescription>
-                    {canEditBasicInfo ? "Bearbeiten Sie Ihre persönlichen Informationen" : "Nur zur Ansicht"}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="title">Titel</Label>
-                      <Input 
-                        id="title"
-                        value={formData.title}
-                        onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
-                        disabled={!canEditBasicInfo}
-                        placeholder="z.B. Dr., PD Dr., Prof."
-                        data-testid="input-title"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="firstName">
-                        Vorname <span className="text-destructive">*</span>
-                      </Label>
-                      <Input 
-                        id="firstName"
-                        value={formData.firstName}
-                        onChange={(e) => setFormData(prev => ({ ...prev, firstName: e.target.value }))}
-                        disabled={!canEditBasicInfo}
-                        required
-                        data-testid="input-firstname"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="lastName">
-                        Nachname <span className="text-destructive">*</span>
-                      </Label>
-                      <Input 
-                        id="lastName"
-                        value={formData.lastName}
-                        onChange={(e) => setFormData(prev => ({ ...prev, lastName: e.target.value }))}
-                        disabled={!canEditBasicInfo}
-                        required
-                        data-testid="input-lastname"
-                      />
-                    </div>
-                  </div>
-                  
+          <TabsContent value="profile" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Basisdaten</CardTitle>
+                <CardDescription>Verwalten Sie Ihre persönlichen Informationen</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="birthday" className="flex items-center gap-2">
-                      <Calendar className="w-4 h-4" />
-                      Geburtstag <span className="text-destructive">*</span>
-                    </Label>
+                    <Label>Titel</Label>
                     <Input 
-                      id="birthday"
-                      type="date"
-                      value={formData.birthday}
-                      onChange={(e) => setFormData(prev => ({ ...prev, birthday: e.target.value }))}
+                      value={formData.title} 
+                      onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))} 
                       disabled={!canEditBasicInfo}
-                      required
-                      className="w-48"
-                      data-testid="input-birthday"
-                    />
-                    <p className="text-xs text-muted-foreground flex items-center gap-1">
-                      <Info className="w-3 h-3" />
-                      Dein Geburtstag wird nur für Geburtstags-Hinweise im Team verwendet.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Mail className="w-5 h-5" /> Kontaktdaten
-                  </CardTitle>
-                  <CardDescription>
-                    Dienstliche und private Erreichbarkeit
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="email">
-                        E-Mail (dienstlich) <span className="text-destructive">*</span>
-                      </Label>
-                      <Input 
-                        id="email"
-                        type="email"
-                        value={formData.email}
-                        onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                        disabled={!canEditBasicInfo}
-                        required
-                        data-testid="input-email"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="emailPrivate">
-                        E-Mail (privat)
-                        {!canEditPrivateInfo && isViewingOwnProfile && (
-                          <Badge variant="outline" className="ml-2 text-xs">Nur Ansicht</Badge>
-                        )}
-                      </Label>
-                      <Input 
-                        id="emailPrivate"
-                        type="email"
-                        value={formData.emailPrivate}
-                        onChange={(e) => setFormData(prev => ({ ...prev, emailPrivate: e.target.value }))}
-                        disabled={!canEditPrivateInfo}
-                        className={!canEditPrivateInfo ? "bg-muted" : ""}
-                        data-testid="input-email-private"
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="phoneWork">
-                        Telefon (dienstlich) <span className="text-destructive">*</span>
-                      </Label>
-                      <Input 
-                        id="phoneWork"
-                        type="tel"
-                        value={formData.phoneWork}
-                        onChange={(e) => setFormData(prev => ({ ...prev, phoneWork: e.target.value }))}
-                        disabled={!canEditBasicInfo}
-                        required
-                        data-testid="input-phone-work"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="phonePrivate">
-                        Telefon (privat)
-                        {!canEditPrivateInfo && isViewingOwnProfile && (
-                          <Badge variant="outline" className="ml-2 text-xs">Nur Ansicht</Badge>
-                        )}
-                      </Label>
-                      <Input 
-                        id="phonePrivate"
-                        type="tel"
-                        value={formData.phonePrivate}
-                        onChange={(e) => setFormData(prev => ({ ...prev, phonePrivate: e.target.value }))}
-                        disabled={!canEditPrivateInfo}
-                        className={!canEditPrivateInfo ? "bg-muted" : ""}
-                        data-testid="input-phone-private"
-                      />
-                    </div>
-                  </div>
-                  
-                  {!canEditPrivateInfo && isViewingOwnProfile && (
-                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                      <p className="text-sm text-amber-800">
-                        Private Kontaktdaten können nur durch die Sekretärin, den Primararzt oder den 1. Oberarzt geändert werden.
-                      </p>
-                    </div>
-                  )}
-                  
-                  <Separator />
-                  
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label>Private Kontaktdaten für Kolleg:innen sichtbar machen</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Wenn aktiviert, können Ihre Kolleg:innen Ihre privaten Kontaktdaten im Teamverzeichnis sehen
-                      </p>
-                    </div>
-                    <Switch 
-                      checked={formData.showPrivateContact}
-                      onCheckedChange={(checked) => setFormData(prev => ({ ...prev, showPrivateContact: checked }))}
-                      disabled={!canEditBasicInfo}
-                      data-testid="switch-show-private"
                     />
                   </div>
-                </CardContent>
-              </Card>
+                  <div className="space-y-2">
+                    <Label>Vorname</Label>
+                    <Input 
+                      value={formData.firstName} 
+                      onChange={(e) => setFormData(prev => ({ ...prev, firstName: e.target.value }))} 
+                      disabled={!canEditBasicInfo}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Nachname</Label>
+                    <Input 
+                      value={formData.lastName} 
+                      onChange={(e) => setFormData(prev => ({ ...prev, lastName: e.target.value }))} 
+                      disabled={!canEditBasicInfo}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Geburtsdatum</Label>
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-muted-foreground" />
+                      <Input 
+                        type="date"
+                        value={formData.birthday}
+                        onChange={(e) => setFormData(prev => ({ ...prev, birthday: e.target.value }))} 
+                        disabled={!canEditBasicInfo}
+                      />
+                    </div>
+                  </div>
+                </div>
 
-              {canEditBasicInfo && (
+                <Separator />
+
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>E-Mail (Dienst)</Label>
+                    <div className="relative">
+                      <Mail className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
+                      <Input 
+                        className="pl-10"
+                        value={formData.email} 
+                        onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))} 
+                        disabled={!canEditBasicInfo}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>E-Mail (privat)</Label>
+                    <div className="relative">
+                      <Mail className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
+                      <Input 
+                        className="pl-10"
+                        value={formData.emailPrivate} 
+                        onChange={(e) => setFormData(prev => ({ ...prev, emailPrivate: e.target.value }))} 
+                        disabled={!canEditPrivateInfo}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Telefon (Dienst)</Label>
+                    <div className="relative">
+                      <Phone className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
+                      <Input 
+                        className="pl-10"
+                        value={formData.phoneWork} 
+                        onChange={(e) => setFormData(prev => ({ ...prev, phoneWork: e.target.value }))} 
+                        disabled={!canEditBasicInfo}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Telefon (privat)</Label>
+                    <div className="relative">
+                      <Phone className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
+                      <Input 
+                        className="pl-10"
+                        value={formData.phonePrivate} 
+                        onChange={(e) => setFormData(prev => ({ ...prev, phonePrivate: e.target.value }))} 
+                        disabled={!canEditPrivateInfo}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/30">
+                  <div className="flex items-center gap-3">
+                    <Lock className="w-4 h-4 text-muted-foreground" />
+                    <div>
+                      <p className="font-medium">Private Kontaktdaten sichtbar</p>
+                      <p className="text-sm text-muted-foreground">Erlaubt das Anzeigen privater Telefonnummer/E-Mail</p>
+                    </div>
+                  </div>
+                  <Switch 
+                    checked={formData.showPrivateContact}
+                    onCheckedChange={(checked) => setFormData(prev => ({ ...prev, showPrivateContact: checked }))}
+                    disabled={!canEditPrivateInfo}
+                  />
+                </div>
+
                 <div className="flex justify-end">
-                  <Button onClick={handleSave} disabled={saving} className="gap-2" data-testid="button-save">
-                    <Save className="w-4 h-4" />
-                    {saving ? "Wird gespeichert..." : "Änderungen speichern"}
+                  <Button onClick={handleSave} disabled={!canEditBasicInfo || saving}>
+                    <Save className="w-4 h-4 mr-2" />
+                    Speichern
                   </Button>
                 </div>
-              )}
-            </div>
-          </TabsContent>
-
-          <TabsContent value="qualifications">
-            <div className="grid gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Tag className="w-5 h-5" /> Namenskürzel / Badge
-                  </CardTitle>
-                  <CardDescription>
-                    Ihr eindeutiges Kürzel für Dienstplan und Wochenplan
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-lg bg-primary/10 flex items-center justify-center text-primary text-2xl font-bold font-mono">
-                      {formData.badge}
-                    </div>
-                    <div className="flex-1">
-                      <p className="font-medium">Aktuelles Kürzel: <span className="font-mono text-lg">{formData.badge}</span></p>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Dein Kürzel wird im Dienstplan und Wochenplan angezeigt. Es sollte eindeutig sein.
-                      </p>
-                    </div>
-                    {canEditBasicInfo && (
-                      <Dialog open={isBadgeDialogOpen} onOpenChange={setIsBadgeDialogOpen}>
-                        <DialogTrigger asChild>
-                          <Button variant="outline" className="gap-2" data-testid="button-change-badge">
-                            <Pencil className="w-4 h-4" />
-                            Badge ändern
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Kürzel ändern</DialogTitle>
-                            <DialogDescription>
-                              Geben Sie ein neues eindeutiges Kürzel ein (2-4 Zeichen empfohlen)
-                            </DialogDescription>
-                          </DialogHeader>
-                          <div className="py-4">
-                            <div className="space-y-2">
-                              <Label htmlFor="newBadge">Neues Kürzel</Label>
-                              <Input 
-                                id="newBadge"
-                                value={newBadge}
-                                onChange={(e) => setNewBadge(e.target.value.toUpperCase())}
-                                placeholder="z.B. SH, LG, MW"
-                                maxLength={4}
-                                className="font-mono text-lg uppercase"
-                                data-testid="input-new-badge"
-                              />
-                              <p className="text-xs text-muted-foreground">
-                                Das Kürzel sollte eindeutig sein. Typischerweise werden die Initialen des Nachnamens verwendet.
-                              </p>
-                            </div>
-                          </div>
-                          <DialogFooter>
-                            <Button variant="outline" onClick={() => setIsBadgeDialogOpen(false)}>
-                              Abbrechen
-                            </Button>
-                            <Button onClick={handleBadgeChange} disabled={!newBadge} data-testid="button-save-badge">
-                              Speichern
-                            </Button>
-                          </DialogFooter>
-                        </DialogContent>
-                      </Dialog>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Briefcase className="w-5 h-5" /> Dienstgrad & Einsetzbarkeit
-                  </CardTitle>
-                  <CardDescription>
-                    Diese Felder können nur durch die Sekretärin, den Primararzt oder den 1. Oberarzt geändert werden
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label>Dienstgrad</Label>
-                    <div className="flex items-center gap-2">
-                      <Input value={employee.role} disabled className="bg-muted" />
-                      {!isAdmin && (
-                        <Badge variant="outline" className="shrink-0">Nur Ansicht</Badge>
-                      )}
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label>Kompetenzen</Label>
-                    <div className="flex flex-wrap gap-2 p-3 bg-muted rounded-lg min-h-[60px]">
-                      {employee.competencies.length > 0 ? (
-                        employee.competencies.map((comp, i) => (
-                          <Badge key={i} variant="secondary">{comp}</Badge>
-                        ))
-                      ) : (
-                        <span className="text-sm text-muted-foreground">Keine Kompetenzen eingetragen</span>
-                      )}
-                    </div>
-                    {!isAdmin && (
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Wenden Sie sich an die Sekretärin oder einen Administrator, um Änderungen vorzunehmen
-                      </p>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <GraduationCap className="w-5 h-5" /> Diplome & Zertifikate
-                  </CardTitle>
-                  <CardDescription>
-                    Laden Sie Ihre Diplome und Zertifikate hoch
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex flex-wrap gap-2">
-                    {employee.diplomas && employee.diplomas.length > 0 ? (
-                      employee.diplomas.map((diploma, i) => (
-                        <div key={i} className="flex items-center gap-2 px-3 py-2 bg-secondary rounded-lg">
-                          <FileText className="w-4 h-4" />
-                          <span className="text-sm">{diploma}</span>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-sm text-muted-foreground">Keine Diplome hochgeladen</p>
-                    )}
-                  </div>
-                  
-                  {canEditBasicInfo && (
-                    <Button variant="outline" className="gap-2" data-testid="button-upload-diploma">
-                      <Upload className="w-4 h-4" /> Diplom hochladen
-                    </Button>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="security">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Lock className="w-5 h-5" /> Sicherheit
-                </CardTitle>
-                <CardDescription>
-                  Verwalten Sie Ihr Passwort und Ihre Sicherheitseinstellungen
-                </CardDescription>
+                <CardTitle>Sicherheit</CardTitle>
+                <CardDescription>Passwort ändern</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-secondary/50 rounded-lg">
-                  <div>
-                    <p className="font-medium">Passwort ändern</p>
-                    <p className="text-sm text-muted-foreground">
-                      Ändern Sie Ihr Passwort regelmäßig für mehr Sicherheit
-                    </p>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Aktuelles Passwort</Label>
+                    <Input 
+                      type="password"
+                      value={passwordData.currentPassword}
+                      onChange={(e) => setPasswordData(prev => ({ ...prev, currentPassword: e.target.value }))}
+                      disabled
+                    />
                   </div>
-                  <Dialog open={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen}>
-                    <DialogTrigger asChild>
-                      <Button variant="outline" data-testid="button-change-password">
-                        Passwort ändern
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Passwort ändern</DialogTitle>
-                        <DialogDescription>
-                          Geben Sie Ihr aktuelles und ein neues Passwort ein
-                        </DialogDescription>
-                      </DialogHeader>
-                      <div className="grid gap-4 py-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="currentPassword">Aktuelles Passwort</Label>
-                          <Input 
-                            id="currentPassword"
-                            type="password"
-                            value={passwordData.currentPassword}
-                            onChange={(e) => setPasswordData(prev => ({ ...prev, currentPassword: e.target.value }))}
-                            data-testid="input-current-password"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="newPassword">Neues Passwort</Label>
-                          <Input 
-                            id="newPassword"
-                            type="password"
-                            value={passwordData.newPassword}
-                            onChange={(e) => setPasswordData(prev => ({ ...prev, newPassword: e.target.value }))}
-                            data-testid="input-new-password"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="confirmPassword">Passwort bestätigen</Label>
-                          <Input 
-                            id="confirmPassword"
-                            type="password"
-                            value={passwordData.confirmPassword}
-                            onChange={(e) => setPasswordData(prev => ({ ...prev, confirmPassword: e.target.value }))}
-                            data-testid="input-confirm-password"
-                          />
-                        </div>
-                      </div>
-                      <DialogFooter>
-                        <Button variant="outline" onClick={() => setIsPasswordDialogOpen(false)}>
-                          Abbrechen
-                        </Button>
-                        <Button onClick={handlePasswordChange} data-testid="button-save-password">
-                          Speichern
-                        </Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
+                  <div className="space-y-2">
+                    <Label>Neues Passwort</Label>
+                    <Input 
+                      type="password"
+                      value={passwordData.newPassword}
+                      onChange={(e) => setPasswordData(prev => ({ ...prev, newPassword: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Neues Passwort bestätigen</Label>
+                    <Input 
+                      type="password"
+                      value={passwordData.confirmPassword}
+                      onChange={(e) => setPasswordData(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                    />
+                  </div>
                 </div>
 
-                <Separator />
+                <Button onClick={handlePasswordChange}>
+                  <Lock className="w-4 h-4 mr-2" />
+                  Passwort ändern
+                </Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-                <div className="p-4 bg-muted/50 rounded-lg">
-                  <p className="text-sm text-muted-foreground">
-                    <strong>Hinweis:</strong> Bei vergessenen Passwörtern wenden Sie sich bitte an die Sekretärin 
-                    oder einen Administrator. Passwörter können nicht per E-Mail zurückgesetzt werden.
-                  </p>
+          <TabsContent value="roles" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Rollen & Kompetenzen</CardTitle>
+                <CardDescription>Verwalten Sie Ihre fachlichen Einstellungen</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Rolle</Label>
+                    <div className="relative">
+                      <Briefcase className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
+                      <Input value={employee.role} disabled />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>App-Rolle</Label>
+                    <div className="relative">
+                      <Shield className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
+                      <Input value={employee.appRole} disabled />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Kompetenzen</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {employee.competencies?.length ? (
+                      employee.competencies.map((comp, idx) => (
+                        <Badge key={idx} variant="secondary">
+                          <GraduationCap className="w-3 h-3 mr-1" /> {comp}
+                        </Badge>
+                      ))
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Keine Kompetenzen hinterlegt</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Primärer Einsatzbereich</Label>
+                  <div className="relative">
+                    <Tag className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
+                    <Input value={employee.primaryDeploymentArea || "—"} disabled />
+                  </div>
                 </div>
               </CardContent>
             </Card>
