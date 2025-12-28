@@ -3,7 +3,7 @@ import type { Express, Request, Response } from "express";
 import type { Server } from "http";
 
 import { storage } from "./storage";
-import { registerModularApiRoutes } from "./api";
+import { registerModularApiRoutes } from "./api/middleware/auth";
 import { authenticate, requireAuth } from "./lib/auth";
 
 import { generateRosterPlan } from "./services/rosterGenerator";
