@@ -26,15 +26,23 @@ import type {
   InsertPlannedAbsence,
 } from "@shared/schema";
 
-import { getAuthToken } from "@/lib/auth";
-
 const API_BASE = "/api";
+const TOKEN_KEY = "cliniq_auth_token";
 
 type ApiEnvelope<T> =
   | { success: true; data: T }
-  | { success: false; error: string };
+  | { success: false; error: string }
+  | any;
 
-async function parseJsonSafe(res: Response): Promise<any | null> {
+function readToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+async function safeJson(res: Response): Promise<any | null> {
   try {
     return await res.json();
   } catch {
@@ -42,385 +50,454 @@ async function parseJsonSafe(res: Response): Promise<any | null> {
   }
 }
 
-function buildHeaders(extra?: HeadersInit): HeadersInit {
-  const token = getAuthToken();
-  const base: Record<string, string> = {};
+function isEnvelope(obj: any): obj is { success: boolean } {
+  return obj && typeof obj === "object" && typeof obj.success === "boolean";
+}
 
-  if (token) base.Authorization = `Bearer ${token}`;
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+  payload?: any;
 
-  // extra darf base überschreiben
-  return { ...base, ...(extra as any) };
+  constructor(message: string, status: number, code?: string, payload?: any) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+    this.payload = payload;
+  }
 }
 
 /**
- * apiFetch:
- * - hängt Bearer Token automatisch an
- * - entpackt { success:true, data } Responses
- * - wirft bei { success:false, error } oder HTTP !ok
+ * Zentraler Fetch:
+ * - hängt Bearer Token automatisch an (wenn vorhanden)
+ * - JSON-Handling + Envelope-Unwrap
+ * - 401 => code "AUTH_REQUIRED"
  */
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
+async function apiFetch<T>(
+  path: string,
+  options: RequestInit = {},
+  config?: { unwrap?: boolean }
+): Promise<T> {
+  const unwrap = config?.unwrap ?? true;
 
-  const res = await fetch(url, {
-    ...init,
-    headers: buildHeaders(init?.headers),
+  const token = readToken();
+
+  const headers = new Headers(options.headers || {});
+  // Accept immer setzen
+  if (!headers.has("Accept")) headers.set("Accept", "application/json");
+
+  // JSON body => content-type
+  if (options.body && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  // Auth
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers,
   });
 
-  // 204: No Content
-  if (res.status === 204) return {} as T;
-
-  const body = await parseJsonSafe(res);
-
-  // Wenn Backend "success envelope" nutzt:
-  if (body && typeof body === "object" && "success" in body) {
-    const env = body as ApiEnvelope<any>;
-    if (env.success) return env.data as T;
-    throw new Error(env.error || "Request failed");
+  // 204
+  if (res.status === 204) {
+    return {} as T;
   }
 
-  // Kein Envelope: klassisch nach HTTP Status
+  const data = await safeJson(res);
+
+  // 401 sauber markieren (damit UI redirecten kann)
+  if (res.status === 401) {
+    const msg =
+      data?.error ||
+      (isEnvelope(data) && data.success === false && data.error) ||
+      "Anmeldung erforderlich";
+    throw new ApiError(msg, 401, "AUTH_REQUIRED", data);
+  }
+
+  // sonstige Fehler
   if (!res.ok) {
     const msg =
-      (body && (body.error || body.message)) ||
+      data?.error ||
+      (isEnvelope(data) && data.success === false && data.error) ||
       `Request failed with status ${res.status}`;
-    throw new Error(msg);
+    throw new ApiError(msg, res.status, "REQUEST_FAILED", data);
   }
 
-  // Plain JSON
-  return body as T;
+  // Envelope entpacken
+  if (unwrap && isEnvelope(data)) {
+    if (data.success === true) return data.data as T;
+    throw new ApiError(data.error || "Request failed", res.status, "REQUEST_FAILED", data);
+  }
+
+  return data as T;
 }
 
-// -------------------- Employee API --------------------
+// ---------- Employee API ----------
 export const employeeApi = {
-  getAll: async (): Promise<Employee[]> => apiFetch<Employee[]>("/employees"),
+  getAll: async (): Promise<Employee[]> => {
+    return apiFetch<Employee[]>("/employees", { method: "GET" });
+  },
 
-  getById: async (id: number): Promise<Employee> =>
-    apiFetch<Employee>(`/employees/${id}`),
+  getById: async (id: number): Promise<Employee> => {
+    return apiFetch<Employee>(`/employees/${id}`, { method: "GET" });
+  },
 
-  create: async (data: Omit<Employee, "id" | "createdAt">): Promise<Employee> =>
-    apiFetch<Employee>("/employees", {
+  create: async (data: Omit<Employee, "id" | "createdAt">): Promise<Employee> => {
+    return apiFetch<Employee>("/employees", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    }),
+    });
+  },
 
   update: async (
     id: number,
     data: Partial<Omit<Employee, "id" | "createdAt">>
-  ): Promise<Employee> =>
-    apiFetch<Employee>(`/employees/${id}`, {
+  ): Promise<Employee> => {
+    return apiFetch<Employee>(`/employees/${id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    }),
+    });
+  },
 
-  delete: async (id: number): Promise<void> =>
-    apiFetch<void>(`/employees/${id}`, { method: "DELETE" }),
+  delete: async (id: number): Promise<void> => {
+    return apiFetch<void>(`/employees/${id}`, { method: "DELETE" });
+  },
 };
 
-// -------------------- Roster API --------------------
+// ---------- Roster API ----------
 export const rosterApi = {
-  getByMonth: async (year: number, month: number): Promise<RosterShift[]> =>
-    apiFetch<RosterShift[]>(`/roster/${year}/${month}`),
+  getByMonth: async (year: number, month: number): Promise<RosterShift[]> => {
+    return apiFetch<RosterShift[]>(`/roster/${year}/${month}`, { method: "GET" });
+  },
 
-  getByDate: async (date: string): Promise<RosterShift[]> =>
-    apiFetch<RosterShift[]>(`/roster/date/${date}`),
+  getByDate: async (date: string): Promise<RosterShift[]> => {
+    return apiFetch<RosterShift[]>(`/roster/date/${date}`, { method: "GET" });
+  },
 
-  getById: async (id: number): Promise<RosterShift> =>
-    apiFetch<RosterShift>(`/roster/shift/${id}`),
+  getById: async (id: number): Promise<RosterShift> => {
+    return apiFetch<RosterShift>(`/roster/shift/${id}`, { method: "GET" });
+  },
 
-  create: async (data: Omit<RosterShift, "id" | "createdAt">): Promise<RosterShift> =>
-    apiFetch<RosterShift>("/roster", {
+  create: async (data: Omit<RosterShift, "id" | "createdAt">): Promise<RosterShift> => {
+    return apiFetch<RosterShift>("/roster", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    }),
+    });
+  },
 
-  update: async (id: number, data: Partial<InsertRosterShift>): Promise<RosterShift> =>
-    apiFetch<RosterShift>(`/roster/${id}`, {
+  update: async (id: number, data: Partial<InsertRosterShift>): Promise<RosterShift> => {
+    return apiFetch<RosterShift>(`/roster/${id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    }),
+    });
+  },
 
-  bulkCreate: async (shifts: InsertRosterShift[]): Promise<RosterShift[]> =>
-    apiFetch<RosterShift[]>("/roster/bulk", {
+  bulkCreate: async (shifts: InsertRosterShift[]): Promise<RosterShift[]> => {
+    return apiFetch<RosterShift[]>("/roster/bulk", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ shifts }),
-    }),
+    });
+  },
 
-  delete: async (id: number): Promise<void> =>
-    apiFetch<void>(`/roster/${id}`, { method: "DELETE" }),
+  delete: async (id: number): Promise<void> => {
+    return apiFetch<void>(`/roster/${id}`, { method: "DELETE" });
+  },
 
-  deleteByMonth: async (year: number, month: number): Promise<void> =>
-    apiFetch<void>(`/roster/month/${year}/${month}`, { method: "DELETE" }),
+  deleteByMonth: async (year: number, month: number): Promise<void> => {
+    return apiFetch<void>(`/roster/month/${year}/${month}`, { method: "DELETE" });
+  },
 
-  generate: async (year: number, month: number) =>
-    apiFetch<{
-      success: boolean;
-      generatedShifts: number;
-      reasoning: string;
-      warnings: string[];
-      shifts: Array<{
-        date: string;
-        serviceType: string;
-        employeeId: number;
-        employeeName: string;
-      }>;
-    }>("/roster/generate", {
+  generate: async (
+    year: number,
+    month: number
+  ): Promise<{
+    success: boolean;
+    generatedShifts: number;
+    reasoning: string;
+    warnings: string[];
+    shifts: Array<{ date: string; serviceType: string; employeeId: number; employeeName: string }>;
+  }> => {
+    // generate liefert oft schon ein Objekt; unwrap bleibt ok
+    return apiFetch(`/roster/generate`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ year, month }),
-    }),
+    });
+  },
 
   applyGenerated: async (
     year: number,
     month: number,
     shifts: any[],
     replaceExisting: boolean = true
-  ) =>
-    apiFetch<{
-      success: boolean;
-      savedShifts: number;
-      message: string;
-    }>("/roster/apply-generated", {
+  ): Promise<{ success: boolean; savedShifts: number; message: string }> => {
+    return apiFetch(`/roster/apply-generated`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ year, month, shifts, replaceExisting }),
-    }),
+    });
+  },
 };
 
-// -------------------- Absence API --------------------
+// ---------- Absence API ----------
 export const absenceApi = {
-  getByDateRange: async (startDate: string, endDate: string): Promise<Absence[]> =>
-    apiFetch<Absence[]>(`/absences?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`),
+  getByDateRange: async (startDate: string, endDate: string): Promise<Absence[]> => {
+    const qs = new URLSearchParams({ startDate, endDate });
+    return apiFetch<Absence[]>(`/absences?${qs.toString()}`, { method: "GET" });
+  },
 
-  getByEmployee: async (employeeId: number): Promise<Absence[]> =>
-    apiFetch<Absence[]>(`/absences?employeeId=${employeeId}`),
+  getByEmployee: async (employeeId: number): Promise<Absence[]> => {
+    const qs = new URLSearchParams({ employeeId: String(employeeId) });
+    return apiFetch<Absence[]>(`/absences?${qs.toString()}`, { method: "GET" });
+  },
 
-  create: async (data: Omit<Absence, "id" | "createdAt">): Promise<Absence> =>
-    apiFetch<Absence>("/absences", {
+  create: async (data: Omit<Absence, "id" | "createdAt">): Promise<Absence> => {
+    return apiFetch<Absence>("/absences", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    }),
+    });
+  },
 
-  delete: async (id: number): Promise<void> =>
-    apiFetch<void>(`/absences/${id}`, { method: "DELETE" }),
+  delete: async (id: number): Promise<void> => {
+    return apiFetch<void>(`/absences/${id}`, { method: "DELETE" });
+  },
 };
 
-// -------------------- Resource API --------------------
+// ---------- Resource API ----------
 export const resourceApi = {
-  getAll: async (): Promise<Resource[]> => apiFetch<Resource[]>("/resources"),
+  getAll: async (): Promise<Resource[]> => {
+    return apiFetch<Resource[]>("/resources", { method: "GET" });
+  },
 
-  update: async (
-    id: number,
-    data: Partial<Omit<Resource, "id" | "createdAt">>
-  ): Promise<Resource> =>
-    apiFetch<Resource>(`/resources/${id}`, {
+  update: async (id: number, data: Partial<Omit<Resource, "id" | "createdAt">>): Promise<Resource> => {
+    return apiFetch<Resource>(`/resources/${id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    }),
+    });
+  },
 };
 
-// -------------------- Weekly Assignment API --------------------
+// ---------- Weekly Assignment API ----------
 export const weeklyAssignmentApi = {
-  getByWeek: async (year: number, week: number): Promise<WeeklyAssignment[]> =>
-    apiFetch<WeeklyAssignment[]>(`/weekly-assignments/${year}/${week}`),
+  getByWeek: async (year: number, week: number): Promise<WeeklyAssignment[]> => {
+    return apiFetch<WeeklyAssignment[]>(`/weekly-assignments/${year}/${week}`, { method: "GET" });
+  },
 
-  create: async (data: InsertWeeklyAssignment): Promise<WeeklyAssignment> =>
-    apiFetch<WeeklyAssignment>("/weekly-assignments", {
+  create: async (data: InsertWeeklyAssignment): Promise<WeeklyAssignment> => {
+    return apiFetch<WeeklyAssignment>("/weekly-assignments", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    }),
+    });
+  },
 
-  bulkSave: async (assignments: InsertWeeklyAssignment[]): Promise<WeeklyAssignment[]> =>
-    apiFetch<WeeklyAssignment[]>("/weekly-assignments/bulk", {
+  bulkSave: async (assignments: InsertWeeklyAssignment[]): Promise<WeeklyAssignment[]> => {
+    return apiFetch<WeeklyAssignment[]>("/weekly-assignments/bulk", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ assignments }),
-    }),
+    });
+  },
 
-  delete: async (id: number): Promise<void> =>
-    apiFetch<void>(`/weekly-assignments/${id}`, { method: "DELETE" }),
+  delete: async (id: number): Promise<void> => {
+    return apiFetch<void>(`/weekly-assignments/${id}`, { method: "DELETE" });
+  },
 };
 
-// -------------------- Projects API --------------------
+// ---------- Project Initiative API ----------
 export const projectApi = {
-  getAll: async (): Promise<ProjectInitiative[]> => apiFetch<ProjectInitiative[]>("/projects"),
+  getAll: async (): Promise<ProjectInitiative[]> => {
+    return apiFetch<ProjectInitiative[]>("/projects", { method: "GET" });
+  },
 
-  getById: async (id: number): Promise<ProjectInitiative> =>
-    apiFetch<ProjectInitiative>(`/projects/${id}`),
+  getById: async (id: number): Promise<ProjectInitiative> => {
+    return apiFetch<ProjectInitiative>(`/projects/${id}`, { method: "GET" });
+  },
 
-  create: async (data: InsertProjectInitiative): Promise<ProjectInitiative> =>
-    apiFetch<ProjectInitiative>("/projects", {
+  create: async (data: InsertProjectInitiative): Promise<ProjectInitiative> => {
+    return apiFetch<ProjectInitiative>("/projects", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    }),
+    });
+  },
 
-  update: async (id: number, data: Partial<InsertProjectInitiative>): Promise<ProjectInitiative> =>
-    apiFetch<ProjectInitiative>(`/projects/${id}`, {
+  update: async (id: number, data: Partial<InsertProjectInitiative>): Promise<ProjectInitiative> => {
+    return apiFetch<ProjectInitiative>(`/projects/${id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    }),
+    });
+  },
 
-  delete: async (id: number): Promise<void> =>
-    apiFetch<void>(`/projects/${id}`, { method: "DELETE" }),
+  delete: async (id: number): Promise<void> => {
+    return apiFetch<void>(`/projects/${id}`, { method: "DELETE" });
+  },
 };
 
-// -------------------- Tasks API --------------------
+// ---------- Project Tasks API ----------
 export const taskApi = {
-  getByProject: async (projectId: number): Promise<ProjectTask[]> =>
-    apiFetch<ProjectTask[]>(`/projects/${projectId}/tasks`),
+  getByProject: async (projectId: number): Promise<ProjectTask[]> => {
+    return apiFetch<ProjectTask[]>(`/projects/${projectId}/tasks`, { method: "GET" });
+  },
 
-  getById: async (id: number): Promise<ProjectTask> =>
-    apiFetch<ProjectTask>(`/tasks/${id}`),
+  getById: async (id: number): Promise<ProjectTask> => {
+    return apiFetch<ProjectTask>(`/tasks/${id}`, { method: "GET" });
+  },
 
   create: async (
     projectId: number,
     data: Omit<InsertProjectTask, "initiativeId">
-  ): Promise<ProjectTask> =>
-    apiFetch<ProjectTask>(`/projects/${projectId}/tasks`, {
+  ): Promise<ProjectTask> => {
+    return apiFetch<ProjectTask>(`/projects/${projectId}/tasks`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    }),
+    });
+  },
 
-  update: async (id: number, data: Partial<InsertProjectTask>): Promise<ProjectTask> =>
-    apiFetch<ProjectTask>(`/tasks/${id}`, {
+  update: async (id: number, data: Partial<InsertProjectTask>): Promise<ProjectTask> => {
+    return apiFetch<ProjectTask>(`/tasks/${id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    }),
+    });
+  },
 
-  delete: async (id: number): Promise<void> =>
-    apiFetch<void>(`/tasks/${id}`, { method: "DELETE" }),
+  delete: async (id: number): Promise<void> => {
+    return apiFetch<void>(`/tasks/${id}`, { method: "DELETE" });
+  },
 
-  getActivities: async (taskId: number): Promise<TaskActivity[]> =>
-    apiFetch<TaskActivity[]>(`/tasks/${taskId}/activities`),
+  getActivities: async (taskId: number): Promise<TaskActivity[]> => {
+    return apiFetch<TaskActivity[]>(`/tasks/${taskId}/activities`, { method: "GET" });
+  },
 
   addActivity: async (
     taskId: number,
     data: Omit<InsertTaskActivity, "taskId">
-  ): Promise<TaskActivity> =>
-    apiFetch<TaskActivity>(`/tasks/${taskId}/activities`, {
+  ): Promise<TaskActivity> => {
+    return apiFetch<TaskActivity>(`/tasks/${taskId}/activities`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    }),
+    });
+  },
 };
 
-// -------------------- Documents API --------------------
+// ---------- Project Documents API ----------
 export const documentApi = {
-  getByProject: async (projectId: number): Promise<ProjectDocument[]> =>
-    apiFetch<ProjectDocument[]>(`/projects/${projectId}/documents`),
+  getByProject: async (projectId: number): Promise<ProjectDocument[]> => {
+    return apiFetch<ProjectDocument[]>(`/projects/${projectId}/documents`, { method: "GET" });
+  },
 
-  getById: async (id: number): Promise<ProjectDocument> =>
-    apiFetch<ProjectDocument>(`/documents/${id}`),
+  getById: async (id: number): Promise<ProjectDocument> => {
+    return apiFetch<ProjectDocument>(`/documents/${id}`, { method: "GET" });
+  },
 
   create: async (
     projectId: number,
     data: Omit<InsertProjectDocument, "initiativeId">
-  ): Promise<ProjectDocument> =>
-    apiFetch<ProjectDocument>(`/projects/${projectId}/documents`, {
+  ): Promise<ProjectDocument> => {
+    return apiFetch<ProjectDocument>(`/projects/${projectId}/documents`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    }),
+    });
+  },
 
-  update: async (id: number, data: Partial<InsertProjectDocument>): Promise<ProjectDocument> =>
-    apiFetch<ProjectDocument>(`/documents/${id}`, {
+  update: async (id: number, data: Partial<InsertProjectDocument>): Promise<ProjectDocument> => {
+    return apiFetch<ProjectDocument>(`/documents/${id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    }),
+    });
+  },
 
-  delete: async (id: number): Promise<void> =>
-    apiFetch<void>(`/documents/${id}`, { method: "DELETE" }),
+  delete: async (id: number): Promise<void> => {
+    return apiFetch<void>(`/documents/${id}`, { method: "DELETE" });
+  },
 
-  publish: async (id: number): Promise<ProjectDocument> =>
-    apiFetch<ProjectDocument>(`/documents/${id}/publish`, { method: "POST" }),
+  publish: async (id: number): Promise<ProjectDocument> => {
+    return apiFetch<ProjectDocument>(`/documents/${id}/publish`, { method: "POST" });
+  },
 
-  getApprovals: async (documentId: number): Promise<Approval[]> =>
-    apiFetch<Approval[]>(`/documents/${documentId}/approvals`),
+  getApprovals: async (documentId: number): Promise<Approval[]> => {
+    return apiFetch<Approval[]>(`/documents/${documentId}/approvals`, { method: "GET" });
+  },
 
   requestApproval: async (
     documentId: number,
     data: Omit<InsertApproval, "documentId">
-  ): Promise<Approval> =>
-    apiFetch<Approval>(`/documents/${documentId}/approvals`, {
+  ): Promise<Approval> => {
+    return apiFetch<Approval>(`/documents/${documentId}/approvals`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    }),
+    });
+  },
 };
 
+// ---------- Approval API ----------
 export const approvalApi = {
-  update: async (id: number, data: Partial<InsertApproval>): Promise<Approval> =>
-    apiFetch<Approval>(`/approvals/${id}`, {
+  update: async (id: number, data: Partial<InsertApproval>): Promise<Approval> => {
+    return apiFetch<Approval>(`/approvals/${id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    }),
+    });
+  },
 };
 
-// -------------------- Knowledge API --------------------
+// ---------- Knowledge Base API ----------
 export const knowledgeApi = {
-  getPublished: async (): Promise<ProjectDocument[]> =>
-    apiFetch<ProjectDocument[]>("/knowledge/documents"),
+  getPublished: async (): Promise<ProjectDocument[]> => {
+    return apiFetch<ProjectDocument[]>("/knowledge/documents", { method: "GET" });
+  },
 };
 
-// -------------------- Shift Swap API --------------------
+// ---------- Shift Swap Request API ----------
 export const shiftSwapApi = {
-  getAll: async (): Promise<ShiftSwapRequest[]> => apiFetch<ShiftSwapRequest[]>("/shift-swaps"),
+  getAll: async (): Promise<ShiftSwapRequest[]> => {
+    return apiFetch<ShiftSwapRequest[]>("/shift-swaps", { method: "GET" });
+  },
 
-  getPending: async (): Promise<ShiftSwapRequest[]> =>
-    apiFetch<ShiftSwapRequest[]>("/shift-swaps?status=Ausstehend"),
+  getPending: async (): Promise<ShiftSwapRequest[]> => {
+    return apiFetch<ShiftSwapRequest[]>("/shift-swaps?status=Ausstehend", { method: "GET" });
+  },
 
-  getByEmployee: async (employeeId: number): Promise<ShiftSwapRequest[]> =>
-    apiFetch<ShiftSwapRequest[]>(`/shift-swaps?employeeId=${employeeId}`),
+  getByEmployee: async (employeeId: number): Promise<ShiftSwapRequest[]> => {
+    return apiFetch<ShiftSwapRequest[]>(`/shift-swaps?employeeId=${employeeId}`, { method: "GET" });
+  },
 
-  getById: async (id: number): Promise<ShiftSwapRequest> =>
-    apiFetch<ShiftSwapRequest>(`/shift-swaps/${id}`),
+  getById: async (id: number): Promise<ShiftSwapRequest> => {
+    return apiFetch<ShiftSwapRequest>(`/shift-swaps/${id}`, { method: "GET" });
+  },
 
-  create: async (data: InsertShiftSwapRequest): Promise<ShiftSwapRequest> =>
-    apiFetch<ShiftSwapRequest>("/shift-swaps", {
+  create: async (data: InsertShiftSwapRequest): Promise<ShiftSwapRequest> => {
+    return apiFetch<ShiftSwapRequest>("/shift-swaps", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    }),
+    });
+  },
 
-  update: async (id: number, data: Partial<InsertShiftSwapRequest>): Promise<ShiftSwapRequest> =>
-    apiFetch<ShiftSwapRequest>(`/shift-swaps/${id}`, {
+  update: async (id: number, data: Partial<InsertShiftSwapRequest>): Promise<ShiftSwapRequest> => {
+    return apiFetch<ShiftSwapRequest>(`/shift-swaps/${id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    }),
+    });
+  },
 
-  approve: async (id: number, approverId: number, notes?: string): Promise<ShiftSwapRequest> =>
-    apiFetch<ShiftSwapRequest>(`/shift-swaps/${id}/approve`, {
+  approve: async (id: number, approverId: number, notes?: string): Promise<ShiftSwapRequest> => {
+    return apiFetch<ShiftSwapRequest>(`/shift-swaps/${id}/approve`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ approverId, notes }),
-    }),
+    });
+  },
 
-  reject: async (id: number, approverId: number, notes?: string): Promise<ShiftSwapRequest> =>
-    apiFetch<ShiftSwapRequest>(`/shift-swaps/${id}/reject`, {
+  reject: async (id: number, approverId: number, notes?: string): Promise<ShiftSwapRequest> => {
+    return apiFetch<ShiftSwapRequest>(`/shift-swaps/${id}/reject`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ approverId, notes }),
-    }),
+    });
+  },
 
-  delete: async (id: number): Promise<void> =>
-    apiFetch<void>(`/shift-swaps/${id}`, { method: "DELETE" }),
+  delete: async (id: number): Promise<void> => {
+    return apiFetch<void>(`/shift-swaps/${id}`, { method: "DELETE" });
+  },
 };
 
-// -------------------- Roster Settings API --------------------
+// ---------- Roster Settings API ----------
 export interface NextPlanningMonth {
   year: number;
   month: number;
@@ -430,70 +507,94 @@ export interface NextPlanningMonth {
 }
 
 export const rosterSettingsApi = {
-  get: async (): Promise<RosterSettings> => apiFetch<RosterSettings>("/roster-settings"),
+  get: async (): Promise<RosterSettings> => {
+    return apiFetch<RosterSettings>("/roster-settings", { method: "GET" });
+  },
 
-  update: async (data: InsertRosterSettings): Promise<RosterSettings> =>
-    apiFetch<RosterSettings>("/roster-settings", {
+  update: async (data: InsertRosterSettings): Promise<RosterSettings> => {
+    return apiFetch<RosterSettings>("/roster-settings", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    }),
+    });
+  },
 
-  getNextPlanningMonth: async (): Promise<NextPlanningMonth> =>
-    apiFetch<NextPlanningMonth>("/roster-settings/next-planning-month"),
+  getNextPlanningMonth: async (): Promise<NextPlanningMonth> => {
+    return apiFetch<NextPlanningMonth>("/roster-settings/next-planning-month", { method: "GET" });
+  },
 };
 
-// -------------------- Shift Wishes API --------------------
+// ---------- Shift Wishes API ----------
 export const shiftWishesApi = {
-  getByMonth: async (year: number, month: number): Promise<ShiftWish[]> =>
-    apiFetch<ShiftWish[]>(`/shift-wishes?year=${year}&month=${month}`),
+  getByMonth: async (year: number, month: number): Promise<ShiftWish[]> => {
+    return apiFetch<ShiftWish[]>(`/shift-wishes?year=${year}&month=${month}`, { method: "GET" });
+  },
 
-  getByEmployeeAndMonth: async (employeeId: number, year: number, month: number): Promise<ShiftWish | null> =>
-    apiFetch<ShiftWish | null>(`/shift-wishes?employeeId=${employeeId}&year=${year}&month=${month}`),
+  getByEmployeeAndMonth: async (
+    employeeId: number,
+    year: number,
+    month: number
+  ): Promise<ShiftWish | null> => {
+    return apiFetch<ShiftWish | null>(
+      `/shift-wishes?employeeId=${employeeId}&year=${year}&month=${month}`,
+      { method: "GET" }
+    );
+  },
 
-  create: async (data: InsertShiftWish): Promise<ShiftWish> =>
-    apiFetch<ShiftWish>("/shift-wishes", {
+  create: async (data: InsertShiftWish): Promise<ShiftWish> => {
+    return apiFetch<ShiftWish>("/shift-wishes", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    }),
+    });
+  },
 
-  update: async (id: number, data: Partial<InsertShiftWish>): Promise<ShiftWish> =>
-    apiFetch<ShiftWish>(`/shift-wishes/${id}`, {
+  update: async (id: number, data: Partial<InsertShiftWish>): Promise<ShiftWish> => {
+    return apiFetch<ShiftWish>(`/shift-wishes/${id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    }),
+    });
+  },
 
-  submit: async (id: number): Promise<ShiftWish> =>
-    apiFetch<ShiftWish>(`/shift-wishes/${id}/submit`, { method: "POST" }),
+  submit: async (id: number): Promise<ShiftWish> => {
+    return apiFetch<ShiftWish>(`/shift-wishes/${id}/submit`, { method: "POST" });
+  },
 
-  delete: async (id: number): Promise<void> =>
-    apiFetch<void>(`/shift-wishes/${id}`, { method: "DELETE" }),
+  delete: async (id: number): Promise<void> => {
+    return apiFetch<void>(`/shift-wishes/${id}`, { method: "DELETE" });
+  },
 };
 
-// -------------------- Planned Absences API --------------------
+// ---------- Planned Absences API ----------
 export const plannedAbsencesApi = {
-  getByMonth: async (year: number, month: number): Promise<PlannedAbsence[]> =>
-    apiFetch<PlannedAbsence[]>(`/planned-absences?year=${year}&month=${month}`),
+  getByMonth: async (year: number, month: number): Promise<PlannedAbsence[]> => {
+    return apiFetch<PlannedAbsence[]>(`/planned-absences?year=${year}&month=${month}`, { method: "GET" });
+  },
 
-  getByEmployeeAndMonth: async (employeeId: number, year: number, month: number): Promise<PlannedAbsence[]> =>
-    apiFetch<PlannedAbsence[]>(`/planned-absences?employeeId=${employeeId}&year=${year}&month=${month}`),
+  getByEmployeeAndMonth: async (
+    employeeId: number,
+    year: number,
+    month: number
+  ): Promise<PlannedAbsence[]> => {
+    return apiFetch<PlannedAbsence[]>(
+      `/planned-absences?employeeId=${employeeId}&year=${year}&month=${month}`,
+      { method: "GET" }
+    );
+  },
 
-  create: async (data: InsertPlannedAbsence): Promise<PlannedAbsence> =>
-    apiFetch<PlannedAbsence>("/planned-absences", {
+  create: async (data: InsertPlannedAbsence): Promise<PlannedAbsence> => {
+    return apiFetch<PlannedAbsence>("/planned-absences", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    }),
+    });
+  },
 
-  update: async (id: number, data: Partial<InsertPlannedAbsence>): Promise<PlannedAbsence> =>
-    apiFetch<PlannedAbsence>(`/planned-absences/${id}`, {
+  update: async (id: number, data: Partial<InsertPlannedAbsence>): Promise<PlannedAbsence> => {
+    return apiFetch<PlannedAbsence>(`/planned-absences/${id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    }),
+    });
+  },
 
-  delete: async (id: number): Promise<void> =>
-    apiFetch<void>(`/planned-absences/${id}`, { method: "DELETE" }),
+  delete: async (id: number): Promise<void> => {
+    return apiFetch<void>(`/planned-absences/${id}`, { method: "DELETE" });
+  },
 };
