@@ -20,18 +20,18 @@ async function throwIfResNotOk(res: Response) {
 export async function apiRequest(
   method: string,
   url: string,
-  data?: unknown,
+  data?: unknown
 ): Promise<Response> {
   const token = readToken();
 
   const headers: Record<string, string> = {};
-  if (data !== undefined) headers["Content-Type"] = "application/json";
+  if (data) headers["Content-Type"] = "application/json";
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
   const res = await fetch(url, {
     method,
     headers,
-    body: data !== undefined ? JSON.stringify(data) : undefined,
+    body: data ? JSON.stringify(data) : undefined,
   });
 
   await throwIfResNotOk(res);
@@ -50,7 +50,9 @@ export const getQueryFn: <T>(options: {
     const headers: Record<string, string> = {};
     if (token) headers["Authorization"] = `Bearer ${token}`;
 
-    const res = await fetch(queryKey.join("/") as string, { headers });
+    const res = await fetch(queryKey.join("/") as string, {
+      headers,
+    });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null as any;
