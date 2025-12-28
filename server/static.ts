@@ -13,13 +13,8 @@ export function serveStatic(app: Express) {
   // 1) Static assets
   app.use(express.static(distPath));
 
-  // 2) IMPORTANT: API routes must never fall back to SPA
-  // If an /api/* route wasn't handled by the API router, return JSON 404.
-  app.use("/api", (req, res) => {
-    return res.status(404).json({ success: false, error: "API endpoint not found" });
-  });
-
-  // 3) SPA fallback ONLY for non-API routes
+  // 2) SPA fallback ONLY for non-API routes
+  // Note: API-404-Guard is handled in server/index.ts before serveStatic is called
   app.get("*", (_req, res) => {
     res.sendFile(path.resolve(distPath, "index.html"));
   });

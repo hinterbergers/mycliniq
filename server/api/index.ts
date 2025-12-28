@@ -5,6 +5,7 @@ import type { Express } from "express";
 import { authenticate } from "./middleware/auth";
 
 // Import route modules
+import { registerAdminRoutes } from "./admin";
 import { registerEmployeeRoutes } from "./employees";
 import { registerCompetencyRoutes } from "./competencies";
 import { registerRoomRoutes } from "./rooms";

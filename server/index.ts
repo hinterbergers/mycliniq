@@ -72,6 +72,15 @@ app.use((req, res, next) => {
     throw err;
   });
 
+  // API-404-Guard: Return JSON 404 for unknown /api/* endpoints
+  // This MUST be after all API routes but before the SPA fallback
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.path.startsWith("/api") && !res.headersSent) {
+      return res.status(404).json({ success: false, error: "API endpoint not found" });
+    }
+    next();
+  });
+
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
