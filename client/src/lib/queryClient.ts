@@ -20,7 +20,7 @@ async function throwIfResNotOk(res: Response) {
 export async function apiRequest(
   method: string,
   url: string,
-  data?: unknown
+  data?: unknown,
 ): Promise<Response> {
   const token = readToken();
 
@@ -40,23 +40,16 @@ export async function apiRequest(
 
 type UnauthorizedBehavior = "returnNull" | "throw";
 
-export const getQueryFn: <T>(options: {
-  on401: UnauthorizedBehavior;
-}) => QueryFunction<T> =
-  ({ on401: unauthorizedBehavior }) =>
+export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryFunction<T> =
+  ({ on401 }) =>
   async ({ queryKey }) => {
     const token = readToken();
-
     const headers: Record<string, string> = {};
     if (token) headers["Authorization"] = `Bearer ${token}`;
 
-    const res = await fetch(queryKey.join("/") as string, {
-      headers,
-    });
+    const res = await fetch(queryKey.join("/") as string, { headers });
 
-    if (unauthorizedBehavior === "returnNull" && res.status === 401) {
-      return null as any;
-    }
+    if (on401 === "returnNull" && res.status === 401) return null as any;
 
     await throwIfResNotOk(res);
     return await res.json();
@@ -71,8 +64,6 @@ export const queryClient = new QueryClient({
       staleTime: Infinity,
       retry: false,
     },
-    mutations: {
-      retry: false,
-    },
+    mutations: { retry: false },
   },
 });

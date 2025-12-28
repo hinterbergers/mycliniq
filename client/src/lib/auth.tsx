@@ -1,5 +1,12 @@
 // client/src/lib/auth.tsx
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 type AppRole = "Admin" | "Editor" | "User";
 type SystemRole = "employee" | "department_admin" | "clinic_admin" | "system_admin";
@@ -12,7 +19,7 @@ export interface ApiMeResponse {
       employeeId: number;
       name: string;
       lastName: string;
-      email: string;
+      email?: string;
       systemRole: SystemRole;
       appRole: AppRole;
       isAdmin: boolean;
@@ -25,8 +32,24 @@ export interface ApiMeResponse {
 
 export interface LoginResponse {
   token: string;
-  employee: any; // server returns safeEmployee; keep flexible for now
-  expiresAt: string;
+  employee?: any;
+  expiresAt?: string;
+}
+
+export interface AuthMeResponse {
+  success: true;
+  user: {
+    id: number;
+    employeeId: number;
+    appRole: AppRole;
+    systemRole: SystemRole;
+    isAdmin: boolean;
+    name: string;
+    lastName: string;
+    departmentId?: number;
+    clinicId?: number;
+    capabilities?: string[];
+  };
 }
 
 type AuthStatus = "loading" | "authenticated" | "anonymous";
@@ -35,6 +58,11 @@ interface AuthContextValue {
   status: AuthStatus;
   token: string | null;
   me: ApiMeResponse["data"] | null;
+
+  // convenience flags
+  isLoading: boolean;
+  isAuthenticated: boolean;
+
   login: (args: { email: string; password: string; rememberMe?: boolean }) => Promise<void>;
   logout: () => Promise<void>;
   refreshMe: () => Promise<void>;
@@ -42,25 +70,56 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const TOKEN_KEY = "mycliniq_token";
+// ✅ IMPORTANT: must match the rest of your app
+const TOKEN_KEY = "cliniq_auth_token";
+
+/**
+ * Safe localStorage helpers
+ */
+function readStoredToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+function writeStoredToken(t: string) {
+  try {
+    localStorage.setItem(TOKEN_KEY, t);
+  } catch {
+    // ignore
+  }
+}
+function clearStoredToken() {
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // ignore
+  }
+}
 
 /**
  * Helper: fetch wrapper that adds Bearer token if present
  */
-async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}, token: string | null = null) {
+async function apiFetch(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  token: string | null = null
+) {
   const headers = new Headers(init.headers || {});
-  headers.set("Accept", "application/json");
-  if (token) headers.set("Authorization", `Bearer ${token}`);
+  if (!headers.has("Accept")) headers.set("Accept", "application/json");
+  if (token && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
   if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
 
   const res = await fetch(input, { ...init, headers });
-  const text = await res.text();
 
+  // read text first to gracefully handle empty/non-json bodies
+  const text = await res.text();
   let json: any = null;
   try {
     json = text ? JSON.parse(text) : null;
   } catch {
-    // non-json
+    json = null;
   }
 
   if (!res.ok) {
@@ -78,51 +137,125 @@ async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}, token:
   return json;
 }
 
+/**
+ * Fetch /api/me (new canonical endpoint)
+ */
+async function fetchApiMe(token: string): Promise<ApiMeResponse["data"]> {
+  const res = (await apiFetch("/api/me", { method: "GET" }, token)) as any;
+
+  // Expected: { success:true, data:{...} }
+  if (res?.success === true && res?.data?.user) {
+    return res.data as ApiMeResponse["data"];
+  }
+
+  // Some servers might return already {data:{...}} without success envelope
+  if (res?.data?.user) return res.data as ApiMeResponse["data"];
+
+  throw new Error("Unerwartetes Format von /api/me");
+}
+
+/**
+ * Fetch /api/auth/me (fallback)
+ * Expected: { success:true, user:{...} }
+ */
+async function fetchAuthMe(token: string): Promise<AuthMeResponse["user"]> {
+  const res = (await apiFetch("/api/auth/me", { method: "GET" }, token)) as any;
+  if (res?.success === true && res?.user) return res.user as AuthMeResponse["user"];
+  throw new Error("Unerwartetes Format von /api/auth/me");
+}
+
+function toMeDataFromAuthMe(user: AuthMeResponse["user"]): ApiMeResponse["data"] {
+  return {
+    user: {
+      id: user.id,
+      employeeId: user.employeeId,
+      name: user.name,
+      lastName: user.lastName,
+      systemRole: user.systemRole,
+      appRole: user.appRole,
+      isAdmin: user.isAdmin,
+      // email unknown here
+    },
+    department: null,
+    clinic: null,
+    capabilities: Array.isArray(user.capabilities) ? user.capabilities : [],
+  };
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>("loading");
   const [token, setToken] = useState<string | null>(null);
   const [me, setMe] = useState<ApiMeResponse["data"] | null>(null);
 
-  // load token from localStorage on first render
+  const isLoading = status === "loading";
+  const isAuthenticated = status === "authenticated" && !!token && !!me?.user;
+
+  // bootstrap token once
   useEffect(() => {
-    const saved = localStorage.getItem(TOKEN_KEY);
-    if (saved) setToken(saved);
-    else setStatus("anonymous");
+    const saved = readStoredToken();
+    if (saved) {
+      setToken(saved);
+      setStatus("loading");
+    } else {
+      setStatus("anonymous");
+    }
+  }, []);
+
+  const clearAuth = useCallback(() => {
+    clearStoredToken();
+    setToken(null);
+    setMe(null);
+    setStatus("anonymous");
   }, []);
 
   const refreshMe = useCallback(async () => {
-    if (!token) {
+    const t = token ?? readStoredToken();
+    if (!t) {
       setMe(null);
       setStatus("anonymous");
       return;
     }
 
+    // Make sure state knows the token
+    setToken(t);
+    setStatus("loading");
+
     try {
-      const data = (await apiFetch("/api/me", { method: "GET" }, token)) as ApiMeResponse;
-      // Some implementations might return {error:"Nicht authentifiziert"} with 401.
-      // Our apiFetch would throw in that case.
-      setMe(data.data);
+      // 1) primary
+      const meData = await fetchApiMe(t);
+      setMe(meData);
       setStatus("authenticated");
-    } catch (e: any) {
-      // token invalid/expired => clear
-      console.warn("[auth] refreshMe failed:", e?.message || e);
-      localStorage.removeItem(TOKEN_KEY);
-      setToken(null);
+      return;
+    } catch (e1) {
+      // 2) fallback
+      try {
+        const u = await fetchAuthMe(t);
+        setMe(toMeDataFromAuthMe(u));
+        setStatus("authenticated");
+        return;
+      } catch (e2: any) {
+        console.warn("[auth] refreshMe failed:", e2?.message || e2);
+        clearAuth();
+      }
+    }
+  }, [token, clearAuth]);
+
+  // whenever token changes -> refresh
+  useEffect(() => {
+    if (token) {
+      void refreshMe();
+    } else if (status !== "loading") {
+      // keep anonymous if no token
       setMe(null);
       setStatus("anonymous");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
-
-  // Whenever token changes -> refresh /api/me
-  useEffect(() => {
-    if (token) {
-      setStatus("loading");
-      void refreshMe();
-    }
-  }, [token, refreshMe]);
 
   const login = useCallback(
     async ({ email, password, rememberMe }: { email: string; password: string; rememberMe?: boolean }) => {
+      setStatus("loading");
+
       const payload = { email, password, rememberMe: !!rememberMe };
 
       const res = (await apiFetch("/api/auth/login", {
@@ -130,17 +263,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify(payload),
       })) as LoginResponse;
 
-      if (!res?.token) throw new Error("Login fehlgeschlagen: kein Token erhalten");
+      if (!res?.token) {
+        setStatus("anonymous");
+        throw new Error("Login fehlgeschlagen: kein Token erhalten");
+      }
 
-      localStorage.setItem(TOKEN_KEY, res.token);
+      // persist + set state
+      writeStoredToken(res.token);
       setToken(res.token);
 
-      // Immediately fetch /api/me
-      setStatus("loading");
+      // immediately fetch /api/me (fallback to /api/auth/me inside refreshMe)
       await (async () => {
-        const meRes = (await apiFetch("/api/me", { method: "GET" }, res.token)) as ApiMeResponse;
-        setMe(meRes.data);
-        setStatus("authenticated");
+        try {
+          const meData = await fetchApiMe(res.token);
+          setMe(meData);
+          setStatus("authenticated");
+        } catch {
+          const u = await fetchAuthMe(res.token);
+          setMe(toMeDataFromAuthMe(u));
+          setStatus("authenticated");
+        }
       })();
     },
     []
@@ -148,30 +290,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     try {
-      if (token) {
-        await apiFetch("/api/auth/logout", { method: "POST" }, token);
+      const t = token ?? readStoredToken();
+      if (t) {
+        await apiFetch("/api/auth/logout", { method: "POST" }, t);
       }
     } catch (e) {
       // ignore network/server errors on logout
       console.warn("[auth] logout error:", e);
     } finally {
-      localStorage.removeItem(TOKEN_KEY);
-      setToken(null);
-      setMe(null);
-      setStatus("anonymous");
+      clearAuth();
     }
-  }, [token]);
+  }, [token, clearAuth]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
       status,
       token,
       me,
+      isLoading,
+      isAuthenticated,
       login,
       logout,
       refreshMe,
     }),
-    [status, token, me, login, logout, refreshMe]
+    [status, token, me, isLoading, isAuthenticated, login, logout, refreshMe]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
