@@ -1,7 +1,7 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { Employee } from '@shared/schema';
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import type { Employee } from "@shared/schema";
 
-type SystemRole = 'employee' | 'department_admin' | 'clinic_admin' | 'system_admin';
+type SystemRole = "employee" | "department_admin" | "clinic_admin" | "system_admin";
 
 export interface UserData {
   id: number;
@@ -10,12 +10,12 @@ export interface UserData {
   lastName: string;
   email?: string;
   systemRole: SystemRole;
-  appRole: string;
+  appRole: "Admin" | "Editor" | "User" | string;
   isAdmin: boolean;
 }
 
 export interface AuthContextType {
-  employee: Omit<Employee, 'passwordHash'> | null;
+  employee: Omit<Employee, "passwordHash"> | null;
   user: UserData | null;
   token: string | null;
 
@@ -34,8 +34,7 @@ export interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-const ADMIN_ROLES = ['Primararzt', '1. Oberarzt', 'Sekretariat'] as const;
-const TOKEN_KEY = 'cliniq_auth_token';
+const TOKEN_KEY = "cliniq_auth_token";
 
 function clearToken() {
   try { localStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ }
@@ -52,111 +51,57 @@ async function safeJson(res: Response): Promise<any | null> {
 }
 
 function normalizeSystemRole(x: any): SystemRole {
-  const v = String(x || '').toLowerCase();
-  if (v === 'system_admin') return 'system_admin';
-  if (v === 'clinic_admin') return 'clinic_admin';
-  if (v === 'department_admin') return 'department_admin';
-  return 'employee';
+  const v = String(x || "").toLowerCase();
+  if (v === "system_admin") return "system_admin";
+  if (v === "clinic_admin") return "clinic_admin";
+  if (v === "department_admin") return "department_admin";
+  return "employee";
 }
 
-function buildUserFromEmployee(emp: any): UserData {
-  const isAdmin = !!emp?.isAdmin;
-  const empRole = normalizeSystemRole(emp?.systemRole); // optional: wenn server das liefert
-  const systemRole: SystemRole = empRole !== 'employee'
-    ? empRole
-    : (isAdmin ? 'department_admin' : 'employee');
+// /api/me kann verschiedene Shapes liefern -> wir ziehen sauber heraus, was wir brauchen
+function extractMe(payload: any): { user: UserData | null; employee: any | null; capabilities: string[] } {
+  if (!payload) return { user: null, employee: null, capabilities: [] };
 
-  return {
-    id: emp.id,
-    employeeId: emp.id,
-    name: emp.name ?? '',
-    lastName: emp.lastName ?? '',
-    email: emp.email,
-    systemRole,
-    appRole: emp.appRole ?? 'User',
-    isAdmin,
-  };
-}
+  const root = payload.success && payload.data ? payload.data : payload;
 
-// Erstellt ein vollständiges Employee-Objekt aus User-Daten oder einem partiellen Employee
-// Wichtig: Stellt sicher, dass alle erforderlichen Felder vorhanden sind, insbesondere 'role'
-function ensureCompleteEmployee(emp: any, fallbackRole?: string): Omit<Employee, 'passwordHash'> | null {
-  if (!emp || !emp.id) return null;
-  
-  // Wenn bereits ein vollständiges Employee-Objekt vorhanden ist, verwende es
-  if (emp.role && typeof emp.role === 'string') {
-    return emp as Omit<Employee, 'passwordHash'>;
-  }
-  
-  // Ansonsten konstruiere ein vollständiges Employee-Objekt mit Standardwerten
-  return {
-    ...emp,
-    role: emp.role || fallbackRole || 'Assistenzarzt', // Standard-Rolle falls nicht vorhanden
-    competencies: Array.isArray(emp.competencies) ? emp.competencies : [],
-    diplomas: Array.isArray(emp.diplomas) ? emp.diplomas : [],
-    isActive: emp.isActive !== undefined ? emp.isActive : true,
-    isAdmin: emp.isAdmin !== undefined ? emp.isAdmin : false,
-    takesShifts: emp.takesShifts !== undefined ? emp.takesShifts : true,
-    showPrivateContact: emp.showPrivateContact !== undefined ? emp.showPrivateContact : false,
-  } as Omit<Employee, 'passwordHash'>;
-}
+  const userRaw = root.user ?? null;
+  const employeeRaw = root.employee ?? null;
 
-// Unterstützt mehrere Response-Shapes
-function extractAuthPayload(payload: any): { employee?: any; user?: any; capabilities?: any } {
-  if (!payload) return {};
+  const capsRaw = root.capabilities;
+  const capabilities = Array.isArray(capsRaw) ? capsRaw.filter((x: any) => typeof x === "string") : [];
 
-  // Shape A: { success:true, data:{ user, employee, capabilities } }
-  if (payload.success && payload.data) {
-    return {
-      employee: payload.data.employee ?? payload.data.emp ?? payload.data.currentEmployee,
-      user: payload.data.user,
-      capabilities: payload.data.capabilities,
-    };
-  }
+  // userRaw ist idealerweise dein serverseitiges AuthUser/UserData-Objekt
+  const user: UserData | null = userRaw
+    ? {
+        id: Number(userRaw.id),
+        employeeId: Number(userRaw.employeeId ?? userRaw.employee_id ?? userRaw.employee ?? userRaw.id),
+        name: String(userRaw.name ?? ""),
+        lastName: String(userRaw.lastName ?? userRaw.last_name ?? ""),
+        email: userRaw.email ? String(userRaw.email) : undefined,
+        systemRole: normalizeSystemRole(userRaw.systemRole),
+        appRole: userRaw.appRole ?? "User",
+        isAdmin: !!userRaw.isAdmin,
+      }
+    : null;
 
-  // Shape B: { token, employee, expiresAt } (login response)
-  if (payload.employee || payload.user || payload.capabilities) {
-    return {
-      employee: payload.employee,
-      user: payload.user,
-      capabilities: payload.capabilities,
-    };
-  }
-
-  // Shape C: { employee: {...} } (legacy)
-  if (payload.employee) {
-    return { employee: payload.employee };
-  }
-
-  return {};
+  return { user, employee: employeeRaw, capabilities };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [employee, setEmployee] = useState<Omit<Employee, 'passwordHash'> | null>(null);
+  const [employee, setEmployee] = useState<Omit<Employee, "passwordHash"> | null>(null);
   const [user, setUser] = useState<UserData | null>(null);
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // ✅ Fix 2: OR statt AND
-  const isAuthenticated = useMemo(
-    () => !!token && (!!employee || !!user),
-    [token, employee, user]
-  );
+  const isAuthenticated = useMemo(() => !!token && !!user, [token, user]);
 
-  const isAdmin = useMemo(() => {
-    if (!employee) return false;
-    const role = (employee as any).role;
-    return !!(employee as any).isAdmin || (typeof role === 'string' && (ADMIN_ROLES as readonly string[]).includes(role));
-  }, [employee]);
+  const isAdmin = useMemo(() => !!user?.isAdmin || user?.appRole === "Admin", [user]);
 
   const isTechnicalAdmin = useMemo(() => {
-    // bevorzugt user.systemRole, sonst fallback employee.systemRole
-    const uRole = user?.systemRole;
-    if (uRole) return uRole !== 'employee';
-    const eRole = normalizeSystemRole((employee as any)?.systemRole);
-    return eRole !== 'employee' || isAdmin;
-  }, [user, employee, isAdmin]);
+    const role = user?.systemRole;
+    return role ? role !== "employee" : false;
+  }, [user]);
 
   const resetAuthState = () => {
     clearToken();
@@ -166,89 +111,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setCapabilities([]);
   };
 
-  const applyAuthState = (next: {
-    token?: string | null;
-    employee?: Omit<Employee, 'passwordHash'> | null;
-    user?: UserData | null;
-    capabilities?: string[];
-  }) => {
-    if (typeof next.token !== 'undefined') setToken(next.token);
-    if (typeof next.employee !== 'undefined') setEmployee(next.employee);
-    if (typeof next.user !== 'undefined') setUser(next.user);
-    if (typeof next.capabilities !== 'undefined') setCapabilities(next.capabilities);
-  };
-
-  const fetchWithToken = async (url: string, authToken: string) => {
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${authToken}` } });
+  async function fetchMe(authToken: string) {
+    const res = await fetch("/api/me", {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
     const data = await safeJson(res);
     return { ok: res.ok, status: res.status, data };
-  };
+  }
 
   const verifyToken = async (authToken: string) => {
     setIsLoading(true);
     try {
-      // 1) Erst /api/me versuchen (Admin-Capabilities etc.)
-      const primary = await fetchWithToken('/api/me', authToken);
-      if (primary.ok && primary.data) {
-        const { employee: empRaw, user: userRaw, capabilities: capsRaw } = extractAuthPayload(primary.data);
-        
-        // Employee sicherstellen: vollständig mit role-Feld
-        const emp = empRaw ? ensureCompleteEmployee(empRaw) : null;
-        
-        // User erstellen: bevorzuge userRaw, sonst aus employee ableiten
-        const u = userRaw 
-          ? (userRaw as UserData) 
-          : (emp ? buildUserFromEmployee(emp) : null);
-        
-        // Nur setzen, wenn Werte vorhanden sind (undefined = nicht setzen, behalte vorhandenen State)
-        const updates: Parameters<typeof applyAuthState>[0] = {
-          capabilities: Array.isArray(capsRaw) ? capsRaw : [],
-        };
-        if (emp) updates.employee = emp;
-        if (u) updates.user = u;
-        applyAuthState(updates);
-        
-        // Wenn employee gesetzt wurde, sind wir fertig
-        if (emp) {
+      const me = await fetchMe(authToken);
+
+      // 401/403 = Token ungültig -> sauber resetten
+      if (!me.ok) {
+        if (me.status === 401 || me.status === 403) {
+          resetAuthState();
           return;
         }
+
+        // andere Serverfehler -> Token behalten, aber nichts überschreiben
+        console.warn("[Auth] /api/me failed:", me.status, me.data);
+        return;
       }
 
-      // 2) Wenn /api/me fehlschlägt oder kein employee liefert -> Fallback /api/auth/me
-      // WICHTIG: Nicht resettet, wenn /api/me fehlschlägt, sondern Fallback versuchen
-      const fallback = await fetchWithToken('/api/auth/me', authToken);
-      if (fallback.ok && fallback.data) {
-        const { employee: empRaw, user: userRaw, capabilities: capsRaw } = extractAuthPayload(fallback.data);
-        
-        if (empRaw) {
-          // Employee sicherstellen: vollständig mit role-Feld
-          const emp = ensureCompleteEmployee(empRaw);
-          if (emp) {
-            const u = userRaw ? (userRaw as UserData) : buildUserFromEmployee(emp);
-            applyAuthState({
-              employee: emp,
-              user: u,
-              capabilities: Array.isArray(capsRaw) ? capsRaw : [],
-            });
-            return;
-          }
-        }
-      }
+      const { user: u, employee: empRaw, capabilities: caps } = extractMe(me.data);
 
-      // 3) Nur wenn beide Endpunkte fehlschlagen ODER kein employee liefern -> dann reset
-      // ABER: Wenn wir bereits employee/user haben, nicht resettet (könnte temporärer Server-Fehler sein)
-      if (!employee && !user) {
+      if (!u) {
+        // /api/me ok aber ohne user? -> als invalid behandeln
         resetAuthState();
-      } else {
-        // Behalte vorhandene Auth-Daten, setze nur loading auf false
-        console.warn('[Auth] verifyToken: Endpunkte lieferten keine Daten, behalte vorhandene Auth-Daten');
+        return;
       }
+
+      setUser(u);
+      setCapabilities(caps);
+
+      // employee ist optional UI-Daten – wenn vorhanden setzen, sonst null lassen
+      setEmployee(empRaw ? (empRaw as Omit<Employee, "passwordHash">) : null);
     } catch (err) {
-      console.error('[Auth] verifyToken failed:', err);
-      // Bei Fehler: Nur resettet, wenn wir keine Auth-Daten haben
-      if (!employee && !user) {
-        resetAuthState();
-      }
+      console.error("[Auth] verifyToken failed:", err);
+      // Netzwerkfehler: Token NICHT löschen (sonst nervig bei kurzen Aussetzern)
     } finally {
       setIsLoading(false);
     }
@@ -268,48 +171,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string, rememberMe?: boolean) => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, rememberMe }),
       });
 
       const data = await safeJson(res);
-      if (!res.ok) throw new Error(data?.error || 'Anmeldung fehlgeschlagen');
+      if (!res.ok) throw new Error(data?.error || "Anmeldung fehlgeschlagen");
 
       const authToken = data?.token as string | undefined;
-      if (!authToken) throw new Error('Login: token fehlt in Response');
+      if (!authToken) throw new Error("Login: token fehlt in Response");
 
       setToken(authToken);
       writeToken(authToken);
 
-      // Login-response kann employee, user und capabilities enthalten
-      const { employee: empRaw, user: userRaw, capabilities: capsRaw } = extractAuthPayload(data);
-      
-      // Employee sicherstellen: vollständig mit role-Feld
-      const emp = empRaw ? ensureCompleteEmployee(empRaw) : null;
-      
-      // User erstellen: bevorzuge userRaw, sonst aus employee ableiten
-      const u = userRaw 
-        ? (userRaw as UserData) 
-        : (emp ? buildUserFromEmployee(emp) : null);
-      
-      // Setze initiale Auth-Daten aus Login-Response (für schnelle UI-Aktualisierung)
-      if (emp || u) {
-        applyAuthState({ 
-          employee: emp ?? null, 
-          user: u ?? null, 
-          capabilities: Array.isArray(capsRaw) ? capsRaw : [] 
-        });
-      }
-
-      // Danach verifyToken aufrufen für vollständige Daten (Capabilities, etc.)
-      // Auch wenn verifyToken fehlschlägt, haben wir bereits employee/user gesetzt
+      // Login-Response NICHT mehr “zusammenbasteln” -> direkt /api/me als Wahrheit
       await verifyToken(authToken);
     } catch (err) {
-      console.error('[Auth] login failed:', err);
+      console.error("[Auth] login failed:", err);
       resetAuthState();
-      throw err; // Weiterwerfen, damit UI den Fehler anzeigen kann
+      throw err;
     } finally {
       setIsLoading(false);
     }
@@ -318,10 +200,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     try {
       if (token) {
-        await fetch('/api/auth/logout', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+        await fetch("/api/auth/logout", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        });
       }
     } catch (err) {
-      console.error('[Auth] logout error:', err);
+      console.error("[Auth] logout error:", err);
     } finally {
       resetAuthState();
     }
@@ -329,7 +214,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshAuth = async () => {
     const saved = readToken();
-    if (saved) await verifyToken(saved);
+    if (saved) {
+      setToken(saved);
+      await verifyToken(saved);
+    }
   };
 
   return (
@@ -338,11 +226,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         employee,
         user,
         token,
+
         isLoading,
         isAuthenticated,
+
         isAdmin,
         isTechnicalAdmin,
+
         capabilities,
+
         login,
         logout,
         refreshAuth,
@@ -355,7 +247,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth(): AuthContextType {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within an AuthProvider');
+  if (!ctx) throw new Error("useAuth must be used within an AuthProvider");
   return ctx;
 }
 
