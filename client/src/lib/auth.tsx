@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Employee } from "@shared/schema";
+import { clearAuthToken, readAuthToken, writeAuthToken } from "./authToken";
 
 type SystemRole = "employee" | "department_admin" | "clinic_admin" | "system_admin";
 
@@ -56,35 +57,10 @@ export interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 const ADMIN_ROLES = ["Primararzt", "1. Oberarzt", "Sekretariat"] as const;
-const TOKEN_KEY = "cliniq_auth_token";
-
-function clearToken() {
-  try {
-    localStorage.removeItem(TOKEN_KEY);
-  } catch {
-    // ignore
-  }
-}
-
-function readToken(): string | null {
-  try {
-    return localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function writeToken(token: string) {
-  try {
-    localStorage.setItem(TOKEN_KEY, token);
-  } catch {
-    // ignore
-  }
-}
 
 // Legacy helper used by some admin pages
 export function getAuthToken() {
-  return readToken();
+  return readAuthToken();
 }
 
 async function safeJson(res: Response): Promise<any | null> {
@@ -137,7 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   const resetAuthState = () => {
-    clearToken();
+    clearAuthToken();
     setToken(null);
     setEmployee(null);
     setUser(null);
@@ -181,8 +157,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         // 1) Primär: /api/me  -> { success:true, data:{ user, department, clinic, capabilities, employee? } }
         const primary = await fetchMe(authToken);
-        if (primary.ok && primary.data?.success && primary.data?.data?.user) {
-          const meData = primary.data.data as MeData;
+        const primaryData = primary.data?.data ?? primary.data;
+        if (primary.ok && primary.data?.success !== false && primaryData?.user) {
+          const meData = primaryData as MeData;
 
           applyAuthState({
             user: meData.user,
@@ -194,16 +171,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (!meData.employee) {
             const fb = await fetchAuthMe(authToken);
             if (fb.ok) {
-              // /api/auth/me liefert bei dir: { success:true, user:{...} } (ohne employee)
-              // falls doch mal employee auftaucht:
-              if (fb.data?.employee) {
-                applyAuthState({ employee: fb.data.employee as Omit<Employee, "passwordHash"> });
+              const fbData = fb.data?.data ?? fb.data;
+              if (fbData?.employee) {
+                applyAuthState({ employee: fbData.employee as Omit<Employee, "passwordHash"> });
               }
-              // falls /api/me user komisch wäre: user zur Sicherheit setzen
-              if (!meData.user && fb.data?.user) {
-                applyAuthState({ user: fb.data.user as UserData });
+              if (!meData.user && fbData?.user) {
+                applyAuthState({ user: fbData.user as UserData });
               }
             }
+          }
           }
 
           return;
@@ -211,25 +187,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         // 2) Fallback: /api/auth/me
         const fallback = await fetchAuthMe(authToken);
-        if (fallback.ok && fallback.data?.success) {
-          // Bei dir: { success:true, user:{...} }
-          const fbUser = fallback.data.user as UserData | undefined;
+        if (fallback.ok && fallback.data?.success !== false) {
+          const fbData = fallback.data?.data ?? fallback.data;
+          const fbUser = fbData?.user as UserData | undefined;
+          const fbEmployee = fbData?.employee as Omit<Employee, "passwordHash"> | undefined;
+          const fbCapabilities = Array.isArray(fbData?.capabilities) ? fbData.capabilities : [];
 
           if (fbUser) {
             applyAuthState({
               user: fbUser,
-              capabilities: Array.isArray(fallback.data.capabilities) ? fallback.data.capabilities : [],
-              employee: fallback.data.employee
-                ? (fallback.data.employee as Omit<Employee, "passwordHash">)
-                : null,
+              capabilities: fbCapabilities,
+              employee: fbEmployee ?? null,
             });
             return;
           }
 
           // falls nur employee geliefert würde:
-          if (fallback.data?.employee) {
-            const emp = fallback.data.employee as Omit<Employee, "passwordHash">;
-            applyAuthState({ employee: emp, user: buildUserFromEmployee(emp), capabilities: [] });
+          if (fbEmployee) {
+            applyAuthState({
+              employee: fbEmployee,
+              user: buildUserFromEmployee(fbEmployee),
+              capabilities: fbCapabilities,
+            });
             return;
           }
         }
@@ -249,7 +228,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Initial: Token laden + verifizieren
   useEffect(() => {
-    const saved = readToken();
+    const saved = readAuthToken();
     if (saved) {
       setToken(saved);
       void verifyToken(saved);
@@ -281,7 +260,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         setToken(authToken);
-        writeToken(authToken);
+        writeAuthToken(authToken);
 
         // schneller UI-Boost falls employee in login-response
         if (data?.employee) {
@@ -319,7 +298,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [token]);
 
   const refreshAuth = useCallback(async () => {
-    const saved = readToken();
+    const saved = readAuthToken();
     if (!saved) {
       resetAuthState();
       setIsLoading(false);

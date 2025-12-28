@@ -25,36 +25,79 @@ import type {
   PlannedAbsence,
   InsertPlannedAbsence
 } from "@shared/schema";
+import { readAuthToken } from "./authToken";
 
 const API_BASE = "/api";
 
-async function handleResponse<T>(response: Response): Promise<T> {
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: "Request failed" }));
-    throw new Error(error.error || `Request failed with status ${response.status}`);
+type ApiEnvelope<T> = {
+  success: boolean;
+  data?: T;
+  error?: string;
+  message?: string;
+};
+
+function buildHeaders(
+  headersInit: HeadersInit | undefined,
+  hasBody: boolean
+): Headers {
+  const headers = new Headers(headersInit);
+  if (!headers.has("Accept")) {
+    headers.set("Accept", "application/json");
   }
-  
+  if (hasBody && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  const token = readAuthToken();
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+  return headers;
+}
+
+async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const headers = buildHeaders(init.headers, Boolean(init.body));
+  return fetch(input, { ...init, headers });
+}
+
+async function handleResponse<T>(response: Response): Promise<T> {
   if (response.status === 204) {
     return {} as T;
   }
-  
-  return response.json();
+
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const message = body?.error || body?.message || "Request failed";
+    throw new Error(message);
+  }
+
+  if (body && typeof body === "object" && "success" in body) {
+    const envelope = body as ApiEnvelope<T>;
+    if (!envelope.success) {
+      throw new Error(envelope.error || envelope.message || "Request failed");
+    }
+    if (typeof envelope.data !== "undefined") {
+      return envelope.data;
+    }
+  }
+
+  return body as T;
 }
 
 // Employee API
 export const employeeApi = {
   getAll: async (): Promise<Employee[]> => {
-    const response = await fetch(`${API_BASE}/employees`);
+    const response = await apiFetch(`${API_BASE}/employees`);
     return handleResponse<Employee[]>(response);
   },
   
   getById: async (id: number): Promise<Employee> => {
-    const response = await fetch(`${API_BASE}/employees/${id}`);
+    const response = await apiFetch(`${API_BASE}/employees/${id}`);
     return handleResponse<Employee>(response);
   },
   
   create: async (data: Omit<Employee, "id" | "createdAt">): Promise<Employee> => {
-    const response = await fetch(`${API_BASE}/employees`, {
+    const response = await apiFetch(`${API_BASE}/employees`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
@@ -63,7 +106,7 @@ export const employeeApi = {
   },
   
   update: async (id: number, data: Partial<Omit<Employee, "id" | "createdAt">>): Promise<Employee> => {
-    const response = await fetch(`${API_BASE}/employees/${id}`, {
+    const response = await apiFetch(`${API_BASE}/employees/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
@@ -72,7 +115,7 @@ export const employeeApi = {
   },
   
   delete: async (id: number): Promise<void> => {
-    const response = await fetch(`${API_BASE}/employees/${id}`, {
+    const response = await apiFetch(`${API_BASE}/employees/${id}`, {
       method: "DELETE"
     });
     return handleResponse<void>(response);
@@ -82,22 +125,22 @@ export const employeeApi = {
 // Roster API
 export const rosterApi = {
   getByMonth: async (year: number, month: number): Promise<RosterShift[]> => {
-    const response = await fetch(`${API_BASE}/roster/${year}/${month}`);
+    const response = await apiFetch(`${API_BASE}/roster/${year}/${month}`);
     return handleResponse<RosterShift[]>(response);
   },
   
   getByDate: async (date: string): Promise<RosterShift[]> => {
-    const response = await fetch(`${API_BASE}/roster/date/${date}`);
+    const response = await apiFetch(`${API_BASE}/roster/date/${date}`);
     return handleResponse<RosterShift[]>(response);
   },
   
   getById: async (id: number): Promise<RosterShift> => {
-    const response = await fetch(`${API_BASE}/roster/shift/${id}`);
+    const response = await apiFetch(`${API_BASE}/roster/shift/${id}`);
     return handleResponse<RosterShift>(response);
   },
   
   create: async (data: Omit<RosterShift, "id" | "createdAt">): Promise<RosterShift> => {
-    const response = await fetch(`${API_BASE}/roster`, {
+    const response = await apiFetch(`${API_BASE}/roster`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
@@ -106,7 +149,7 @@ export const rosterApi = {
   },
   
   update: async (id: number, data: Partial<InsertRosterShift>): Promise<RosterShift> => {
-    const response = await fetch(`${API_BASE}/roster/${id}`, {
+    const response = await apiFetch(`${API_BASE}/roster/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
@@ -115,7 +158,7 @@ export const rosterApi = {
   },
   
   bulkCreate: async (shifts: InsertRosterShift[]): Promise<RosterShift[]> => {
-    const response = await fetch(`${API_BASE}/roster/bulk`, {
+    const response = await apiFetch(`${API_BASE}/roster/bulk`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ shifts })
@@ -124,14 +167,14 @@ export const rosterApi = {
   },
   
   delete: async (id: number): Promise<void> => {
-    const response = await fetch(`${API_BASE}/roster/${id}`, {
+    const response = await apiFetch(`${API_BASE}/roster/${id}`, {
       method: "DELETE"
     });
     return handleResponse<void>(response);
   },
   
   deleteByMonth: async (year: number, month: number): Promise<void> => {
-    const response = await fetch(`${API_BASE}/roster/month/${year}/${month}`, {
+    const response = await apiFetch(`${API_BASE}/roster/month/${year}/${month}`, {
       method: "DELETE"
     });
     return handleResponse<void>(response);
@@ -149,7 +192,7 @@ export const rosterApi = {
       employeeName: string;
     }>;
   }> => {
-    const response = await fetch(`${API_BASE}/roster/generate`, {
+    const response = await apiFetch(`${API_BASE}/roster/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ year, month })
@@ -162,7 +205,7 @@ export const rosterApi = {
     savedShifts: number;
     message: string;
   }> => {
-    const response = await fetch(`${API_BASE}/roster/apply-generated`, {
+    const response = await apiFetch(`${API_BASE}/roster/apply-generated`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ year, month, shifts, replaceExisting })
@@ -174,17 +217,17 @@ export const rosterApi = {
 // Absence API
 export const absenceApi = {
   getByDateRange: async (startDate: string, endDate: string): Promise<Absence[]> => {
-    const response = await fetch(`${API_BASE}/absences?startDate=${startDate}&endDate=${endDate}`);
+    const response = await apiFetch(`${API_BASE}/absences?startDate=${startDate}&endDate=${endDate}`);
     return handleResponse<Absence[]>(response);
   },
   
   getByEmployee: async (employeeId: number): Promise<Absence[]> => {
-    const response = await fetch(`${API_BASE}/absences?employeeId=${employeeId}`);
+    const response = await apiFetch(`${API_BASE}/absences?employeeId=${employeeId}`);
     return handleResponse<Absence[]>(response);
   },
   
   create: async (data: Omit<Absence, "id" | "createdAt">): Promise<Absence> => {
-    const response = await fetch(`${API_BASE}/absences`, {
+    const response = await apiFetch(`${API_BASE}/absences`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
@@ -193,7 +236,7 @@ export const absenceApi = {
   },
   
   delete: async (id: number): Promise<void> => {
-    const response = await fetch(`${API_BASE}/absences/${id}`, {
+    const response = await apiFetch(`${API_BASE}/absences/${id}`, {
       method: "DELETE"
     });
     return handleResponse<void>(response);
@@ -203,12 +246,12 @@ export const absenceApi = {
 // Resource API
 export const resourceApi = {
   getAll: async (): Promise<Resource[]> => {
-    const response = await fetch(`${API_BASE}/resources`);
+    const response = await apiFetch(`${API_BASE}/resources`);
     return handleResponse<Resource[]>(response);
   },
   
   update: async (id: number, data: Partial<Omit<Resource, "id" | "createdAt">>): Promise<Resource> => {
-    const response = await fetch(`${API_BASE}/resources/${id}`, {
+    const response = await apiFetch(`${API_BASE}/resources/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
@@ -220,12 +263,12 @@ export const resourceApi = {
 // Weekly Assignment API
 export const weeklyAssignmentApi = {
   getByWeek: async (year: number, week: number): Promise<WeeklyAssignment[]> => {
-    const response = await fetch(`${API_BASE}/weekly-assignments/${year}/${week}`);
+    const response = await apiFetch(`${API_BASE}/weekly-assignments/${year}/${week}`);
     return handleResponse<WeeklyAssignment[]>(response);
   },
   
   create: async (data: InsertWeeklyAssignment): Promise<WeeklyAssignment> => {
-    const response = await fetch(`${API_BASE}/weekly-assignments`, {
+    const response = await apiFetch(`${API_BASE}/weekly-assignments`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
@@ -234,7 +277,7 @@ export const weeklyAssignmentApi = {
   },
   
   bulkSave: async (assignments: InsertWeeklyAssignment[]): Promise<WeeklyAssignment[]> => {
-    const response = await fetch(`${API_BASE}/weekly-assignments/bulk`, {
+    const response = await apiFetch(`${API_BASE}/weekly-assignments/bulk`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ assignments })
@@ -243,7 +286,7 @@ export const weeklyAssignmentApi = {
   },
   
   delete: async (id: number): Promise<void> => {
-    const response = await fetch(`${API_BASE}/weekly-assignments/${id}`, {
+    const response = await apiFetch(`${API_BASE}/weekly-assignments/${id}`, {
       method: "DELETE"
     });
     return handleResponse<void>(response);
@@ -253,17 +296,17 @@ export const weeklyAssignmentApi = {
 // Project Initiative API
 export const projectApi = {
   getAll: async (): Promise<ProjectInitiative[]> => {
-    const response = await fetch(`${API_BASE}/projects`);
+    const response = await apiFetch(`${API_BASE}/projects`);
     return handleResponse<ProjectInitiative[]>(response);
   },
 
   getById: async (id: number): Promise<ProjectInitiative> => {
-    const response = await fetch(`${API_BASE}/projects/${id}`);
+    const response = await apiFetch(`${API_BASE}/projects/${id}`);
     return handleResponse<ProjectInitiative>(response);
   },
 
   create: async (data: InsertProjectInitiative): Promise<ProjectInitiative> => {
-    const response = await fetch(`${API_BASE}/projects`, {
+    const response = await apiFetch(`${API_BASE}/projects`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
@@ -272,7 +315,7 @@ export const projectApi = {
   },
 
   update: async (id: number, data: Partial<InsertProjectInitiative>): Promise<ProjectInitiative> => {
-    const response = await fetch(`${API_BASE}/projects/${id}`, {
+    const response = await apiFetch(`${API_BASE}/projects/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
@@ -281,7 +324,7 @@ export const projectApi = {
   },
 
   delete: async (id: number): Promise<void> => {
-    const response = await fetch(`${API_BASE}/projects/${id}`, {
+    const response = await apiFetch(`${API_BASE}/projects/${id}`, {
       method: "DELETE"
     });
     return handleResponse<void>(response);
@@ -291,17 +334,17 @@ export const projectApi = {
 // Project Tasks API
 export const taskApi = {
   getByProject: async (projectId: number): Promise<ProjectTask[]> => {
-    const response = await fetch(`${API_BASE}/projects/${projectId}/tasks`);
+    const response = await apiFetch(`${API_BASE}/projects/${projectId}/tasks`);
     return handleResponse<ProjectTask[]>(response);
   },
 
   getById: async (id: number): Promise<ProjectTask> => {
-    const response = await fetch(`${API_BASE}/tasks/${id}`);
+    const response = await apiFetch(`${API_BASE}/tasks/${id}`);
     return handleResponse<ProjectTask>(response);
   },
 
   create: async (projectId: number, data: Omit<InsertProjectTask, 'initiativeId'>): Promise<ProjectTask> => {
-    const response = await fetch(`${API_BASE}/projects/${projectId}/tasks`, {
+    const response = await apiFetch(`${API_BASE}/projects/${projectId}/tasks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
@@ -310,7 +353,7 @@ export const taskApi = {
   },
 
   update: async (id: number, data: Partial<InsertProjectTask>): Promise<ProjectTask> => {
-    const response = await fetch(`${API_BASE}/tasks/${id}`, {
+    const response = await apiFetch(`${API_BASE}/tasks/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
@@ -319,19 +362,19 @@ export const taskApi = {
   },
 
   delete: async (id: number): Promise<void> => {
-    const response = await fetch(`${API_BASE}/tasks/${id}`, {
+    const response = await apiFetch(`${API_BASE}/tasks/${id}`, {
       method: "DELETE"
     });
     return handleResponse<void>(response);
   },
 
   getActivities: async (taskId: number): Promise<TaskActivity[]> => {
-    const response = await fetch(`${API_BASE}/tasks/${taskId}/activities`);
+    const response = await apiFetch(`${API_BASE}/tasks/${taskId}/activities`);
     return handleResponse<TaskActivity[]>(response);
   },
 
   addActivity: async (taskId: number, data: Omit<InsertTaskActivity, 'taskId'>): Promise<TaskActivity> => {
-    const response = await fetch(`${API_BASE}/tasks/${taskId}/activities`, {
+    const response = await apiFetch(`${API_BASE}/tasks/${taskId}/activities`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
@@ -343,17 +386,17 @@ export const taskApi = {
 // Project Documents API
 export const documentApi = {
   getByProject: async (projectId: number): Promise<ProjectDocument[]> => {
-    const response = await fetch(`${API_BASE}/projects/${projectId}/documents`);
+    const response = await apiFetch(`${API_BASE}/projects/${projectId}/documents`);
     return handleResponse<ProjectDocument[]>(response);
   },
 
   getById: async (id: number): Promise<ProjectDocument> => {
-    const response = await fetch(`${API_BASE}/documents/${id}`);
+    const response = await apiFetch(`${API_BASE}/documents/${id}`);
     return handleResponse<ProjectDocument>(response);
   },
 
   create: async (projectId: number, data: Omit<InsertProjectDocument, 'initiativeId'>): Promise<ProjectDocument> => {
-    const response = await fetch(`${API_BASE}/projects/${projectId}/documents`, {
+    const response = await apiFetch(`${API_BASE}/projects/${projectId}/documents`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
@@ -362,7 +405,7 @@ export const documentApi = {
   },
 
   update: async (id: number, data: Partial<InsertProjectDocument>): Promise<ProjectDocument> => {
-    const response = await fetch(`${API_BASE}/documents/${id}`, {
+    const response = await apiFetch(`${API_BASE}/documents/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
@@ -371,26 +414,26 @@ export const documentApi = {
   },
 
   delete: async (id: number): Promise<void> => {
-    const response = await fetch(`${API_BASE}/documents/${id}`, {
+    const response = await apiFetch(`${API_BASE}/documents/${id}`, {
       method: "DELETE"
     });
     return handleResponse<void>(response);
   },
 
   publish: async (id: number): Promise<ProjectDocument> => {
-    const response = await fetch(`${API_BASE}/documents/${id}/publish`, {
+    const response = await apiFetch(`${API_BASE}/documents/${id}/publish`, {
       method: "POST"
     });
     return handleResponse<ProjectDocument>(response);
   },
 
   getApprovals: async (documentId: number): Promise<Approval[]> => {
-    const response = await fetch(`${API_BASE}/documents/${documentId}/approvals`);
+    const response = await apiFetch(`${API_BASE}/documents/${documentId}/approvals`);
     return handleResponse<Approval[]>(response);
   },
 
   requestApproval: async (documentId: number, data: Omit<InsertApproval, 'documentId'>): Promise<Approval> => {
-    const response = await fetch(`${API_BASE}/documents/${documentId}/approvals`, {
+    const response = await apiFetch(`${API_BASE}/documents/${documentId}/approvals`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
@@ -402,7 +445,7 @@ export const documentApi = {
 // Approval API
 export const approvalApi = {
   update: async (id: number, data: Partial<InsertApproval>): Promise<Approval> => {
-    const response = await fetch(`${API_BASE}/approvals/${id}`, {
+    const response = await apiFetch(`${API_BASE}/approvals/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
@@ -414,7 +457,7 @@ export const approvalApi = {
 // Knowledge Base API (published documents)
 export const knowledgeApi = {
   getPublished: async (): Promise<ProjectDocument[]> => {
-    const response = await fetch(`${API_BASE}/knowledge/documents`);
+    const response = await apiFetch(`${API_BASE}/knowledge/documents`);
     return handleResponse<ProjectDocument[]>(response);
   }
 };
@@ -422,27 +465,27 @@ export const knowledgeApi = {
 // Shift Swap Request API
 export const shiftSwapApi = {
   getAll: async (): Promise<ShiftSwapRequest[]> => {
-    const response = await fetch(`${API_BASE}/shift-swaps`);
+    const response = await apiFetch(`${API_BASE}/shift-swaps`);
     return handleResponse<ShiftSwapRequest[]>(response);
   },
   
   getPending: async (): Promise<ShiftSwapRequest[]> => {
-    const response = await fetch(`${API_BASE}/shift-swaps?status=Ausstehend`);
+    const response = await apiFetch(`${API_BASE}/shift-swaps?status=Ausstehend`);
     return handleResponse<ShiftSwapRequest[]>(response);
   },
   
   getByEmployee: async (employeeId: number): Promise<ShiftSwapRequest[]> => {
-    const response = await fetch(`${API_BASE}/shift-swaps?employeeId=${employeeId}`);
+    const response = await apiFetch(`${API_BASE}/shift-swaps?employeeId=${employeeId}`);
     return handleResponse<ShiftSwapRequest[]>(response);
   },
   
   getById: async (id: number): Promise<ShiftSwapRequest> => {
-    const response = await fetch(`${API_BASE}/shift-swaps/${id}`);
+    const response = await apiFetch(`${API_BASE}/shift-swaps/${id}`);
     return handleResponse<ShiftSwapRequest>(response);
   },
   
   create: async (data: InsertShiftSwapRequest): Promise<ShiftSwapRequest> => {
-    const response = await fetch(`${API_BASE}/shift-swaps`, {
+    const response = await apiFetch(`${API_BASE}/shift-swaps`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
@@ -451,7 +494,7 @@ export const shiftSwapApi = {
   },
   
   update: async (id: number, data: Partial<InsertShiftSwapRequest>): Promise<ShiftSwapRequest> => {
-    const response = await fetch(`${API_BASE}/shift-swaps/${id}`, {
+    const response = await apiFetch(`${API_BASE}/shift-swaps/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
@@ -460,7 +503,7 @@ export const shiftSwapApi = {
   },
   
   approve: async (id: number, approverId: number, notes?: string): Promise<ShiftSwapRequest> => {
-    const response = await fetch(`${API_BASE}/shift-swaps/${id}/approve`, {
+    const response = await apiFetch(`${API_BASE}/shift-swaps/${id}/approve`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ approverId, notes })
@@ -469,7 +512,7 @@ export const shiftSwapApi = {
   },
   
   reject: async (id: number, approverId: number, notes?: string): Promise<ShiftSwapRequest> => {
-    const response = await fetch(`${API_BASE}/shift-swaps/${id}/reject`, {
+    const response = await apiFetch(`${API_BASE}/shift-swaps/${id}/reject`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ approverId, notes })
@@ -478,7 +521,7 @@ export const shiftSwapApi = {
   },
   
   delete: async (id: number): Promise<void> => {
-    const response = await fetch(`${API_BASE}/shift-swaps/${id}`, {
+    const response = await apiFetch(`${API_BASE}/shift-swaps/${id}`, {
       method: "DELETE"
     });
     return handleResponse<void>(response);
@@ -496,12 +539,12 @@ export interface NextPlanningMonth {
 
 export const rosterSettingsApi = {
   get: async (): Promise<RosterSettings> => {
-    const response = await fetch(`${API_BASE}/roster-settings`);
+    const response = await apiFetch(`${API_BASE}/roster-settings`);
     return handleResponse<RosterSettings>(response);
   },
   
   update: async (data: InsertRosterSettings): Promise<RosterSettings> => {
-    const response = await fetch(`${API_BASE}/roster-settings`, {
+    const response = await apiFetch(`${API_BASE}/roster-settings`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
@@ -510,7 +553,7 @@ export const rosterSettingsApi = {
   },
   
   getNextPlanningMonth: async (): Promise<NextPlanningMonth> => {
-    const response = await fetch(`${API_BASE}/roster-settings/next-planning-month`);
+    const response = await apiFetch(`${API_BASE}/roster-settings/next-planning-month`);
     return handleResponse<NextPlanningMonth>(response);
   }
 };
@@ -518,17 +561,17 @@ export const rosterSettingsApi = {
 // Shift Wishes API
 export const shiftWishesApi = {
   getByMonth: async (year: number, month: number): Promise<ShiftWish[]> => {
-    const response = await fetch(`${API_BASE}/shift-wishes?year=${year}&month=${month}`);
+    const response = await apiFetch(`${API_BASE}/shift-wishes?year=${year}&month=${month}`);
     return handleResponse<ShiftWish[]>(response);
   },
   
   getByEmployeeAndMonth: async (employeeId: number, year: number, month: number): Promise<ShiftWish | null> => {
-    const response = await fetch(`${API_BASE}/shift-wishes?employeeId=${employeeId}&year=${year}&month=${month}`);
+    const response = await apiFetch(`${API_BASE}/shift-wishes?employeeId=${employeeId}&year=${year}&month=${month}`);
     return handleResponse<ShiftWish | null>(response);
   },
   
   create: async (data: InsertShiftWish): Promise<ShiftWish> => {
-    const response = await fetch(`${API_BASE}/shift-wishes`, {
+    const response = await apiFetch(`${API_BASE}/shift-wishes`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
@@ -537,7 +580,7 @@ export const shiftWishesApi = {
   },
   
   update: async (id: number, data: Partial<InsertShiftWish>): Promise<ShiftWish> => {
-    const response = await fetch(`${API_BASE}/shift-wishes/${id}`, {
+    const response = await apiFetch(`${API_BASE}/shift-wishes/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
@@ -546,14 +589,14 @@ export const shiftWishesApi = {
   },
   
   submit: async (id: number): Promise<ShiftWish> => {
-    const response = await fetch(`${API_BASE}/shift-wishes/${id}/submit`, {
+    const response = await apiFetch(`${API_BASE}/shift-wishes/${id}/submit`, {
       method: "POST"
     });
     return handleResponse<ShiftWish>(response);
   },
   
   delete: async (id: number): Promise<void> => {
-    const response = await fetch(`${API_BASE}/shift-wishes/${id}`, {
+    const response = await apiFetch(`${API_BASE}/shift-wishes/${id}`, {
       method: "DELETE"
     });
     return handleResponse<void>(response);
@@ -563,17 +606,17 @@ export const shiftWishesApi = {
 // Planned Absences API
 export const plannedAbsencesApi = {
   getByMonth: async (year: number, month: number): Promise<PlannedAbsence[]> => {
-    const response = await fetch(`${API_BASE}/planned-absences?year=${year}&month=${month}`);
+    const response = await apiFetch(`${API_BASE}/planned-absences?year=${year}&month=${month}`);
     return handleResponse<PlannedAbsence[]>(response);
   },
   
   getByEmployeeAndMonth: async (employeeId: number, year: number, month: number): Promise<PlannedAbsence[]> => {
-    const response = await fetch(`${API_BASE}/planned-absences?employeeId=${employeeId}&year=${year}&month=${month}`);
+    const response = await apiFetch(`${API_BASE}/planned-absences?employeeId=${employeeId}&year=${year}&month=${month}`);
     return handleResponse<PlannedAbsence[]>(response);
   },
   
   create: async (data: InsertPlannedAbsence): Promise<PlannedAbsence> => {
-    const response = await fetch(`${API_BASE}/planned-absences`, {
+    const response = await apiFetch(`${API_BASE}/planned-absences`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
@@ -582,7 +625,7 @@ export const plannedAbsencesApi = {
   },
   
   update: async (id: number, data: Partial<InsertPlannedAbsence>): Promise<PlannedAbsence> => {
-    const response = await fetch(`${API_BASE}/planned-absences/${id}`, {
+    const response = await apiFetch(`${API_BASE}/planned-absences/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
@@ -591,7 +634,7 @@ export const plannedAbsencesApi = {
   },
   
   delete: async (id: number): Promise<void> => {
-    const response = await fetch(`${API_BASE}/planned-absences/${id}`, {
+    const response = await apiFetch(`${API_BASE}/planned-absences/${id}`, {
       method: "DELETE"
     });
     return handleResponse<void>(response);

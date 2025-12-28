@@ -1,14 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
-
-const TOKEN_KEY = "cliniq_auth_token";
-
-function readToken(): string | null {
-  try {
-    return localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
-}
+import { readAuthToken } from "./authToken";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -22,7 +13,7 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
-  const token = readToken();
+  const token = readAuthToken();
 
   const res = await fetch(url, {
     method,
@@ -44,7 +35,7 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const token = readToken();
+    const token = readAuthToken();
     const res = await fetch(queryKey.join("/") as string, {
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
