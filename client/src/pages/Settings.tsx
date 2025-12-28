@@ -9,6 +9,8 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar as DatePickerCalendar } from "@/components/ui/calendar";
 import { 
   User, 
   Mail, 
@@ -21,7 +23,7 @@ import {
   AlertCircle,
   GraduationCap,
   Briefcase,
-  Calendar,
+  Calendar as CalendarIcon,
   Tag,
   Pencil,
   Info,
@@ -51,6 +53,38 @@ function formatBirthday(value: string | Date | null | undefined): string {
     return "";
   }
   return toInput(value);
+}
+
+function formatBirthdayDisplay(value: string | Date | null | undefined): string {
+  const iso = formatBirthday(value);
+  if (!iso) return "";
+  const [year, month, day] = iso.split("-");
+  return `${day}.${month}.${year}`;
+}
+
+function parseBirthdayInput(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  let iso = "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    iso = trimmed;
+  } else {
+    const match = trimmed.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+    if (!match) return null;
+    iso = `${match[3]}-${match[2]}-${match[1]}`;
+  }
+
+  const [year, month, day] = iso.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+  return iso;
 }
 
 export default function Settings() {
@@ -105,6 +139,7 @@ export default function Settings() {
     showPrivateContact: false,
     badge: ''
   });
+  const [birthdayInput, setBirthdayInput] = useState("");
   const [roleValue, setRoleValue] = useState<Employee["role"] | "">("");
   const [appRoleValue, setAppRoleValue] = useState<Employee["appRole"] | "">("");
   const [competenciesValue, setCompetenciesValue] = useState<string[]>([]);
@@ -124,6 +159,32 @@ export default function Settings() {
     loadData();
   }, [viewingUserId]);
 
+  const applyEmployeeState = (emp: Employee) => {
+    setEmployee(emp);
+    const nameParts = emp.name.split(' ');
+    const hasTitle = nameParts[0]?.includes('Dr.') || nameParts[0]?.includes('PD') || nameParts[0]?.includes('Prof.');
+    const titleValue = emp.title?.trim() || (hasTitle ? nameParts.slice(0, nameParts.length > 2 ? 2 : 1).join(' ') : '');
+    const birthdayIso = formatBirthday(emp.birthday);
+
+    setFormData({
+      title: titleValue,
+      firstName: emp.firstName || '',
+      lastName: emp.lastName || (hasTitle ? nameParts.slice(-1)[0] : nameParts.slice(-1)[0]) || '',
+      birthday: birthdayIso,
+      email: emp.email || '',
+      emailPrivate: emp.emailPrivate || '',
+      phoneWork: emp.phoneWork || '',
+      phonePrivate: emp.phonePrivate || '',
+      showPrivateContact: emp.showPrivateContact || false,
+      badge: emp.lastName?.substring(0, 2).toUpperCase() || emp.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || ''
+    });
+    setBirthdayInput(formatBirthdayDisplay(birthdayIso || emp.birthday));
+    setNewBadge(emp.lastName?.substring(0, 2).toUpperCase() || '');
+    setRoleValue(emp.role || "");
+    setAppRoleValue(emp.appRole || "");
+    setCompetenciesValue(Array.isArray(emp.competencies) ? emp.competencies : []);
+  };
+
   const loadData = async () => {
     try {
       const employees = await employeeApi.getAll();
@@ -131,27 +192,7 @@ export default function Settings() {
       
       const emp = employees.find(e => e.id === viewingUserId);
       if (emp) {
-        setEmployee(emp);
-        const nameParts = emp.name.split(' ');
-        const hasTitle = nameParts[0]?.includes('Dr.') || nameParts[0]?.includes('PD') || nameParts[0]?.includes('Prof.');
-        const titleValue = emp.title?.trim() || (hasTitle ? nameParts.slice(0, nameParts.length > 2 ? 2 : 1).join(' ') : '');
-        
-        setFormData({
-          title: titleValue,
-          firstName: emp.firstName || '',
-          lastName: emp.lastName || (hasTitle ? nameParts.slice(-1)[0] : nameParts.slice(-1)[0]) || '',
-          birthday: formatBirthday(emp.birthday),
-          email: emp.email || '',
-          emailPrivate: emp.emailPrivate || '',
-          phoneWork: emp.phoneWork || '',
-          phonePrivate: emp.phonePrivate || '',
-          showPrivateContact: emp.showPrivateContact || false,
-          badge: emp.lastName?.substring(0, 2).toUpperCase() || emp.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || ''
-        });
-        setNewBadge(emp.lastName?.substring(0, 2).toUpperCase() || '');
-        setRoleValue(emp.role || "");
-        setAppRoleValue(emp.appRole || "");
-        setCompetenciesValue(Array.isArray(emp.competencies) ? emp.competencies : []);
+        applyEmployeeState(emp);
       }
     } catch (error) {
       toast({
@@ -170,6 +211,16 @@ export default function Settings() {
     setSaving(true);
     try {
       const payload: Partial<Omit<Employee, "id" | "createdAt">> = {};
+      const parsedBirthday = parseBirthdayInput(birthdayInput);
+      if (parsedBirthday === null) {
+        toast({
+          title: "Fehler",
+          description: "Bitte ein gueltiges Geburtsdatum eingeben (TT.MM.JJJJ oder JJJJ-MM-TT).",
+          variant: "destructive"
+        });
+        setSaving(false);
+        return;
+      }
 
       // TODO: Backend schema needs title, birthday, badge fields before full persistence
       // Currently saving only fields supported by the existing API
@@ -178,7 +229,7 @@ export default function Settings() {
           title: formData.title || null,
           firstName: formData.firstName,
           lastName: formData.lastName,
-          birthday: formData.birthday || null,
+          birthday: parsedBirthday || null,
           email: formData.email,
           emailPrivate: formData.emailPrivate,
           phoneWork: formData.phoneWork,
@@ -200,12 +251,17 @@ export default function Settings() {
         return;
       }
 
-      await employeeApi.update(employee.id, payload);
+      const updated = await employeeApi.update(employee.id, payload);
       toast({
         title: "Gespeichert",
         description: "Ihre Einstellungen wurden aktualisiert"
       });
-      loadData();
+      if (updated) {
+        applyEmployeeState(updated);
+        setAllEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
+      } else {
+        loadData();
+      }
     } catch (error) {
       toast({
         title: "Fehler",
@@ -367,11 +423,38 @@ export default function Settings() {
                   <div className="space-y-2">
                     <Label>Geburtsdatum</Label>
                     <div className="flex items-center gap-2">
-                      <Calendar className="w-4 h-4 text-muted-foreground" />
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            disabled={!canEditBasicInfo}
+                            aria-label="Kalender oeffnen"
+                          >
+                            <CalendarIcon className="w-4 h-4 text-muted-foreground" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent align="start" className="p-2">
+                          <DatePickerCalendar
+                            mode="single"
+                            captionLayout="dropdown"
+                            selected={formData.birthday ? new Date(`${formData.birthday}T00:00:00`) : undefined}
+                            onSelect={(date) => {
+                              if (!date) return;
+                              const iso = formatBirthday(date);
+                              setFormData(prev => ({ ...prev, birthday: iso }));
+                              setBirthdayInput(formatBirthdayDisplay(iso));
+                            }}
+                            fromYear={1900}
+                            toYear={new Date().getFullYear()}
+                          />
+                        </PopoverContent>
+                      </Popover>
                       <Input 
-                        type="date"
-                        value={formData.birthday}
-                        onChange={(e) => setFormData(prev => ({ ...prev, birthday: e.target.value }))} 
+                        value={birthdayInput}
+                        onChange={(e) => setBirthdayInput(e.target.value)}
+                        placeholder="TT.MM.JJJJ"
                         disabled={!canEditBasicInfo}
                       />
                     </div>
