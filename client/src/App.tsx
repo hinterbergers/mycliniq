@@ -81,6 +81,43 @@ function Router() {
       <Route path="/personal">
         {() => <ProtectedRoute component={Personal} />}
       </Route>
+
+            {/* Verwaltung aliases (compat) */}
+            <Route path="/verwaltung">
+        {() => <Redirect to="/admin" />}
+      </Route>
+
+      <Route path="/verwaltung/employees">
+        {() => <Redirect to="/admin/employees" />}
+      </Route>
+
+      <Route path="/verwaltung/resources">
+        {() => <Redirect to="/admin/resources" />}
+      </Route>
+
+      <Route path="/verwaltung/daily-plan">
+        {() => <Redirect to="/admin/daily-plan" />}
+      </Route>
+
+      <Route path="/verwaltung/roster">
+        {() => <Redirect to="/admin/roster" />}
+      </Route>
+
+      <Route path="/verwaltung/weekly">
+        {() => <Redirect to="/admin/weekly" />}
+      </Route>
+
+      <Route path="/verwaltung/projects">
+        {() => <Redirect to="/admin/projects" />}
+      </Route>
+
+      <Route path="/verwaltung/projects/:id">
+        {() => <Redirect to="/admin/projects/:id" />}
+      </Route>
+
+      <Route path="/verwaltung/clinic">
+        {() => <Redirect to="/admin/clinic" />}
+      </Route>
       
       {/* Admin / Verwaltung Routes */}
       <Route path="/admin">

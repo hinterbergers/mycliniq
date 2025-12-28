@@ -31,6 +31,15 @@ export async function setupVite(server: Server, app: Express) {
 
   app.use(vite.middlewares);
 
+  // API routes should return 404 JSON, not SPA fallback
+  // This middleware catches any /api/* requests that weren't handled by API routes
+  app.use((req, res, next) => {
+    if (req.path.startsWith("/api") && !res.headersSent) {
+      return res.status(404).json({ success: false, error: "API endpoint not found" });
+    }
+    next();
+  });
+
   app.use("*", async (req, res, next) => {
     const url = req.originalUrl;
 
