@@ -609,14 +609,18 @@ export const plannedAbsencesApi = {
   },
 };
 
-export type MeResponse = {
-  success: true;
+export type MeData = {
   user: any;
+  department?: any;
+  clinic?: any;
+  capabilities?: string[];
 };
 
-eexport const authApi = {
-  me: async (): Promise<any> => {
-    const res = await apiFetch<MeResponse>("/auth/me", { method: "GET" });
-    return res.user;
+export const authApi = {
+  me: async (): Promise<MeData> => {
+    // /api/me liefert { success:true, data:{...} }
+    const res = await apiFetch<{ success: true; data: MeData }>("/me", { method: "GET" }, { unwrap: false });
+    if (!res?.success) throw new Error("Anmeldung erforderlich");
+    return res.data;
   },
 };
