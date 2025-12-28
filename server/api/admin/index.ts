@@ -150,6 +150,33 @@ export function registerAdminRoutes(app: Express): void {
     }
   });
 
+    // Alias: GET /api/admin/employees -> same as /api/admin/users
+    router.get("/employees", requireTechnicalAdmin, async (req, res) => {
+      try {
+        const users = await db
+          .select({
+            id: employees.id,
+            name: employees.name,
+            lastName: employees.lastName,
+            email: employees.email,
+            systemRole: employees.systemRole,
+            appRole: employees.appRole,
+            isActive: employees.isActive,
+            departmentId: employees.departmentId,
+            departmentName: departments.name,
+          })
+          .from(employees)
+          .leftJoin(departments, eq(employees.departmentId, departments.id))
+          .where(eq(employees.isActive, true))
+          .orderBy(employees.name);
+  
+        return res.json({ success: true, data: users });
+      } catch (error) {
+        console.error("[API] Error in GET /api/admin/employees:", error);
+        return res.status(500).json({ success: false, error: "Fehler beim Abrufen der Benutzer" });
+      }
+    });
+
   // GET /api/admin/users/:id/permissions
   router.get("/users/:id/permissions", requireTechnicalAdmin, async (req, res) => {
     try {
