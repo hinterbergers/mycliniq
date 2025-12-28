@@ -23,7 +23,8 @@ import type {
   ShiftWish,
   InsertShiftWish,
   PlannedAbsence,
-  InsertPlannedAbsence
+  InsertPlannedAbsence,
+  Competency
 } from "@shared/schema";
 import { readAuthToken } from "./authToken";
 
@@ -119,6 +120,23 @@ export const employeeApi = {
       method: "DELETE"
     });
     return handleResponse<void>(response);
+  },
+
+  getCompetencies: async (id: number): Promise<Array<{ competencyId: number; code?: string | null; name?: string | null }>> => {
+    const response = await apiFetch(`${API_BASE}/employees/${id}/competencies`);
+    return handleResponse<Array<{ competencyId: number; code?: string | null; name?: string | null }>>(response);
+  },
+
+  updateCompetencies: async (id: number, competencyIds: number[]): Promise<{
+    id: number;
+    competencies: Array<{ competencyId: number; code?: string | null; name?: string | null }>;
+    count: number;
+  }> => {
+    const response = await apiFetch(`${API_BASE}/employees/${id}/competencies`, {
+      method: "PUT",
+      body: JSON.stringify({ competencyIds })
+    });
+    return handleResponse(response);
   }
 };
 
@@ -258,6 +276,25 @@ export const resourceApi = {
     });
     return handleResponse<Resource>(response);
   }
+};
+
+export const roomApi = {
+  getAll: async (options?: { active?: boolean }): Promise<Resource[]> => {
+    const params = new URLSearchParams();
+    if (options?.active !== undefined) {
+      params.set("active", options.active ? "true" : "false");
+    }
+    const query = params.toString();
+    const response = await apiFetch(`${API_BASE}/rooms${query ? `?${query}` : ""}`);
+    return handleResponse<Resource[]>(response);
+  },
+};
+
+export const competencyApi = {
+  getAll: async (): Promise<Competency[]> => {
+    const response = await apiFetch(`${API_BASE}/competencies`);
+    return handleResponse<Competency[]>(response);
+  },
 };
 
 // Weekly Assignment API

@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -16,22 +17,18 @@ import {
   Mail, 
   Phone, 
   Lock, 
-  FileText, 
   Shield, 
-  Upload, 
   Save,
   AlertCircle,
   GraduationCap,
   Briefcase,
   Calendar as CalendarIcon,
   Tag,
-  Pencil,
-  Info,
   X
 } from "lucide-react";
 import { useState, useEffect } from "react";
-import { employeeApi } from "@/lib/api";
-import type { Employee } from "@shared/schema";
+import { employeeApi, competencyApi, roomApi } from "@/lib/api";
+import type { Employee, Competency, Resource } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useParams, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
@@ -142,8 +139,12 @@ export default function Settings() {
   const [birthdayInput, setBirthdayInput] = useState("");
   const [roleValue, setRoleValue] = useState<Employee["role"] | "">("");
   const [appRoleValue, setAppRoleValue] = useState<Employee["appRole"] | "">("");
-  const [competenciesValue, setCompetenciesValue] = useState<string[]>([]);
-  const [newCompetency, setNewCompetency] = useState("");
+  const [availableCompetencies, setAvailableCompetencies] = useState<Competency[]>([]);
+  const [selectedCompetencyIds, setSelectedCompetencyIds] = useState<number[]>([]);
+  const [competencySearch, setCompetencySearch] = useState("");
+  const [availableRooms, setAvailableRooms] = useState<Resource[]>([]);
+  const [deploymentRoomIds, setDeploymentRoomIds] = useState<number[]>([]);
+  const [roomSearch, setRoomSearch] = useState("");
   
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
@@ -158,6 +159,31 @@ export default function Settings() {
   useEffect(() => {
     loadData();
   }, [viewingUserId]);
+
+  const selectedCompetencyLabels = selectedCompetencyIds.map((id) => {
+    const match = availableCompetencies.find((comp) => comp.id === id);
+    return { id, label: match?.name || `Kompetenz ${id}` };
+  });
+  const filteredCompetencies = availableCompetencies.filter((comp) => {
+    const query = competencySearch.trim().toLowerCase();
+    if (!query) return true;
+    return (
+      comp.name.toLowerCase().includes(query) ||
+      (comp.code || "").toLowerCase().includes(query)
+    );
+  });
+  const selectedRoomLabels = deploymentRoomIds.map((id) => {
+    const match = availableRooms.find((room) => room.id === id);
+    return { id, label: match?.name || `Raum ${id}` };
+  });
+  const filteredRooms = availableRooms.filter((room) => {
+    const query = roomSearch.trim().toLowerCase();
+    if (!query) return true;
+    return (
+      room.name.toLowerCase().includes(query) ||
+      (room.category || "").toLowerCase().includes(query)
+    );
+  });
 
   const applyEmployeeState = (emp: Employee) => {
     setEmployee(emp);
@@ -182,17 +208,46 @@ export default function Settings() {
     setNewBadge(emp.lastName?.substring(0, 2).toUpperCase() || '');
     setRoleValue(emp.role || "");
     setAppRoleValue(emp.appRole || "");
-    setCompetenciesValue(Array.isArray(emp.competencies) ? emp.competencies : []);
+    setSelectedCompetencyIds([]);
+    const prefs = (emp.shiftPreferences as { deploymentRoomIds?: number[] } | null) || null;
+    setDeploymentRoomIds(Array.isArray(prefs?.deploymentRoomIds) ? prefs.deploymentRoomIds : []);
   };
 
   const loadData = async () => {
     try {
-      const employees = await employeeApi.getAll();
+      const [employees, competencies, rooms] = await Promise.all([
+        employeeApi.getAll(),
+        competencyApi.getAll(),
+        roomApi.getAll({ active: true })
+      ]);
       setAllEmployees(employees);
+      setAvailableCompetencies(competencies.filter((comp) => comp.isActive !== false));
+      setAvailableRooms(rooms.filter((room) => room.isActive !== false));
       
       const emp = employees.find(e => e.id === viewingUserId);
       if (emp) {
         applyEmployeeState(emp);
+        try {
+          const empCompetencies = await employeeApi.getCompetencies(emp.id);
+          const ids = empCompetencies
+            .map((comp) => comp.competencyId)
+            .filter((id) => typeof id === "number");
+          if (ids.length) {
+            setSelectedCompetencyIds(ids);
+          } else if (Array.isArray(emp.competencies) && competencies.length) {
+            const fallbackIds = emp.competencies
+              .map((name) => competencies.find((comp) => comp.name === name)?.id)
+              .filter((id): id is number => typeof id === "number");
+            setSelectedCompetencyIds(fallbackIds);
+          }
+        } catch {
+          if (Array.isArray(emp.competencies) && competencies.length) {
+            const fallbackIds = emp.competencies
+              .map((name) => competencies.find((comp) => comp.name === name)?.id)
+              .filter((id): id is number => typeof id === "number");
+            setSelectedCompetencyIds(fallbackIds);
+          }
+        }
       }
     } catch (error) {
       toast({
@@ -242,7 +297,10 @@ export default function Settings() {
         Object.assign(payload, {
           role: (roleValue || employee.role) as Employee["role"],
           appRole: (appRoleValue || employee.appRole) as Employee["appRole"],
-          competencies: competenciesValue,
+          shiftPreferences: {
+            ...(employee.shiftPreferences || {}),
+            deploymentRoomIds: deploymentRoomIds
+          }
         });
       }
 
@@ -251,7 +309,13 @@ export default function Settings() {
         return;
       }
 
-      const updated = await employeeApi.update(employee.id, payload);
+      const updated = Object.keys(payload).length
+        ? await employeeApi.update(employee.id, payload)
+        : null;
+
+      if (canEditRoleAndCompetencies) {
+        await employeeApi.updateCompetencies(employee.id, selectedCompetencyIds);
+      }
       toast({
         title: "Gespeichert",
         description: "Ihre Einstellungen wurden aktualisiert"
@@ -259,9 +323,8 @@ export default function Settings() {
       if (updated) {
         applyEmployeeState(updated);
         setAllEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
-      } else {
-        loadData();
       }
+      loadData();
     } catch (error) {
       toast({
         title: "Fehler",
@@ -300,15 +363,16 @@ export default function Settings() {
     setIsBadgeDialogOpen(false);
   };
 
-  const handleAddCompetency = () => {
-    const trimmed = newCompetency.trim();
-    if (!trimmed) return;
-    setCompetenciesValue((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
-    setNewCompetency("");
+  const toggleCompetency = (id: number) => {
+    setSelectedCompetencyIds((prev) =>
+      prev.includes(id) ? prev.filter((compId) => compId !== id) : [...prev, id]
+    );
   };
 
-  const handleRemoveCompetency = (value: string) => {
-    setCompetenciesValue((prev) => prev.filter((comp) => comp !== value));
+  const toggleDeploymentRoom = (id: number) => {
+    setDeploymentRoomIds((prev) =>
+      prev.includes(id) ? prev.filter((roomId) => roomId !== id) : [...prev, id]
+    );
   };
 
   if (loading) {
@@ -648,17 +712,17 @@ export default function Settings() {
                 <div className="space-y-2">
                   <Label>Kompetenzen</Label>
                   <div className="flex flex-wrap gap-2">
-                    {(canEditRoleAndCompetencies ? competenciesValue : employee.competencies)?.length ? (
-                      (canEditRoleAndCompetencies ? competenciesValue : employee.competencies || []).map((comp, idx) => (
-                        <Badge key={`${comp}-${idx}`} variant="secondary" className="flex items-center gap-1">
+                    {selectedCompetencyLabels.length ? (
+                      selectedCompetencyLabels.map((comp) => (
+                        <Badge key={comp.id} variant="secondary" className="flex items-center gap-1">
                           <GraduationCap className="w-3 h-3" />
-                          <span>{comp}</span>
+                          <span>{comp.label}</span>
                           {canEditRoleAndCompetencies && (
                             <button
                               type="button"
-                              onClick={() => handleRemoveCompetency(comp)}
+                              onClick={() => toggleCompetency(comp.id)}
                               className="ml-1 text-muted-foreground hover:text-foreground"
-                              aria-label={`Kompetenz entfernen: ${comp}`}
+                              aria-label={`Kompetenz entfernen: ${comp.label}`}
                             >
                               <X className="w-3 h-3" />
                             </button>
@@ -670,31 +734,107 @@ export default function Settings() {
                     )}
                   </div>
                   {canEditRoleAndCompetencies && (
-                    <div className="flex gap-2">
-                      <Input
-                        value={newCompetency}
-                        onChange={(e) => setNewCompetency(e.target.value)}
-                        placeholder="Kompetenz hinzufügen"
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            handleAddCompetency();
-                          }
-                        }}
-                      />
-                      <Button type="button" onClick={handleAddCompetency} variant="outline">
-                        Hinzufügen
-                      </Button>
-                    </div>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button type="button" variant="outline">
+                          Kompetenzen auswaehlen
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent align="start" className="w-80">
+                        <div className="space-y-2">
+                          <Input
+                            value={competencySearch}
+                            onChange={(e) => setCompetencySearch(e.target.value)}
+                            placeholder="Kompetenz suchen..."
+                          />
+                          <div className="max-h-56 overflow-y-auto space-y-2">
+                            {filteredCompetencies.map((comp) => {
+                              const checked = selectedCompetencyIds.includes(comp.id);
+                              return (
+                                <div key={comp.id} className="flex items-center gap-2">
+                                  <Checkbox
+                                    id={`competency-${comp.id}`}
+                                    checked={checked}
+                                    onCheckedChange={() => toggleCompetency(comp.id)}
+                                  />
+                                  <Label htmlFor={`competency-${comp.id}`} className="text-sm font-normal cursor-pointer">
+                                    {comp.code ? `${comp.code} - ${comp.name}` : comp.name}
+                                  </Label>
+                                </div>
+                              );
+                            })}
+                            {!filteredCompetencies.length && (
+                              <p className="text-sm text-muted-foreground">Keine Kompetenzen gefunden</p>
+                            )}
+                          </div>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
                   )}
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Primärer Einsatzbereich</Label>
-                  <div className="relative">
-                    <Tag className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
-                    <Input value={employee.primaryDeploymentArea || "—"} disabled />
+                  <Label>Einsatzbereiche (Ressourcen/Raeume)</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedRoomLabels.length ? (
+                      selectedRoomLabels.map((room) => (
+                        <Badge key={room.id} variant="secondary" className="flex items-center gap-1">
+                          <Tag className="w-3 h-3" />
+                          <span>{room.label}</span>
+                          {canEditRoleAndCompetencies && (
+                            <button
+                              type="button"
+                              onClick={() => toggleDeploymentRoom(room.id)}
+                              className="ml-1 text-muted-foreground hover:text-foreground"
+                              aria-label={`Einsatzbereich entfernen: ${room.label}`}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
+                        </Badge>
+                      ))
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Keine Einsatzbereiche hinterlegt</p>
+                    )}
                   </div>
+                  {canEditRoleAndCompetencies && (
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button type="button" variant="outline">
+                          Einsatzbereiche auswaehlen
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent align="start" className="w-80">
+                        <div className="space-y-2">
+                          <Input
+                            value={roomSearch}
+                            onChange={(e) => setRoomSearch(e.target.value)}
+                            placeholder="Raeume/Ressourcen suchen..."
+                          />
+                          <div className="max-h-56 overflow-y-auto space-y-2">
+                            {filteredRooms.map((room) => {
+                              const checked = deploymentRoomIds.includes(room.id);
+                              return (
+                                <div key={room.id} className="flex items-center gap-2">
+                                  <Checkbox
+                                    id={`room-${room.id}`}
+                                    checked={checked}
+                                    onCheckedChange={() => toggleDeploymentRoom(room.id)}
+                                  />
+                                  <Label htmlFor={`room-${room.id}`} className="text-sm font-normal cursor-pointer">
+                                    {room.category ? `${room.name} (${room.category})` : room.name}
+                                  </Label>
+                                </div>
+                              );
+                            })}
+                            {!filteredRooms.length && (
+                              <p className="text-sm text-muted-foreground">Keine Raeume gefunden</p>
+                            )}
+                          </div>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  )}
                 </div>
 
                 <div className="flex justify-end">
