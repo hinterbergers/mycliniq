@@ -4,7 +4,7 @@ import type { Server } from "http";
 
 import { storage } from "./storage";
 import { registerModularApiRoutes } from "./api";
-import { authenticate, requireAuth } from "./api/middleware/auth";
+import { authenticate, requireAuth } from "./lib/auth";
 
 import { generateRosterPlan } from "./services/rosterGenerator";
 import { insertRosterShiftSchema } from "@shared/schema";
