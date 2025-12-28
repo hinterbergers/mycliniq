@@ -8,7 +8,6 @@ import { employees, sessions, departments, userPermissions, permissions } from "
  */
 export interface AuthUser {
   id: number;
-  oderId?: string;
   employeeId: number;
   appRole: "Admin" | "Editor" | "User";
   systemRole: "employee" | "department_admin" | "clinic_admin" | "system_admin";
@@ -20,20 +19,22 @@ export interface AuthUser {
   capabilities: string[];
 }
 
-/**
- * Extend Express Request to include user
- */
+interface SessionData {
+  employeeId?: number;
+  userId?: string;
+}
+
 declare global {
   namespace Express {
     interface Request {
       user?: AuthUser;
-      session?: { employeeId?: number; userId?: string } & Record<string, any>;
+      session?: SessionData & Record<string, any>;
     }
   }
 }
 
 /**
- * Extract Bearer token from request
+ * Extract Bearer token
  */
 function extractToken(req: Request): string | null {
   const authHeader = req.headers.authorization;
@@ -41,9 +42,6 @@ function extractToken(req: Request): string | null {
   return null;
 }
 
-/**
- * Get AuthUser from employeeId (incl. capabilities)
- */
 async function getAuthUserByEmployeeId(employeeId: number): Promise<AuthUser | null> {
   try {
     const [employee] = await db.select().from(employees).where(eq(employees.id, employeeId));
@@ -55,29 +53,17 @@ async function getAuthUserByEmployeeId(employeeId: number): Promise<AuthUser | n
 
     if (employee.departmentId) {
       departmentId = employee.departmentId;
-
-      const [department] = await db
-        .select()
-        .from(departments)
-        .where(eq(departments.id, employee.departmentId));
-
+      const [department] = await db.select().from(departments).where(eq(departments.id, employee.departmentId));
       if (department) clinicId = department.clinicId;
     }
 
-    // Capabilities for current department
     let capabilities: string[] = [];
     if (departmentId) {
       const userPerms = await db
         .select({ key: permissions.key })
         .from(userPermissions)
         .innerJoin(permissions, eq(userPermissions.permissionId, permissions.id))
-        .where(
-          and(
-            // NOTE: depends on schema: userPermissions.userId might be employeeId in your system
-            eq(userPermissions.userId, employeeId),
-            eq(userPermissions.departmentId, departmentId)
-          )
-        );
+        .where(and(eq(userPermissions.userId, employeeId), eq(userPermissions.departmentId, departmentId)));
 
       capabilities = userPerms.map((p) => p.key);
     }
@@ -85,12 +71,19 @@ async function getAuthUserByEmployeeId(employeeId: number): Promise<AuthUser | n
     const systemRole = (employee.systemRole || "employee") as AuthUser["systemRole"];
     const isTechnicalAdmin = systemRole !== "employee";
 
+    // ID: falls employee.userId eine UUID/ID-String ist, nicht parseInt erzwingen.
+    // Für /api/me nutzt ihr ohnehin employeeId als echten Bezug.
+    const numericId =
+      typeof (employee as any).userId === "string" && /^\d+$/.test((employee as any).userId)
+        ? parseInt((employee as any).userId, 10)
+        : employee.id;
+
     return {
-      id: employee.userId ? parseInt(employee.userId) : employee.id,
+      id: numericId,
       employeeId: employee.id,
       appRole: employee.appRole as AuthUser["appRole"],
       systemRole,
-      isAdmin: !!employee.isAdmin || employee.appRole === "Admin" || isTechnicalAdmin,
+      isAdmin: employee.isAdmin || employee.appRole === "Admin" || isTechnicalAdmin,
       name: employee.name,
       lastName: employee.lastName || "",
       departmentId,
@@ -103,17 +96,12 @@ async function getAuthUserByEmployeeId(employeeId: number): Promise<AuthUser | n
   }
 }
 
-/**
- * Verify token against sessions table (DB-backed sessions)
- */
 async function verifyToken(token: string): Promise<AuthUser | null> {
   try {
     const [session] = await db.select().from(sessions).where(eq(sessions.token, token));
     if (!session) return null;
 
-    if (session.expiresAt && new Date(session.expiresAt) < new Date()) {
-      return null;
-    }
+    if (session.expiresAt && new Date(session.expiresAt) < new Date()) return null;
 
     return await getAuthUserByEmployeeId(session.employeeId);
   } catch (error) {
@@ -124,31 +112,29 @@ async function verifyToken(token: string): Promise<AuthUser | null> {
 
 /**
  * Authentication middleware:
- * - If token exists: validate session, attach req.user or return 401
- * - If no token: in production let it pass through (some routes are public), protected routes use requireAuth
+ * - In production: if no token -> just next() (route decides via requireAuth)
+ * - If token exists but invalid -> 401
+ * This is the cleanest split: authenticate attaches req.user if possible,
+ * requireAuth enforces it.
  */
 export async function authenticate(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const token = extractToken(req);
 
     if (!token) {
-      // DEV: warn for unauth access, but avoid log spam
+      // DEV logging only (optional)
       if (process.env.NODE_ENV !== "production") {
-        const skipLogPrefixes = [
-          "/api/health",
-          "/api/roster-settings",
-          "/assets",
-          "/favicon",
-        ];
-        if (!skipLogPrefixes.some((p) => req.originalUrl.startsWith(p))) {
-          console.warn(`[Auth] Unauthenticated access to ${req.method} ${req.originalUrl}`);
+        const skipLogPaths = ["/api/roster-settings", "/api/health"];
+        if (!skipLogPaths.some((p) => req.originalUrl.startsWith(p))) {
+          // keep it low-noise
+          // console.warn(`[Auth] Unauthenticated access to ${req.method} ${req.originalUrl}`);
         }
       }
-
       return next();
     }
 
     const user = await verifyToken(token);
+
     if (!user) {
       res.status(401).json({ success: false, error: "Ungültiges oder abgelaufenes Token" });
       return;
@@ -162,9 +148,6 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
   }
 }
 
-/**
- * Strict auth guard for protected endpoints
- */
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
   if (!req.user) {
     res.status(401).json({ success: false, error: "Anmeldung erforderlich" });
@@ -174,56 +157,64 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
 }
 
 export function requireTechnicalAdmin(req: Request, res: Response, next: NextFunction): void {
-  if (!req.user) return res.status(401).json({ success: false, error: "Anmeldung erforderlich" });
+  if (!req.user) return res.status(401).json({ success: false, error: "Anmeldung erforderlich" }) as any;
 
   const ok =
     req.user.systemRole === "department_admin" ||
     req.user.systemRole === "clinic_admin" ||
     req.user.systemRole === "system_admin";
 
-  if (!ok) return res.status(403).json({ success: false, error: "Technische Admin-Berechtigung erforderlich" });
-
+  if (!ok) {
+    res.status(403).json({ success: false, error: "Technische Admin-Berechtigung erforderlich" });
+    return;
+  }
   next();
 }
 
 export function requireClinicAdmin(req: Request, res: Response, next: NextFunction): void {
-  if (!req.user) return res.status(401).json({ success: false, error: "Anmeldung erforderlich" });
+  if (!req.user) return res.status(401).json({ success: false, error: "Anmeldung erforderlich" }) as any;
 
   const ok = req.user.systemRole === "clinic_admin" || req.user.systemRole === "system_admin";
-  if (!ok) return res.status(403).json({ success: false, error: "Klinik-Admin-Berechtigung erforderlich" });
-
+  if (!ok) {
+    res.status(403).json({ success: false, error: "Klinik-Admin-Berechtigung erforderlich" });
+    return;
+  }
   next();
 }
 
 export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
-  if (!req.user) return res.status(401).json({ success: false, error: "Anmeldung erforderlich" });
+  if (!req.user) return res.status(401).json({ success: false, error: "Anmeldung erforderlich" }) as any;
 
   if (!req.user.isAdmin && req.user.appRole !== "Admin") {
-    return res.status(403).json({ success: false, error: "Admin-Berechtigung erforderlich" });
+    res.status(403).json({ success: false, error: "Admin-Berechtigung erforderlich" });
+    return;
   }
-
   next();
 }
 
 export function requireEditor(req: Request, res: Response, next: NextFunction): void {
-  if (!req.user) return res.status(401).json({ success: false, error: "Anmeldung erforderlich" });
+  if (!req.user) return res.status(401).json({ success: false, error: "Anmeldung erforderlich" }) as any;
 
   if (!req.user.isAdmin && !["Admin", "Editor"].includes(req.user.appRole)) {
-    return res.status(403).json({ success: false, error: "Editor-Berechtigung erforderlich" });
+    res.status(403).json({ success: false, error: "Editor-Berechtigung erforderlich" });
+    return;
   }
-
   next();
 }
 
 export function requireOwnerOrAdmin(getOwnerId: (req: Request) => number) {
   return (req: Request, res: Response, next: NextFunction): void => {
-    if (!req.user) return res.status(401).json({ success: false, error: "Anmeldung erforderlich" });
+    if (!req.user) {
+      res.status(401).json({ success: false, error: "Anmeldung erforderlich" });
+      return;
+    }
 
     if (req.user.isAdmin || req.user.appRole === "Admin") return next();
 
     const ownerId = getOwnerId(req);
     if (req.user.employeeId !== ownerId) {
-      return res.status(403).json({ success: false, error: "Zugriff nur auf eigene Daten erlaubt" });
+      res.status(403).json({ success: false, error: "Zugriff nur auf eigene Daten erlaubt" });
+      return;
     }
 
     next();
@@ -231,12 +222,7 @@ export function requireOwnerOrAdmin(getOwnerId: (req: Request) => number) {
 }
 
 export function isTechnicalAdmin(req: Request): boolean {
-  if (!req.user) return false;
-  return (
-    req.user.systemRole === "department_admin" ||
-    req.user.systemRole === "clinic_admin" ||
-    req.user.systemRole === "system_admin"
-  );
+  return !!req.user && req.user.systemRole !== "employee";
 }
 
 export function hasCapability(req: Request, capability: string): boolean {
@@ -246,12 +232,11 @@ export function hasCapability(req: Request, capability: string): boolean {
 }
 
 export function isAdmin(req: Request): boolean {
-  return !!(req.user?.isAdmin || req.user?.appRole === "Admin");
+  return !!req.user && (req.user.isAdmin || req.user.appRole === "Admin");
 }
 
 export function isEditorOrAdmin(req: Request): boolean {
-  if (!req.user) return false;
-  return req.user.isAdmin || ["Admin", "Editor"].includes(req.user.appRole);
+  return !!req.user && (req.user.isAdmin || ["Admin", "Editor"].includes(req.user.appRole));
 }
 
 export function canAccessEmployee(req: Request, employeeId: number): boolean {
@@ -261,16 +246,7 @@ export function canAccessEmployee(req: Request, employeeId: number): boolean {
 }
 
 export const getOwnerIdFrom = {
-  params:
-    (paramName: string = "employeeId") =>
-    (req: Request) =>
-      Number(req.params[paramName]),
-  body:
-    (fieldName: string = "employeeId") =>
-    (req: Request) =>
-      Number(req.body[fieldName]),
-  query:
-    (queryName: string = "employee_id") =>
-    (req: Request) =>
-      Number(req.query[queryName]),
+  params: (paramName: string = "employeeId") => (req: Request) => Number(req.params[paramName]),
+  body: (fieldName: string = "employeeId") => (req: Request) => Number(req.body[fieldName]),
+  query: (queryName: string = "employee_id") => (req: Request) => Number(req.query[queryName]),
 };
