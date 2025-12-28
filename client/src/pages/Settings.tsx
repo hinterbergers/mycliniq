@@ -24,7 +24,8 @@ import {
   Calendar,
   Tag,
   Pencil,
-  Info
+  Info,
+  X
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { employeeApi } from "@/lib/api";
@@ -33,10 +34,44 @@ import { useToast } from "@/hooks/use-toast";
 import { useParams, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 
+function formatBirthday(value: string | Date | null | undefined): string {
+  if (!value) return "";
+  const toInput = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+  if (typeof value === "string") {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return toInput(parsed);
+    }
+    return "";
+  }
+  return toInput(value);
+}
+
 export default function Settings() {
   const params = useParams();
   const [, setLocation] = useLocation();
   const { employee: currentUser, user, isAdmin } = useAuth();
+
+  const ROLE_OPTIONS: Employee["role"][] = [
+    "Primararzt",
+    "1. Oberarzt",
+    "Oberarzt",
+    "Oberärztin",
+    "Facharzt",
+    "Assistenzarzt",
+    "Assistenzärztin",
+    "Turnusarzt",
+    "Student (KPJ)",
+    "Student (Famulant)",
+    "Sekretariat",
+  ];
+  const APP_ROLE_OPTIONS: Employee["appRole"][] = ["Admin", "Editor", "User"];
   
   const viewingUserId = params.userId
     ? parseInt(params.userId)
@@ -70,6 +105,10 @@ export default function Settings() {
     showPrivateContact: false,
     badge: ''
   });
+  const [roleValue, setRoleValue] = useState<Employee["role"] | "">("");
+  const [appRoleValue, setAppRoleValue] = useState<Employee["appRole"] | "">("");
+  const [competenciesValue, setCompetenciesValue] = useState<string[]>([]);
+  const [newCompetency, setNewCompetency] = useState("");
   
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
@@ -95,12 +134,13 @@ export default function Settings() {
         setEmployee(emp);
         const nameParts = emp.name.split(' ');
         const hasTitle = nameParts[0]?.includes('Dr.') || nameParts[0]?.includes('PD') || nameParts[0]?.includes('Prof.');
+        const titleValue = emp.title?.trim() || (hasTitle ? nameParts.slice(0, nameParts.length > 2 ? 2 : 1).join(' ') : '');
         
         setFormData({
-          title: hasTitle ? nameParts.slice(0, nameParts.length > 2 ? 2 : 1).join(' ') : '',
+          title: titleValue,
           firstName: emp.firstName || '',
           lastName: emp.lastName || (hasTitle ? nameParts.slice(-1)[0] : nameParts.slice(-1)[0]) || '',
-          birthday: '',
+          birthday: formatBirthday(emp.birthday),
           email: emp.email || '',
           emailPrivate: emp.emailPrivate || '',
           phoneWork: emp.phoneWork || '',
@@ -109,6 +149,9 @@ export default function Settings() {
           badge: emp.lastName?.substring(0, 2).toUpperCase() || emp.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || ''
         });
         setNewBadge(emp.lastName?.substring(0, 2).toUpperCase() || '');
+        setRoleValue(emp.role || "");
+        setAppRoleValue(emp.appRole || "");
+        setCompetenciesValue(Array.isArray(emp.competencies) ? emp.competencies : []);
       }
     } catch (error) {
       toast({
@@ -122,21 +165,42 @@ export default function Settings() {
   };
 
   const handleSave = async () => {
-    if (!employee || !canEditBasicInfo) return;
+    if (!employee || (!canEditBasicInfo && !canEditRoleAndCompetencies)) return;
     
     setSaving(true);
     try {
+      const payload: Partial<Omit<Employee, "id" | "createdAt">> = {};
+
       // TODO: Backend schema needs title, birthday, badge fields before full persistence
       // Currently saving only fields supported by the existing API
-      await employeeApi.update(employee.id, {
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        email: formData.email,
-        emailPrivate: formData.emailPrivate,
-        phoneWork: formData.phoneWork,
-        phonePrivate: formData.phonePrivate,
-        showPrivateContact: formData.showPrivateContact
-      });
+      if (canEditBasicInfo) {
+        Object.assign(payload, {
+          title: formData.title || null,
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          birthday: formData.birthday || null,
+          email: formData.email,
+          emailPrivate: formData.emailPrivate,
+          phoneWork: formData.phoneWork,
+          phonePrivate: formData.phonePrivate,
+          showPrivateContact: formData.showPrivateContact,
+        });
+      }
+
+      if (canEditRoleAndCompetencies) {
+        Object.assign(payload, {
+          role: (roleValue || employee.role) as Employee["role"],
+          appRole: (appRoleValue || employee.appRole) as Employee["appRole"],
+          competencies: competenciesValue,
+        });
+      }
+
+      if (Object.keys(payload).length === 0) {
+        setSaving(false);
+        return;
+      }
+
+      await employeeApi.update(employee.id, payload);
       toast({
         title: "Gespeichert",
         description: "Ihre Einstellungen wurden aktualisiert"
@@ -178,6 +242,17 @@ export default function Settings() {
       description: `Ihr neues Kürzel ist "${newBadge.toUpperCase()}"`
     });
     setIsBadgeDialogOpen(false);
+  };
+
+  const handleAddCompetency = () => {
+    const trimmed = newCompetency.trim();
+    if (!trimmed) return;
+    setCompetenciesValue((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
+    setNewCompetency("");
+  };
+
+  const handleRemoveCompetency = (value: string) => {
+    setCompetenciesValue((prev) => prev.filter((comp) => comp !== value));
   };
 
   if (loading) {
@@ -439,14 +514,50 @@ export default function Settings() {
                     <Label>Rolle</Label>
                     <div className="relative">
                       <Briefcase className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
-                      <Input value={employee.role} disabled />
+                      {canEditRoleAndCompetencies ? (
+                        <Select
+                          value={roleValue}
+                          onValueChange={(value) => setRoleValue(value as Employee["role"])}
+                        >
+                          <SelectTrigger className="pl-10">
+                            <SelectValue placeholder="Rolle auswählen" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ROLE_OPTIONS.map((role) => (
+                              <SelectItem key={role} value={role}>
+                                {role}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input value={employee.role} disabled />
+                      )}
                     </div>
                   </div>
                   <div className="space-y-2">
                     <Label>App-Rolle</Label>
                     <div className="relative">
                       <Shield className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
-                      <Input value={employee.appRole} disabled />
+                      {canEditRoleAndCompetencies ? (
+                        <Select
+                          value={appRoleValue}
+                          onValueChange={(value) => setAppRoleValue(value as Employee["appRole"])}
+                        >
+                          <SelectTrigger className="pl-10">
+                            <SelectValue placeholder="App-Rolle auswählen" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {APP_ROLE_OPTIONS.map((role) => (
+                              <SelectItem key={role} value={role}>
+                                {role}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input value={employee.appRole} disabled />
+                      )}
                     </div>
                   </div>
                 </div>
@@ -454,16 +565,45 @@ export default function Settings() {
                 <div className="space-y-2">
                   <Label>Kompetenzen</Label>
                   <div className="flex flex-wrap gap-2">
-                    {employee.competencies?.length ? (
-                      employee.competencies.map((comp, idx) => (
-                        <Badge key={idx} variant="secondary">
-                          <GraduationCap className="w-3 h-3 mr-1" /> {comp}
+                    {(canEditRoleAndCompetencies ? competenciesValue : employee.competencies)?.length ? (
+                      (canEditRoleAndCompetencies ? competenciesValue : employee.competencies || []).map((comp, idx) => (
+                        <Badge key={`${comp}-${idx}`} variant="secondary" className="flex items-center gap-1">
+                          <GraduationCap className="w-3 h-3" />
+                          <span>{comp}</span>
+                          {canEditRoleAndCompetencies && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveCompetency(comp)}
+                              className="ml-1 text-muted-foreground hover:text-foreground"
+                              aria-label={`Kompetenz entfernen: ${comp}`}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
                         </Badge>
                       ))
                     ) : (
                       <p className="text-sm text-muted-foreground">Keine Kompetenzen hinterlegt</p>
                     )}
                   </div>
+                  {canEditRoleAndCompetencies && (
+                    <div className="flex gap-2">
+                      <Input
+                        value={newCompetency}
+                        onChange={(e) => setNewCompetency(e.target.value)}
+                        placeholder="Kompetenz hinzufügen"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleAddCompetency();
+                          }
+                        }}
+                      />
+                      <Button type="button" onClick={handleAddCompetency} variant="outline">
+                        Hinzufügen
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -472,6 +612,13 @@ export default function Settings() {
                     <Tag className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
                     <Input value={employee.primaryDeploymentArea || "—"} disabled />
                   </div>
+                </div>
+
+                <div className="flex justify-end">
+                  <Button onClick={handleSave} disabled={!canEditRoleAndCompetencies || saving}>
+                    <Save className="w-4 h-4 mr-2" />
+                    Speichern
+                  </Button>
                 </div>
               </CardContent>
             </Card>
