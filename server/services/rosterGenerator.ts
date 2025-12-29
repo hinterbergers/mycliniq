@@ -6,16 +6,19 @@ import { format, eachDayOfInterval, isWeekend, startOfMonth, endOfMonth } from "
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+type ServiceType = 'gyn' | 'kreiszimmer' | 'turnus';
+
 interface ShiftPreferences {
   preferredDaysOff?: string[];
   maxShiftsPerWeek?: number;
   preferredAreas?: string[];
   notes?: string;
+  serviceTypeOverrides?: ServiceType[];
 }
 
 interface GeneratedShift {
   date: string;
-  serviceType: 'gyn' | 'kreiszimmer' | 'turnus';
+  serviceType: ServiceType;
   employeeId: number;
   employeeName: string;
 }
@@ -26,7 +29,9 @@ interface GenerationResult {
   warnings: string[];
 }
 
-const SERVICE_CAPABILITIES: Record<string, string[]> = {
+const SERVICE_TYPES: ServiceType[] = ['gyn', 'kreiszimmer', 'turnus'];
+
+const SERVICE_CAPABILITIES: Record<ServiceType, string[]> = {
   gyn: ["Primararzt", "1. Oberarzt", "Funktionsoberarzt", "Ausbildungsoberarzt", "Oberarzt", "Oberärztin"],
   kreiszimmer: ["Assistenzarzt", "Assistenzärztin"],
   turnus: ["Assistenzarzt", "Assistenzärztin", "Turnusarzt"]
@@ -49,6 +54,19 @@ function isDateWithinRange(date: string, start?: string | Date | null, end?: str
   return Boolean(startDate || endDate);
 }
 
+function getServiceTypesForRole(role: string): ServiceType[] {
+  return SERVICE_TYPES.filter((service) => SERVICE_CAPABILITIES[service].includes(role));
+}
+
+function getServiceTypesForEmployee(employee: Employee): ServiceType[] {
+  const prefs = employee.shiftPreferences as ShiftPreferences | null;
+  const overrides = Array.isArray(prefs?.serviceTypeOverrides)
+    ? prefs.serviceTypeOverrides.filter((value): value is ServiceType => SERVICE_TYPES.includes(value as ServiceType))
+    : [];
+  if (overrides.length) return overrides;
+  return getServiceTypesForRole(employee.role);
+}
+
 export async function generateRosterPlan(
   employees: Employee[],
   existingAbsences: Absence[],
@@ -60,10 +78,6 @@ export async function generateRosterPlan(
   const days = eachDayOfInterval({ start: startDate, end: endDate });
 
   const activeEmployees = employees.filter(e => e.isActive && e.takesShifts !== false);
-  
-  const gynCapable = activeEmployees.filter(e => SERVICE_CAPABILITIES.gyn.includes(e.role));
-  const kreiszimmerCapable = activeEmployees.filter(e => SERVICE_CAPABILITIES.kreiszimmer.includes(e.role));
-  const turnusCapable = activeEmployees.filter(e => SERVICE_CAPABILITIES.turnus.includes(e.role));
 
   const employeeData = activeEmployees.map(e => {
     const prefs = e.shiftPreferences as ShiftPreferences | null;
@@ -84,6 +98,7 @@ export async function generateRosterPlan(
       role: e.role,
       primaryArea: e.primaryDeploymentArea,
       competencies: e.competencies,
+      serviceTypes: getServiceTypesForEmployee(e),
       preferredDaysOff: prefs?.preferredDaysOff || [],
       maxShiftsPerWeek: prefs?.maxShiftsPerWeek || 5,
       notes: prefs?.notes || "",
@@ -111,6 +126,7 @@ ${JSON.stringify(daysData, null, 2)}
 - gyn (Gynäkologie-Dienst): Primararzt, 1. Oberarzt, Funktionsoberarzt, Ausbildungsoberarzt, Oberarzt, Oberärztin
 - kreiszimmer (Kreißzimmer): Assistenzarzt, Assistenzärztin
 - turnus (Turnus): Assistenzarzt, Assistenzärztin, Turnusarzt
+Wenn im Mitarbeiterobjekt "serviceTypes" gesetzt sind, dürfen nur diese Diensttypen zugewiesen werden (Abweichung vom Rollenstandard).
 
 ## Regeln:
 1. Jeder Tag muss einen gyn-Dienst und einen kreiszimmer-Dienst haben
@@ -160,8 +176,8 @@ Antworte mit folgendem JSON-Format:
         return false;
       }
       
-      const capabilities = SERVICE_CAPABILITIES[shift.serviceType];
-      if (!capabilities?.includes(employee.role)) {
+      const allowed = getServiceTypesForEmployee(employee);
+      if (!allowed.includes(shift.serviceType)) {
         console.warn(`${employee.name} ist nicht berechtigt für ${shift.serviceType}`);
         return false;
       }
@@ -203,8 +219,8 @@ export async function validateShiftAssignment(
   serviceType: string,
   existingAbsences: Absence[]
 ): Promise<{ valid: boolean; reason?: string }> {
-  const capabilities = SERVICE_CAPABILITIES[serviceType];
-  if (!capabilities?.includes(employee.role)) {
+  const allowed = getServiceTypesForEmployee(employee);
+  if (!allowed.includes(serviceType as ServiceType)) {
     return { valid: false, reason: `${employee.name} ist nicht berechtigt für ${serviceType}-Dienste` };
   }
 

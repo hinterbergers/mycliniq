@@ -81,7 +81,17 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const isValidEmail = (value: string) =>
   EMAIL_REGEX.test(value) && !/[^\x00-\x7F]/.test(value);
 
-const SERVICE_CAPABILITIES = {
+type ServiceType = "gyn" | "kreiszimmer" | "turnus";
+
+const SERVICE_TYPES: ServiceType[] = ["gyn", "kreiszimmer", "turnus"];
+
+const SERVICE_TYPE_META: Record<ServiceType, { label: string; color: string }> = {
+  gyn: { label: "Gyn-Dienst", color: "bg-blue-100 text-blue-700 border-blue-200" },
+  kreiszimmer: { label: "Kreißzimmer", color: "bg-pink-100 text-pink-700 border-pink-200" },
+  turnus: { label: "Turnus", color: "bg-emerald-100 text-emerald-700 border-emerald-200" }
+};
+
+const SERVICE_CAPABILITIES: Record<ServiceType, string[]> = {
   gyn: ["Primararzt", "1. Oberarzt", "Funktionsoberarzt", "Ausbildungsoberarzt", "Oberarzt", "Oberärztin"],
   kreiszimmer: ["Assistenzarzt", "Assistenzärztin"],
   turnus: ["Assistenzarzt", "Assistenzärztin", "Turnusarzt"]
@@ -89,6 +99,7 @@ const SERVICE_CAPABILITIES = {
 
 interface ShiftPreferences {
   deploymentRoomIds?: number[];
+  serviceTypeOverrides?: ServiceType[];
 }
 
 interface CompetencyAssignment {
@@ -191,6 +202,8 @@ export default function EmployeeManagement() {
   const [diplomaDialogOpen, setDiplomaDialogOpen] = useState(false);
   const [editingDiploma, setEditingDiploma] = useState<Partial<Diploma> | null>(null);
   const [diplomaSearchTerm, setDiplomaSearchTerm] = useState("");
+  const [diplomaEmployeeIds, setDiplomaEmployeeIds] = useState<number[]>([]);
+  const [diplomaEmployeeSearch, setDiplomaEmployeeSearch] = useState("");
   
   const [availableCompetencies, setAvailableCompetencies] = useState<Competency[]>([]);
   const [availableDiplomas, setAvailableDiplomas] = useState<Diploma[]>([]);
@@ -218,6 +231,7 @@ export default function EmployeeManagement() {
   const [editCompetencyIds, setEditCompetencyIds] = useState<number[]>([]);
   const [editDiplomaIds, setEditDiplomaIds] = useState<number[]>([]);
   const [editDeploymentRoomIds, setEditDeploymentRoomIds] = useState<number[]>([]);
+  const [editServiceTypeOverrides, setEditServiceTypeOverrides] = useState<ServiceType[]>([]);
   const [editTakesShifts, setEditTakesShifts] = useState(true);
   const [editInactiveFrom, setEditInactiveFrom] = useState("");
   const [editInactiveUntil, setEditInactiveUntil] = useState("");
@@ -233,6 +247,7 @@ export default function EmployeeManagement() {
   const [newCompetencyIds, setNewCompetencyIds] = useState<number[]>([]);
   const [newDiplomaIds, setNewDiplomaIds] = useState<number[]>([]);
   const [newDeploymentRoomIds, setNewDeploymentRoomIds] = useState<number[]>([]);
+  const [newServiceTypeOverrides, setNewServiceTypeOverrides] = useState<ServiceType[]>([]);
   const [newTakesShifts, setNewTakesShifts] = useState(true);
   const [newInactiveFrom, setNewInactiveFrom] = useState("");
   const [newInactiveUntil, setNewInactiveUntil] = useState("");
@@ -311,6 +326,7 @@ export default function EmployeeManagement() {
     setNewCompetencyIds([]);
     setNewDiplomaIds([]);
     setNewDeploymentRoomIds([]);
+    setNewServiceTypeOverrides([]);
     setNewTakesShifts(true);
     setNewInactiveFrom("");
     setNewInactiveUntil("");
@@ -344,6 +360,11 @@ export default function EmployeeManagement() {
     setEditInactiveUntil(formatBirthday(emp.inactiveUntil));
     const prefs = (emp.shiftPreferences as ShiftPreferences | null) || null;
     setEditDeploymentRoomIds(Array.isArray(prefs?.deploymentRoomIds) ? prefs.deploymentRoomIds : []);
+    setEditServiceTypeOverrides(
+      Array.isArray(prefs?.serviceTypeOverrides)
+        ? prefs.serviceTypeOverrides.filter((value): value is ServiceType => SERVICE_TYPES.includes(value))
+        : []
+    );
     setEditCompetencyIds([]);
     setEditDiplomaIds([]);
     setResetPasswordData({ newPassword: "", confirmPassword: "" });
@@ -449,6 +470,7 @@ export default function EmployeeManagement() {
       setUserPermissions([]);
       setEditCompetencyIds([]);
       setEditDiplomaIds([]);
+      setEditServiceTypeOverrides([]);
     }
   };
 
@@ -465,6 +487,8 @@ export default function EmployeeManagement() {
     setDiplomaDialogOpen(open);
     if (!open) {
       setEditingDiploma(null);
+      setDiplomaEmployeeIds([]);
+      setDiplomaEmployeeSearch("");
     }
   };
 
@@ -574,6 +598,20 @@ export default function EmployeeManagement() {
     
     setSaving(true);
     try {
+      const baseShiftPreferences = (editingEmployee.shiftPreferences &&
+        typeof editingEmployee.shiftPreferences === "object")
+        ? (editingEmployee.shiftPreferences as ShiftPreferences)
+        : {};
+      const nextShiftPreferences: ShiftPreferences = {
+        ...baseShiftPreferences,
+        deploymentRoomIds: editDeploymentRoomIds
+      };
+      if (editServiceTypeOverrides.length) {
+        nextShiftPreferences.serviceTypeOverrides = editServiceTypeOverrides;
+      } else {
+        delete (nextShiftPreferences as { serviceTypeOverrides?: ServiceType[] }).serviceTypeOverrides;
+      }
+
       const payload: Partial<Omit<Employee, "id" | "createdAt">> = {
         title: editFormData.title || null,
         firstName: editFormData.firstName.trim(),
@@ -590,10 +628,7 @@ export default function EmployeeManagement() {
         takesShifts: editTakesShifts,
         inactiveFrom: parsedInactiveFrom || null,
         inactiveUntil: parsedInactiveUntil || null,
-        shiftPreferences: {
-          ...(editingEmployee.shiftPreferences || {}),
-          deploymentRoomIds: editDeploymentRoomIds
-        }
+        shiftPreferences: nextShiftPreferences
       };
 
       const updated = await employeeApi.update(editingEmployee.id, payload);
@@ -723,6 +758,13 @@ export default function EmployeeManagement() {
     
     setCreating(true);
     try {
+      const nextShiftPreferences: ShiftPreferences = {
+        deploymentRoomIds: newDeploymentRoomIds
+      };
+      if (newServiceTypeOverrides.length) {
+        nextShiftPreferences.serviceTypeOverrides = newServiceTypeOverrides;
+      }
+
       const payload: any = {
         title: newFormData.title || null,
         firstName: newFormData.firstName.trim(),
@@ -740,9 +782,7 @@ export default function EmployeeManagement() {
         takesShifts: newTakesShifts,
         inactiveFrom: parsedInactiveFrom || null,
         inactiveUntil: parsedInactiveUntil || null,
-        shiftPreferences: {
-          deploymentRoomIds: newDeploymentRoomIds
-        }
+        shiftPreferences: nextShiftPreferences
       };
       if (currentUser?.departmentId) {
         payload.departmentId = currentUser.departmentId;
@@ -856,6 +896,24 @@ export default function EmployeeManagement() {
     );
   };
 
+  const toggleEditServiceType = (type: ServiceType) => {
+    setEditServiceTypeOverrides((prev) =>
+      prev.includes(type) ? prev.filter((value) => value !== type) : [...prev, type]
+    );
+  };
+
+  const toggleNewServiceType = (type: ServiceType) => {
+    setNewServiceTypeOverrides((prev) =>
+      prev.includes(type) ? prev.filter((value) => value !== type) : [...prev, type]
+    );
+  };
+
+  const toggleDiplomaEmployee = (id: number) => {
+    setDiplomaEmployeeIds((prev) =>
+      prev.includes(id) ? prev.filter((empId) => empId !== id) : [...prev, id]
+    );
+  };
+
   const getCompetencyLabel = (id: number) =>
     availableCompetencies.find((comp) => comp.id === id)?.name || `Kompetenz ${id}`;
 
@@ -865,11 +923,20 @@ export default function EmployeeManagement() {
   const getRoomLabel = (id: number) =>
     availableRooms.find((room) => room.id === id)?.name || `Arbeitsplatz ${id}`;
 
+  const getServiceTypeLabel = (type: ServiceType) => SERVICE_TYPE_META[type]?.label || type;
+
   const getRoleLabel = (role: string) => ROLE_LABELS[role] || role;
 
   const getRoleSortRank = (role?: string | null) => {
     const normalized = normalizeRoleValue(role);
     return ROLE_SORT_ORDER[normalized] ?? 999;
+  };
+
+  const getEmployeeDiplomaIds = (emp: Employee, diplomas: Diploma[]) => {
+    if (!Array.isArray(emp.diplomas)) return [];
+    return emp.diplomas
+      .map((name) => diplomas.find((diploma) => diploma.name === name)?.id)
+      .filter((id): id is number => typeof id === "number");
   };
 
   const filteredEmployees = employees
@@ -925,6 +992,29 @@ export default function EmployeeManagement() {
     );
   });
 
+  const filteredDiplomaEmployees = employees
+    .filter((emp) => emp.isActive)
+    .filter((emp) => {
+      const query = diplomaEmployeeSearch.trim().toLowerCase();
+      if (!query) return true;
+      return (
+        emp.name.toLowerCase().includes(query) ||
+        (emp.email || "").toLowerCase().includes(query) ||
+        (emp.lastName || "").toLowerCase().includes(query)
+      );
+    })
+    .slice()
+    .sort((a, b) => {
+      const roleRank = getRoleSortRank(a.role) - getRoleSortRank(b.role);
+      if (roleRank !== 0) return roleRank;
+      const lastNameA = (a.lastName || a.name || "").toLowerCase();
+      const lastNameB = (b.lastName || b.name || "").toLowerCase();
+      if (lastNameA !== lastNameB) return lastNameA.localeCompare(lastNameB);
+      const firstNameA = (a.firstName || "").toLowerCase();
+      const firstNameB = (b.firstName || "").toLowerCase();
+      return firstNameA.localeCompare(firstNameB);
+    });
+
   const editSelectedCompetencyLabels = editCompetencyIds.map((id) => ({
     id,
     label: getCompetencyLabel(id),
@@ -955,6 +1045,16 @@ export default function EmployeeManagement() {
     label: getRoomLabel(id),
   }));
 
+  const editSelectedServiceTypeLabels = editServiceTypeOverrides.map((type) => ({
+    id: type,
+    label: getServiceTypeLabel(type),
+  }));
+
+  const newSelectedServiceTypeLabels = newServiceTypeOverrides.map((type) => ({
+    id: type,
+    label: getServiceTypeLabel(type),
+  }));
+
   const filteredCompetencies = competencyList.filter(comp =>
     comp.name.toLowerCase().includes(competencySearchTerm.toLowerCase()) ||
     (comp.code || "").toLowerCase().includes(competencySearchTerm.toLowerCase())
@@ -970,12 +1070,26 @@ export default function EmployeeManagement() {
       )
     : PERMISSION_FALLBACK;
 
-  const getCapabilities = (role: string) => {
-    const caps = [];
-    if (SERVICE_CAPABILITIES.gyn.includes(role)) caps.push({ label: "Gyn-Dienst", color: "bg-blue-100 text-blue-700 border-blue-200" });
-    if (SERVICE_CAPABILITIES.kreiszimmer.includes(role)) caps.push({ label: "Kreißzimmer", color: "bg-pink-100 text-pink-700 border-pink-200" });
-    if (SERVICE_CAPABILITIES.turnus.includes(role)) caps.push({ label: "Turnus", color: "bg-emerald-100 text-emerald-700 border-emerald-200" });
-    return caps;
+  const getServiceTypesForRole = (role: string): ServiceType[] => {
+    const normalizedRole = normalizeRoleValue(role) || role;
+    return SERVICE_TYPES.filter((service) => SERVICE_CAPABILITIES[service].includes(normalizedRole));
+  };
+
+  const getServiceTypesForEmployee = (emp: Employee): ServiceType[] => {
+    const prefs = (emp.shiftPreferences as ShiftPreferences | null) || null;
+    const overrides = Array.isArray(prefs?.serviceTypeOverrides)
+      ? prefs.serviceTypeOverrides.filter((value): value is ServiceType => SERVICE_TYPES.includes(value))
+      : [];
+    if (overrides.length) return overrides;
+    return getServiceTypesForRole(emp.role);
+  };
+
+  const getCapabilities = (emp: Employee) => {
+    const types = getServiceTypesForEmployee(emp);
+    return types.map((type) => ({
+      label: SERVICE_TYPE_META[type].label,
+      color: SERVICE_TYPE_META[type].color
+    }));
   };
 
   const getDeploymentLabels = (emp: Employee) => {
@@ -1078,12 +1192,59 @@ export default function EmployeeManagement() {
 
   const handleNewDiploma = () => {
     setEditingDiploma({ name: "", description: "" });
+    setDiplomaEmployeeIds([]);
+    setDiplomaEmployeeSearch("");
     setDiplomaDialogOpen(true);
   };
 
   const handleEditDiploma = (diploma: Diploma) => {
     setEditingDiploma({ ...diploma });
+    setDiplomaEmployeeSearch("");
+    setDiplomaEmployeeIds(
+      employees
+        .filter((emp) => Array.isArray(emp.diplomas) && emp.diplomas.includes(diploma.name))
+        .map((emp) => emp.id)
+    );
     setDiplomaDialogOpen(true);
+  };
+
+  const syncDiplomaAssignments = async (diploma: Diploma, nextDiplomas: Diploma[]) => {
+    if (!canManageEmployees) return;
+    const selected = new Set(diplomaEmployeeIds);
+    const toUpdate = employees.filter((emp) => {
+      const currentIds = getEmployeeDiplomaIds(emp, nextDiplomas);
+      const hasDiploma = currentIds.includes(diploma.id);
+      const shouldHave = selected.has(emp.id);
+      return hasDiploma !== shouldHave;
+    });
+
+    if (!toUpdate.length) return;
+
+    await Promise.all(
+      toUpdate.map(async (emp) => {
+        const currentIds = getEmployeeDiplomaIds(emp, nextDiplomas);
+        const shouldHave = selected.has(emp.id);
+        const nextIds = shouldHave
+          ? Array.from(new Set([...currentIds, diploma.id]))
+          : currentIds.filter((id) => id !== diploma.id);
+        await employeeApi.updateDiplomas(emp.id, nextIds);
+      })
+    );
+
+    setEmployees((prev) =>
+      prev.map((emp) => {
+        if (!toUpdate.some((candidate) => candidate.id === emp.id)) return emp;
+        const currentIds = getEmployeeDiplomaIds(emp, nextDiplomas);
+        const shouldHave = selected.has(emp.id);
+        const nextIds = shouldHave
+          ? Array.from(new Set([...currentIds, diploma.id]))
+          : currentIds.filter((id) => id !== diploma.id);
+        const nextNames = nextIds
+          .map((id) => nextDiplomas.find((d) => d.id === id)?.name)
+          .filter((name): name is string => Boolean(name));
+        return { ...emp, diplomas: nextNames };
+      })
+    );
   };
 
   const handleSaveDiploma = async () => {
@@ -1108,6 +1269,7 @@ export default function EmployeeManagement() {
         const next = diplomaList.map(d => d.id === updated.id ? updated : d);
         setDiplomaList(next);
         setAvailableDiplomas(next.filter((diploma) => diploma.isActive !== false));
+        await syncDiplomaAssignments(updated, next);
       } else {
         const created = await diplomaApi.create({
           name: cleanedName,
@@ -1117,6 +1279,7 @@ export default function EmployeeManagement() {
         const next = [...diplomaList, created];
         setDiplomaList(next);
         setAvailableDiplomas(next.filter((diploma) => diploma.isActive !== false));
+        await syncDiplomaAssignments(created, next);
       }
       setDiplomaDialogOpen(false);
       setEditingDiploma(null);
@@ -1425,6 +1588,49 @@ export default function EmployeeManagement() {
 
                     <div className="space-y-3 rounded-lg border border-border p-4">
                       <div>
+                        <Label>Einsetzbar für (Abweichung)</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Nur bei Abweichungen vom Standard nach Rolle setzen. Leer lassen = Standard.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {newSelectedServiceTypeLabels.length ? (
+                          newSelectedServiceTypeLabels.map((service) => (
+                            <Badge key={service.id} variant="secondary" className="flex items-center gap-1">
+                              <span>{service.label}</span>
+                              <button
+                                type="button"
+                                onClick={() => toggleNewServiceType(service.id)}
+                                className="ml-1 text-muted-foreground hover:text-foreground"
+                                aria-label={`Einsetzbarkeit entfernen: ${service.label}`}
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </Badge>
+                          ))
+                        ) : (
+                          <p className="text-sm text-muted-foreground">Standard nach Rolle</p>
+                        )}
+                      </div>
+                      <div className="grid gap-2 md:grid-cols-3">
+                        {SERVICE_TYPES.map((service) => (
+                          <div key={service} className="flex items-center gap-2">
+                            <Checkbox
+                              id={`new-service-${service}`}
+                              checked={newServiceTypeOverrides.includes(service)}
+                              onCheckedChange={() => toggleNewServiceType(service)}
+                              disabled={!canManageEmployees}
+                            />
+                            <Label htmlFor={`new-service-${service}`} className="text-sm font-normal cursor-pointer">
+                              {SERVICE_TYPE_META[service].label}
+                            </Label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 rounded-lg border border-border p-4">
+                      <div>
                         <Label>Langzeit-Deaktivierung</Label>
                         <p className="text-xs text-muted-foreground">
                           Von/Bis - in diesem Zeitraum nicht fuer Dienst- und Wochenplan beruecksichtigen.
@@ -1660,7 +1866,7 @@ export default function EmployeeManagement() {
                   </TableHeader>
                   <TableBody>
                     {filteredEmployees.map((emp) => {
-                      const capabilities = getCapabilities(emp.role);
+                      const capabilities = getCapabilities(emp);
                       const deploymentLabels = getDeploymentLabels(emp);
                       const employeeCompetencies = emp.competencies || [];
                       const isDutyExcluded = emp.takesShifts === false;
@@ -2064,6 +2270,49 @@ export default function EmployeeManagement() {
                         onCheckedChange={(checked) => setEditTakesShifts(Boolean(checked))}
                         disabled={!canManageEmployees}
                       />
+                    </div>
+
+                    <div className="space-y-3 rounded-lg border border-border p-4">
+                      <div>
+                        <Label>Einsetzbar für (Abweichung)</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Nur bei Abweichungen vom Standard nach Rolle setzen. Leer lassen = Standard.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {editSelectedServiceTypeLabels.length ? (
+                          editSelectedServiceTypeLabels.map((service) => (
+                            <Badge key={service.id} variant="secondary" className="flex items-center gap-1">
+                              <span>{service.label}</span>
+                              <button
+                                type="button"
+                                onClick={() => toggleEditServiceType(service.id)}
+                                className="ml-1 text-muted-foreground hover:text-foreground"
+                                aria-label={`Einsetzbarkeit entfernen: ${service.label}`}
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </Badge>
+                          ))
+                        ) : (
+                          <p className="text-sm text-muted-foreground">Standard nach Rolle</p>
+                        )}
+                      </div>
+                      <div className="grid gap-2 md:grid-cols-3">
+                        {SERVICE_TYPES.map((service) => (
+                          <div key={service} className="flex items-center gap-2">
+                            <Checkbox
+                              id={`edit-service-${service}`}
+                              checked={editServiceTypeOverrides.includes(service)}
+                              onCheckedChange={() => toggleEditServiceType(service)}
+                              disabled={!canManageEmployees}
+                            />
+                            <Label htmlFor={`edit-service-${service}`} className="text-sm font-normal cursor-pointer">
+                              {SERVICE_TYPE_META[service].label}
+                            </Label>
+                          </div>
+                        ))}
+                      </div>
                     </div>
 
                     <div className="space-y-3 rounded-lg border border-border p-4">
@@ -2558,6 +2807,40 @@ export default function EmployeeManagement() {
                     data-testid="input-diploma-description"
                   />
                 </div>
+                {canManageEmployees && (
+                  <div className="space-y-2">
+                    <Label>Benutzer zuordnen</Label>
+                    <Input
+                      value={diplomaEmployeeSearch}
+                      onChange={(e) => setDiplomaEmployeeSearch(e.target.value)}
+                      placeholder="Benutzer suchen..."
+                    />
+                    <div className="max-h-56 overflow-y-auto space-y-2 rounded-md border border-border p-2">
+                      {filteredDiplomaEmployees.map((emp) => {
+                        const checked = diplomaEmployeeIds.includes(emp.id);
+                        return (
+                          <div key={emp.id} className="flex items-center gap-2">
+                            <Checkbox
+                              id={`diploma-employee-${emp.id}`}
+                              checked={checked}
+                              onCheckedChange={() => toggleDiplomaEmployee(emp.id)}
+                            />
+                            <Label htmlFor={`diploma-employee-${emp.id}`} className="text-sm font-normal cursor-pointer flex-1">
+                              {emp.name}
+                            </Label>
+                            <span className="text-xs text-muted-foreground">{getRoleLabel(emp.role)}</span>
+                          </div>
+                        );
+                      })}
+                      {!filteredDiplomaEmployees.length && (
+                        <p className="text-sm text-muted-foreground">Keine Benutzer gefunden</p>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Zugeordnete Diplome erscheinen automatisch in den Benutzereinstellungen.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 

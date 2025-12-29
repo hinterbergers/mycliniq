@@ -153,6 +153,32 @@ const getRoleSortRank = (role?: string | null) => {
   return ROLE_SORT_ORDER[normalized] ?? 999;
 };
 
+type ServiceType = "gyn" | "kreiszimmer" | "turnus";
+
+const SERVICE_TYPES: ServiceType[] = ["gyn", "kreiszimmer", "turnus"];
+
+const SERVICE_TYPE_META: Record<ServiceType, { label: string }> = {
+  gyn: { label: "Gyn-Dienst" },
+  kreiszimmer: { label: "Kreißzimmer" },
+  turnus: { label: "Turnus" }
+};
+
+const SERVICE_CAPABILITIES: Record<ServiceType, string[]> = {
+  gyn: ["Primararzt", "1. Oberarzt", "Funktionsoberarzt", "Ausbildungsoberarzt", "Oberarzt", "Oberärztin"],
+  kreiszimmer: ["Assistenzarzt", "Assistenzärztin"],
+  turnus: ["Assistenzarzt", "Assistenzärztin", "Turnusarzt"]
+};
+
+interface ShiftPreferences {
+  deploymentRoomIds?: number[];
+  serviceTypeOverrides?: ServiceType[];
+}
+
+const getServiceTypesForRole = (role?: string | null): ServiceType[] => {
+  const normalized = normalizeRoleValue(role) || "";
+  return SERVICE_TYPES.filter((service) => SERVICE_CAPABILITIES[service].includes(normalized));
+};
+
 function parseInactiveDate(value: string): string | null {
   if (!value.trim()) return "";
   return parseBirthdayInput(value);
@@ -224,6 +250,7 @@ export default function Settings() {
   const [diplomaSearch, setDiplomaSearch] = useState("");
   const [availableRooms, setAvailableRooms] = useState<Resource[]>([]);
   const [deploymentRoomIds, setDeploymentRoomIds] = useState<number[]>([]);
+  const [serviceTypeOverrides, setServiceTypeOverrides] = useState<ServiceType[]>([]);
   const [roomSearch, setRoomSearch] = useState("");
   
   const [passwordData, setPasswordData] = useState({
@@ -278,6 +305,13 @@ export default function Settings() {
     const match = availableRooms.find((room) => room.id === id);
     return { id, label: match?.name || `Arbeitsplatz ${id}` };
   });
+  const selectedServiceTypeLabels = serviceTypeOverrides.map((type) => ({
+    id: type,
+    label: SERVICE_TYPE_META[type]?.label || type
+  }));
+  const defaultServiceTypeLabels = getServiceTypesForRole(roleValue || employee?.role).map(
+    (type) => SERVICE_TYPE_META[type]?.label || type
+  );
   const filteredRooms = availableRooms.filter((room) => {
     const query = roomSearch.trim().toLowerCase();
     if (!query) return true;
@@ -335,8 +369,13 @@ export default function Settings() {
     setInactiveFrom(formatBirthday(emp.inactiveFrom));
     setInactiveUntil(formatBirthday(emp.inactiveUntil));
     setSelectedCompetencyIds([]);
-    const prefs = (emp.shiftPreferences as { deploymentRoomIds?: number[] } | null) || null;
+    const prefs = (emp.shiftPreferences as ShiftPreferences | null) || null;
     setDeploymentRoomIds(Array.isArray(prefs?.deploymentRoomIds) ? prefs.deploymentRoomIds : []);
+    setServiceTypeOverrides(
+      Array.isArray(prefs?.serviceTypeOverrides)
+        ? prefs.serviceTypeOverrides.filter((value): value is ServiceType => SERVICE_TYPES.includes(value))
+        : []
+    );
   };
 
   const loadData = async () => {
@@ -566,16 +605,26 @@ export default function Settings() {
       }
 
       if (canEditRoleAndCompetencies) {
+        const baseShiftPreferences = (employee.shiftPreferences && typeof employee.shiftPreferences === "object")
+          ? (employee.shiftPreferences as ShiftPreferences)
+          : {};
+        const nextShiftPreferences: ShiftPreferences = {
+          ...baseShiftPreferences,
+          deploymentRoomIds: deploymentRoomIds
+        };
+        if (serviceTypeOverrides.length) {
+          nextShiftPreferences.serviceTypeOverrides = serviceTypeOverrides;
+        } else {
+          delete (nextShiftPreferences as { serviceTypeOverrides?: ServiceType[] }).serviceTypeOverrides;
+        }
+
         Object.assign(payload, {
           role: (roleValue || employee.role) as Employee["role"],
           appRole: (appRoleValue || employee.appRole) as Employee["appRole"],
           takesShifts,
           inactiveFrom: parsedInactiveFrom || null,
           inactiveUntil: parsedInactiveUntil || null,
-          shiftPreferences: {
-            ...(employee.shiftPreferences || {}),
-            deploymentRoomIds: deploymentRoomIds
-          }
+          shiftPreferences: nextShiftPreferences
         });
       }
 
@@ -696,6 +745,12 @@ export default function Settings() {
   const toggleDeploymentRoom = (id: number) => {
     setDeploymentRoomIds((prev) =>
       prev.includes(id) ? prev.filter((roomId) => roomId !== id) : [...prev, id]
+    );
+  };
+
+  const toggleServiceTypeOverride = (type: ServiceType) => {
+    setServiceTypeOverrides((prev) =>
+      prev.includes(type) ? prev.filter((value) => value !== type) : [...prev, type]
     );
   };
 
@@ -1271,6 +1326,60 @@ export default function Settings() {
                               <p className="text-sm text-muted-foreground">Keine Arbeitsplätze gefunden</p>
                             )}
                           </div>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Einsetzbar für (Abweichung)</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Nur bei Abweichungen setzen. Standard nach Rolle: {defaultServiceTypeLabels.length ? defaultServiceTypeLabels.join(", ") : "—"}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedServiceTypeLabels.length ? (
+                      selectedServiceTypeLabels.map((service) => (
+                        <Badge key={service.id} variant="secondary" className="flex items-center gap-1">
+                          <Shield className="w-3 h-3" />
+                          <span>{service.label}</span>
+                          {canEditRoleAndCompetencies && (
+                            <button
+                              type="button"
+                              onClick={() => toggleServiceTypeOverride(service.id)}
+                              className="ml-1 text-muted-foreground hover:text-foreground"
+                              aria-label={`Einsetzbarkeit entfernen: ${service.label}`}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
+                        </Badge>
+                      ))
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Keine Abweichung gesetzt</p>
+                    )}
+                  </div>
+                  {canEditRoleAndCompetencies && (
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button type="button" variant="outline">
+                          Einsetzbarkeit anpassen
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent align="start" className="w-72">
+                        <div className="space-y-2">
+                          {SERVICE_TYPES.map((service) => (
+                            <div key={service} className="flex items-center gap-2">
+                              <Checkbox
+                                id={`service-${service}`}
+                                checked={serviceTypeOverrides.includes(service)}
+                                onCheckedChange={() => toggleServiceTypeOverride(service)}
+                              />
+                              <Label htmlFor={`service-${service}`} className="text-sm font-normal cursor-pointer">
+                                {SERVICE_TYPE_META[service].label}
+                              </Label>
+                            </div>
+                          ))}
                         </div>
                       </PopoverContent>
                     </Popover>

@@ -64,9 +64,11 @@ function parseDateValue(value: string): Date | null {
 }
 
 function PregnancyWeeksCalculator() {
-  const [tab, setTab] = useState<"lmp" | "edd">("lmp");
+  const [tab, setTab] = useState<"lmp" | "edd" | "ivf">("lmp");
   const [lmpInput, setLmpInput] = useState("");
   const [eddInput, setEddInput] = useState("");
+  const [transferInput, setTransferInput] = useState("");
+  const [embryoAgeDays, setEmbryoAgeDays] = useState("5");
 
   const { referenceDate, dueDate, diffDays } = useMemo(() => {
     if (tab === "lmp") {
@@ -81,6 +83,20 @@ function PregnancyWeeksCalculator() {
       };
     }
 
+    if (tab === "ivf") {
+      const transferDate = parseDateValue(transferInput);
+      const embryoAge = Number(embryoAgeDays);
+      if (!transferDate || !Number.isFinite(embryoAge) || embryoAge < 3 || embryoAge > 5) {
+        return { referenceDate: null, dueDate: null, diffDays: null };
+      }
+      const lmpFromTransfer = subDays(transferDate, embryoAge + 14);
+      return {
+        referenceDate: lmpFromTransfer,
+        dueDate: addDays(lmpFromTransfer, 280),
+        diffDays: differenceInDays(startOfDay(new Date()), startOfDay(lmpFromTransfer))
+      };
+    }
+
     const edd = parseDateValue(eddInput);
     if (!edd) {
       return { referenceDate: null, dueDate: null, diffDays: null };
@@ -91,17 +107,18 @@ function PregnancyWeeksCalculator() {
       dueDate: edd,
       diffDays: differenceInDays(startOfDay(new Date()), startOfDay(lmpFromEdd))
     };
-  }, [tab, lmpInput, eddInput]);
+  }, [tab, lmpInput, eddInput, transferInput, embryoAgeDays]);
 
   const displayWeeks = diffDays !== null && diffDays >= 0 ? Math.floor(diffDays / 7) : null;
   const displayDays = diffDays !== null && diffDays >= 0 ? diffDays % 7 : null;
 
   return (
     <div className="space-y-6">
-      <Tabs value={tab} onValueChange={(value) => setTab(value as "lmp" | "edd")}>
+      <Tabs value={tab} onValueChange={(value) => setTab(value as "lmp" | "edd" | "ivf")}>
         <TabsList>
           <TabsTrigger value="lmp">Letzte Periode</TabsTrigger>
           <TabsTrigger value="edd">Errechneter Termin</TabsTrigger>
+          <TabsTrigger value="ivf">IVF / Transfer</TabsTrigger>
         </TabsList>
         <TabsContent value="lmp" className="space-y-4">
           <div className="space-y-2">
@@ -123,6 +140,30 @@ function PregnancyWeeksCalculator() {
               value={eddInput}
               onChange={(event) => setEddInput(event.target.value)}
             />
+          </div>
+        </TabsContent>
+        <TabsContent value="ivf" className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="transfer-date">Transferdatum</Label>
+            <Input
+              id="transfer-date"
+              type="date"
+              value={transferInput}
+              onChange={(event) => setTransferInput(event.target.value)}
+            />
+          </div>
+          <div className="space-y-2 max-w-xs">
+            <Label htmlFor="embryo-age">Embryo-Tag</Label>
+            <Select value={embryoAgeDays} onValueChange={setEmbryoAgeDays}>
+              <SelectTrigger id="embryo-age">
+                <SelectValue placeholder="Embryo-Tag" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="3">Tag 3</SelectItem>
+                <SelectItem value="4">Tag 4</SelectItem>
+                <SelectItem value="5">Tag 5 (Blastozyste)</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </TabsContent>
       </Tabs>
@@ -162,6 +203,8 @@ function PregnancyWeeksCalculator() {
 function PulCalculator() {
   const [hcg0, setHcg0] = useState("");
   const [hcg48, setHcg48] = useState("");
+  const [model, setModel] = useState<"ratio" | "progesterone">("ratio");
+  const [progesterone, setProgesterone] = useState("");
 
   const parsed0 = Number(hcg0);
   const parsed48 = Number(hcg48);
@@ -172,25 +215,77 @@ function PulCalculator() {
     if (!ratio) return null;
     if (ratio < 0.87) {
       return {
-        label: "Fallender Verlauf",
-        detail: "Spricht eher für nicht vitale Schwangerschaft."
+        label: "Ratio < 0.87",
+        detail: "Häufig abortiver Verlauf („failed PUL“)."
       };
     }
-    if (ratio < 1.66) {
+    if (ratio <= 1.65) {
       return {
-        label: "Grenzbereich",
-        detail: "Verlauf kontrollieren und klinisch einordnen."
+        label: "Ratio 0.88–1.65",
+        detail: "Erhöhtes Risiko für EUG – Verlauf eng kontrollieren."
       };
     }
     return {
-      label: "Ansteigender Verlauf",
-      detail: "Spricht eher für intrauterine Schwangerschaft."
+      label: "Ratio > 1.65",
+      detail: "Wahrscheinliche intakte intrauterine Schwangerschaft."
     };
   }, [ratio]);
 
+  const probabilities = useMemo(() => {
+    if (!ratio) return null;
+    let intrauterin = 0;
+    let extrauterin = 0;
+    let abortiv = 0;
+    let note = "";
+
+    if (ratio < 0.87) {
+      intrauterin = 10;
+      extrauterin = 15;
+      abortiv = 75;
+    } else if (ratio <= 1.65) {
+      intrauterin = 15;
+      extrauterin = 65;
+      abortiv = 20;
+    } else {
+      intrauterin = 70;
+      extrauterin = 20;
+      abortiv = 10;
+    }
+
+    if (model === "progesterone") {
+      const progValue = Number(progesterone);
+      if (!progesterone.trim()) {
+        note = "Progesteronwert fehlt – Einordnung basiert auf der hCG-Ratio.";
+      } else if (!Number.isFinite(progValue)) {
+        note = "Ungültiger Progesteronwert – bitte prüfen.";
+      } else if (progValue < 2) {
+        intrauterin = 15;
+        extrauterin = 10;
+        abortiv = 75;
+        note = "Progesteron < 2 nmol/L: niedriges EUG-Risiko, eher abortiver Verlauf.";
+      } else {
+        note = "Progesteron ergänzt die Einordnung (vereinfachtes M6-Modell).";
+      }
+    }
+
+    return { intrauterin, extrauterin, abortiv, note };
+  }, [ratio, model, progesterone]);
+
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="space-y-2">
+          <Label htmlFor="pul-model">Modell</Label>
+          <Select value={model} onValueChange={(value) => setModel(value as "ratio" | "progesterone")}>
+            <SelectTrigger id="pul-model">
+              <SelectValue placeholder="Modell auswählen" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ratio">β-hCG-Ratio</SelectItem>
+              <SelectItem value="progesterone">M6 (hCG + Progesteron)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <div className="space-y-2">
           <Label htmlFor="hcg-0">hCG (0 h)</Label>
           <Input
@@ -215,32 +310,67 @@ function PulCalculator() {
         </div>
       </div>
 
+      {model === "progesterone" && (
+        <div className="space-y-2 max-w-sm">
+          <Label htmlFor="progesterone">Progesteron (nmol/L)</Label>
+          <Input
+            id="progesterone"
+            type="number"
+            inputMode="decimal"
+            placeholder="z.B. 1.8"
+            value={progesterone}
+            onChange={(event) => setProgesterone(event.target.value)}
+          />
+        </div>
+      )}
+
       <Card className="border-dashed">
         <CardContent className="p-6 space-y-4">
           {!ratio ? (
             <p className="text-sm text-muted-foreground">Bitte beide Werte eingeben, um die Ratio zu berechnen.</p>
           ) : (
-            <div className="grid gap-4 md:grid-cols-3">
-              <div>
-                <p className="text-xs uppercase text-muted-foreground">hCG-Ratio</p>
-                <p className="text-2xl font-semibold">{ratio.toFixed(2)}</p>
+            <>
+              <div className="grid gap-4 md:grid-cols-3">
+                <div>
+                  <p className="text-xs uppercase text-muted-foreground">hCG-Ratio</p>
+                  <p className="text-2xl font-semibold">{ratio.toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase text-muted-foreground">Veränderung</p>
+                  <p className="text-2xl font-semibold">{delta ? `${delta.toFixed(1)}%` : "—"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs uppercase text-muted-foreground">Einschätzung</p>
+                  <p className="text-base font-semibold">{interpretation?.label ?? "—"}</p>
+                  <p className="text-xs text-muted-foreground">{interpretation?.detail ?? ""}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs uppercase text-muted-foreground">Veränderung</p>
-                <p className="text-2xl font-semibold">{delta ? `${delta.toFixed(1)}%` : "—"}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs uppercase text-muted-foreground">Einschätzung</p>
-                <p className="text-base font-semibold">{interpretation?.label ?? "—"}</p>
-                <p className="text-xs text-muted-foreground">{interpretation?.detail ?? ""}</p>
-              </div>
-            </div>
+              {probabilities && (
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div>
+                    <p className="text-xs uppercase text-muted-foreground">Intrauterin</p>
+                    <p className="text-2xl font-semibold">{probabilities.intrauterin}%</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase text-muted-foreground">Extrauterin (EUG)</p>
+                    <p className="text-2xl font-semibold">{probabilities.extrauterin}%</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase text-muted-foreground">Abortiv</p>
+                    <p className="text-2xl font-semibold">{probabilities.abortiv}%</p>
+                  </div>
+                </div>
+              )}
+              {probabilities?.note && (
+                <p className="text-xs text-muted-foreground">{probabilities.note}</p>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
 
       <p className="text-xs text-muted-foreground">
-        Hinweis: Richtwerte für die Verlaufstendenz. Klinische Beurteilung bleibt erforderlich.
+        Hinweis: Vereinfachte Risikoklassifikation. Klinische Beurteilung bleibt erforderlich.
       </p>
     </div>
   );
