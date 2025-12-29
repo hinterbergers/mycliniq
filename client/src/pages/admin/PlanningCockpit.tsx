@@ -1,7 +1,7 @@
 import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Users, Building2, CalendarClock, UserCog, CalendarRange, Briefcase, Building, Shield } from "lucide-react";
+import { Users, Building2, CalendarClock, UserCog, CalendarRange, Briefcase, Building } from "lucide-react";
 import { useLocation } from "wouter";
 
 export default function PlanningCockpit() {
@@ -64,14 +64,6 @@ export default function PlanningCockpit() {
       color: "text-indigo-600",
       bg: "bg-indigo-50"
     },
-    {
-      title: "Benutzer & Berechtigungen",
-      description: "Benutzer verwalten und Berechtigungen zuweisen.",
-      icon: Shield,
-      action: () => setLocation("/admin/employees"),
-      color: "text-red-600",
-      bg: "bg-red-50"
-    }
   ];
 
   return (
