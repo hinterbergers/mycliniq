@@ -16,7 +16,7 @@ import {
 
 export function Sidebar() {
   const [location, setLocation] = useLocation();
-  const { employee, logout, isAdmin, isTechnicalAdmin } = useAuth();
+  const { employee, user, token, logout, isAdmin, isTechnicalAdmin } = useAuth();
 
   const navItems = [
     { href: "/dienstplaene", label: "Dienstpläne", icon: CalendarDays },
@@ -27,6 +27,7 @@ export function Sidebar() {
   ];
 
   const getInitials = (name: string) => {
+    if (!name) return "?";
     const parts = name.split(' ');
     if (parts.length >= 2) {
       return parts[0][0] + parts[parts.length - 1][0];
@@ -89,7 +90,7 @@ export function Sidebar() {
           })}
       </nav>
 
-      {employee && (
+      {(employee || user || token) && (
         <div className="p-4 border-t border-sidebar-border">
           <div 
             className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-white/10 transition-colors cursor-pointer group"
@@ -97,11 +98,15 @@ export function Sidebar() {
             data-testid="button-logout"
           >
             <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white font-bold text-xs">
-              {getInitials(employee.name)}
+              {getInitials(employee?.name || `${user?.name ?? ""} ${user?.lastName ?? ""}`.trim() || "Benutzer")}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate text-white">{employee.name}</p>
-              <p className="text-xs text-white/60 truncate">{employee.role}</p>
+              <p className="text-sm font-medium truncate text-white">
+                {employee?.name || `${user?.name ?? ""} ${user?.lastName ?? ""}`.trim() || "Benutzer"}
+              </p>
+              <p className="text-xs text-white/60 truncate">
+                {employee?.role || user?.appRole || user?.systemRole || "Abmelden"}
+              </p>
             </div>
             <LogOut className="w-4 h-4 text-white/60 group-hover:text-white transition-colors" />
           </div>
