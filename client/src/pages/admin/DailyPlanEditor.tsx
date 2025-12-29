@@ -49,6 +49,8 @@ interface AvailableStaff {
 const ROLE_COLORS: Record<string, string> = {
   "Primararzt": "bg-purple-100 text-purple-800 border-purple-200",
   "1. Oberarzt": "bg-blue-100 text-blue-800 border-blue-200",
+  "Funktionsoberarzt": "bg-blue-100 text-blue-800 border-blue-200",
+  "Ausbildungsoberarzt": "bg-blue-100 text-blue-800 border-blue-200",
   "Oberarzt": "bg-blue-100 text-blue-800 border-blue-200",
   "Oberärztin": "bg-blue-100 text-blue-800 border-blue-200",
   "Facharzt": "bg-cyan-100 text-cyan-800 border-cyan-200",
@@ -56,6 +58,8 @@ const ROLE_COLORS: Record<string, string> = {
   "Assistenzärztin": "bg-green-100 text-green-800 border-green-200",
   "Turnusarzt": "bg-amber-100 text-amber-800 border-amber-200",
   "Student (KPJ)": "bg-orange-100 text-orange-800 border-orange-200",
+  "Student (Famulant)": "bg-orange-100 text-orange-800 border-orange-200",
+  "Sekretariat": "bg-slate-100 text-slate-700 border-slate-200",
   "Hebamme": "bg-pink-100 text-pink-800 border-pink-200",
   "Spezialist": "bg-indigo-100 text-indigo-800 border-indigo-200",
 };
@@ -63,6 +67,8 @@ const ROLE_COLORS: Record<string, string> = {
 const ROLE_BADGES: Record<string, string> = {
   "Primararzt": "Prim",
   "1. Oberarzt": "1.OA",
+  "Funktionsoberarzt": "FOA",
+  "Ausbildungsoberarzt": "AOA",
   "Oberarzt": "OA",
   "Oberärztin": "OA",
   "Facharzt": "FA",
@@ -70,8 +76,26 @@ const ROLE_BADGES: Record<string, string> = {
   "Assistenzärztin": "AA",
   "Turnusarzt": "TA",
   "Student (KPJ)": "KPJ",
+  "Student (Famulant)": "FAM",
+  "Sekretariat": "SEK",
   "Hebamme": "HEB",
   "Spezialist": "SPZ",
+};
+
+const toDate = (value?: string | Date | null) => {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const isEmployeeInactive = (employee: Employee, date: Date) => {
+  const inactiveFrom = toDate(employee.inactiveFrom);
+  const inactiveUntil = toDate(employee.inactiveUntil);
+  if (!inactiveFrom && !inactiveUntil) return false;
+  if (inactiveFrom && date < inactiveFrom) return false;
+  if (inactiveUntil && date > inactiveUntil) return false;
+  return true;
 };
 
 const generateDummySections = (): SectionData[] => [
@@ -207,7 +231,13 @@ export default function DailyPlanEditor() {
     loadData();
   }, []);
 
-  const availableStaff = generateAvailableStaff(employees);
+  const availableStaff = generateAvailableStaff(
+    employees.filter((emp) =>
+      emp.isActive &&
+      emp.takesShifts !== false &&
+      !isEmployeeInactive(emp, currentDate)
+    )
+  );
 
   const handleValidate = () => {
     toast({

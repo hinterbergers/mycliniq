@@ -38,6 +38,8 @@ export type User = typeof users.$inferSelect;
 export const roleEnum = pgEnum('role', [
   'Primararzt',
   '1. Oberarzt',
+  'Funktionsoberarzt',
+  'Ausbildungsoberarzt',
   'Oberarzt',
   'Oberärztin',
   'Facharzt',
@@ -226,6 +228,8 @@ export const employees = pgTable("employees", {
   employmentFrom: date("employment_from"),
   employmentUntil: date("employment_until"),
   isAdmin: boolean("is_admin").notNull().default(false),
+  inactiveFrom: date("inactive_from"),
+  inactiveUntil: date("inactive_until"),
   isActive: boolean("is_active").notNull().default(true),
   validUntil: date("valid_until"),
   passwordHash: text("password_hash"),

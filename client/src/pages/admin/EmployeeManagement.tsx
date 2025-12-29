@@ -22,19 +22,58 @@ import type { Employee, Competency, Resource, Diploma } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 
-const ROLE_OPTIONS: Employee["role"][] = [
-  "Primararzt",
-  "1. Oberarzt",
-  "Oberarzt",
-  "Oberärztin",
-  "Facharzt",
-  "Assistenzarzt",
-  "Assistenzärztin",
-  "Turnusarzt",
-  "Student (KPJ)",
-  "Student (Famulant)",
-  "Sekretariat",
+const ROLE_LABELS: Record<string, string> = {
+  "Primararzt": "Primararzt:in",
+  "1. Oberarzt": "1. Oberarzt:in",
+  "Funktionsoberarzt": "Funktionsoberarzt:in",
+  "Ausbildungsoberarzt": "Ausbildungsoberarzt:in",
+  "Oberarzt": "Oberarzt:in",
+  "Oberärztin": "Oberarzt:in",
+  "Facharzt": "Facharzt:in",
+  "Assistenzarzt": "Assistenzarzt:in",
+  "Assistenzärztin": "Assistenzarzt:in",
+  "Turnusarzt": "Turnusarzt:in",
+  "Student (KPJ)": "Student:in (KPJ)",
+  "Student (Famulant)": "Student:in (Famulant)",
+  "Sekretariat": "Sekretariat"
+};
+
+const ROLE_OPTIONS: Array<{ value: Employee["role"]; label: string }> = [
+  { value: "Primararzt", label: ROLE_LABELS["Primararzt"] },
+  { value: "1. Oberarzt", label: ROLE_LABELS["1. Oberarzt"] },
+  { value: "Funktionsoberarzt", label: ROLE_LABELS["Funktionsoberarzt"] },
+  { value: "Ausbildungsoberarzt", label: ROLE_LABELS["Ausbildungsoberarzt"] },
+  { value: "Oberarzt", label: ROLE_LABELS["Oberarzt"] },
+  { value: "Facharzt", label: ROLE_LABELS["Facharzt"] },
+  { value: "Assistenzarzt", label: ROLE_LABELS["Assistenzarzt"] },
+  { value: "Turnusarzt", label: ROLE_LABELS["Turnusarzt"] },
+  { value: "Student (KPJ)", label: ROLE_LABELS["Student (KPJ)"] },
+  { value: "Student (Famulant)", label: ROLE_LABELS["Student (Famulant)"] },
+  { value: "Sekretariat", label: ROLE_LABELS["Sekretariat"] },
 ];
+
+const ROLE_SORT_ORDER: Record<string, number> = {
+  "Primararzt": 1,
+  "1. Oberarzt": 2,
+  "Funktionsoberarzt": 3,
+  "Ausbildungsoberarzt": 4,
+  "Oberarzt": 5,
+  "Oberärztin": 5,
+  "Facharzt": 6,
+  "Assistenzarzt": 7,
+  "Assistenzärztin": 7,
+  "Turnusarzt": 8,
+  "Student (KPJ)": 9,
+  "Student (Famulant)": 9,
+  "Sekretariat": 10
+};
+
+const normalizeRoleValue = (role?: string | null): Employee["role"] | "" => {
+  if (!role) return "";
+  if (role === "Oberärztin") return "Oberarzt";
+  if (role === "Assistenzärztin") return "Assistenzarzt";
+  return role as Employee["role"];
+};
 
 const APP_ROLE_OPTIONS: Employee["appRole"][] = ["Admin", "Editor", "User"];
 
@@ -43,7 +82,7 @@ const isValidEmail = (value: string) =>
   EMAIL_REGEX.test(value) && !/[^\x00-\x7F]/.test(value);
 
 const SERVICE_CAPABILITIES = {
-  gyn: ["Primararzt", "1. Oberarzt", "Oberarzt", "Oberärztin"],
+  gyn: ["Primararzt", "1. Oberarzt", "Funktionsoberarzt", "Ausbildungsoberarzt", "Oberarzt", "Oberärztin"],
   kreiszimmer: ["Assistenzarzt", "Assistenzärztin"],
   turnus: ["Assistenzarzt", "Assistenzärztin", "Turnusarzt"]
 };
@@ -106,6 +145,11 @@ function parseBirthdayInput(value: string): string | null {
     return null;
   }
   return iso;
+}
+
+function parseInactiveDate(value: string): string | null {
+  if (!value.trim()) return "";
+  return parseBirthdayInput(value);
 }
 
 const PERMISSION_FALLBACK = [
@@ -175,6 +219,8 @@ export default function EmployeeManagement() {
   const [editDiplomaIds, setEditDiplomaIds] = useState<number[]>([]);
   const [editDeploymentRoomIds, setEditDeploymentRoomIds] = useState<number[]>([]);
   const [editTakesShifts, setEditTakesShifts] = useState(true);
+  const [editInactiveFrom, setEditInactiveFrom] = useState("");
+  const [editInactiveUntil, setEditInactiveUntil] = useState("");
   const [resetPasswordData, setResetPasswordData] = useState({
     newPassword: "",
     confirmPassword: "",
@@ -188,6 +234,8 @@ export default function EmployeeManagement() {
   const [newDiplomaIds, setNewDiplomaIds] = useState<number[]>([]);
   const [newDeploymentRoomIds, setNewDeploymentRoomIds] = useState<number[]>([]);
   const [newTakesShifts, setNewTakesShifts] = useState(true);
+  const [newInactiveFrom, setNewInactiveFrom] = useState("");
+  const [newInactiveUntil, setNewInactiveUntil] = useState("");
   
   const canManageEmployees = isAdmin || isTechnicalAdmin;
   
@@ -264,6 +312,8 @@ export default function EmployeeManagement() {
     setNewDiplomaIds([]);
     setNewDeploymentRoomIds([]);
     setNewTakesShifts(true);
+    setNewInactiveFrom("");
+    setNewInactiveUntil("");
     setCompetencySearch("");
     setDiplomaSearch("");
     setRoomSearch("");
@@ -287,9 +337,11 @@ export default function EmployeeManagement() {
       showPrivateContact: emp.showPrivateContact || false,
     });
     setEditBirthdayInput(formatBirthdayDisplay(birthdayIso || emp.birthday));
-    setEditRoleValue(emp.role || "");
+    setEditRoleValue(normalizeRoleValue(emp.role));
     setEditAppRoleValue(emp.appRole || "");
     setEditTakesShifts(emp.takesShifts ?? true);
+    setEditInactiveFrom(formatBirthday(emp.inactiveFrom));
+    setEditInactiveUntil(formatBirthday(emp.inactiveUntil));
     const prefs = (emp.shiftPreferences as ShiftPreferences | null) || null;
     setEditDeploymentRoomIds(Array.isArray(prefs?.deploymentRoomIds) ? prefs.deploymentRoomIds : []);
     setEditCompetencyIds([]);
@@ -490,6 +542,35 @@ export default function EmployeeManagement() {
       });
       return;
     }
+
+    const parsedInactiveFrom = parseInactiveDate(editInactiveFrom);
+    if (parsedInactiveFrom === null) {
+      toast({
+        title: "Fehler",
+        description: "Bitte ein gueltiges Startdatum fuer die Deaktivierung eingeben (TT.MM.JJJJ oder JJJJ-MM-TT).",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const parsedInactiveUntil = parseInactiveDate(editInactiveUntil);
+    if (parsedInactiveUntil === null) {
+      toast({
+        title: "Fehler",
+        description: "Bitte ein gueltiges Enddatum fuer die Deaktivierung eingeben (TT.MM.JJJJ oder JJJJ-MM-TT).",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (parsedInactiveFrom && parsedInactiveUntil && parsedInactiveFrom > parsedInactiveUntil) {
+      toast({
+        title: "Fehler",
+        description: "Das Enddatum der Deaktivierung muss nach dem Startdatum liegen.",
+        variant: "destructive"
+      });
+      return;
+    }
     
     setSaving(true);
     try {
@@ -507,6 +588,8 @@ export default function EmployeeManagement() {
         role: (editRoleValue || editingEmployee.role) as Employee["role"],
         appRole: (editAppRoleValue || editingEmployee.appRole) as Employee["appRole"],
         takesShifts: editTakesShifts,
+        inactiveFrom: parsedInactiveFrom || null,
+        inactiveUntil: parsedInactiveUntil || null,
         shiftPreferences: {
           ...(editingEmployee.shiftPreferences || {}),
           deploymentRoomIds: editDeploymentRoomIds
@@ -608,6 +691,35 @@ export default function EmployeeManagement() {
       });
       return;
     }
+
+    const parsedInactiveFrom = parseInactiveDate(newInactiveFrom);
+    if (parsedInactiveFrom === null) {
+      toast({
+        title: "Fehler",
+        description: "Bitte ein gueltiges Startdatum fuer die Deaktivierung eingeben (TT.MM.JJJJ oder JJJJ-MM-TT).",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const parsedInactiveUntil = parseInactiveDate(newInactiveUntil);
+    if (parsedInactiveUntil === null) {
+      toast({
+        title: "Fehler",
+        description: "Bitte ein gueltiges Enddatum fuer die Deaktivierung eingeben (TT.MM.JJJJ oder JJJJ-MM-TT).",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (parsedInactiveFrom && parsedInactiveUntil && parsedInactiveFrom > parsedInactiveUntil) {
+      toast({
+        title: "Fehler",
+        description: "Das Enddatum der Deaktivierung muss nach dem Startdatum liegen.",
+        variant: "destructive"
+      });
+      return;
+    }
     
     setCreating(true);
     try {
@@ -626,6 +738,8 @@ export default function EmployeeManagement() {
         appRole: (newAppRoleValue || "User") as Employee["appRole"],
         systemRole: "employee",
         takesShifts: newTakesShifts,
+        inactiveFrom: parsedInactiveFrom || null,
+        inactiveUntil: parsedInactiveUntil || null,
         shiftPreferences: {
           deploymentRoomIds: newDeploymentRoomIds
         }
@@ -742,15 +856,6 @@ export default function EmployeeManagement() {
     );
   };
 
-  const filteredEmployees = employees.filter(emp => {
-    const search = searchTerm.toLowerCase();
-    return (
-      emp.name.toLowerCase().includes(search) ||
-      emp.role.toLowerCase().includes(search) ||
-      (emp.competencies || []).some(c => c.toLowerCase().includes(search))
-    );
-  });
-
   const getCompetencyLabel = (id: number) =>
     availableCompetencies.find((comp) => comp.id === id)?.name || `Kompetenz ${id}`;
 
@@ -759,6 +864,36 @@ export default function EmployeeManagement() {
 
   const getRoomLabel = (id: number) =>
     availableRooms.find((room) => room.id === id)?.name || `Arbeitsplatz ${id}`;
+
+  const getRoleLabel = (role: string) => ROLE_LABELS[role] || role;
+
+  const getRoleSortRank = (role?: string | null) => {
+    const normalized = normalizeRoleValue(role);
+    return ROLE_SORT_ORDER[normalized] ?? 999;
+  };
+
+  const filteredEmployees = employees
+    .filter((emp) => {
+      const search = searchTerm.toLowerCase();
+      const roleLabel = getRoleLabel(emp.role).toLowerCase();
+      return (
+        emp.name.toLowerCase().includes(search) ||
+        emp.role.toLowerCase().includes(search) ||
+        roleLabel.includes(search) ||
+        (emp.competencies || []).some((c) => c.toLowerCase().includes(search))
+      );
+    })
+    .slice()
+    .sort((a, b) => {
+      const roleRank = getRoleSortRank(a.role) - getRoleSortRank(b.role);
+      if (roleRank !== 0) return roleRank;
+      const lastNameA = (a.lastName || a.name || "").toLowerCase();
+      const lastNameB = (b.lastName || b.name || "").toLowerCase();
+      if (lastNameA !== lastNameB) return lastNameA.localeCompare(lastNameB);
+      const firstNameA = (a.firstName || "").toLowerCase();
+      const firstNameB = (b.firstName || "").toLowerCase();
+      return firstNameA.localeCompare(firstNameB);
+    });
 
   const filteredAvailableCompetencies = availableCompetencies.filter((comp) => {
     const query = competencySearch.trim().toLowerCase();
@@ -1254,7 +1389,7 @@ export default function EmployeeManagement() {
                           </SelectTrigger>
                           <SelectContent>
                             {ROLE_OPTIONS.map((role) => (
-                              <SelectItem key={role} value={role}>{role}</SelectItem>
+                              <SelectItem key={role.value} value={role.value}>{role.label}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -1286,6 +1421,35 @@ export default function EmployeeManagement() {
                         onCheckedChange={(checked) => setNewTakesShifts(Boolean(checked))}
                         disabled={!canManageEmployees}
                       />
+                    </div>
+
+                    <div className="space-y-3 rounded-lg border border-border p-4">
+                      <div>
+                        <Label>Langzeit-Deaktivierung</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Von/Bis - in diesem Zeitraum nicht fuer Dienst- und Wochenplan beruecksichtigen.
+                        </p>
+                      </div>
+                      <div className="grid md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Von</Label>
+                          <Input
+                            type="date"
+                            value={newInactiveFrom}
+                            onChange={(e) => setNewInactiveFrom(e.target.value)}
+                            disabled={!canManageEmployees}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Bis</Label>
+                          <Input
+                            type="date"
+                            value={newInactiveUntil}
+                            onChange={(e) => setNewInactiveUntil(e.target.value)}
+                            disabled={!canManageEmployees}
+                          />
+                        </div>
+                      </div>
                     </div>
 
                         <div className="space-y-2">
@@ -1514,7 +1678,7 @@ export default function EmployeeManagement() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Badge variant="secondary" className="font-normal">{emp.role}</Badge>
+                            <Badge variant="secondary" className="font-normal">{getRoleLabel(emp.role)}</Badge>
                           </TableCell>
                           <TableCell>
                             {getAppRoleBadge(emp.appRole)}
@@ -1868,7 +2032,7 @@ export default function EmployeeManagement() {
                           </SelectTrigger>
                           <SelectContent>
                             {ROLE_OPTIONS.map((role) => (
-                              <SelectItem key={role} value={role}>{role}</SelectItem>
+                              <SelectItem key={role.value} value={role.value}>{role.label}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -1900,6 +2064,35 @@ export default function EmployeeManagement() {
                         onCheckedChange={(checked) => setEditTakesShifts(Boolean(checked))}
                         disabled={!canManageEmployees}
                       />
+                    </div>
+
+                    <div className="space-y-3 rounded-lg border border-border p-4">
+                      <div>
+                        <Label>Langzeit-Deaktivierung</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Von/Bis - in diesem Zeitraum nicht fuer Dienst- und Wochenplan beruecksichtigen.
+                        </p>
+                      </div>
+                      <div className="grid md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Von</Label>
+                          <Input
+                            type="date"
+                            value={editInactiveFrom}
+                            onChange={(e) => setEditInactiveFrom(e.target.value)}
+                            disabled={!canManageEmployees}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Bis</Label>
+                          <Input
+                            type="date"
+                            value={editInactiveUntil}
+                            onChange={(e) => setEditInactiveUntil(e.target.value)}
+                            disabled={!canManageEmployees}
+                          />
+                        </div>
+                      </div>
                     </div>
 
                     <div className="space-y-2">

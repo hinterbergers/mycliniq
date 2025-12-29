@@ -27,10 +27,27 @@ interface GenerationResult {
 }
 
 const SERVICE_CAPABILITIES: Record<string, string[]> = {
-  gyn: ["Primararzt", "1. Oberarzt", "Oberarzt", "Oberärztin"],
+  gyn: ["Primararzt", "1. Oberarzt", "Funktionsoberarzt", "Ausbildungsoberarzt", "Oberarzt", "Oberärztin"],
   kreiszimmer: ["Assistenzarzt", "Assistenzärztin"],
   turnus: ["Assistenzarzt", "Assistenzärztin", "Turnusarzt"]
 };
+
+function toDate(value?: string | Date | null): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function isDateWithinRange(date: string, start?: string | Date | null, end?: string | Date | null): boolean {
+  const target = toDate(date);
+  if (!target) return false;
+  const startDate = toDate(start ?? null);
+  const endDate = toDate(end ?? null);
+  if (startDate && target < startDate) return false;
+  if (endDate && target > endDate) return false;
+  return Boolean(startDate || endDate);
+}
 
 export async function generateRosterPlan(
   employees: Employee[],
@@ -53,6 +70,13 @@ export async function generateRosterPlan(
     const absenceDates = existingAbsences
       .filter(a => a.employeeId === e.id)
       .map(a => `${a.startDate} bis ${a.endDate} (${a.reason})`);
+    const inactiveFrom = toDate(e.inactiveFrom);
+    const inactiveUntil = toDate(e.inactiveUntil);
+    if (inactiveFrom || inactiveUntil) {
+      const formattedFrom = inactiveFrom ? format(inactiveFrom, 'yyyy-MM-dd') : "offen";
+      const formattedUntil = inactiveUntil ? format(inactiveUntil, 'yyyy-MM-dd') : "offen";
+      absenceDates.push(`Langzeitabwesenheit: ${formattedFrom} bis ${formattedUntil}`);
+    }
     
     return {
       id: e.id,
@@ -84,7 +108,7 @@ ${JSON.stringify(employeeData, null, 2)}
 ${JSON.stringify(daysData, null, 2)}
 
 ## Diensttypen und berechtigte Rollen:
-- gyn (Gynäkologie-Dienst): Primararzt, 1. Oberarzt, Oberarzt, Oberärztin
+- gyn (Gynäkologie-Dienst): Primararzt, 1. Oberarzt, Funktionsoberarzt, Ausbildungsoberarzt, Oberarzt, Oberärztin
 - kreiszimmer (Kreißzimmer): Assistenzarzt, Assistenzärztin
 - turnus (Turnus): Assistenzarzt, Assistenzärztin, Turnusarzt
 
@@ -151,6 +175,12 @@ Antworte mit folgendem JSON-Format:
         console.warn(`${employee.name} ist am ${shift.date} abwesend`);
         return false;
       }
+
+      const isInactive = isDateWithinRange(shift.date, employee.inactiveFrom, employee.inactiveUntil);
+      if (isInactive) {
+        console.warn(`${employee.name} ist am ${shift.date} langfristig deaktiviert`);
+        return false;
+      }
       
       return true;
     });
@@ -185,6 +215,11 @@ export async function validateShiftAssignment(
   );
   if (isAbsent) {
     return { valid: false, reason: `${employee.name} ist am ${date} abwesend` };
+  }
+
+  const isInactive = isDateWithinRange(date, employee.inactiveFrom, employee.inactiveUntil);
+  if (isInactive) {
+    return { valid: false, reason: `${employee.name} ist am ${date} langfristig deaktiviert` };
   }
 
   return { valid: true };

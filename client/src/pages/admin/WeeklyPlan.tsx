@@ -49,23 +49,49 @@ interface SectionData {
 const ROLE_COLORS: Record<string, string> = {
   "Primararzt": "bg-purple-100 text-purple-800 border-purple-200",
   "1. Oberarzt": "bg-blue-100 text-blue-800 border-blue-200",
+  "Funktionsoberarzt": "bg-blue-100 text-blue-800 border-blue-200",
+  "Ausbildungsoberarzt": "bg-blue-100 text-blue-800 border-blue-200",
   "Oberarzt": "bg-blue-100 text-blue-800 border-blue-200",
   "Oberärztin": "bg-blue-100 text-blue-800 border-blue-200",
+  "Facharzt": "bg-cyan-100 text-cyan-800 border-cyan-200",
   "Assistenzarzt": "bg-green-100 text-green-800 border-green-200",
   "Assistenzärztin": "bg-green-100 text-green-800 border-green-200",
   "Turnusarzt": "bg-amber-100 text-amber-800 border-amber-200",
   "Student (KPJ)": "bg-orange-100 text-orange-800 border-orange-200",
+  "Student (Famulant)": "bg-orange-100 text-orange-800 border-orange-200",
+  "Sekretariat": "bg-slate-100 text-slate-700 border-slate-200",
 };
 
 const ROLE_BADGES: Record<string, string> = {
   "Primararzt": "Prim",
   "1. Oberarzt": "1.OA",
+  "Funktionsoberarzt": "FOA",
+  "Ausbildungsoberarzt": "AOA",
   "Oberarzt": "OA",
   "Oberärztin": "OA",
+  "Facharzt": "FA",
   "Assistenzarzt": "AA",
   "Assistenzärztin": "AA",
   "Turnusarzt": "TA",
   "Student (KPJ)": "KPJ",
+  "Student (Famulant)": "FAM",
+  "Sekretariat": "SEK",
+};
+
+const toDate = (value?: string | Date | null) => {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const isEmployeeInactive = (employee: Employee, rangeStart: Date, rangeEnd: Date) => {
+  const inactiveFrom = toDate(employee.inactiveFrom);
+  const inactiveUntil = toDate(employee.inactiveUntil);
+  if (!inactiveFrom && !inactiveUntil) return false;
+  if (inactiveFrom && inactiveFrom > rangeEnd) return false;
+  if (inactiveUntil && inactiveUntil < rangeStart) return false;
+  return true;
 };
 
 const generateDummySections = (): SectionData[] => {
@@ -264,7 +290,11 @@ export default function WeeklyPlan() {
     }
   };
 
-  const availableEmployees = employees.filter(e => e.isActive);
+  const availableEmployees = employees.filter((emp) =>
+    emp.isActive &&
+    emp.takesShifts !== false &&
+    !isEmployeeInactive(emp, weekStart, weekEnd)
+  );
 
   return (
     <Layout title="Wochenplan-Editor">

@@ -27,7 +27,7 @@ import {
   Tag,
   X
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { employeeApi, competencyApi, roomApi, diplomaApi } from "@/lib/api";
 import { apiRequest } from "@/lib/queryClient";
 import type { Employee, Competency, Resource, Diploma } from "@shared/schema";
@@ -90,24 +90,79 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const isValidEmail = (value: string) =>
   EMAIL_REGEX.test(value) && !/[^\x00-\x7F]/.test(value);
 
+const ROLE_LABELS: Record<string, string> = {
+  "Primararzt": "Primararzt:in",
+  "1. Oberarzt": "1. Oberarzt:in",
+  "Funktionsoberarzt": "Funktionsoberarzt:in",
+  "Ausbildungsoberarzt": "Ausbildungsoberarzt:in",
+  "Oberarzt": "Oberarzt:in",
+  "Oberärztin": "Oberarzt:in",
+  "Facharzt": "Facharzt:in",
+  "Assistenzarzt": "Assistenzarzt:in",
+  "Assistenzärztin": "Assistenzarzt:in",
+  "Turnusarzt": "Turnusarzt:in",
+  "Student (KPJ)": "Student:in (KPJ)",
+  "Student (Famulant)": "Student:in (Famulant)",
+  "Sekretariat": "Sekretariat"
+};
+
+const ROLE_OPTIONS: Array<{ value: Employee["role"]; label: string }> = [
+  { value: "Primararzt", label: ROLE_LABELS["Primararzt"] },
+  { value: "1. Oberarzt", label: ROLE_LABELS["1. Oberarzt"] },
+  { value: "Funktionsoberarzt", label: ROLE_LABELS["Funktionsoberarzt"] },
+  { value: "Ausbildungsoberarzt", label: ROLE_LABELS["Ausbildungsoberarzt"] },
+  { value: "Oberarzt", label: ROLE_LABELS["Oberarzt"] },
+  { value: "Facharzt", label: ROLE_LABELS["Facharzt"] },
+  { value: "Assistenzarzt", label: ROLE_LABELS["Assistenzarzt"] },
+  { value: "Turnusarzt", label: ROLE_LABELS["Turnusarzt"] },
+  { value: "Student (KPJ)", label: ROLE_LABELS["Student (KPJ)"] },
+  { value: "Student (Famulant)", label: ROLE_LABELS["Student (Famulant)"] },
+  { value: "Sekretariat", label: ROLE_LABELS["Sekretariat"] },
+];
+
+const ROLE_SORT_ORDER: Record<string, number> = {
+  "Primararzt": 1,
+  "1. Oberarzt": 2,
+  "Funktionsoberarzt": 3,
+  "Ausbildungsoberarzt": 4,
+  "Oberarzt": 5,
+  "Oberärztin": 5,
+  "Facharzt": 6,
+  "Assistenzarzt": 7,
+  "Assistenzärztin": 7,
+  "Turnusarzt": 8,
+  "Student (KPJ)": 9,
+  "Student (Famulant)": 9,
+  "Sekretariat": 10
+};
+
+const normalizeRoleValue = (role?: string | null): Employee["role"] | "" => {
+  if (!role) return "";
+  if (role === "Oberärztin") return "Oberarzt";
+  if (role === "Assistenzärztin") return "Assistenzarzt";
+  return role as Employee["role"];
+};
+
+const getRoleLabel = (role?: string | null) => {
+  if (!role) return "";
+  return ROLE_LABELS[role] || role;
+};
+
+const getRoleSortRank = (role?: string | null) => {
+  const normalized = normalizeRoleValue(role);
+  return ROLE_SORT_ORDER[normalized] ?? 999;
+};
+
+function parseInactiveDate(value: string): string | null {
+  if (!value.trim()) return "";
+  return parseBirthdayInput(value);
+}
+
 export default function Settings() {
   const params = useParams();
   const [, setLocation] = useLocation();
   const { employee: currentUser, user, isAdmin, isTechnicalAdmin, capabilities } = useAuth();
 
-  const ROLE_OPTIONS: Employee["role"][] = [
-    "Primararzt",
-    "1. Oberarzt",
-    "Oberarzt",
-    "Oberärztin",
-    "Facharzt",
-    "Assistenzarzt",
-    "Assistenzärztin",
-    "Turnusarzt",
-    "Student (KPJ)",
-    "Student (Famulant)",
-    "Sekretariat",
-  ];
   const APP_ROLE_OPTIONS: Employee["appRole"][] = ["Admin", "Editor", "User"];
 
   const PERMISSION_FALLBACK = [
@@ -159,6 +214,8 @@ export default function Settings() {
   const [roleValue, setRoleValue] = useState<Employee["role"] | "">("");
   const [appRoleValue, setAppRoleValue] = useState<Employee["appRole"] | "">("");
   const [takesShifts, setTakesShifts] = useState(true);
+  const [inactiveFrom, setInactiveFrom] = useState("");
+  const [inactiveUntil, setInactiveUntil] = useState("");
   const [availableCompetencies, setAvailableCompetencies] = useState<Competency[]>([]);
   const [selectedCompetencyIds, setSelectedCompetencyIds] = useState<number[]>([]);
   const [competencySearch, setCompetencySearch] = useState("");
@@ -235,6 +292,22 @@ export default function Settings() {
       )
     : PERMISSION_FALLBACK;
 
+  const sortedEmployees = useMemo(() => {
+    return allEmployees
+      .filter((emp) => emp.isActive)
+      .slice()
+      .sort((a, b) => {
+        const roleRank = getRoleSortRank(a.role) - getRoleSortRank(b.role);
+        if (roleRank !== 0) return roleRank;
+        const lastNameA = (a.lastName || a.name || "").toLowerCase();
+        const lastNameB = (b.lastName || b.name || "").toLowerCase();
+        if (lastNameA !== lastNameB) return lastNameA.localeCompare(lastNameB);
+        const firstNameA = (a.firstName || "").toLowerCase();
+        const firstNameB = (b.firstName || "").toLowerCase();
+        return firstNameA.localeCompare(firstNameB);
+      });
+  }, [allEmployees]);
+
   const applyEmployeeState = (emp: Employee) => {
     setEmployee(emp);
     const nameParts = emp.name.split(' ');
@@ -256,9 +329,11 @@ export default function Settings() {
     });
     setBirthdayInput(formatBirthdayDisplay(birthdayIso || emp.birthday));
     setNewBadge(emp.lastName?.substring(0, 2).toUpperCase() || '');
-    setRoleValue(emp.role || "");
+    setRoleValue(normalizeRoleValue(emp.role));
     setAppRoleValue(emp.appRole || "");
     setTakesShifts(emp.takesShifts ?? true);
+    setInactiveFrom(formatBirthday(emp.inactiveFrom));
+    setInactiveUntil(formatBirthday(emp.inactiveUntil));
     setSelectedCompetencyIds([]);
     const prefs = (emp.shiftPreferences as { deploymentRoomIds?: number[] } | null) || null;
     setDeploymentRoomIds(Array.isArray(prefs?.deploymentRoomIds) ? prefs.deploymentRoomIds : []);
@@ -438,6 +513,42 @@ export default function Settings() {
         return;
       }
 
+      let parsedInactiveFrom: string | null | "" = "";
+      let parsedInactiveUntil: string | null | "" = "";
+      if (canEditRoleAndCompetencies) {
+        parsedInactiveFrom = parseInactiveDate(inactiveFrom);
+        if (parsedInactiveFrom === null) {
+          toast({
+            title: "Fehler",
+            description: "Bitte ein gueltiges Startdatum fuer die Deaktivierung eingeben (TT.MM.JJJJ oder JJJJ-MM-TT).",
+            variant: "destructive"
+          });
+          setSaving(false);
+          return;
+        }
+
+        parsedInactiveUntil = parseInactiveDate(inactiveUntil);
+        if (parsedInactiveUntil === null) {
+          toast({
+            title: "Fehler",
+            description: "Bitte ein gueltiges Enddatum fuer die Deaktivierung eingeben (TT.MM.JJJJ oder JJJJ-MM-TT).",
+            variant: "destructive"
+          });
+          setSaving(false);
+          return;
+        }
+
+        if (parsedInactiveFrom && parsedInactiveUntil && parsedInactiveFrom > parsedInactiveUntil) {
+          toast({
+            title: "Fehler",
+            description: "Das Enddatum der Deaktivierung muss nach dem Startdatum liegen.",
+            variant: "destructive"
+          });
+          setSaving(false);
+          return;
+        }
+      }
+
       // TODO: Backend schema needs title, birthday, badge fields before full persistence
       // Currently saving only fields supported by the existing API
       if (canEditBasicInfo) {
@@ -459,6 +570,8 @@ export default function Settings() {
           role: (roleValue || employee.role) as Employee["role"],
           appRole: (appRoleValue || employee.appRole) as Employee["appRole"],
           takesShifts,
+          inactiveFrom: parsedInactiveFrom || null,
+          inactiveUntil: parsedInactiveUntil || null,
           shiftPreferences: {
             ...(employee.shiftPreferences || {}),
             deploymentRoomIds: deploymentRoomIds
@@ -632,9 +745,9 @@ export default function Settings() {
                     <SelectValue placeholder="Benutzer wählen" />
                   </SelectTrigger>
                   <SelectContent>
-                    {allEmployees.filter(e => e.isActive).map(emp => (
+                    {sortedEmployees.map(emp => (
                       <SelectItem key={emp.id} value={emp.id.toString()}>
-                        {emp.name} - {emp.role}
+                        {emp.name} - {getRoleLabel(emp.role)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -651,7 +764,7 @@ export default function Settings() {
           <div>
             <h2 className="text-2xl font-bold">{employee.name}</h2>
             <p className="text-muted-foreground flex items-center gap-2">
-              <User className="w-4 h-4" /> {employee.role}
+              <User className="w-4 h-4" /> {getRoleLabel(employee.role)}
             </p>
           </div>
         </div>
@@ -891,14 +1004,14 @@ export default function Settings() {
                           </SelectTrigger>
                           <SelectContent>
                             {ROLE_OPTIONS.map((role) => (
-                              <SelectItem key={role} value={role}>
-                                {role}
+                              <SelectItem key={role.value} value={role.value}>
+                                {role.label}
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       ) : (
-                        <Input value={employee.role} disabled />
+                        <Input value={getRoleLabel(employee.role)} disabled />
                       )}
                     </div>
                   </div>
@@ -941,6 +1054,35 @@ export default function Settings() {
                     onCheckedChange={(checked) => setTakesShifts(Boolean(checked))}
                     disabled={!canEditRoleAndCompetencies}
                   />
+                </div>
+
+                <div className="space-y-3 rounded-lg border border-border p-4">
+                  <div>
+                    <Label>Langzeit-Deaktivierung</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Von/Bis - in diesem Zeitraum nicht fuer Dienst- und Wochenplan beruecksichtigen.
+                    </p>
+                  </div>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Von</Label>
+                      <Input
+                        type="date"
+                        value={inactiveFrom}
+                        onChange={(e) => setInactiveFrom(e.target.value)}
+                        disabled={!canEditRoleAndCompetencies}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Bis</Label>
+                      <Input
+                        type="date"
+                        value={inactiveUntil}
+                        onChange={(e) => setInactiveUntil(e.target.value)}
+                        disabled={!canEditRoleAndCompetencies}
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
