@@ -1456,6 +1456,7 @@ export default function EmployeeManagement() {
                       const capabilities = getCapabilities(emp.role);
                       const deploymentLabels = getDeploymentLabels(emp);
                       const employeeCompetencies = emp.competencies || [];
+                      const isDutyExcluded = emp.takesShifts === false;
                       return (
                         <TableRow key={emp.id} data-testid={`row-employee-${emp.id}`}>
                           <TableCell className="font-medium">
@@ -1493,13 +1494,19 @@ export default function EmployeeManagement() {
                             )}
                           </TableCell>
                           <TableCell>
-                            <div className="flex gap-1 flex-wrap">
-                              {capabilities.map((cap, i) => (
-                                <Badge key={i} variant="outline" className={`text-xs font-medium border ${cap.color}`}>
-                                  {cap.label}
-                                </Badge>
-                              ))}
-                            </div>
+                            {isDutyExcluded ? (
+                              <Badge variant="outline" className="text-xs text-muted-foreground border-muted-foreground/30">
+                                Nicht im Dienstplan
+                              </Badge>
+                            ) : (
+                              <div className="flex gap-1 flex-wrap">
+                                {capabilities.map((cap, i) => (
+                                  <Badge key={i} variant="outline" className={`text-xs font-medium border ${cap.color}`}>
+                                    {cap.label}
+                                  </Badge>
+                                ))}
+                              </div>
+                            )}
                           </TableCell>
                           <TableCell className="text-right">
                             {canManageEmployees && (

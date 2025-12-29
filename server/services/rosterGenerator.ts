@@ -42,7 +42,7 @@ export async function generateRosterPlan(
   const endDate = endOfMonth(new Date(year, month - 1));
   const days = eachDayOfInterval({ start: startDate, end: endDate });
 
-  const activeEmployees = employees.filter(e => e.isActive);
+  const activeEmployees = employees.filter(e => e.isActive && e.takesShifts !== false);
   
   const gynCapable = activeEmployees.filter(e => SERVICE_CAPABILITIES.gyn.includes(e.role));
   const kreiszimmerCapable = activeEmployees.filter(e => SERVICE_CAPABILITIES.kreiszimmer.includes(e.role));
