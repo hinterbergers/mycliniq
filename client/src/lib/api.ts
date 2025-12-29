@@ -911,3 +911,25 @@ export const plannedAbsencesApi = {
     return handleResponse<void>(response);
   }
 };
+
+export interface ToolVisibilitySetting {
+  toolKey: string;
+  isEnabled: boolean;
+}
+
+// Tools API
+export const toolsApi = {
+  getVisibility: async (): Promise<ToolVisibilitySetting[]> => {
+    const response = await apiFetch(`${API_BASE}/tools`);
+    return handleResponse<ToolVisibilitySetting[]>(response);
+  },
+
+  updateVisibility: async (tools: ToolVisibilitySetting[]): Promise<ToolVisibilitySetting[]> => {
+    const response = await apiFetch(`${API_BASE}/tools/visibility`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tools })
+    });
+    return handleResponse<ToolVisibilitySetting[]>(response);
+  }
+};

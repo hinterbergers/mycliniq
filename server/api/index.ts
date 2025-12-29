@@ -17,6 +17,7 @@ import { registerDailyOverrideRoutes } from "./daily-overrides";
 import { registerAbsenceRoutes } from "./absences";
 import { registerProjectRoutes } from "./projects";
 import { registerSopRoutes } from "./sops";
+import { registerToolRoutes } from "./tools";
 
 /**
  * Register all modular API routes
@@ -112,6 +113,11 @@ export function registerModularApiRoutes(app: Express): void {
   const sopsRouter = Router();
   registerSopRoutes(sopsRouter);
   app.use("/api/sops", sopsRouter);
+
+  // Tools API
+  const toolsRouter = Router();
+  registerToolRoutes(toolsRouter);
+  app.use("/api/tools", toolsRouter);
 
   console.log("✓ Modular API routes registered (with authentication)");
 }

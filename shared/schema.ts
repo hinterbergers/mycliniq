@@ -1055,6 +1055,29 @@ export const insertRosterSettingsSchema = createInsertSchema(rosterSettings).omi
 export type InsertRosterSettings = z.infer<typeof insertRosterSettingsSchema>;
 export type RosterSettings = typeof rosterSettings.$inferSelect;
 
+// Tool visibility settings (per department)
+export const toolVisibility = pgTable("tool_visibility", {
+  id: serial("id").primaryKey(),
+  departmentId: integer("department_id").references(() => departments.id).notNull(),
+  toolKey: text("tool_key").notNull(),
+  isEnabled: boolean("is_enabled").notNull().default(true),
+  updatedById: integer("updated_by_id").references(() => employees.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (table) => [
+  index("tool_visibility_department_idx").on(table.departmentId),
+  uniqueIndex("tool_visibility_department_tool_idx").on(table.departmentId, table.toolKey)
+]);
+
+export const insertToolVisibilitySchema = createInsertSchema(toolVisibility).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export type InsertToolVisibility = z.infer<typeof insertToolVisibilitySchema>;
+export type ToolVisibility = typeof toolVisibility.$inferSelect;
+
 // Shift wish status
 export const wishStatusEnum = pgEnum('wish_status', [
   'Entwurf',

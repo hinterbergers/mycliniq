@@ -19,6 +19,7 @@ import WeeklyPlan from "@/pages/admin/WeeklyPlan";
 import Projects from "@/pages/admin/Projects";
 import ProjectDetail from "@/pages/admin/ProjectDetail";
 import ClinicSettings from "@/pages/admin/ClinicSettings";
+import Tools from "@/pages/Tools";
 import NotFound from "@/pages/not-found";
 import { Loader2 } from "lucide-react";
 
@@ -61,6 +62,9 @@ function Router() {
       </Route>
       <Route path="/projekte">
         {() => <ProtectedRoute component={Projects} />}
+      </Route>
+      <Route path="/tools">
+        {() => <ProtectedRoute component={Tools} />}
       </Route>
       <Route path="/projekte/:id">
         {() => <ProtectedRoute component={ProjectDetail} />}

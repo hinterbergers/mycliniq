@@ -11,7 +11,7 @@ import {
   CalendarDays,
   FileText,
   Briefcase,
-  Heart
+  Wrench
 } from "lucide-react";
 
 export function Sidebar() {
@@ -22,6 +22,7 @@ export function Sidebar() {
     { href: "/dienstplaene", label: "Dienstpläne", icon: CalendarDays },
     { href: "/wissen", label: "SOPs", icon: FileText },
     { href: "/projekte", label: "Projekte", icon: Briefcase },
+    { href: "/tools", label: "Tools", icon: Wrench },
     { href: "/admin", label: "Verwaltung", icon: Users, adminOnly: true },
     { href: "/einstellungen", label: "Einstellungen", icon: Settings },
   ];
