@@ -106,8 +106,11 @@ export const plannedAbsenceStatusEnum = pgEnum('planned_absence_status', [
 // Room category enum
 export const roomCategoryEnum = pgEnum('room_category', [
   'Geburtshilfe',
+  'Gynäkologie',
   'OP',
   'Ambulanz',
+  'Spezialambulanz',
+  'Besprechung',
   'Station',
   'Verwaltung',
   'Sonstiges'
@@ -410,6 +413,8 @@ export const rooms = pgTable("rooms", {
   useInWeeklyPlan: boolean("use_in_weekly_plan").notNull().default(true),
   isAvailable: boolean("is_available").notNull().default(true),
   blockReason: text("block_reason"),
+  requiredRoleCompetencies: text("required_role_competencies").array().notNull().default(sql`ARRAY[]::text[]`),
+  alternativeRoleCompetencies: text("alternative_role_competencies").array().notNull().default(sql`ARRAY[]::text[]`),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull()

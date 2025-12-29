@@ -102,12 +102,12 @@ const TEAM_DATA = [
 ];
 
 const RESOURCES_DATA = [
-  { name: "Kreißsaal 1", type: "Geburtshilfe", isAvailable: true },
-  { name: "Kreißsaal 2", type: "Geburtshilfe", isAvailable: true },
-  { name: "OP 1", type: "OP", isAvailable: true },
-  { name: "OP 2", type: "OP", isAvailable: true },
-  { name: "Ambulanz Gyn", type: "Ambulanz", isAvailable: true },
-  { name: "Mamma Ambulanz", type: "Ambulanz", isAvailable: true }
+  { name: "Kreißsaal 1", category: "Geburtshilfe", isAvailable: true },
+  { name: "Kreißsaal 2", category: "Geburtshilfe", isAvailable: true },
+  { name: "OP 1", category: "OP", isAvailable: true },
+  { name: "OP 2", category: "OP", isAvailable: true },
+  { name: "Ambulanz Gyn", category: "Ambulanz", isAvailable: true },
+  { name: "Mamma Ambulanz", category: "Ambulanz", isAvailable: true }
 ];
 
 async function seed() {
@@ -132,12 +132,14 @@ async function seed() {
     
     // Seed permissions
     const permissionData = [
+      { key: "users.manage", label: "Benutzer anlegen / verwalten", scope: "department" },
       { key: "dutyplan.edit", label: "Dienstplan bearbeiten", scope: "department" },
-      { key: "dutyplan.publish", label: "Dienstplan veröffentlichen", scope: "department" },
-      { key: "vacation.approve", label: "Urlaub genehmigen", scope: "department" },
-      { key: "sop.edit", label: "SOPs bearbeiten", scope: "department" },
-      { key: "sop.approve", label: "SOPs genehmigen", scope: "department" },
-      { key: "project.manage", label: "Projekte verwalten", scope: "department" }
+      { key: "dutyplan.publish", label: "Dienstplan freigeben", scope: "department" },
+      { key: "vacation.lock", label: "Urlaubsplanung bearbeiten (Sperrzeitraum)", scope: "department" },
+      { key: "absence.create", label: "Abwesenheiten eintragen", scope: "department" },
+      { key: "sop.approve", label: "SOPs freigeben", scope: "department" },
+      { key: "project.close", label: "Projekte abschließen", scope: "department" },
+      { key: "training.edit", label: "Ausbildungsplan bearbeiten", scope: "department" }
     ];
     
     for (const perm of permissionData) {

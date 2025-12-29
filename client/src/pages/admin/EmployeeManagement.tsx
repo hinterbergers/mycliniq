@@ -14,7 +14,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as DatePickerCalendar } from "@/components/ui/calendar";
-import { Search, Plus, Filter, UserPlus, Pencil, Loader2, Shield, MapPin, Calendar as CalendarIcon, Trash2, Award, Building, Key, X } from "lucide-react";
+import { Search, Plus, Filter, UserPlus, Pencil, Loader2, Shield, MapPin, Calendar as CalendarIcon, Trash2, Award, Building, X } from "lucide-react";
 import { useState, useEffect } from "react";
 import { employeeApi, competencyApi, roomApi } from "@/lib/api";
 import { apiRequest } from "@/lib/queryClient";
@@ -38,16 +38,6 @@ const ROLE_OPTIONS: Employee["role"][] = [
 
 const APP_ROLE_OPTIONS: Employee["appRole"][] = ["Admin", "Editor", "User"];
 
-const DUMMY_COMPETENCY_DATA = [
-  { id: 1, name: "Senior Mamma Surgeon", badge: "SMS", description: "Erfahrener Brustkrebschirurg", rooms: ["OP 1 TCH", "OP 2"], requirements: "10+ Jahre Erfahrung, Mamma-Diplom" },
-  { id: 2, name: "ÖGUM I", badge: "Ö1", description: "Ultraschall-Zertifikat Stufe I", rooms: ["Schwangerenambulanz", "Risikoambulanz"], requirements: "ÖGUM Kurs I abgeschlossen" },
-  { id: 3, name: "ÖGUM II", badge: "Ö2", description: "Ultraschall-Zertifikat Stufe II", rooms: ["Schwangerenambulanz", "Risikoambulanz"], requirements: "ÖGUM I + 2 Jahre Praxis" },
-  { id: 4, name: "Dysplasie", badge: "DYS", description: "Dysplasie-Diagnostik", rooms: ["Dysplasie-Sprechstunde", "GYN-Ambulanz"], requirements: "Dysplasiediplom, Kolposkopie-Kurs" },
-  { id: 5, name: "Gyn-Onkologie", badge: "GYO", description: "Gynäkologische Onkologie", rooms: ["OP 1 TCH", "Onko-Station"], requirements: "FA GYN, Onkologie-Zusatzausbildung" },
-  { id: 6, name: "Geburtshilfe", badge: "GEB", description: "Geburtshilfliche Versorgung", rooms: ["Kreißzimmer", "Sectio-OP"], requirements: "FA GYN oder in Ausbildung" },
-  { id: 7, name: "Urogynäkologie", badge: "URO", description: "Beckenboden & Inkontinenz", rooms: ["Urodynamik", "OP 2"], requirements: "Urogyn-Zusatzausbildung" },
-  { id: 8, name: "Kindergynäkologie", badge: "KIG", description: "Kinder- und Jugendgynäkologie", rooms: ["Spezial-Ambulanz"], requirements: "Kindergyn-Zusatzausbildung" },
-];
 
 const SERVICE_CAPABILITIES = {
   gyn: ["Primararzt", "1. Oberarzt", "Oberarzt", "Oberärztin"],
@@ -59,13 +49,9 @@ interface ShiftPreferences {
   deploymentRoomIds?: number[];
 }
 
-interface CompetencyData {
-  id: number;
-  name: string;
-  badge: string;
-  description: string;
-  rooms: string[];
-  requirements: string;
+interface CompetencyAssignment {
+  roomName: string;
+  weekdays: string[];
 }
 
 function formatBirthday(value: string | Date | null | undefined): string {
@@ -119,8 +105,19 @@ function parseBirthdayInput(value: string): string | null {
   return iso;
 }
 
+const PERMISSION_FALLBACK = [
+  { key: "users.manage", label: "Benutzer anlegen / verwalten" },
+  { key: "dutyplan.edit", label: "Dienstplan bearbeiten" },
+  { key: "dutyplan.publish", label: "Dienstplan freigeben" },
+  { key: "vacation.lock", label: "Urlaubsplanung bearbeiten (Sperrzeitraum)" },
+  { key: "absence.create", label: "Abwesenheiten eintragen" },
+  { key: "sop.approve", label: "SOPs freigeben" },
+  { key: "project.close", label: "Projekte abschließen" },
+  { key: "training.edit", label: "Ausbildungsplan bearbeiten" }
+];
+
 export default function EmployeeManagement() {
-  const { employee: currentUser, isAdmin } = useAuth();
+  const { employee: currentUser, isAdmin, isTechnicalAdmin } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
@@ -130,17 +127,16 @@ export default function EmployeeManagement() {
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [newEmployeeDialogOpen, setNewEmployeeDialogOpen] = useState(false);
-  const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
-  const [availablePermissions, setAvailablePermissions] = useState<Array<{key: string, label: string, scope: string}>>([]);
+  const [availablePermissions, setAvailablePermissions] = useState<Array<{ key: string; label: string; scope?: string }>>([]);
   const [userPermissions, setUserPermissions] = useState<string[]>([]);
   const [loadingPermissions, setLoadingPermissions] = useState(false);
   const { toast } = useToast();
   
-  const [competencies, setCompetencies] = useState<CompetencyData[]>(DUMMY_COMPETENCY_DATA);
+  const [competencyList, setCompetencyList] = useState<Competency[]>([]);
   const [competencyDialogOpen, setCompetencyDialogOpen] = useState(false);
-  const [editingCompetency, setEditingCompetency] = useState<CompetencyData | null>(null);
+  const [editingCompetency, setEditingCompetency] = useState<Partial<Competency> | null>(null);
   const [competencySearchTerm, setCompetencySearchTerm] = useState("");
+  const [competencyAssignments, setCompetencyAssignments] = useState<Record<number, CompetencyAssignment[]>>({});
   
   const [availableCompetencies, setAvailableCompetencies] = useState<Competency[]>([]);
   const [availableRooms, setAvailableRooms] = useState<Resource[]>([]);
@@ -177,7 +173,7 @@ export default function EmployeeManagement() {
   const [newCompetencyIds, setNewCompetencyIds] = useState<number[]>([]);
   const [newDeploymentRoomIds, setNewDeploymentRoomIds] = useState<number[]>([]);
   
-  const canManageEmployees = isAdmin;
+  const canManageEmployees = isAdmin || isTechnicalAdmin;
   
   useEffect(() => {
     loadData();
@@ -192,8 +188,27 @@ export default function EmployeeManagement() {
         roomApi.getAll({ active: true })
       ]);
       setEmployees(employeeData);
+      setCompetencyList(competencyData);
       setAvailableCompetencies(competencyData.filter((comp) => comp.isActive !== false));
       setAvailableRooms(roomData.filter((room) => room.isActive !== false));
+
+      const roomDetails = await Promise.all(
+        roomData.map((room) => roomApi.getById(room.id))
+      );
+      const assignmentMap: Record<number, CompetencyAssignment[]> = {};
+      roomDetails.forEach((room) => {
+        const weekdayLabels = getActiveWeekdays(room.weekdaySettings);
+        (room.requiredCompetencies || []).forEach((req) => {
+          if (!assignmentMap[req.competencyId]) {
+            assignmentMap[req.competencyId] = [];
+          }
+          assignmentMap[req.competencyId].push({
+            roomName: room.name,
+            weekdays: weekdayLabels
+          });
+        });
+      });
+      setCompetencyAssignments(assignmentMap);
     } catch (error) {
       toast({
         title: "Fehler",
@@ -203,6 +218,22 @@ export default function EmployeeManagement() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const getActiveWeekdays = (
+    weekdaySettings?: Array<{
+      weekday: number;
+      isClosed?: boolean;
+    }>
+  ): string[] => {
+    const labels = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+    if (!weekdaySettings || !weekdaySettings.length) {
+      return labels;
+    }
+    const closed = new Set(
+      weekdaySettings.filter((day) => day.isClosed).map((day) => day.weekday)
+    );
+    return labels.filter((_, index) => !closed.has(index + 1));
   };
 
   const resetNewEmployeeForm = () => {
@@ -247,6 +278,17 @@ export default function EmployeeManagement() {
     loadEmployeeCompetencies(editingEmployee);
   }, [editingEmployee, availableCompetencies]);
 
+  useEffect(() => {
+    if (!editingEmployee) return;
+    setUserPermissions([]);
+    if (isTechnicalAdmin) {
+      loadPermissions(editingEmployee.id);
+    } else {
+      setAvailablePermissions([]);
+      setLoadingPermissions(false);
+    }
+  }, [editingEmployee, isTechnicalAdmin]);
+
   const loadEmployeeCompetencies = async (emp: Employee) => {
     try {
       const empCompetencies = await employeeApi.getCompetencies(emp.id);
@@ -282,6 +324,8 @@ export default function EmployeeManagement() {
     if (!open) {
       setEditingEmployee(null);
       setResetPasswordData({ newPassword: "", confirmPassword: "" });
+      setAvailablePermissions([]);
+      setUserPermissions([]);
     }
   };
 
@@ -545,10 +589,16 @@ export default function EmployeeManagement() {
     label: getRoomLabel(id),
   }));
 
-  const filteredCompetencies = competencies.filter(comp =>
+  const filteredCompetencies = competencyList.filter(comp =>
     comp.name.toLowerCase().includes(competencySearchTerm.toLowerCase()) ||
-    comp.badge.toLowerCase().includes(competencySearchTerm.toLowerCase())
+    (comp.code || "").toLowerCase().includes(competencySearchTerm.toLowerCase())
   );
+
+  const permissionOptions = availablePermissions.length
+    ? PERMISSION_FALLBACK.map(
+        (fallback) => availablePermissions.find((perm) => perm.key === fallback.key) || fallback
+      )
+    : PERMISSION_FALLBACK;
 
   const getCapabilities = (role: string) => {
     const caps = [];
@@ -582,31 +632,69 @@ export default function EmployeeManagement() {
   };
 
   const handleNewCompetency = () => {
-    setEditingCompetency({ id: Date.now(), name: "", badge: "", description: "", rooms: [], requirements: "" });
+    setEditingCompetency({ name: "", code: "", description: "", prerequisites: "" });
     setCompetencyDialogOpen(true);
   };
 
-  const handleEditCompetency = (comp: CompetencyData) => {
+  const handleEditCompetency = (comp: Competency) => {
     setEditingCompetency({ ...comp });
     setCompetencyDialogOpen(true);
   };
 
-  const handleSaveCompetency = () => {
+  const handleSaveCompetency = async () => {
     if (!editingCompetency) return;
-    
-    if (editingCompetency.id && competencies.some(c => c.id === editingCompetency.id)) {
-      setCompetencies(prev => prev.map(c => c.id === editingCompetency.id ? editingCompetency : c));
-    } else {
-      setCompetencies(prev => [...prev, editingCompetency]);
+    const cleanedName = editingCompetency.name?.trim() || "";
+    const cleanedCode = editingCompetency.code?.trim().toUpperCase() || "";
+    if (!cleanedName || !cleanedCode) {
+      toast({
+        title: "Fehler",
+        description: "Name und Kürzel sind erforderlich",
+        variant: "destructive"
+      });
+      return;
     }
-    
-    setCompetencyDialogOpen(false);
-    toast({ title: "Gespeichert", description: "Kompetenz wurde gespeichert" });
+
+    setSaving(true);
+    try {
+      if (editingCompetency.id) {
+        const updated = await competencyApi.update(editingCompetency.id, {
+          name: cleanedName,
+          code: cleanedCode,
+          description: editingCompetency.description || null,
+          prerequisites: editingCompetency.prerequisites || null
+        });
+        setCompetencyList(prev => prev.map(c => c.id === updated.id ? updated : c));
+      } else {
+        const created = await competencyApi.create({
+          name: cleanedName,
+          code: cleanedCode,
+          description: editingCompetency.description || null,
+          prerequisites: editingCompetency.prerequisites || null,
+          isActive: true
+        });
+        setCompetencyList(prev => [...prev, created]);
+      }
+      setCompetencyDialogOpen(false);
+      setEditingCompetency(null);
+      toast({ title: "Gespeichert", description: "Kompetenz wurde gespeichert" });
+    } catch (error) {
+      toast({ title: "Fehler", description: "Kompetenz konnte nicht gespeichert werden", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleDeleteCompetency = (id: number) => {
-    setCompetencies(prev => prev.filter(c => c.id !== id));
-    toast({ title: "Gelöscht", description: "Kompetenz wurde entfernt" });
+  const handleDeleteCompetency = async (id: number) => {
+    setSaving(true);
+    try {
+      await competencyApi.delete(id);
+      setCompetencyList(prev => prev.filter(c => c.id !== id));
+      toast({ title: "Gelöscht", description: "Kompetenz wurde entfernt" });
+    } catch (error) {
+      toast({ title: "Fehler", description: "Kompetenz konnte nicht gelöscht werden", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const loadPermissions = async (userId: number) => {
@@ -641,23 +729,17 @@ export default function EmployeeManagement() {
   };
 
   const handleSavePermissions = async () => {
-    if (!selectedEmployeeId) return;
+    if (!editingEmployee || !isTechnicalAdmin) return;
 
     setSaving(true);
     try {
       const token = localStorage.getItem('cliniq_auth_token');
-      const employee = employees.find(e => e.id === selectedEmployeeId);
-      if (!employee) {
-        throw new Error("Mitarbeiter nicht gefunden");
-      }
-
-      // Use employee's department or current user's department
-      const departmentId = employee.departmentId || currentUser?.departmentId;
+      const departmentId = editingEmployee.departmentId || currentUser?.departmentId;
       if (!departmentId) {
         throw new Error("Keine Abteilung zugeordnet");
       }
 
-      const response = await fetch(`/api/admin/users/${selectedEmployeeId}/permissions`, {
+      const response = await fetch(`/api/admin/users/${editingEmployee.id}/permissions`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -678,7 +760,6 @@ export default function EmployeeManagement() {
         title: "Erfolgreich",
         description: "Berechtigungen wurden gespeichert"
       });
-      setPermissionsDialogOpen(false);
     } catch (error: any) {
       console.error("Error saving permissions:", error);
       toast({
@@ -729,13 +810,14 @@ export default function EmployeeManagement() {
                   <Filter className="w-4 h-4" /> Filter
                 </Button>
                 
-                <Dialog open={newEmployeeDialogOpen} onOpenChange={handleNewEmployeeDialogChange}>
-                  <DialogTrigger asChild>
-                    <Button className="gap-2" data-testid="button-new-employee">
-                      <UserPlus className="w-4 h-4" /> Neuer Mitarbeiter
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+                {canManageEmployees && (
+                  <Dialog open={newEmployeeDialogOpen} onOpenChange={handleNewEmployeeDialogChange}>
+                    <DialogTrigger asChild>
+                      <Button className="gap-2" data-testid="button-new-employee">
+                        <UserPlus className="w-4 h-4" /> Neuer Mitarbeiter
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                       <DialogTitle>Neuen Mitarbeiter anlegen</DialogTitle>
                     </DialogHeader>
@@ -1012,8 +1094,9 @@ export default function EmployeeManagement() {
                         Speichern
                       </Button>
                     </DialogFooter>
-                  </DialogContent>
-                </Dialog>
+                    </DialogContent>
+                  </Dialog>
+                )}
               </div>
             </div>
 
@@ -1086,19 +1169,6 @@ export default function EmployeeManagement() {
                                 <Button 
                                   variant="ghost" 
                                   size="icon"
-                                  onClick={() => {
-                                    setSelectedEmployeeId(emp.id);
-                                    loadPermissions(emp.id);
-                                    setPermissionsDialogOpen(true);
-                                  }}
-                                  data-testid={`button-permissions-employee-${emp.id}`}
-                                  title="Berechtigungen verwalten"
-                                >
-                                  <Key className="w-4 h-4" />
-                                </Button>
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon"
                                   onClick={() => handleEditEmployee(emp)}
                                   data-testid={`button-edit-employee-${emp.id}`}
                                 >
@@ -1128,9 +1198,11 @@ export default function EmployeeManagement() {
                   data-testid="input-search-competencies"
                 />
               </div>
-              <Button className="gap-2" onClick={handleNewCompetency} data-testid="button-new-competency">
-                <Plus className="w-4 h-4" /> Neue Kompetenz
-              </Button>
+              {canManageEmployees && (
+                <Button className="gap-2" onClick={handleNewCompetency} data-testid="button-new-competency">
+                  <Plus className="w-4 h-4" /> Neue Kompetenz
+                </Button>
+              )}
             </div>
 
             <Card className="border-none shadow-sm">
@@ -1147,7 +1219,11 @@ export default function EmployeeManagement() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredCompetencies.map((comp) => (
+                    {filteredCompetencies.map((comp) => {
+                      const assignedRooms = competencyAssignments[comp.id] || [];
+                      const renderAssignment = (assignment: CompetencyAssignment) =>
+                        `${assignment.roomName}${assignment.weekdays.length ? ` (${assignment.weekdays.join(", ")})` : ""}`;
+                      return (
                       <TableRow key={comp.id} data-testid={`row-competency-${comp.id}`}>
                         <TableCell className="font-medium">
                           <div className="flex items-center gap-2">
@@ -1156,50 +1232,54 @@ export default function EmployeeManagement() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="secondary" className="font-mono">{comp.badge}</Badge>
+                          <Badge variant="secondary" className="font-mono">{comp.code || "—"}</Badge>
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate">
-                          {comp.description}
+                          {comp.description || "—"}
                         </TableCell>
                         <TableCell>
                           <div className="flex gap-1 flex-wrap">
-                            {comp.rooms.slice(0, 2).map((room, i) => (
+                            {assignedRooms.slice(0, 2).map((room, i) => (
                               <Badge key={i} variant="outline" className="text-xs">
                                 <Building className="w-3 h-3 mr-1" />
-                                {room}
+                                {renderAssignment(room)}
                               </Badge>
                             ))}
-                            {comp.rooms.length > 2 && (
-                              <Badge variant="outline" className="text-xs">+{comp.rooms.length - 2}</Badge>
+                            {assignedRooms.length > 2 && (
+                              <Badge variant="outline" className="text-xs">+{assignedRooms.length - 2}</Badge>
                             )}
                           </div>
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate">
-                          {comp.requirements}
+                          {comp.prerequisites || "—"}
                         </TableCell>
                         <TableCell className="text-right">
-                          <div className="flex justify-end gap-1">
-                            <Button 
-                              variant="ghost" 
-                              size="icon"
-                              onClick={() => handleEditCompetency(comp)}
-                              data-testid={`button-edit-competency-${comp.id}`}
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </Button>
-                            <Button 
-                              variant="ghost" 
-                              size="icon"
-                              className="text-destructive hover:text-destructive"
-                              onClick={() => handleDeleteCompetency(comp.id)}
-                              data-testid={`button-delete-competency-${comp.id}`}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
+                          {canManageEmployees ? (
+                            <div className="flex justify-end gap-1">
+                              <Button 
+                                variant="ghost" 
+                                size="icon"
+                                onClick={() => handleEditCompetency(comp)}
+                                data-testid={`button-edit-competency-${comp.id}`}
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon"
+                                className="text-destructive hover:text-destructive"
+                                onClick={() => handleDeleteCompetency(comp.id)}
+                                data-testid={`button-delete-competency-${comp.id}`}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
                         </TableCell>
                       </TableRow>
-                    ))}
+                    )})}
                   </TableBody>
                 </Table>
               </CardContent>
@@ -1215,9 +1295,10 @@ export default function EmployeeManagement() {
             
             {editingEmployee && (
               <Tabs defaultValue="profile" className="w-full">
-                <TabsList className="grid w-full grid-cols-3">
+                <TabsList className="grid w-full grid-cols-4">
                   <TabsTrigger value="profile">Profil</TabsTrigger>
                   <TabsTrigger value="roles">Rollen & Kompetenzen</TabsTrigger>
+                  <TabsTrigger value="permissions">Berechtigungen</TabsTrigger>
                   <TabsTrigger value="security">Sicherheit</TabsTrigger>
                 </TabsList>
                 
@@ -1479,6 +1560,49 @@ export default function EmployeeManagement() {
                   </div>
                 </TabsContent>
 
+                <TabsContent value="permissions" className="space-y-4 py-4">
+                  <div className="space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                      Berechtigungen gelten pro Abteilung und steuern Detailrechte in der Verwaltung.
+                    </p>
+                    {loadingPermissions ? (
+                      <div className="flex items-center justify-center py-6 text-muted-foreground">
+                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                        Berechtigungen werden geladen...
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {permissionOptions.map((perm) => (
+                          <div key={perm.key} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`perm-${perm.key}`}
+                              checked={userPermissions.includes(perm.key)}
+                              onCheckedChange={() => togglePermission(perm.key)}
+                              disabled={!isTechnicalAdmin}
+                            />
+                            <Label htmlFor={`perm-${perm.key}`} className="text-sm font-normal cursor-pointer flex-1">
+                              {perm.label}
+                            </Label>
+                          </div>
+                        ))}
+                        {!permissionOptions.length && (
+                          <p className="text-sm text-muted-foreground">Keine Berechtigungen verfügbar</p>
+                        )}
+                      </div>
+                    )}
+                    {isTechnicalAdmin ? (
+                      <Button onClick={handleSavePermissions} disabled={saving || loadingPermissions}>
+                        {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                        Speichern
+                      </Button>
+                    ) : (
+                      <div className="text-xs text-muted-foreground">
+                        Nur System-Admins können Berechtigungen bearbeiten.
+                      </div>
+                    )}
+                  </div>
+                </TabsContent>
+
                 <TabsContent value="security" className="space-y-4 py-4">
                   <div className="space-y-4">
                     <div>
@@ -1540,7 +1664,7 @@ export default function EmployeeManagement() {
                 <div className="space-y-2">
                   <Label>Kompetenzname *</Label>
                   <Input 
-                    value={editingCompetency.name}
+                    value={editingCompetency.name || ""}
                     onChange={(e) => setEditingCompetency({ ...editingCompetency, name: e.target.value })}
                     placeholder="z.B. Senior Mamma Surgeon"
                     data-testid="input-competency-name"
@@ -1550,8 +1674,8 @@ export default function EmployeeManagement() {
                 <div className="space-y-2">
                   <Label>Badge-Kürzel * (einzigartig)</Label>
                   <Input 
-                    value={editingCompetency.badge}
-                    onChange={(e) => setEditingCompetency({ ...editingCompetency, badge: e.target.value.toUpperCase() })}
+                    value={(editingCompetency.code || "").toUpperCase()}
+                    onChange={(e) => setEditingCompetency({ ...editingCompetency, code: e.target.value.toUpperCase() })}
                     placeholder="z.B. SMS"
                     maxLength={4}
                     className="font-mono uppercase"
@@ -1563,7 +1687,7 @@ export default function EmployeeManagement() {
                 <div className="space-y-2">
                   <Label>Beschreibung</Label>
                   <Textarea 
-                    value={editingCompetency.description}
+                    value={editingCompetency.description || ""}
                     onChange={(e) => setEditingCompetency({ ...editingCompetency, description: e.target.value })}
                     placeholder="Kurze Beschreibung der Kompetenz..."
                     rows={2}
@@ -1573,32 +1697,28 @@ export default function EmployeeManagement() {
                 
                 <div className="space-y-2">
                   <Label>Zugeordnete Räume/Bereiche</Label>
-                  <div className="grid grid-cols-2 gap-2 p-3 border border-border rounded-lg bg-muted/10 max-h-32 overflow-y-auto">
-                    {availableRooms.map((room) => (
-                      <div key={room.id} className="flex items-center space-x-2">
-                        <Checkbox 
-                          id={`room-${room.id}`}
-                          checked={editingCompetency.rooms.includes(room.name)}
-                          onCheckedChange={(checked) => {
-                            const newRooms = checked
-                              ? [...editingCompetency.rooms, room.name]
-                              : editingCompetency.rooms.filter(r => r !== room.name);
-                            setEditingCompetency({ ...editingCompetency, rooms: newRooms });
-                          }}
-                        />
-                        <Label htmlFor={`room-${room.id}`} className="text-sm font-normal cursor-pointer">
-                          {room.name}
-                        </Label>
-                      </div>
+                  <div className="flex flex-wrap gap-2">
+                    {(editingCompetency.id ? (competencyAssignments[editingCompetency.id] || []) : []).map((assignment, index) => (
+                      <Badge key={`${assignment.roomName}-${index}`} variant="outline" className="text-xs">
+                        <Building className="w-3 h-3 mr-1" />
+                        {assignment.roomName}
+                        {assignment.weekdays.length ? ` (${assignment.weekdays.join(", ")})` : ""}
+                      </Badge>
                     ))}
+                    {editingCompetency.id && !(competencyAssignments[editingCompetency.id] || []).length && (
+                      <p className="text-sm text-muted-foreground">Keine Räume zugeordnet</p>
+                    )}
+                    {!editingCompetency.id && (
+                      <p className="text-sm text-muted-foreground">Nach dem Speichern sichtbar</p>
+                    )}
                   </div>
                 </div>
                 
                 <div className="space-y-2">
                   <Label>Voraussetzungen</Label>
                   <Textarea 
-                    value={editingCompetency.requirements}
-                    onChange={(e) => setEditingCompetency({ ...editingCompetency, requirements: e.target.value })}
+                    value={editingCompetency.prerequisites || ""}
+                    onChange={(e) => setEditingCompetency({ ...editingCompetency, prerequisites: e.target.value })}
                     placeholder="z.B. 10+ Jahre Erfahrung, Dysplasiediplom..."
                     rows={2}
                     data-testid="input-competency-requirements"
@@ -1611,62 +1731,14 @@ export default function EmployeeManagement() {
               <DialogClose asChild>
                 <Button variant="outline">Abbrechen</Button>
               </DialogClose>
-              <Button onClick={handleSaveCompetency} data-testid="button-save-competency">
+              <Button onClick={handleSaveCompetency} disabled={saving} data-testid="button-save-competency">
+                {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 Speichern
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
 
-        {/* Permissions Dialog */}
-        <Dialog open={permissionsDialogOpen} onOpenChange={setPermissionsDialogOpen}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Berechtigungen verwalten</DialogTitle>
-            </DialogHeader>
-            {loadingPermissions ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-6 h-6 animate-spin text-[#0F5BA7]" />
-              </div>
-            ) : (
-              <div className="space-y-4 py-4">
-                <p className="text-sm text-muted-foreground">
-                  Wählen Sie die Berechtigungen, die dieser Benutzer für die aktuelle Abteilung haben soll.
-                </p>
-                <div className="space-y-3 max-h-96 overflow-y-auto border rounded-lg p-4">
-                  {availablePermissions.map((perm) => (
-                    <div key={perm.key} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={perm.key}
-                        checked={userPermissions.includes(perm.key)}
-                        onCheckedChange={() => togglePermission(perm.key)}
-                      />
-                      <Label htmlFor={perm.key} className="text-sm font-normal cursor-pointer flex-1">
-                        {perm.label}
-                        <span className="text-xs text-muted-foreground ml-2">({perm.scope})</span>
-                      </Label>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button variant="outline">Abbrechen</Button>
-              </DialogClose>
-              <Button onClick={handleSavePermissions} disabled={saving || loadingPermissions}>
-                {saving ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Speichern...
-                  </>
-                ) : (
-                  "Speichern"
-                )}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </div>
     </Layout>
   );

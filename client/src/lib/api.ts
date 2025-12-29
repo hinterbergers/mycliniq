@@ -288,12 +288,117 @@ export const roomApi = {
     const response = await apiFetch(`${API_BASE}/rooms${query ? `?${query}` : ""}`);
     return handleResponse<Resource[]>(response);
   },
+  getById: async (id: number): Promise<Resource & {
+    weekdaySettings?: Array<{
+      id: number;
+      roomId: number;
+      weekday: number;
+      usageLabel?: string | null;
+      timeFrom?: string | null;
+      timeTo?: string | null;
+      isClosed?: boolean;
+      closedReason?: string | null;
+    }>;
+    requiredCompetencies?: Array<{
+      id: number;
+      competencyId: number;
+      relationType: "AND" | "OR";
+      competencyCode?: string | null;
+      competencyName?: string | null;
+    }>;
+  }> => {
+    const response = await apiFetch(`${API_BASE}/rooms/${id}`);
+    return handleResponse(response);
+  },
+  update: async (
+    id: number,
+    data: Partial<Omit<Resource, "id" | "createdAt">> & {
+      requiredRoleCompetencies?: string[];
+      alternativeRoleCompetencies?: string[];
+    }
+  ): Promise<Resource> => {
+    const response = await apiFetch(`${API_BASE}/rooms/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data)
+    });
+    return handleResponse<Resource>(response);
+  },
+  updateWeekdaySettings: async (
+    id: number,
+    settings: Array<{
+      weekday: number;
+      usageLabel?: string | null;
+      timeFrom?: string | null;
+      timeTo?: string | null;
+      isClosed?: boolean;
+      closedReason?: string | null;
+    }>
+  ): Promise<{
+    roomId: number;
+    weekdaySettings: Array<{
+      id: number;
+      roomId: number;
+      weekday: number;
+      usageLabel?: string | null;
+      timeFrom?: string | null;
+      timeTo?: string | null;
+      isClosed?: boolean;
+      closedReason?: string | null;
+    }>;
+    count: number;
+  }> => {
+    const response = await apiFetch(`${API_BASE}/rooms/${id}/weekday-settings`, {
+      method: "PUT",
+      body: JSON.stringify({ settings })
+    });
+    return handleResponse(response);
+  },
+  updateCompetencies: async (
+    id: number,
+    competencies: Array<{ competencyId: number; relationType: "AND" | "OR" }>
+  ): Promise<{
+    roomId: number;
+    requiredCompetencies: Array<{
+      id: number;
+      competencyId: number;
+      relationType: "AND" | "OR";
+      competencyCode?: string | null;
+      competencyName?: string | null;
+    }>;
+    count: number;
+  }> => {
+    const response = await apiFetch(`${API_BASE}/rooms/${id}/competencies`, {
+      method: "PUT",
+      body: JSON.stringify({ competencies })
+    });
+    return handleResponse(response);
+  },
 };
 
 export const competencyApi = {
   getAll: async (): Promise<Competency[]> => {
     const response = await apiFetch(`${API_BASE}/competencies`);
     return handleResponse<Competency[]>(response);
+  },
+  create: async (data: Omit<Competency, "id" | "createdAt" | "updatedAt">): Promise<Competency> => {
+    const response = await apiFetch(`${API_BASE}/competencies`, {
+      method: "POST",
+      body: JSON.stringify(data)
+    });
+    return handleResponse<Competency>(response);
+  },
+  update: async (id: number, data: Partial<Omit<Competency, "id" | "createdAt" | "updatedAt">>): Promise<Competency> => {
+    const response = await apiFetch(`${API_BASE}/competencies/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data)
+    });
+    return handleResponse<Competency>(response);
+  },
+  delete: async (id: number): Promise<void> => {
+    const response = await apiFetch(`${API_BASE}/competencies/${id}`, {
+      method: "DELETE"
+    });
+    return handleResponse<void>(response);
   },
 };
 

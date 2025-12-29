@@ -10,22 +10,32 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertCircle, Building, Pencil, Info } from "lucide-react";
-import { useState } from "react";
+import { AlertCircle, Building, Pencil, Info, Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { competencyApi, roomApi } from "@/lib/api";
+import type { Competency, Resource } from "@shared/schema";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/auth";
 
 const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 
-const COMPETENCIES = [
-  { id: "fa_gyn", label: "FA Gynäkologie" },
-  { id: "ass_gyn", label: "Assistenzarzt Gyn" },
-  { id: "fa_geb", label: "FA Geburtshilfe" },
-  { id: "ass_geb", label: "Assistenzarzt Geb" },
-  { id: "hebamme", label: "Hebamme" },
-  { id: "op_assist", label: "OP-Assistenz" },
-  { id: "ultraschall", label: "Ultraschall-Zertifikat" },
-  { id: "praenatal", label: "Pränataldiagnostik" },
-  { id: "onkologie", label: "Gyn. Onkologie" },
-  { id: "mamma", label: "Mamma-Spezialist" },
+const ROOM_CATEGORIES = [
+  "Geburtshilfe",
+  "Gynäkologie",
+  "OP",
+  "Ambulanz",
+  "Spezialambulanz",
+  "Besprechung",
+  "Station",
+  "Verwaltung",
+  "Sonstiges",
+];
+
+const ROLE_COMPETENCIES = [
+  { id: "facharzt", label: "Facharzt/Fachärztin" },
+  { id: "assistenzarzt", label: "Assistenzarzt/Assistenzärztin" },
+  { id: "op_assistenz", label: "OP-Assistenz" },
+  { id: "sekretaerin", label: "Sekretärin" },
 ];
 
 interface WeeklySchedule {
@@ -36,17 +46,20 @@ interface WeeklySchedule {
   blockReason: string;
 }
 
-interface Room {
+interface RoomState {
   id: number;
   name: string;
-  type: string;
-  status: "open" | "closed";
-  message: string;
+  category: string;
+  isAvailable: boolean;
+  blockReason: string;
   description: string;
   useInWeeklyPlan: boolean;
   weeklySchedule: WeeklySchedule[];
-  requiredCompetencies: string[];
-  alternativeCompetencies: string[];
+  requiredRoleCompetencies: string[];
+  alternativeRoleCompetencies: string[];
+  requiredAdminCompetencyIds: number[];
+  alternativeAdminCompetencyIds: number[];
+  isActive: boolean;
 }
 
 const initialWeeklySchedule = (): WeeklySchedule[] => 
@@ -59,44 +72,189 @@ const initialWeeklySchedule = (): WeeklySchedule[] =>
   }));
 
 export default function ResourceManagement() {
-  const [rooms, setRooms] = useState<Room[]>([
-    { id: 1, name: "Kreißsaal 1", type: "Geburtshilfe", status: "open", message: "", description: "Hauptgebärsaal mit CTG-Überwachung", useInWeeklyPlan: true, weeklySchedule: initialWeeklySchedule(), requiredCompetencies: ["hebamme"], alternativeCompetencies: ["fa_geb", "ass_geb"] },
-    { id: 2, name: "Kreißsaal 2 (Wanne)", type: "Geburtshilfe", status: "open", message: "", description: "Gebärsaal mit Wassergeburtsmöglichkeit", useInWeeklyPlan: true, weeklySchedule: initialWeeklySchedule(), requiredCompetencies: ["hebamme"], alternativeCompetencies: ["fa_geb", "ass_geb"] },
-    { id: 3, name: "Sectio-OP", type: "OP", status: "open", message: "", description: "Operationssaal für Kaiserschnitte", useInWeeklyPlan: true, weeklySchedule: initialWeeklySchedule(), requiredCompetencies: ["fa_geb", "op_assist"], alternativeCompetencies: [] },
-    { id: 4, name: "Gyn-OP 1", type: "OP", status: "closed", message: "Reinigung bis 15.12.", description: "Gynäkologischer Operationssaal", useInWeeklyPlan: true, weeklySchedule: initialWeeklySchedule(), requiredCompetencies: ["fa_gyn", "op_assist"], alternativeCompetencies: [] },
-    { id: 5, name: "Ambulanz Raum 1", type: "Ambulanz", status: "open", message: "", description: "Allgemeine gynäkologische Sprechstunde", useInWeeklyPlan: true, weeklySchedule: initialWeeklySchedule(), requiredCompetencies: [], alternativeCompetencies: ["fa_gyn", "ass_gyn"] },
-    { id: 6, name: "Schwangeren-Amb.", type: "Ambulanz", status: "open", message: "", description: "Schwangerenvorsorge und -betreuung", useInWeeklyPlan: true, weeklySchedule: initialWeeklySchedule(), requiredCompetencies: ["ultraschall"], alternativeCompetencies: ["fa_geb", "ass_geb"] },
-    { id: 7, name: "Pränatal-Diagnostik", type: "Spezialambulanz", status: "open", message: "", description: "Spezialisierte Pränataldiagnostik", useInWeeklyPlan: true, weeklySchedule: initialWeeklySchedule(), requiredCompetencies: ["praenatal", "ultraschall"], alternativeCompetencies: [] },
-    { id: 8, name: "Mamma-Sprechstunde", type: "Spezialambulanz", status: "open", message: "", description: "Brustsprechstunde und Nachsorge", useInWeeklyPlan: true, weeklySchedule: initialWeeklySchedule(), requiredCompetencies: ["mamma"], alternativeCompetencies: ["fa_gyn", "onkologie"] },
-  ]);
-
-  const [editingRoom, setEditingRoom] = useState<Room | null>(null);
+  const { isAdmin, isTechnicalAdmin } = useAuth();
+  const { toast } = useToast();
+  const [rooms, setRooms] = useState<RoomState[]>([]);
+  const [availableCompetencies, setAvailableCompetencies] = useState<Competency[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [editingRoom, setEditingRoom] = useState<RoomState | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  const toggleRoom = (id: number, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setRooms(rooms.map(r => 
-      r.id === id 
-        ? { ...r, status: r.status === 'open' ? 'closed' : 'open', message: r.status === 'open' ? 'Gesperrt durch Sekretariat' : '' } 
-        : r
-    ));
+  const canEdit = isAdmin || isTechnicalAdmin;
+
+  useEffect(() => {
+    loadRooms();
+  }, []);
+
+  const loadRooms = async () => {
+    setLoading(true);
+    try {
+      const [roomList, competencies] = await Promise.all([
+        roomApi.getAll({ active: true }),
+        competencyApi.getAll()
+      ]);
+
+      setAvailableCompetencies(competencies.filter((comp) => comp.isActive !== false));
+
+      const detailedRooms = await Promise.all(
+        roomList.map(async (room) => {
+          const detail = await roomApi.getById(room.id);
+          return mapRoomState(room, detail);
+        })
+      );
+
+      setRooms(detailedRooms);
+    } catch (error) {
+      toast({
+        title: "Fehler",
+        description: "Räume konnten nicht geladen werden",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const openEditDialog = (room: Room) => {
+  const mapRoomState = (
+    room: Resource,
+    detail: Resource & {
+      weekdaySettings?: Array<{
+        weekday: number;
+        usageLabel?: string | null;
+        timeFrom?: string | null;
+        timeTo?: string | null;
+        isClosed?: boolean;
+        closedReason?: string | null;
+      }>;
+      requiredCompetencies?: Array<{
+        competencyId: number;
+        relationType: "AND" | "OR";
+      }>;
+    }
+  ): RoomState => {
+    const schedule = initialWeeklySchedule();
+    if (detail.weekdaySettings?.length) {
+      detail.weekdaySettings.forEach((setting) => {
+        const index = Math.max(0, Math.min(6, setting.weekday - 1));
+        schedule[index] = {
+          usage: setting.usageLabel || "",
+          timeFrom: setting.timeFrom || schedule[index].timeFrom,
+          timeTo: setting.timeTo || schedule[index].timeTo,
+          blocked: Boolean(setting.isClosed),
+          blockReason: setting.closedReason || ""
+        };
+      });
+    }
+
+    const requiredAdminCompetencyIds = (detail.requiredCompetencies || [])
+      .filter((req) => req.relationType === "AND")
+      .map((req) => req.competencyId);
+    const alternativeAdminCompetencyIds = (detail.requiredCompetencies || [])
+      .filter((req) => req.relationType === "OR")
+      .map((req) => req.competencyId);
+
+    return {
+      id: room.id,
+      name: room.name,
+      category: room.category,
+      isAvailable: room.isAvailable,
+      blockReason: room.blockReason || "",
+      description: room.description || "",
+      useInWeeklyPlan: room.useInWeeklyPlan,
+      weeklySchedule: schedule,
+      requiredRoleCompetencies: room.requiredRoleCompetencies || [],
+      alternativeRoleCompetencies: room.alternativeRoleCompetencies || [],
+      requiredAdminCompetencyIds,
+      alternativeAdminCompetencyIds,
+      isActive: room.isActive
+    };
+  };
+
+  const toggleRoom = async (id: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!canEdit) return;
+    const target = rooms.find((room) => room.id === id);
+    if (!target) return;
+
+    const nextAvailable = !target.isAvailable;
+    const nextReason = nextAvailable ? "" : target.blockReason || "Gesperrt durch Sekretariat";
+    const updatedRooms = rooms.map((room) =>
+      room.id === id
+        ? { ...room, isAvailable: nextAvailable, blockReason: nextReason }
+        : room
+    );
+    setRooms(updatedRooms);
+
+    try {
+      await roomApi.update(id, {
+        isAvailable: nextAvailable,
+        blockReason: nextAvailable ? null : nextReason
+      });
+    } catch (error) {
+      toast({
+        title: "Fehler",
+        description: "Status konnte nicht gespeichert werden",
+        variant: "destructive"
+      });
+      setRooms(rooms);
+    }
+  };
+
+  const openEditDialog = (room: RoomState) => {
     setEditingRoom({ ...room, weeklySchedule: room.weeklySchedule.map(s => ({ ...s })) });
     setIsDialogOpen(true);
   };
 
-  const handleSave = () => {
-    if (editingRoom) {
-      setRooms(rooms.map(r => r.id === editingRoom.id ? editingRoom : r));
-      console.log("Gespeichert:", editingRoom);
+  const handleSave = async () => {
+    if (!editingRoom) return;
+    if (!canEdit) {
+      setIsDialogOpen(false);
+      setEditingRoom(null);
+      return;
     }
-    setIsDialogOpen(false);
-    setEditingRoom(null);
+
+    setSaving(true);
+    try {
+      await roomApi.update(editingRoom.id, {
+        name: editingRoom.name,
+        category: editingRoom.category as Resource["category"],
+        description: editingRoom.description || null,
+        useInWeeklyPlan: editingRoom.useInWeeklyPlan,
+        isAvailable: editingRoom.isAvailable,
+        blockReason: editingRoom.blockReason || null,
+        requiredRoleCompetencies: editingRoom.requiredRoleCompetencies,
+        alternativeRoleCompetencies: editingRoom.alternativeRoleCompetencies
+      });
+
+      const weekdaySettings = editingRoom.weeklySchedule.map((entry, index) => ({
+        weekday: index + 1,
+        usageLabel: entry.usage || null,
+        timeFrom: entry.timeFrom || null,
+        timeTo: entry.timeTo || null,
+        isClosed: entry.blocked,
+        closedReason: entry.blockReason || null
+      }));
+      await roomApi.updateWeekdaySettings(editingRoom.id, weekdaySettings);
+
+      const adminCompetencies = [
+        ...editingRoom.requiredAdminCompetencyIds.map((id) => ({ competencyId: id, relationType: "AND" as const })),
+        ...editingRoom.alternativeAdminCompetencyIds.map((id) => ({ competencyId: id, relationType: "OR" as const }))
+      ];
+      await roomApi.updateCompetencies(editingRoom.id, adminCompetencies);
+
+      setRooms(rooms.map(r => r.id === editingRoom.id ? editingRoom : r));
+      toast({ title: "Gespeichert", description: "Raum wurde aktualisiert" });
+    } catch (error) {
+      toast({ title: "Fehler", description: "Speichern fehlgeschlagen", variant: "destructive" });
+    } finally {
+      setSaving(false);
+      setIsDialogOpen(false);
+      setEditingRoom(null);
+    }
   };
 
-  const updateEditingRoom = (updates: Partial<Room>) => {
+  const updateEditingRoom = (updates: Partial<RoomState>) => {
     if (editingRoom) {
       setEditingRoom({ ...editingRoom, ...updates });
     }
@@ -110,7 +268,23 @@ export default function ResourceManagement() {
     }
   };
 
-  const toggleCompetency = (list: "requiredCompetencies" | "alternativeCompetencies", competencyId: string) => {
+  const toggleRoleCompetency = (
+    list: "requiredRoleCompetencies" | "alternativeRoleCompetencies",
+    competencyId: string
+  ) => {
+    if (editingRoom) {
+      const current = editingRoom[list];
+      const updated = current.includes(competencyId)
+        ? current.filter(c => c !== competencyId)
+        : [...current, competencyId];
+      updateEditingRoom({ [list]: updated });
+    }
+  };
+
+  const toggleAdminCompetency = (
+    list: "requiredAdminCompetencyIds" | "alternativeAdminCompetencyIds",
+    competencyId: number
+  ) => {
     if (editingRoom) {
       const current = editingRoom[list];
       const updated = current.includes(competencyId)
@@ -141,18 +315,24 @@ export default function ResourceManagement() {
           </div>
         </div>
 
-        <div className="grid gap-6">
-          {["Geburtshilfe", "OP", "Ambulanz", "Spezialambulanz"].map((category) => (
+        {loading ? (
+          <div className="flex items-center justify-center py-16 text-muted-foreground">
+            <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+            Räume werden geladen...
+          </div>
+        ) : (
+          <div className="grid gap-6">
+            {ROOM_CATEGORIES.filter((category) => rooms.some((room) => room.category === category)).map((category) => (
             <div key={category} className="space-y-3">
               <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
                 <Building className="w-4 h-4 text-muted-foreground" />
                 {category}
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {rooms.filter(r => r.type === category).map(room => (
+                {rooms.filter(r => r.category === category).map(room => (
                   <Card 
                     key={room.id} 
-                    className={`border-none shadow-sm transition-all cursor-pointer hover:shadow-md ${room.status === 'closed' ? 'bg-secondary/50 opacity-80' : 'bg-card'}`}
+                    className={`border-none shadow-sm transition-all cursor-pointer hover:shadow-md ${!room.isAvailable ? 'bg-secondary/50 opacity-80' : 'bg-card'}`}
                     onClick={() => openEditDialog(room)}
                     data-testid={`card-room-${room.id}`}
                   >
@@ -162,18 +342,18 @@ export default function ResourceManagement() {
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-medium">{room.name}</span>
                             <Badge 
-                              variant={room.status === 'open' ? 'default' : 'secondary'}
-                              className={`text-[10px] h-5 ${room.status === 'open' ? 'bg-green-100 text-green-800 hover:bg-green-100' : ''}`}
+                              variant={room.isAvailable ? 'default' : 'secondary'}
+                              className={`text-[10px] h-5 ${room.isAvailable ? 'bg-green-100 text-green-800 hover:bg-green-100' : ''}`}
                             >
-                              {room.status === 'open' ? 'Aktiv' : 'Inaktiv'}
+                              {room.isAvailable ? 'Aktiv' : 'Inaktiv'}
                             </Badge>
-                            {room.status === 'closed' && (
+                            {!room.isAvailable && (
                               <Badge variant="destructive" className="text-[10px] h-5">Gesperrt</Badge>
                             )}
                           </div>
                           <p className="text-xs text-muted-foreground">
-                            {room.status === 'closed' 
-                              ? `Gesperrt: ${room.message || 'Kein Grund angegeben'}` 
+                            {!room.isAvailable
+                              ? `Gesperrt: ${room.blockReason || 'Kein Grund angegeben'}` 
                               : 'Verfügbar'}
                           </p>
                         </div>
@@ -193,13 +373,14 @@ export default function ResourceManagement() {
                           <div className="flex flex-col items-center gap-1">
                             <Switch 
                               id={`room-${room.id}`}
-                              checked={room.status === 'open'}
+                              checked={room.isAvailable}
+                              disabled={!canEdit}
                               onCheckedChange={() => {}}
                               onClick={(e) => toggleRoom(room.id, e)}
                               data-testid={`switch-room-${room.id}`}
                             />
                             <Label htmlFor={`room-${room.id}`} className="text-[10px] text-muted-foreground">
-                              {room.status === 'open' ? 'Aktiv' : 'Inaktiv'}
+                              {room.isAvailable ? 'Aktiv' : 'Inaktiv'}
                             </Label>
                           </div>
                         </div>
@@ -210,7 +391,8 @@ export default function ResourceManagement() {
               </div>
             </div>
           ))}
-        </div>
+          </div>
+        )}
 
         <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 flex gap-3">
           <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
@@ -241,6 +423,7 @@ export default function ResourceManagement() {
                     id="room-name"
                     value={editingRoom.name}
                     onChange={(e) => updateEditingRoom({ name: e.target.value })}
+                    disabled={!canEdit}
                     data-testid="input-room-name"
                   />
                 </div>
@@ -248,17 +431,19 @@ export default function ResourceManagement() {
                 <div className="space-y-2">
                   <Label htmlFor="room-category">Kategorie</Label>
                   <Select 
-                    value={editingRoom.type} 
-                    onValueChange={(value) => updateEditingRoom({ type: value })}
+                    value={editingRoom.category} 
+                    onValueChange={(value) => updateEditingRoom({ category: value })}
+                    disabled={!canEdit}
                   >
                     <SelectTrigger id="room-category" data-testid="select-room-category">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Geburtshilfe">Geburtshilfe</SelectItem>
-                      <SelectItem value="OP">OP</SelectItem>
-                      <SelectItem value="Ambulanz">Ambulanz</SelectItem>
-                      <SelectItem value="Spezialambulanz">Spezialambulanz</SelectItem>
+                      {ROOM_CATEGORIES.map((category) => (
+                        <SelectItem key={category} value={category}>
+                          {category}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -271,6 +456,7 @@ export default function ResourceManagement() {
                     onChange={(e) => updateEditingRoom({ description: e.target.value })}
                     placeholder="Kurze Beschreibung des Raums..."
                     rows={3}
+                    disabled={!canEdit}
                     data-testid="input-room-description"
                   />
                 </div>
@@ -280,6 +466,7 @@ export default function ResourceManagement() {
                     id="use-in-weekly"
                     checked={editingRoom.useInWeeklyPlan}
                     onCheckedChange={(checked) => updateEditingRoom({ useInWeeklyPlan: checked === true })}
+                    disabled={!canEdit}
                     data-testid="checkbox-use-weekly"
                   />
                   <Label htmlFor="use-in-weekly" className="cursor-pointer">
@@ -306,7 +493,7 @@ export default function ResourceManagement() {
                                 onChange={(e) => updateWeeklySchedule(index, { usage: e.target.value })}
                                 placeholder="Nutzung (z.B. Chefsprechstunde)"
                                 className="h-8 text-sm md:col-span-2"
-                                disabled={editingRoom.weeklySchedule[index].blocked}
+                                disabled={!canEdit || editingRoom.weeklySchedule[index].blocked}
                                 data-testid={`input-usage-${day}`}
                               />
                               <div className="flex items-center gap-1">
@@ -315,7 +502,7 @@ export default function ResourceManagement() {
                                   value={editingRoom.weeklySchedule[index].timeFrom}
                                   onChange={(e) => updateWeeklySchedule(index, { timeFrom: e.target.value })}
                                   className="h-8 text-sm"
-                                  disabled={editingRoom.weeklySchedule[index].blocked}
+                                  disabled={!canEdit || editingRoom.weeklySchedule[index].blocked}
                                   data-testid={`input-time-from-${day}`}
                                 />
                                 <span className="text-muted-foreground">–</span>
@@ -324,7 +511,7 @@ export default function ResourceManagement() {
                                   value={editingRoom.weeklySchedule[index].timeTo}
                                   onChange={(e) => updateWeeklySchedule(index, { timeTo: e.target.value })}
                                   className="h-8 text-sm"
-                                  disabled={editingRoom.weeklySchedule[index].blocked}
+                                  disabled={!canEdit || editingRoom.weeklySchedule[index].blocked}
                                   data-testid={`input-time-to-${day}`}
                                 />
                               </div>
@@ -332,6 +519,7 @@ export default function ResourceManagement() {
                                 <Checkbox
                                   checked={editingRoom.weeklySchedule[index].blocked}
                                   onCheckedChange={(checked) => updateWeeklySchedule(index, { blocked: checked === true, blockReason: checked ? editingRoom.weeklySchedule[index].blockReason : '' })}
+                                  disabled={!canEdit}
                                   data-testid={`checkbox-blocked-${day}`}
                                 />
                                 <Label className="text-sm text-muted-foreground">Gesperrt</Label>
@@ -345,6 +533,7 @@ export default function ResourceManagement() {
                                 onChange={(e) => updateWeeklySchedule(index, { blockReason: e.target.value })}
                                 placeholder="Grund für Sperre an diesem Tag..."
                                 className="h-8 text-sm"
+                                disabled={!canEdit}
                                 data-testid={`input-block-reason-${day}`}
                               />
                             </div>
@@ -357,9 +546,10 @@ export default function ResourceManagement() {
                   <div className="space-y-2 pt-2">
                     <Label>Globaler Sperrgrund (Raum komplett gesperrt)</Label>
                     <Input
-                      value={editingRoom.message}
-                      onChange={(e) => updateEditingRoom({ message: e.target.value })}
+                      value={editingRoom.blockReason}
+                      onChange={(e) => updateEditingRoom({ blockReason: e.target.value })}
                       placeholder="z.B. Renovierung bis 15.12., Wartung..."
+                      disabled={!canEdit}
                       data-testid="input-block-reason"
                     />
                     <p className="text-xs text-muted-foreground">
@@ -373,18 +563,19 @@ export default function ResourceManagement() {
                 <div className="space-y-6">
                   <div className="space-y-3">
                     <div>
-                      <Label className="text-base font-medium">Benötigte Kompetenzen (AND)</Label>
+                      <Label className="text-base font-medium">Basis-Kompetenzen (AND)</Label>
                       <p className="text-sm text-muted-foreground mt-1">
                         Alle ausgewählten Kompetenzen müssen erfüllt sein.
                       </p>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
-                      {COMPETENCIES.map((comp) => (
+                      {ROLE_COMPETENCIES.map((comp) => (
                         <div key={comp.id} className="flex items-center space-x-2">
                           <Checkbox
                             id={`req-${comp.id}`}
-                            checked={editingRoom.requiredCompetencies.includes(comp.id)}
-                            onCheckedChange={() => toggleCompetency("requiredCompetencies", comp.id)}
+                            checked={editingRoom.requiredRoleCompetencies.includes(comp.id)}
+                            onCheckedChange={() => toggleRoleCompetency("requiredRoleCompetencies", comp.id)}
+                            disabled={!canEdit}
                             data-testid={`checkbox-required-${comp.id}`}
                           />
                           <Label htmlFor={`req-${comp.id}`} className="text-sm cursor-pointer">
@@ -397,22 +588,71 @@ export default function ResourceManagement() {
 
                   <div className="space-y-3">
                     <div>
-                      <Label className="text-base font-medium">Alternativ-Kompetenzen (ODER)</Label>
+                      <Label className="text-base font-medium">Basis-Kompetenzen (ODER)</Label>
                       <p className="text-sm text-muted-foreground mt-1">
                         Mindestens eine der ausgewählten Kompetenzen muss erfüllt sein.
                       </p>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
-                      {COMPETENCIES.map((comp) => (
+                      {ROLE_COMPETENCIES.map((comp) => (
                         <div key={comp.id} className="flex items-center space-x-2">
                           <Checkbox
                             id={`alt-${comp.id}`}
-                            checked={editingRoom.alternativeCompetencies.includes(comp.id)}
-                            onCheckedChange={() => toggleCompetency("alternativeCompetencies", comp.id)}
+                            checked={editingRoom.alternativeRoleCompetencies.includes(comp.id)}
+                            onCheckedChange={() => toggleRoleCompetency("alternativeRoleCompetencies", comp.id)}
+                            disabled={!canEdit}
                             data-testid={`checkbox-alternative-${comp.id}`}
                           />
                           <Label htmlFor={`alt-${comp.id}`} className="text-sm cursor-pointer">
                             {comp.label}
+                          </Label>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <Label className="text-base font-medium">Kompetenzen aus Verwaltung (AND)</Label>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Auswahl aus Verwaltung &gt; Mitarbeiter & Kompetenzen &gt; Kompetenzen.
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {availableCompetencies.map((comp) => (
+                        <div key={comp.id} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`admin-req-${comp.id}`}
+                            checked={editingRoom.requiredAdminCompetencyIds.includes(comp.id)}
+                            onCheckedChange={() => toggleAdminCompetency("requiredAdminCompetencyIds", comp.id)}
+                            disabled={!canEdit}
+                          />
+                          <Label htmlFor={`admin-req-${comp.id}`} className="text-sm cursor-pointer">
+                            {comp.code ? `${comp.code} - ${comp.name}` : comp.name}
+                          </Label>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <Label className="text-base font-medium">Kompetenzen aus Verwaltung (ODER)</Label>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Mindestens eine Kompetenz aus dieser Liste ist ausreichend.
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {availableCompetencies.map((comp) => (
+                        <div key={comp.id} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`admin-alt-${comp.id}`}
+                            checked={editingRoom.alternativeAdminCompetencyIds.includes(comp.id)}
+                            onCheckedChange={() => toggleAdminCompetency("alternativeAdminCompetencyIds", comp.id)}
+                            disabled={!canEdit}
+                          />
+                          <Label htmlFor={`admin-alt-${comp.id}`} className="text-sm cursor-pointer">
+                            {comp.code ? `${comp.code} - ${comp.name}` : comp.name}
                           </Label>
                         </div>
                       ))}
@@ -434,7 +674,8 @@ export default function ResourceManagement() {
             <Button variant="outline" onClick={() => setIsDialogOpen(false)} data-testid="button-cancel">
               Abbrechen
             </Button>
-            <Button onClick={handleSave} data-testid="button-save">
+            <Button onClick={handleSave} disabled={!canEdit || saving} data-testid="button-save">
+              {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Speichern
             </Button>
           </DialogFooter>

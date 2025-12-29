@@ -22,9 +22,23 @@ import {
  */
 const updateRoomSchema = z.object({
   name: z.string().min(1).optional(),
-  category: z.enum(['Geburtshilfe', 'OP', 'Ambulanz', 'Station', 'Verwaltung', 'Sonstiges']).optional(),
+  category: z.enum([
+    'Geburtshilfe',
+    'Gynäkologie',
+    'OP',
+    'Ambulanz',
+    'Spezialambulanz',
+    'Besprechung',
+    'Station',
+    'Verwaltung',
+    'Sonstiges'
+  ]).optional(),
   description: z.string().nullable().optional(),
-  useInWeeklyPlan: z.boolean().optional()
+  useInWeeklyPlan: z.boolean().optional(),
+  isAvailable: z.boolean().optional(),
+  blockReason: z.string().nullable().optional(),
+  requiredRoleCompetencies: z.array(z.string()).optional(),
+  alternativeRoleCompetencies: z.array(z.string()).optional()
 });
 
 /**
@@ -175,13 +189,26 @@ export function registerRoomRoutes(router: Router) {
       }
       
       // Update only allowed fields
-      const { name, category, description, useInWeeklyPlan } = req.body;
+      const { 
+        name, 
+        category, 
+        description, 
+        useInWeeklyPlan, 
+        isAvailable, 
+        blockReason, 
+        requiredRoleCompetencies, 
+        alternativeRoleCompetencies 
+      } = req.body;
       const updateData: Record<string, any> = {};
       
       if (name !== undefined) updateData.name = name;
       if (category !== undefined) updateData.category = category;
       if (description !== undefined) updateData.description = description;
       if (useInWeeklyPlan !== undefined) updateData.useInWeeklyPlan = useInWeeklyPlan;
+      if (isAvailable !== undefined) updateData.isAvailable = isAvailable;
+      if (blockReason !== undefined) updateData.blockReason = blockReason;
+      if (requiredRoleCompetencies !== undefined) updateData.requiredRoleCompetencies = requiredRoleCompetencies;
+      if (alternativeRoleCompetencies !== undefined) updateData.alternativeRoleCompetencies = alternativeRoleCompetencies;
       
       const [room] = await db
         .update(rooms)

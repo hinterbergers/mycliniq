@@ -19,6 +19,7 @@ import {
   Lock, 
   Shield, 
   Save,
+  Loader2,
   AlertCircle,
   GraduationCap,
   Briefcase,
@@ -28,6 +29,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { employeeApi, competencyApi, roomApi } from "@/lib/api";
+import { apiRequest } from "@/lib/queryClient";
 import type { Employee, Competency, Resource } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useParams, useLocation } from "wouter";
@@ -87,7 +89,7 @@ function parseBirthdayInput(value: string): string | null {
 export default function Settings() {
   const params = useParams();
   const [, setLocation] = useLocation();
-  const { employee: currentUser, user, isAdmin } = useAuth();
+  const { employee: currentUser, user, isAdmin, isTechnicalAdmin, capabilities } = useAuth();
 
   const ROLE_OPTIONS: Employee["role"][] = [
     "Primararzt",
@@ -103,6 +105,17 @@ export default function Settings() {
     "Sekretariat",
   ];
   const APP_ROLE_OPTIONS: Employee["appRole"][] = ["Admin", "Editor", "User"];
+
+  const PERMISSION_FALLBACK = [
+    { key: "users.manage", label: "Benutzer anlegen / verwalten" },
+    { key: "dutyplan.edit", label: "Dienstplan bearbeiten" },
+    { key: "dutyplan.publish", label: "Dienstplan freigeben" },
+    { key: "vacation.lock", label: "Urlaubsplanung bearbeiten (Sperrzeitraum)" },
+    { key: "absence.create", label: "Abwesenheiten eintragen" },
+    { key: "sop.approve", label: "SOPs freigeben" },
+    { key: "project.close", label: "Projekte abschließen" },
+    { key: "training.edit", label: "Ausbildungsplan bearbeiten" }
+  ];
   
   const viewingUserId = params.userId
     ? parseInt(params.userId)
@@ -153,12 +166,25 @@ export default function Settings() {
   });
 
   const [newBadge, setNewBadge] = useState('');
+  const [availablePermissions, setAvailablePermissions] = useState<Array<{ key: string; label: string; scope?: string }>>([]);
+  const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
+  const [loadingPermissions, setLoadingPermissions] = useState(false);
+  const [savingPermissions, setSavingPermissions] = useState(false);
 
   const { toast } = useToast();
 
   useEffect(() => {
     loadData();
   }, [viewingUserId]);
+
+  useEffect(() => {
+    if (isTechnicalAdmin) {
+      loadPermissions();
+    } else {
+      setAvailablePermissions(PERMISSION_FALLBACK);
+      setSelectedPermissions(capabilities || []);
+    }
+  }, [viewingUserId, isTechnicalAdmin, capabilities]);
 
   const selectedCompetencyLabels = selectedCompetencyIds.map((id) => {
     const match = availableCompetencies.find((comp) => comp.id === id);
@@ -184,6 +210,11 @@ export default function Settings() {
       (room.category || "").toLowerCase().includes(query)
     );
   });
+  const permissionOptions = availablePermissions.length
+    ? PERMISSION_FALLBACK.map(
+        (fallback) => availablePermissions.find((perm) => perm.key === fallback.key) || fallback
+      )
+    : PERMISSION_FALLBACK;
 
   const applyEmployeeState = (emp: Employee) => {
     setEmployee(emp);
@@ -258,6 +289,70 @@ export default function Settings() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadPermissions = async () => {
+    setLoadingPermissions(true);
+    try {
+      const response = await apiRequest("GET", `/api/admin/users/${viewingUserId}/permissions`);
+      const result = await response.json();
+      if (result.success && result.data) {
+        setAvailablePermissions(result.data.availablePermissions || PERMISSION_FALLBACK);
+        setSelectedPermissions(result.data.permissions || []);
+      } else {
+        setAvailablePermissions(PERMISSION_FALLBACK);
+        setSelectedPermissions([]);
+      }
+    } catch (error) {
+      setAvailablePermissions(PERMISSION_FALLBACK);
+      setSelectedPermissions([]);
+      toast({
+        title: "Fehler",
+        description: "Berechtigungen konnten nicht geladen werden",
+        variant: "destructive"
+      });
+    } finally {
+      setLoadingPermissions(false);
+    }
+  };
+
+  const handleSavePermissions = async () => {
+    if (!isTechnicalAdmin) return;
+    if (!employee?.departmentId && !currentUser?.departmentId) {
+      toast({
+        title: "Fehler",
+        description: "Keine Abteilung zugeordnet",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setSavingPermissions(true);
+    try {
+      const departmentId = employee?.departmentId || currentUser?.departmentId;
+      await apiRequest("PUT", `/api/admin/users/${viewingUserId}/permissions`, {
+        departmentId,
+        permissionKeys: selectedPermissions
+      });
+      toast({
+        title: "Gespeichert",
+        description: "Berechtigungen wurden aktualisiert"
+      });
+    } catch (error: any) {
+      toast({
+        title: "Fehler",
+        description: error.message || "Berechtigungen konnten nicht gespeichert werden",
+        variant: "destructive"
+      });
+    } finally {
+      setSavingPermissions(false);
+    }
+  };
+
+  const togglePermission = (key: string) => {
+    setSelectedPermissions((prev) =>
+      prev.includes(key) ? prev.filter((perm) => perm !== key) : [...prev, key]
+    );
   };
 
   const handleSave = async () => {
@@ -450,6 +545,7 @@ export default function Settings() {
             <TabsTrigger value="profile">Profil</TabsTrigger>
             <TabsTrigger value="security">Sicherheit</TabsTrigger>
             <TabsTrigger value="roles">Rollen & Kompetenzen</TabsTrigger>
+            <TabsTrigger value="permissions">Berechtigungen</TabsTrigger>
           </TabsList>
 
           <TabsContent value="profile" className="space-y-4">
@@ -843,6 +939,51 @@ export default function Settings() {
                     Speichern
                   </Button>
                 </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="permissions" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Berechtigungen</CardTitle>
+                <CardDescription>
+                  {isTechnicalAdmin
+                    ? "Berechtigungen für diesen Benutzer verwalten"
+                    : "Ihre Berechtigungen (nur lesbar)"}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {loadingPermissions ? (
+                  <div className="flex items-center justify-center py-8 text-muted-foreground">
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    Berechtigungen werden geladen...
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {permissionOptions.map((perm) => (
+                      <div key={perm.key} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`perm-${perm.key}`}
+                          checked={selectedPermissions.includes(perm.key)}
+                          onCheckedChange={() => togglePermission(perm.key)}
+                          disabled={!isTechnicalAdmin}
+                        />
+                        <Label htmlFor={`perm-${perm.key}`} className="text-sm font-normal cursor-pointer flex-1">
+                          {perm.label}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {isTechnicalAdmin && (
+                  <div className="pt-2">
+                    <Button onClick={handleSavePermissions} disabled={savingPermissions}>
+                      {savingPermissions && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                      Speichern
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
