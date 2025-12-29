@@ -282,7 +282,7 @@ export default function ResourceManagement() {
         isClosed: entry.blocked,
         closedReason: entry.blockReason || null
       }));
-      await roomApi.updateWeekdaySettings(editingRoom.id, weekdaySettings);
+      await roomApi.updateWeekdaySettings(roomId, weekdaySettings);
 
       const adminCompetencies = [
         ...editingRoom.requiredAdminCompetencyIds.map((id) => ({ competencyId: id, relationType: "AND" as const })),
