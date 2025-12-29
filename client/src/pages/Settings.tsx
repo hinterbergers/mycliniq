@@ -129,6 +129,7 @@ export default function Settings() {
   const canEditBasicInfo = isViewingOwnProfile || isAdmin;
   const canEditPrivateInfo = isAdmin;
   const canEditRoleAndCompetencies = isAdmin;
+  const canChangePassword = isViewingOwnProfile;
   
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
@@ -432,6 +433,24 @@ export default function Settings() {
   };
 
   const handlePasswordChange = async () => {
+    if (!canChangePassword) {
+      toast({
+        title: "Nicht erlaubt",
+        description: "Passwort kann nur vom Benutzer selbst geändert werden.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!passwordData.currentPassword.trim()) {
+      toast({
+        title: "Fehler",
+        description: "Aktuelles Passwort ist erforderlich",
+        variant: "destructive"
+      });
+      return;
+    }
+
     if (passwordData.newPassword !== passwordData.confirmPassword) {
       toast({
         title: "Fehler",
@@ -440,13 +459,35 @@ export default function Settings() {
       });
       return;
     }
+
+    if (!passwordData.newPassword || passwordData.newPassword.length < 6) {
+      toast({
+        title: "Fehler",
+        description: "Passwort muss mindestens 6 Zeichen haben",
+        variant: "destructive"
+      });
+      return;
+    }
     
-    toast({
-      title: "Passwort geändert",
-      description: "Ihr Passwort wurde erfolgreich aktualisiert"
-    });
-    setIsPasswordDialogOpen(false);
-    setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    try {
+      await apiRequest("POST", "/api/auth/set-password", {
+        currentPassword: passwordData.currentPassword,
+        newPassword: passwordData.newPassword
+      });
+
+      toast({
+        title: "Passwort geändert",
+        description: "Ihr Passwort wurde erfolgreich aktualisiert"
+      });
+      setIsPasswordDialogOpen(false);
+      setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    } catch (error: any) {
+      toast({
+        title: "Fehler",
+        description: error.message || "Passwort konnte nicht geändert werden",
+        variant: "destructive"
+      });
+    }
   };
 
   const handleBadgeChange = () => {
@@ -709,6 +750,12 @@ export default function Settings() {
                 <CardDescription>Passwort ändern</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                {!canChangePassword && (
+                  <div className="text-sm text-muted-foreground">
+                    Passwortänderungen sind nur für den eigenen Account möglich. Admins nutzen die Benutzerverwaltung
+                    zum Zurücksetzen.
+                  </div>
+                )}
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Aktuelles Passwort</Label>
@@ -716,7 +763,7 @@ export default function Settings() {
                       type="password"
                       value={passwordData.currentPassword}
                       onChange={(e) => setPasswordData(prev => ({ ...prev, currentPassword: e.target.value }))}
-                      disabled
+                      disabled={!canChangePassword}
                     />
                   </div>
                   <div className="space-y-2">
@@ -725,6 +772,7 @@ export default function Settings() {
                       type="password"
                       value={passwordData.newPassword}
                       onChange={(e) => setPasswordData(prev => ({ ...prev, newPassword: e.target.value }))}
+                      disabled={!canChangePassword}
                     />
                   </div>
                   <div className="space-y-2">
@@ -733,11 +781,12 @@ export default function Settings() {
                       type="password"
                       value={passwordData.confirmPassword}
                       onChange={(e) => setPasswordData(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                      disabled={!canChangePassword}
                     />
                   </div>
                 </div>
 
-                <Button onClick={handlePasswordChange}>
+                <Button onClick={handlePasswordChange} disabled={!canChangePassword}>
                   <Lock className="w-4 h-4 mr-2" />
                   Passwort ändern
                 </Button>
