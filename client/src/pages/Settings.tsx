@@ -265,13 +265,13 @@ export default function Settings() {
       const [employees, competencies, rooms, diplomas] = await Promise.all([
         employeeApi.getAll(),
         competencyApi.getAll(),
-        roomApi.getAll({ active: true }),
+        roomApi.getAll(),
         diplomaApi.getAll()
       ]);
       setAllEmployees(employees);
       setAvailableCompetencies(competencies.filter((comp) => comp.isActive !== false));
       setAvailableDiplomas(diplomas.filter((diploma) => diploma.isActive !== false));
-      setAvailableRooms(rooms.filter((room) => room.isActive !== false));
+      setAvailableRooms(rooms);
       
       const emp = employees.find(e => e.id === viewingUserId);
       if (emp) {

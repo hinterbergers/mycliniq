@@ -198,7 +198,7 @@ export default function EmployeeManagement() {
       const [employeeData, competencyData, roomData, diplomaData] = await Promise.all([
         employeeApi.getAll(),
         competencyApi.getAll(),
-        roomApi.getAll({ active: true }),
+        roomApi.getAll(),
         diplomaApi.getAll()
       ]);
       setEmployees(employeeData);
@@ -206,7 +206,7 @@ export default function EmployeeManagement() {
       setDiplomaList(diplomaData);
       setAvailableCompetencies(competencyData.filter((comp) => comp.isActive !== false));
       setAvailableDiplomas(diplomaData.filter((diploma) => diploma.isActive !== false));
-      setAvailableRooms(roomData.filter((room) => room.isActive !== false));
+      setAvailableRooms(roomData);
 
       const roomDetails = await Promise.all(
         roomData.map((room) => roomApi.getById(room.id))
