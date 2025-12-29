@@ -9,10 +9,10 @@ import { Badge } from "@/components/ui/badge";
 import { toolsApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
-import { Baby, TestTube2, Sparkles } from "lucide-react";
+import { Baby, TestTube2, Sparkles, Ruler } from "lucide-react";
 import { addDays, subDays, differenceInDays, format, startOfDay } from "date-fns";
 
-type ToolKey = "pregnancy_weeks" | "pul_calculator";
+type ToolKey = "pregnancy_weeks" | "pul_calculator" | "body_surface_area";
 
 const TOOL_CATALOG: Array<{
   key: ToolKey;
@@ -37,12 +37,21 @@ const TOOL_CATALOG: Array<{
     icon: TestTube2,
     accent: "text-amber-600",
     bg: "bg-amber-50"
+  },
+  {
+    key: "body_surface_area",
+    title: "Körperoberflächen-Rechner",
+    description: "Körperoberfläche (Mosteller) aus Größe und Gewicht.",
+    icon: Ruler,
+    accent: "text-sky-600",
+    bg: "bg-sky-50"
   }
 ];
 
 const DEFAULT_VISIBILITY: Record<ToolKey, boolean> = {
   pregnancy_weeks: true,
-  pul_calculator: true
+  pul_calculator: true,
+  body_surface_area: true
 };
 
 function parseDateValue(value: string): Date | null {
@@ -236,6 +245,66 @@ function PulCalculator() {
   );
 }
 
+function BodySurfaceAreaCalculator() {
+  const [heightCm, setHeightCm] = useState("");
+  const [weightKg, setWeightKg] = useState("");
+
+  const heightValue = Number(heightCm);
+  const weightValue = Number(weightKg);
+  const hasValues = heightValue > 0 && weightValue > 0;
+  const bsa = hasValues ? Math.sqrt((heightValue * weightValue) / 3600) : null;
+
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="bsa-height">Größe (cm)</Label>
+          <Input
+            id="bsa-height"
+            type="number"
+            inputMode="decimal"
+            step="0.1"
+            placeholder="z.B. 172"
+            value={heightCm}
+            onChange={(event) => setHeightCm(event.target.value)}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="bsa-weight">Gewicht (kg)</Label>
+          <Input
+            id="bsa-weight"
+            type="number"
+            inputMode="decimal"
+            step="0.1"
+            placeholder="z.B. 68"
+            value={weightKg}
+            onChange={(event) => setWeightKg(event.target.value)}
+          />
+        </div>
+      </div>
+
+      <Card className="border-dashed">
+        <CardContent className="p-6 space-y-4">
+          {!hasValues ? (
+            <p className="text-sm text-muted-foreground">Bitte Größe und Gewicht eingeben, um die Körperoberfläche zu berechnen.</p>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <p className="text-xs uppercase text-muted-foreground">Körperoberfläche</p>
+                <p className="text-2xl font-semibold">{bsa?.toFixed(2)} m²</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase text-muted-foreground">Formel</p>
+                <p className="text-sm text-muted-foreground">Mosteller: √((Größe cm × Gewicht kg) / 3600)</p>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export default function Tools() {
   const { isAdmin } = useAuth();
   const { toast } = useToast();
@@ -308,7 +377,10 @@ export default function Tools() {
     if (selectedTool === "pregnancy_weeks") {
       return <PregnancyWeeksCalculator />;
     }
-    return <PulCalculator />;
+    if (selectedTool === "pul_calculator") {
+      return <PulCalculator />;
+    }
+    return <BodySurfaceAreaCalculator />;
   };
 
   return (

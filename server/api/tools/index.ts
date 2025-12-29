@@ -6,7 +6,7 @@ import { validateBody } from "../../lib/validate";
 import { toolVisibility } from "@shared/schema";
 import { requireAdmin, requireAuth } from "../middleware/auth";
 
-const TOOL_KEYS = ["pregnancy_weeks", "pul_calculator"] as const;
+const TOOL_KEYS = ["pregnancy_weeks", "pul_calculator", "body_surface_area"] as const;
 const toolKeySchema = z.enum(TOOL_KEYS);
 
 const updateToolVisibilitySchema = z.object({
