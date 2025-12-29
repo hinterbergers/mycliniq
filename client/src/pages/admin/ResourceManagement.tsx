@@ -80,6 +80,7 @@ export default function ResourceManagement() {
   const [saving, setSaving] = useState(false);
   const [editingRoom, setEditingRoom] = useState<RoomState | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isCreatingRoom, setIsCreatingRoom] = useState(false);
 
   const canEdit = isAdmin || isTechnicalAdmin;
 
@@ -171,6 +172,22 @@ export default function ResourceManagement() {
     };
   };
 
+  const buildEmptyRoom = (): RoomState => ({
+    id: 0,
+    name: "",
+    category: ROOM_CATEGORIES[0] || "Sonstiges",
+    isAvailable: true,
+    blockReason: "",
+    description: "",
+    useInWeeklyPlan: true,
+    weeklySchedule: initialWeeklySchedule(),
+    requiredRoleCompetencies: [],
+    alternativeRoleCompetencies: [],
+    requiredAdminCompetencyIds: [],
+    alternativeAdminCompetencyIds: [],
+    isActive: true
+  });
+
   const toggleRoom = async (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!canEdit) return;
@@ -202,22 +219,46 @@ export default function ResourceManagement() {
   };
 
   const openEditDialog = (room: RoomState) => {
+    setIsCreatingRoom(false);
     setEditingRoom({ ...room, weeklySchedule: room.weeklySchedule.map(s => ({ ...s })) });
     setIsDialogOpen(true);
+  };
+
+  const openCreateDialog = () => {
+    if (!canEdit) return;
+    setIsCreatingRoom(true);
+    setEditingRoom(buildEmptyRoom());
+    setIsDialogOpen(true);
+  };
+
+  const handleDialogChange = (open: boolean) => {
+    setIsDialogOpen(open);
+    if (!open) {
+      setEditingRoom(null);
+      setIsCreatingRoom(false);
+    }
   };
 
   const handleSave = async () => {
     if (!editingRoom) return;
     if (!canEdit) {
-      setIsDialogOpen(false);
-      setEditingRoom(null);
+      handleDialogChange(false);
+      return;
+    }
+    if (!editingRoom.name.trim()) {
+      toast({
+        title: "Fehler",
+        description: "Bitte einen Raumnamen eingeben",
+        variant: "destructive"
+      });
       return;
     }
 
     setSaving(true);
     try {
-      await roomApi.update(editingRoom.id, {
-        name: editingRoom.name,
+      const isCreating = isCreatingRoom || editingRoom.id === 0;
+      const basePayload = {
+        name: editingRoom.name.trim(),
         category: editingRoom.category as Resource["category"],
         description: editingRoom.description || null,
         useInWeeklyPlan: editingRoom.useInWeeklyPlan,
@@ -225,7 +266,13 @@ export default function ResourceManagement() {
         blockReason: editingRoom.blockReason || null,
         requiredRoleCompetencies: editingRoom.requiredRoleCompetencies,
         alternativeRoleCompetencies: editingRoom.alternativeRoleCompetencies
-      });
+      };
+
+      const persistedRoom = isCreating
+        ? await roomApi.create(basePayload)
+        : await roomApi.update(editingRoom.id, basePayload);
+
+      const roomId = persistedRoom.id;
 
       const weekdaySettings = editingRoom.weeklySchedule.map((entry, index) => ({
         weekday: index + 1,
@@ -241,16 +288,46 @@ export default function ResourceManagement() {
         ...editingRoom.requiredAdminCompetencyIds.map((id) => ({ competencyId: id, relationType: "AND" as const })),
         ...editingRoom.alternativeAdminCompetencyIds.map((id) => ({ competencyId: id, relationType: "OR" as const }))
       ];
-      await roomApi.updateCompetencies(editingRoom.id, adminCompetencies);
+      await roomApi.updateCompetencies(roomId, adminCompetencies);
 
-      setRooms(rooms.map(r => r.id === editingRoom.id ? editingRoom : r));
-      toast({ title: "Gespeichert", description: "Raum wurde aktualisiert" });
+      const nextRoom: RoomState = {
+        ...editingRoom,
+        id: roomId,
+        isActive: persistedRoom.isActive
+      };
+
+      setRooms((prev) =>
+        isCreating
+          ? [...prev, nextRoom]
+          : prev.map((room) => (room.id === editingRoom.id ? nextRoom : room))
+      );
+      toast({
+        title: "Gespeichert",
+        description: isCreating ? "Raum wurde angelegt" : "Raum wurde aktualisiert"
+      });
     } catch (error) {
       toast({ title: "Fehler", description: "Speichern fehlgeschlagen", variant: "destructive" });
     } finally {
       setSaving(false);
-      setIsDialogOpen(false);
-      setEditingRoom(null);
+      handleDialogChange(false);
+    }
+  };
+
+  const handleDeleteRoom = async () => {
+    if (!editingRoom || isCreatingRoom || !canEdit) return;
+    const confirmed = window.confirm("Diesen Raum wirklich löschen? Er wird deaktiviert.");
+    if (!confirmed) return;
+
+    setSaving(true);
+    try {
+      await roomApi.delete(editingRoom.id);
+      setRooms((prev) => prev.filter((room) => room.id !== editingRoom.id));
+      toast({ title: "Gelöscht", description: "Raum wurde deaktiviert" });
+      handleDialogChange(false);
+    } catch (error) {
+      toast({ title: "Fehler", description: "Raum konnte nicht gelöscht werden", variant: "destructive" });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -303,6 +380,13 @@ export default function ResourceManagement() {
             Bereiche des Wochenplans, Verfügbarkeiten und Kompetenzanforderungen verwalten.
           </p>
         </div>
+        {canEdit && (
+          <div className="flex justify-end">
+            <Button onClick={openCreateDialog} data-testid="button-new-room">
+              Neuen Raum anlegen
+            </Button>
+          </div>
+        )}
 
         <div className="bg-orange-50 border border-orange-100 rounded-lg p-4 flex gap-3">
           <AlertCircle className="w-5 h-5 text-orange-600 shrink-0 mt-0.5" />
@@ -402,10 +486,12 @@ export default function ResourceManagement() {
         </div>
       </div>
 
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Raum bearbeiten: {editingRoom?.name}</DialogTitle>
+            <DialogTitle>
+              {isCreatingRoom ? "Neuen Raum anlegen" : `Raum bearbeiten: ${editingRoom?.name}`}
+            </DialogTitle>
           </DialogHeader>
 
           {editingRoom && (
@@ -671,7 +757,18 @@ export default function ResourceManagement() {
           )}
 
           <DialogFooter className="mt-6">
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)} data-testid="button-cancel">
+            {canEdit && !isCreatingRoom && (
+              <Button
+                variant="destructive"
+                onClick={handleDeleteRoom}
+                disabled={saving}
+                className="mr-auto"
+                data-testid="button-delete-room"
+              >
+                Löschen
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => handleDialogChange(false)} data-testid="button-cancel">
               Abbrechen
             </Button>
             <Button onClick={handleSave} disabled={!canEdit || saving} data-testid="button-save">

@@ -288,6 +288,18 @@ export const roomApi = {
     const response = await apiFetch(`${API_BASE}/rooms${query ? `?${query}` : ""}`);
     return handleResponse<Resource[]>(response);
   },
+  create: async (
+    data: Omit<Resource, "id" | "createdAt"> & {
+      requiredRoleCompetencies?: string[];
+      alternativeRoleCompetencies?: string[];
+    }
+  ): Promise<Resource> => {
+    const response = await apiFetch(`${API_BASE}/rooms`, {
+      method: "POST",
+      body: JSON.stringify(data)
+    });
+    return handleResponse<Resource>(response);
+  },
   getById: async (id: number): Promise<Resource & {
     weekdaySettings?: Array<{
       id: number;
@@ -322,6 +334,12 @@ export const roomApi = {
       body: JSON.stringify(data)
     });
     return handleResponse<Resource>(response);
+  },
+  delete: async (id: number): Promise<{ deactivated: boolean; id: number; message?: string }> => {
+    const response = await apiFetch(`${API_BASE}/rooms/${id}`, {
+      method: "DELETE"
+    });
+    return handleResponse(response);
   },
   updateWeekdaySettings: async (
     id: number,

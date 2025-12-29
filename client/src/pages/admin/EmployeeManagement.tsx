@@ -14,7 +14,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as DatePickerCalendar } from "@/components/ui/calendar";
-import { Search, Plus, Filter, UserPlus, Pencil, Loader2, Shield, MapPin, Calendar as CalendarIcon, Trash2, Award, Building, X } from "lucide-react";
+import { Search, Plus, Filter, UserPlus, Pencil, Loader2, Shield, MapPin, Calendar as CalendarIcon, Award, Building, X } from "lucide-react";
 import { useState, useEffect } from "react";
 import { employeeApi, competencyApi, roomApi } from "@/lib/api";
 import { apiRequest } from "@/lib/queryClient";
@@ -697,6 +697,34 @@ export default function EmployeeManagement() {
     }
   };
 
+  const handleDeleteEditingCompetency = async () => {
+    if (!editingCompetency?.id || !canManageEmployees) return;
+    const confirmed = window.confirm("Kompetenz wirklich löschen?");
+    if (!confirmed) return;
+    await handleDeleteCompetency(editingCompetency.id);
+    setCompetencyDialogOpen(false);
+    setEditingCompetency(null);
+  };
+
+  const handleDeleteEmployee = async () => {
+    if (!editingEmployee || !canManageEmployees) return;
+    const confirmed = window.confirm("Mitarbeiter wirklich löschen? Der Datensatz wird deaktiviert.");
+    if (!confirmed) return;
+
+    setSaving(true);
+    try {
+      await employeeApi.delete(editingEmployee.id);
+      setEmployees((prev) => prev.filter((emp) => emp.id !== editingEmployee.id));
+      toast({ title: "Gelöscht", description: "Mitarbeiter wurde deaktiviert" });
+      setEditDialogOpen(false);
+      setEditingEmployee(null);
+    } catch (error) {
+      toast({ title: "Fehler", description: "Mitarbeiter konnte nicht gelöscht werden", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const loadPermissions = async (userId: number) => {
     setLoadingPermissions(true);
     try {
@@ -1264,15 +1292,6 @@ export default function EmployeeManagement() {
                               >
                                 <Pencil className="w-4 h-4" />
                               </Button>
-                              <Button 
-                                variant="ghost" 
-                                size="icon"
-                                className="text-destructive hover:text-destructive"
-                                onClick={() => handleDeleteCompetency(comp.id)}
-                                data-testid={`button-delete-competency-${comp.id}`}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
                             </div>
                           ) : (
                             <span className="text-xs text-muted-foreground">—</span>
@@ -1640,6 +1659,17 @@ export default function EmployeeManagement() {
             )}
             
             <DialogFooter>
+              {canManageEmployees && (
+                <Button
+                  variant="destructive"
+                  onClick={handleDeleteEmployee}
+                  disabled={saving}
+                  className="mr-auto"
+                  data-testid="button-delete-employee"
+                >
+                  Löschen
+                </Button>
+              )}
               <DialogClose asChild>
                 <Button variant="outline">Abbrechen</Button>
               </DialogClose>
@@ -1728,6 +1758,17 @@ export default function EmployeeManagement() {
             )}
             
             <DialogFooter>
+              {editingCompetency?.id && canManageEmployees && (
+                <Button
+                  variant="destructive"
+                  onClick={handleDeleteEditingCompetency}
+                  disabled={saving}
+                  className="mr-auto"
+                  data-testid="button-delete-competency"
+                >
+                  Löschen
+                </Button>
+              )}
               <DialogClose asChild>
                 <Button variant="outline">Abbrechen</Button>
               </DialogClose>
