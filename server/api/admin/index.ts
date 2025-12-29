@@ -11,6 +11,28 @@ import {
 import { authenticate, requireTechnicalAdmin, requireClinicAdmin, requireAuth } from "../middleware/auth";
 // Note: Using direct response format for consistency with existing API
 
+const DEFAULT_PERMISSION_CATALOG = [
+  { key: "users.manage", label: "Benutzer anlegen / verwalten", scope: "department" },
+  { key: "dutyplan.edit", label: "Dienstplan bearbeiten", scope: "department" },
+  { key: "dutyplan.publish", label: "Dienstplan freigeben", scope: "department" },
+  { key: "vacation.lock", label: "Urlaubsplanung bearbeiten (Sperrzeitraum)", scope: "department" },
+  { key: "absence.create", label: "Abwesenheiten eintragen", scope: "department" },
+  { key: "sop.approve", label: "SOPs freigeben", scope: "department" },
+  { key: "project.close", label: "Projekte abschließen", scope: "department" },
+  { key: "training.edit", label: "Ausbildungsplan bearbeiten", scope: "department" }
+];
+
+async function ensurePermissionCatalog(): Promise<void> {
+  const existing = await db
+    .select({ key: permissions.key })
+    .from(permissions);
+  const existingKeys = new Set(existing.map((perm) => perm.key));
+  const missing = DEFAULT_PERMISSION_CATALOG.filter((perm) => !existingKeys.has(perm.key));
+  if (missing.length) {
+    await db.insert(permissions).values(missing).onConflictDoNothing();
+  }
+}
+
 /**
  * Register admin API routes
  */
@@ -179,6 +201,7 @@ export function registerAdminRoutes(app: Express): void {
   // GET /api/admin/users/:id/permissions - Get user permissions for department
   router.get("/users/:id/permissions", requireTechnicalAdmin, async (req, res) => {
     try {
+      await ensurePermissionCatalog();
       const userId = parseInt(req.params.id);
       const departmentId = req.query.departmentId ? parseInt(req.query.departmentId as string) : undefined;
       
@@ -249,6 +272,7 @@ export function registerAdminRoutes(app: Express): void {
   // PUT /api/admin/users/:id/permissions - Update user permissions
   router.put("/users/:id/permissions", requireTechnicalAdmin, async (req, res) => {
     try {
+      await ensurePermissionCatalog();
       const userId = parseInt(req.params.id);
       const { departmentId, permissionKeys } = req.body;
       
@@ -320,4 +344,3 @@ export function registerAdminRoutes(app: Express): void {
   
   console.log("✓ Admin API routes registered");
 }
-
