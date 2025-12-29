@@ -300,12 +300,13 @@ export default function EmployeeManagement() {
     if (!editingEmployee) return;
     setUserPermissions([]);
     if (isTechnicalAdmin) {
-      loadPermissions(editingEmployee.id);
+      const departmentId = editingEmployee.departmentId ?? currentUser?.departmentId ?? undefined;
+      loadPermissions(editingEmployee.id, departmentId);
     } else {
       setAvailablePermissions([]);
       setLoadingPermissions(false);
     }
-  }, [editingEmployee, isTechnicalAdmin]);
+  }, [editingEmployee, isTechnicalAdmin, currentUser?.departmentId]);
 
   const loadEmployeeCompetencies = async (emp: Employee) => {
     try {
@@ -995,11 +996,12 @@ export default function EmployeeManagement() {
     }
   };
 
-  const loadPermissions = async (userId: number) => {
+  const loadPermissions = async (userId: number, departmentId?: number) => {
     setLoadingPermissions(true);
     try {
       const token = localStorage.getItem('cliniq_auth_token');
-      const response = await fetch(`/api/admin/users/${userId}/permissions`, {
+      const query = departmentId ? `?departmentId=${departmentId}` : "";
+      const response = await fetch(`/api/admin/users/${userId}/permissions${query}`, {
         headers: {
           Authorization: `Bearer ${token}`
         }

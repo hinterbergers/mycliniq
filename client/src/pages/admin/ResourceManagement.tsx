@@ -34,6 +34,7 @@ const ROOM_CATEGORIES = [
 const ROLE_COMPETENCIES = [
   { id: "facharzt", label: "Facharzt/Fachärztin" },
   { id: "assistenzarzt", label: "Assistenzarzt/Assistenzärztin" },
+  { id: "primararzt", label: "Primararzt/Primarärztin" },
   { id: "op_assistenz", label: "OP-Assistenz" },
   { id: "sekretaerin", label: "Sekretärin" },
 ];
