@@ -12,9 +12,18 @@ import { format } from "date-fns";
 import { de } from "date-fns/locale";
 
 const getGreeting = () => {
-  const hour = new Date().getHours();
-  if (hour < 12) return "Guten Morgen";
-  if (hour < 18) return "Hallo";
+  const now = new Date();
+  const minutes = now.getHours() * 60 + now.getMinutes();
+
+  if (minutes >= 23 * 60 + 1 || minutes <= 5 * 60) {
+    return "Noch wach? 😱";
+  }
+  if (minutes <= 9 * 60) {
+    return "Guten Morgen";
+  }
+  if (minutes <= 17 * 60) {
+    return "Hallo";
+  }
   return "Guten Abend";
 };
 
@@ -49,10 +58,13 @@ const DUMMY_PRESENT_STAFF = [
 const DUMMY_BIRTHDAY = { name: "Dr. Martina Krenn", hasBirthday: true };
 
 export default function Dashboard() {
-  const { employee, isAdmin } = useAuth();
+  const { employee, user, isAdmin } = useAuth();
   const [, setLocation] = useLocation();
   
-  const firstName = employee?.firstName || employee?.name?.split(' ').pop() || "Kolleg:in";
+  const firstName = employee?.firstName
+    || user?.name
+    || employee?.name?.split(' ')[0]
+    || "Kolleg:in";
   const greeting = getGreeting();
 
   return (
@@ -63,7 +75,7 @@ export default function Dashboard() {
           <div className="bg-gradient-to-br from-primary to-primary/80 rounded-2xl p-8 text-primary-foreground shadow-lg shadow-primary/10">
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-3xl font-bold text-white" data-testid="text-greeting">
-                {greeting}, {firstName}
+                {greeting} {firstName}
               </h2>
               <Badge variant="outline" className="text-primary-foreground border-primary-foreground/30 bg-primary-foreground/10">
                 KABEG Klinikum Klagenfurt

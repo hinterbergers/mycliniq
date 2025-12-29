@@ -336,6 +336,32 @@ export default function EmployeeManagement() {
     }
   };
   
+  const savePermissions = async (employee: Employee) => {
+    if (!isTechnicalAdmin) return;
+    const token = localStorage.getItem('cliniq_auth_token');
+    const departmentId = employee.departmentId || currentUser?.departmentId;
+    if (!departmentId) {
+      throw new Error("Keine Abteilung zugeordnet");
+    }
+
+    const response = await fetch(`/api/admin/users/${employee.id}/permissions`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        departmentId,
+        permissionKeys: userPermissions
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || "Fehler beim Speichern");
+    }
+  };
+
   const handleSaveEmployee = async () => {
     if (!editingEmployee) return;
 
@@ -391,6 +417,25 @@ export default function EmployeeManagement() {
         competencies: updatedCompetencies.length ? updatedCompetencies : updated.competencies,
         shiftPreferences: payload.shiftPreferences ?? updated.shiftPreferences
       } : e));
+
+      let permissionsFailed = false;
+      if (isTechnicalAdmin) {
+        try {
+          await savePermissions(editingEmployee);
+        } catch (error: any) {
+          permissionsFailed = true;
+          toast({
+            title: "Berechtigungen nicht gespeichert",
+            description: error.message || "Berechtigungen konnten nicht gespeichert werden",
+            variant: "destructive"
+          });
+        }
+      }
+
+      if (permissionsFailed) {
+        return;
+      }
+
       setEditDialogOpen(false);
       setEditingEmployee(null);
       toast({ title: "Gespeichert", description: "Mitarbeiterdaten wurden aktualisiert" });
@@ -753,50 +798,6 @@ export default function EmployeeManagement() {
       });
     } finally {
       setLoadingPermissions(false);
-    }
-  };
-
-  const handleSavePermissions = async () => {
-    if (!editingEmployee || !isTechnicalAdmin) return;
-
-    setSaving(true);
-    try {
-      const token = localStorage.getItem('cliniq_auth_token');
-      const departmentId = editingEmployee.departmentId || currentUser?.departmentId;
-      if (!departmentId) {
-        throw new Error("Keine Abteilung zugeordnet");
-      }
-
-      const response = await fetch(`/api/admin/users/${editingEmployee.id}/permissions`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          departmentId,
-          permissionKeys: userPermissions
-        })
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Fehler beim Speichern");
-      }
-
-      toast({
-        title: "Erfolgreich",
-        description: "Berechtigungen wurden gespeichert"
-      });
-    } catch (error: any) {
-      console.error("Error saving permissions:", error);
-      toast({
-        title: "Fehler",
-        description: error.message || "Berechtigungen konnten nicht gespeichert werden",
-        variant: "destructive"
-      });
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -1609,12 +1610,7 @@ export default function EmployeeManagement() {
                         )}
                       </div>
                     )}
-                    {isTechnicalAdmin ? (
-                      <Button onClick={handleSavePermissions} disabled={saving || loadingPermissions}>
-                        {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                        Speichern
-                      </Button>
-                    ) : (
+                    {!isTechnicalAdmin && (
                       <div className="text-xs text-muted-foreground">
                         Nur System-Admins können Berechtigungen bearbeiten.
                       </div>
