@@ -274,22 +274,6 @@ export default function ResourceManagement() {
 
       const roomId = persistedRoom.id;
 
-      const weekdaySettings = editingRoom.weeklySchedule.map((entry, index) => ({
-        weekday: index + 1,
-        usageLabel: entry.usage || null,
-        timeFrom: entry.timeFrom || null,
-        timeTo: entry.timeTo || null,
-        isClosed: entry.blocked,
-        closedReason: entry.blockReason || null
-      }));
-      await roomApi.updateWeekdaySettings(roomId, weekdaySettings);
-
-      const adminCompetencies = [
-        ...editingRoom.requiredAdminCompetencyIds.map((id) => ({ competencyId: id, relationType: "AND" as const })),
-        ...editingRoom.alternativeAdminCompetencyIds.map((id) => ({ competencyId: id, relationType: "OR" as const }))
-      ];
-      await roomApi.updateCompetencies(roomId, adminCompetencies);
-
       const nextRoom: RoomState = {
         ...editingRoom,
         id: roomId,
@@ -301,10 +285,45 @@ export default function ResourceManagement() {
           ? [...prev, nextRoom]
           : prev.map((room) => (room.id === editingRoom.id ? nextRoom : room))
       );
-      toast({
-        title: "Gespeichert",
-        description: isCreating ? "Raum wurde angelegt" : "Raum wurde aktualisiert"
-      });
+
+      const warnings: string[] = [];
+      const weekdaySettings = editingRoom.weeklySchedule.map((entry, index) => ({
+        weekday: index + 1,
+        usageLabel: entry.usage || null,
+        timeFrom: entry.timeFrom || null,
+        timeTo: entry.timeTo || null,
+        isClosed: entry.blocked,
+        closedReason: entry.blockReason || null
+      }));
+      try {
+        await roomApi.updateWeekdaySettings(roomId, weekdaySettings);
+      } catch (error) {
+        console.warn("[Rooms] weekday settings save failed", error);
+        warnings.push("Wochenplan");
+      }
+
+      const adminCompetencies = [
+        ...editingRoom.requiredAdminCompetencyIds.map((id) => ({ competencyId: id, relationType: "AND" as const })),
+        ...editingRoom.alternativeAdminCompetencyIds.map((id) => ({ competencyId: id, relationType: "OR" as const }))
+      ];
+      try {
+        await roomApi.updateCompetencies(roomId, adminCompetencies);
+      } catch (error) {
+        console.warn("[Rooms] competencies save failed", error);
+        warnings.push("Kompetenzen");
+      }
+
+      if (warnings.length) {
+        toast({
+          title: "Teilweise gespeichert",
+          description: `Raum gespeichert, aber ${warnings.join(" & ")} konnten nicht gespeichert werden.`
+        });
+      } else {
+        toast({
+          title: "Gespeichert",
+          description: isCreating ? "Raum wurde angelegt" : "Raum wurde aktualisiert"
+        });
+      }
     } catch (error) {
       toast({ title: "Fehler", description: "Speichern fehlgeschlagen", variant: "destructive" });
     } finally {
