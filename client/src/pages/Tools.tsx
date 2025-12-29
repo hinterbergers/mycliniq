@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toolsApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
@@ -248,11 +249,13 @@ function PulCalculator() {
 function BodySurfaceAreaCalculator() {
   const [heightCm, setHeightCm] = useState("");
   const [weightKg, setWeightKg] = useState("");
+  const [therapy, setTherapy] = useState<"none" | "mtx">("none");
 
   const heightValue = Number(heightCm);
   const weightValue = Number(weightKg);
   const hasValues = heightValue > 0 && weightValue > 0;
   const bsa = hasValues ? Math.sqrt((heightValue * weightValue) / 3600) : null;
+  const mtxDose = therapy === "mtx" && bsa ? bsa * 50 : null;
 
   return (
     <div className="space-y-6">
@@ -283,6 +286,19 @@ function BodySurfaceAreaCalculator() {
         </div>
       </div>
 
+      <div className="space-y-2 max-w-sm">
+        <Label htmlFor="bsa-therapy">Therapie-Auswahl</Label>
+        <Select value={therapy} onValueChange={(value) => setTherapy(value as "none" | "mtx")}>
+          <SelectTrigger id="bsa-therapy">
+            <SelectValue placeholder="Auswahl" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">Leer</SelectItem>
+            <SelectItem value="mtx">MTX</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
       <Card className="border-dashed">
         <CardContent className="p-6 space-y-4">
           {!hasValues ? (
@@ -293,6 +309,13 @@ function BodySurfaceAreaCalculator() {
                 <p className="text-xs uppercase text-muted-foreground">Körperoberfläche</p>
                 <p className="text-2xl font-semibold">{bsa?.toFixed(2)} m²</p>
               </div>
+              {therapy === "mtx" && (
+                <div>
+                  <p className="text-xs uppercase text-muted-foreground">MTX Dosis</p>
+                  <p className="text-2xl font-semibold">{mtxDose ? `${mtxDose.toFixed(1)} mg` : "—"}</p>
+                  <p className="text-xs text-muted-foreground">KOF × 50 mg</p>
+                </div>
+              )}
               <div>
                 <p className="text-xs uppercase text-muted-foreground">Formel</p>
                 <p className="text-sm text-muted-foreground">Mosteller: √((Größe cm × Gewicht kg) / 3600)</p>
