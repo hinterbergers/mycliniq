@@ -1,9 +1,9 @@
 import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -54,6 +54,7 @@ export default function RosterPlan() {
   const [isPublishing, setIsPublishing] = useState(false);
   const [manualEditMode, setManualEditMode] = useState(false);
   const [savingCellKey, setSavingCellKey] = useState<string | null>(null);
+  const [manualDrafts, setManualDrafts] = useState<Record<string, string>>({});
 
   const canEdit = useMemo(() => {
     if (!currentUser) return false;
@@ -157,6 +158,25 @@ export default function RosterPlan() {
     loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    if (!manualEditMode) {
+      setManualDrafts({});
+    }
+  }, [manualEditMode]);
+
+  useEffect(() => {
+    setManualDrafts({});
+  }, [currentDate]);
+
+  const clearManualDraft = useCallback((cellKey: string) => {
+    setManualDrafts((prev) => {
+      if (!prev[cellKey]) return prev;
+      const next = { ...prev };
+      delete next[cellKey];
+      return next;
+    });
+  }, []);
+
   const getAbsences = (date: Date): { empId: number; name: string; reason: string }[] => {
     const dateStr = format(date, 'yyyy-MM-dd');
     return absences
@@ -170,6 +190,7 @@ export default function RosterPlan() {
   const renderAssignmentCell = (date: Date, type: ServiceType, tone: "blue" | "pink" | "emerald") => {
     const shift = getShiftForDay(date, type);
     const employee = shift ? getEmployeeById(shift.employeeId) : null;
+    const freeText = shift?.assigneeFreeText?.trim() || "";
     const dateStr = format(date, "yyyy-MM-dd");
     const conflictReasons = employee ? getConflictReasons(employee, dateStr, type) : [];
     const hasConflict = conflictReasons.length > 0;
@@ -177,21 +198,25 @@ export default function RosterPlan() {
     const isSaving = savingCellKey === cellKey;
 
     if (!manualEditMode || !canEdit) {
-      if (employee) {
+      if (employee || freeText) {
+        const label = employee ? employee.name.split(" ").pop() : freeText;
         return (
           <div className={`relative ${hasConflict ? "border border-red-300 bg-red-50/60" : ""} rounded`}>
             <div
               className={`text-sm px-2 py-1.5 rounded font-medium text-center border shadow-sm ${
-                tone === "pink"
-                  ? "bg-pink-100 text-pink-800 border-pink-200"
-                  : tone === "blue"
-                  ? "bg-blue-100 text-blue-800 border-blue-200"
-                  : "bg-emerald-100 text-emerald-800 border-emerald-200"
+                employee
+                  ? tone === "pink"
+                    ? "bg-pink-100 text-pink-800 border-pink-200"
+                    : tone === "blue"
+                    ? "bg-blue-100 text-blue-800 border-blue-200"
+                    : "bg-emerald-100 text-emerald-800 border-emerald-200"
+                  : "bg-slate-100 text-slate-700 border-slate-200 italic"
               }`}
+              title={employee ? employee.name : freeText}
             >
-              {employee.name.split(" ").pop()}
+              <span className="block truncate">{label}</span>
             </div>
-            {hasConflict && (
+            {hasConflict && employee && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full p-1">
@@ -218,30 +243,80 @@ export default function RosterPlan() {
       );
     }
 
+    const allowedEmployees = employees
+      .filter((emp) => getServiceTypesForEmployee(emp).includes(type))
+      .sort((a, b) => (a.lastName || a.name).localeCompare(b.lastName || b.name));
+    const listId = `manual-assign-${type}`;
+    const draftValue = manualDrafts[cellKey];
+    const currentLabel = draftValue ?? employee?.name ?? freeText ?? "";
+
     return (
-      <Select
-        value={employee ? employee.id.toString() : "none"}
-        onValueChange={(value) => handleManualAssign(date, type, value)}
-      >
-        <SelectTrigger
-          className={`h-8 text-xs ${hasConflict ? "border-red-400" : ""}`}
-          disabled={isSaving}
-        >
-          <SelectValue placeholder="+" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="none">—</SelectItem>
-          {employees.map((emp) => {
-            const reasons = getConflictReasons(emp, dateStr, type);
-            const label = reasons.length ? `${emp.name} (Konflikt)` : emp.name;
-            return (
-              <SelectItem key={emp.id} value={emp.id.toString()}>
-                {label}
-              </SelectItem>
+      <div className="relative">
+        <Input
+          value={currentLabel}
+          onChange={(event) => {
+            const nextValue = event.target.value;
+            setManualDrafts((prev) => {
+              if (!nextValue) {
+                if (!prev[cellKey]) return prev;
+                const next = { ...prev };
+                delete next[cellKey];
+                return next;
+              }
+              return { ...prev, [cellKey]: nextValue };
+            });
+          }}
+          onBlur={(event) => {
+            const value = event.target.value.trim();
+            if (!value) {
+              handleManualAssign(date, type, null, null);
+              return;
+            }
+
+            const normalized = value.toLowerCase();
+            const exactMatch = allowedEmployees.find(
+              (emp) => emp.name.toLowerCase() === normalized || emp.lastName?.toLowerCase() === normalized
             );
-          })}
-        </SelectContent>
-      </Select>
+            if (exactMatch) {
+              handleManualAssign(date, type, exactMatch.id, null);
+              return;
+            }
+
+            const matches = allowedEmployees.filter((emp) => {
+              const last = (emp.lastName || "").toLowerCase();
+              const full = emp.name.toLowerCase();
+              return last.startsWith(normalized) || full.startsWith(normalized);
+            });
+
+            if (matches.length === 1) {
+              handleManualAssign(date, type, matches[0].id, null);
+              return;
+            }
+
+            handleManualAssign(date, type, null, value);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              event.currentTarget.blur();
+            }
+          }}
+          list={listId}
+          placeholder="+"
+          className={`h-8 text-xs w-full min-w-0 ${hasConflict ? "border-red-400" : ""}`}
+          disabled={isSaving}
+        />
+        <datalist id={listId}>
+          {allowedEmployees.map((emp) => (
+            <option key={emp.id} value={emp.name} />
+          ))}
+        </datalist>
+        {hasConflict && (
+          <div className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full p-1">
+            <AlertTriangle className="w-3 h-3" />
+          </div>
+        )}
+      </div>
     );
   };
   
@@ -325,32 +400,39 @@ export default function RosterPlan() {
   const handleManualAssign = async (
     date: Date,
     type: ServiceType,
-    nextEmployeeId: string
+    nextEmployeeId?: number | null,
+    assigneeFreeText?: string | null
   ) => {
     const dateStr = format(date, "yyyy-MM-dd");
     const shift = getShiftForDay(date, type);
     const cellKey = `${dateStr}-${type}`;
     setSavingCellKey(cellKey);
     try {
-      if (nextEmployeeId === "none") {
+      if (!nextEmployeeId && !assigneeFreeText) {
         if (shift) {
           await rosterApi.delete(shift.id);
           setShifts((prev) => prev.filter((item) => item.id !== shift.id));
         }
+        clearManualDraft(cellKey);
       } else {
-        const employeeId = parseInt(nextEmployeeId);
+        const employeeId = nextEmployeeId || null;
+        const trimmedFreeText = assigneeFreeText?.trim() || null;
         if (shift) {
-          if (shift.employeeId !== employeeId) {
-            const updated = await rosterApi.update(shift.id, { employeeId });
-            setShifts((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
-          }
+          const updated = await rosterApi.update(shift.id, {
+            employeeId,
+            assigneeFreeText: employeeId ? null : trimmedFreeText
+          });
+          setShifts((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+          clearManualDraft(cellKey);
         } else {
           const created = await rosterApi.create({
             employeeId,
+            assigneeFreeText: employeeId ? null : trimmedFreeText,
             date: dateStr,
             serviceType: type
           });
           setShifts((prev) => [...prev, created]);
+          clearManualDraft(cellKey);
         }
       }
     } catch (error: any) {

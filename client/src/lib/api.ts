@@ -178,7 +178,7 @@ export const rosterApi = {
     return handleResponse<RosterShift>(response);
   },
   
-  create: async (data: Omit<RosterShift, "id" | "createdAt">): Promise<RosterShift> => {
+  create: async (data: InsertRosterShift): Promise<RosterShift> => {
     const response = await apiFetch(`${API_BASE}/roster`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

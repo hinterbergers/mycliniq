@@ -315,7 +315,19 @@ export async function registerRoutes(
   app.post("/api/roster", async (req: Request, res: Response) => {
     try {
       const validatedData = insertRosterShiftSchema.parse(req.body);
-      const shift = await storage.createRosterShift(validatedData);
+      const rawEmployeeId = validatedData.employeeId;
+      const rawFreeText = typeof validatedData.assigneeFreeText === "string"
+        ? validatedData.assigneeFreeText.trim()
+        : "";
+      if (!rawEmployeeId && !rawFreeText) {
+        return res.status(400).json({ error: "Mitarbeiter oder Freitext ist erforderlich" });
+      }
+      const payload = {
+        ...validatedData,
+        employeeId: rawEmployeeId || null,
+        assigneeFreeText: rawEmployeeId ? null : rawFreeText || null
+      };
+      const shift = await storage.createRosterShift(payload);
       res.status(201).json(shift);
     } catch (error: any) {
       if (error.name === 'ZodError') {
@@ -352,7 +364,29 @@ export async function registerRoutes(
   app.patch("/api/roster/:id", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
-      const shift = await storage.updateRosterShift(id, req.body);
+      const updateData = { ...req.body };
+      if (Object.prototype.hasOwnProperty.call(updateData, "assigneeFreeText")) {
+        updateData.assigneeFreeText = typeof updateData.assigneeFreeText === "string"
+          ? updateData.assigneeFreeText.trim()
+          : updateData.assigneeFreeText;
+        if (updateData.assigneeFreeText === "") {
+          updateData.assigneeFreeText = null;
+        }
+      }
+      if (Object.prototype.hasOwnProperty.call(updateData, "employeeId")) {
+        if (updateData.employeeId) {
+          updateData.assigneeFreeText = null;
+        }
+      }
+      if (Object.prototype.hasOwnProperty.call(updateData, "assigneeFreeText")) {
+        if (updateData.assigneeFreeText) {
+          updateData.employeeId = null;
+        }
+      }
+      if (!updateData.employeeId && !updateData.assigneeFreeText && !updateData.notes) {
+        return res.status(400).json({ error: "Mitarbeiter oder Freitext ist erforderlich" });
+      }
+      const shift = await storage.updateRosterShift(id, updateData);
       if (!shift) {
         return res.status(404).json({ error: "Shift not found" });
       }
@@ -367,6 +401,10 @@ export async function registerRoutes(
       const shifts = req.body.shifts;
       if (!Array.isArray(shifts)) {
         return res.status(400).json({ error: "Shifts must be an array" });
+      }
+      const invalid = shifts.find((shift) => !shift.employeeId && !shift.assigneeFreeText);
+      if (invalid) {
+        return res.status(400).json({ error: "Mitarbeiter oder Freitext ist erforderlich" });
       }
       const results = await storage.bulkCreateRosterShifts(shifts);
       res.status(201).json(results);

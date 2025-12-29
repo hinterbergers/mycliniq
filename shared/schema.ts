@@ -428,15 +428,21 @@ export const rosterShifts = pgTable("roster_shifts", {
   id: serial("id").primaryKey(),
   date: date("date").notNull(),
   serviceType: serviceTypeEnum("service_type").notNull(),
-  employeeId: integer("employee_id").references(() => employees.id).notNull(),
+  employeeId: integer("employee_id").references(() => employees.id),
+  assigneeFreeText: text("assignee_free_text"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull()
 });
 
-export const insertRosterShiftSchema = createInsertSchema(rosterShifts).omit({
-  id: true,
-  createdAt: true
-});
+export const insertRosterShiftSchema = createInsertSchema(rosterShifts)
+  .omit({
+    id: true,
+    createdAt: true
+  })
+  .extend({
+    employeeId: z.number().nullable().optional(),
+    assigneeFreeText: z.string().nullable().optional()
+  });
 
 export type InsertRosterShift = z.infer<typeof insertRosterShiftSchema>;
 export type RosterShift = typeof rosterShifts.$inferSelect;
