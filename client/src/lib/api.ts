@@ -22,6 +22,8 @@ import type {
   InsertRosterSettings,
   ShiftWish,
   InsertShiftWish,
+  LongTermShiftWish,
+  InsertLongTermShiftWish,
   PlannedAbsence,
   InsertPlannedAbsence,
   Competency,
@@ -806,6 +808,8 @@ export interface NextPlanningMonth {
   totalEmployees: number;
   submittedCount: number;
   allSubmitted: boolean;
+  draftShiftCount?: number;
+  hasDraft?: boolean;
 }
 
 export const rosterSettingsApi = {
@@ -871,6 +875,53 @@ export const shiftWishesApi = {
       method: "DELETE"
     });
     return handleResponse<void>(response);
+  }
+};
+
+// Long-term shift wishes API
+export const longTermWishesApi = {
+  getByEmployee: async (employeeId: number): Promise<LongTermShiftWish | null> => {
+    const response = await apiFetch(`${API_BASE}/long-term-wishes?employeeId=${employeeId}`);
+    return handleResponse<LongTermShiftWish | null>(response);
+  },
+
+  getByStatus: async (status: string): Promise<LongTermShiftWish[]> => {
+    const response = await apiFetch(`${API_BASE}/long-term-wishes?status=${encodeURIComponent(status)}`);
+    return handleResponse<LongTermShiftWish[]>(response);
+  },
+
+  save: async (data: InsertLongTermShiftWish): Promise<LongTermShiftWish> => {
+    const response = await apiFetch(`${API_BASE}/long-term-wishes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<LongTermShiftWish>(response);
+  },
+
+  submit: async (id: number): Promise<LongTermShiftWish> => {
+    const response = await apiFetch(`${API_BASE}/long-term-wishes/${id}/submit`, {
+      method: "POST"
+    });
+    return handleResponse<LongTermShiftWish>(response);
+  },
+
+  approve: async (id: number, notes?: string): Promise<LongTermShiftWish> => {
+    const response = await apiFetch(`${API_BASE}/long-term-wishes/${id}/approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notes })
+    });
+    return handleResponse<LongTermShiftWish>(response);
+  },
+
+  reject: async (id: number, notes?: string): Promise<LongTermShiftWish> => {
+    const response = await apiFetch(`${API_BASE}/long-term-wishes/${id}/reject`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notes })
+    });
+    return handleResponse<LongTermShiftWish>(response);
   }
 };
 

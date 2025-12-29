@@ -1,12 +1,11 @@
 import OpenAI from "openai";
-import type { Employee, RosterShift, Absence } from "@shared/schema";
+import type { Employee, Absence, ShiftWish, LongTermShiftWish } from "@shared/schema";
+import { SERVICE_TYPES, type ServiceType, type LongTermWishRule, getServiceTypesForEmployee, employeeDoesShifts } from "@shared/shiftTypes";
 import { format, eachDayOfInterval, isWeekend, startOfMonth, endOfMonth } from "date-fns";
 
 // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-type ServiceType = 'gyn' | 'kreiszimmer' | 'turnus';
 
 interface ShiftPreferences {
   preferredDaysOff?: string[];
@@ -29,14 +28,6 @@ interface GenerationResult {
   warnings: string[];
 }
 
-const SERVICE_TYPES: ServiceType[] = ['gyn', 'kreiszimmer', 'turnus'];
-
-const SERVICE_CAPABILITIES: Record<ServiceType, string[]> = {
-  gyn: ["Primararzt", "1. Oberarzt", "Funktionsoberarzt", "Ausbildungsoberarzt", "Oberarzt", "Oberärztin"],
-  kreiszimmer: ["Assistenzarzt", "Assistenzärztin"],
-  turnus: ["Assistenzarzt", "Assistenzärztin", "Turnusarzt"]
-};
-
 function toDate(value?: string | Date | null): Date | null {
   if (!value) return null;
   if (value instanceof Date) return value;
@@ -54,33 +45,60 @@ function isDateWithinRange(date: string, start?: string | Date | null, end?: str
   return Boolean(startDate || endDate);
 }
 
-function getServiceTypesForRole(role: string): ServiceType[] {
-  return SERVICE_TYPES.filter((service) => SERVICE_CAPABILITIES[service].includes(role));
-}
+const WEEKDAY_SHORT: LongTermWishRule["weekday"][] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-function getServiceTypesForEmployee(employee: Employee): ServiceType[] {
-  const prefs = employee.shiftPreferences as ShiftPreferences | null;
-  const overrides = Array.isArray(prefs?.serviceTypeOverrides)
-    ? prefs.serviceTypeOverrides.filter((value): value is ServiceType => SERVICE_TYPES.includes(value as ServiceType))
-    : [];
-  if (overrides.length) return overrides;
-  return getServiceTypesForRole(employee.role);
+function hasHardLongTermBlock(
+  rules: LongTermWishRule[] | undefined,
+  date: string,
+  serviceType: ServiceType
+): boolean {
+  if (!Array.isArray(rules) || !rules.length) return false;
+  const dayIndex = new Date(date).getDay();
+  const weekday = WEEKDAY_SHORT[dayIndex];
+  return rules.some((rule) => {
+    if (rule.strength !== "HARD") return false;
+    if (rule.kind !== "ALWAYS_OFF" && rule.kind !== "AVOID_ON") return false;
+    if (rule.weekday !== weekday) return false;
+    const ruleService = rule.serviceType ?? "any";
+    if (ruleService === "any") return true;
+    return ruleService === serviceType;
+  });
 }
 
 export async function generateRosterPlan(
   employees: Employee[],
   existingAbsences: Absence[],
   year: number,
-  month: number
+  month: number,
+  shiftWishes: ShiftWish[] = [],
+  longTermWishes: LongTermShiftWish[] = []
 ): Promise<GenerationResult> {
   const startDate = startOfMonth(new Date(year, month - 1));
   const endDate = endOfMonth(new Date(year, month - 1));
   const days = eachDayOfInterval({ start: startDate, end: endDate });
 
-  const activeEmployees = employees.filter(e => e.isActive && e.takesShifts !== false);
+  const activeEmployees = employees.filter(e => e.isActive && employeeDoesShifts(e));
+  const submittedWishes = shiftWishes.filter((wish) => wish.status === "Eingereicht");
+  const wishesByEmployeeId = new Map(submittedWishes.map((wish) => [wish.employeeId, wish]));
+  const approvedLongTerm = longTermWishes.filter((wish) => wish.status === "Genehmigt");
+  const longTermByEmployeeId = new Map(approvedLongTerm.map((wish) => [wish.employeeId, wish]));
+
+  const toServiceTypeList = (values: unknown): ServiceType[] => {
+    if (!Array.isArray(values)) return [];
+    return values.filter((value): value is ServiceType => SERVICE_TYPES.includes(value as ServiceType));
+  };
+
+  const toIsoDateList = (daysList: unknown): string[] => {
+    if (!Array.isArray(daysList)) return [];
+    return daysList
+      .filter((day): day is number => Number.isInteger(day))
+      .map((day) => format(new Date(year, month - 1, day), "yyyy-MM-dd"));
+  };
 
   const employeeData = activeEmployees.map(e => {
     const prefs = e.shiftPreferences as ShiftPreferences | null;
+    const wish = wishesByEmployeeId.get(e.id);
+    const longTerm = longTermByEmployeeId.get(e.id);
     const absenceDates = existingAbsences
       .filter(a => a.employeeId === e.id)
       .map(a => `${a.startDate} bis ${a.endDate} (${a.reason})`);
@@ -99,9 +117,13 @@ export async function generateRosterPlan(
       primaryArea: e.primaryDeploymentArea,
       competencies: e.competencies,
       serviceTypes: getServiceTypesForEmployee(e),
-      preferredDaysOff: prefs?.preferredDaysOff || [],
-      maxShiftsPerWeek: prefs?.maxShiftsPerWeek || 5,
-      notes: prefs?.notes || "",
+      preferredDays: toIsoDateList(wish?.preferredShiftDays),
+      avoidDays: toIsoDateList(wish?.avoidShiftDays),
+      preferredServiceTypes: toServiceTypeList(wish?.preferredServiceTypes),
+      avoidServiceTypes: toServiceTypeList(wish?.avoidServiceTypes),
+      maxShiftsPerWeek: wish?.maxShiftsPerWeek || e.maxShiftsPerWeek || prefs?.maxShiftsPerWeek || 5,
+      notes: wish?.notes || prefs?.notes || "",
+      longTermRules: Array.isArray(longTerm?.rules) ? longTerm?.rules : [],
       absences: absenceDates
     };
   });
@@ -127,16 +149,22 @@ ${JSON.stringify(daysData, null, 2)}
 - kreiszimmer (Kreißzimmer): Assistenzarzt, Assistenzärztin
 - turnus (Turnus): Assistenzarzt, Assistenzärztin, Turnusarzt
 Wenn im Mitarbeiterobjekt "serviceTypes" gesetzt sind, dürfen nur diese Diensttypen zugewiesen werden (Abweichung vom Rollenstandard).
+Beachte in den Mitarbeiterdaten:
+- preferredDays / avoidDays (Datumsliste für ${format(startDate, 'MMMM yyyy')})
+- preferredServiceTypes / avoidServiceTypes
+- longTermRules: wiederkehrende Regeln mit kind/weekday/strength/serviceType (serviceType optional oder "any")
 
 ## Regeln:
 1. Jeder Tag muss einen gyn-Dienst und einen kreiszimmer-Dienst haben
 2. Turnus-Dienste sind optional, aber erwünscht wenn Personal verfügbar
 3. Respektiere Abwesenheiten - kein Mitarbeiter darf an Tagen eingeteilt werden, an denen er/sie abwesend ist
-4. Respektiere bevorzugte freie Tage der Mitarbeiter
-5. Maximale Dienste pro Woche pro Mitarbeiter beachten
-6. Gleichmäßige Verteilung der Dienste anstreben
-7. Wochenenden fair verteilen
-8. Kompetenzen berücksichtigen für komplexe Fälle
+4. Respektiere longTermRules mit strength=HARD (ALWAYS_OFF oder AVOID_ON) als harte Sperre
+5. preferredDays möglichst bevorzugen, avoidDays möglichst vermeiden
+6. preferredServiceTypes bevorzugen, avoidServiceTypes möglichst vermeiden
+7. Maximale Dienste pro Woche pro Mitarbeiter beachten
+8. Gleichmäßige Verteilung der Dienste anstreben
+9. Wochenenden fair verteilen
+10. Kompetenzen berücksichtigen für komplexe Fälle
 
 Antworte mit folgendem JSON-Format:
 {
@@ -197,6 +225,12 @@ Antworte mit folgendem JSON-Format:
         console.warn(`${employee.name} ist am ${shift.date} langfristig deaktiviert`);
         return false;
       }
+
+      const longTermRules = longTermByEmployeeId.get(employee.id)?.rules as LongTermWishRule[] | undefined;
+      if (hasHardLongTermBlock(longTermRules, shift.date, shift.serviceType)) {
+        console.warn(`${employee.name} ist laut Langfristregel am ${shift.date} gesperrt`);
+        return false;
+      }
       
       return true;
     });
@@ -217,7 +251,8 @@ export async function validateShiftAssignment(
   employee: Employee,
   date: string,
   serviceType: string,
-  existingAbsences: Absence[]
+  existingAbsences: Absence[],
+  longTermRules: LongTermWishRule[] = []
 ): Promise<{ valid: boolean; reason?: string }> {
   const allowed = getServiceTypesForEmployee(employee);
   if (!allowed.includes(serviceType as ServiceType)) {
@@ -236,6 +271,10 @@ export async function validateShiftAssignment(
   const isInactive = isDateWithinRange(date, employee.inactiveFrom, employee.inactiveUntil);
   if (isInactive) {
     return { valid: false, reason: `${employee.name} ist am ${date} langfristig deaktiviert` };
+  }
+
+  if (hasHardLongTermBlock(longTermRules, date, serviceType as ServiceType)) {
+    return { valid: false, reason: `${employee.name} ist laut Langfristregel am ${date} gesperrt` };
   }
 
   return { valid: true };

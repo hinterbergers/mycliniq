@@ -11,13 +11,15 @@ import {
   insertProjectTaskSchema,
   insertProjectDocumentSchema,
   insertApprovalSchema,
-  insertTaskActivitySchema
+  insertTaskActivitySchema,
+  insertLongTermShiftWishSchema
 } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { generateRosterPlan } from "./services/rosterGenerator";
 import { registerModularApiRoutes } from "./api";
+import { employeeDoesShifts } from "@shared/shiftTypes";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const isValidEmail = (value: string) =>
@@ -30,6 +32,13 @@ export async function registerRoutes(
   
   // Register modular API routes (employees, competencies, rooms, duty-plans, etc.)
   registerModularApiRoutes(app);
+
+  const canApproveLongTermWishes = async (req: Request): Promise<boolean> => {
+    if (!req.user) return false;
+    if (req.user.isAdmin || req.user.appRole === "Admin") return true;
+    const approver = await storage.getEmployee(req.user.employeeId);
+    return approver?.role === "Primararzt" || approver?.role === "1. Oberarzt";
+  };
   
   // Auth routes
   app.post("/api/auth/login", async (req: Request, res: Response) => {
@@ -391,8 +400,10 @@ export async function registerRoutes(
       const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
       const endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDayOfMonth).padStart(2, '0')}`;
       const absences = await storage.getAbsencesByDateRange(startDate, endDate);
+      const wishes = await storage.getShiftWishesByMonth(year, month);
+      const longTermWishes = await storage.getLongTermShiftWishesByStatus("Genehmigt");
 
-      const result = await generateRosterPlan(employees, absences, year, month);
+      const result = await generateRosterPlan(employees, absences, year, month, wishes, longTermWishes);
 
       res.json({
         success: true,
@@ -1020,17 +1031,27 @@ export async function registerRoutes(
         }
       }
 
-      // Get employee count and submitted wishes count
+      // Get eligible employees and submitted wishes count
       const employees = await storage.getEmployees();
-      const submittedCount = await storage.getSubmittedWishesCount(year, month);
-      const allSubmitted = submittedCount >= employees.length;
+      const eligibleEmployees = employees.filter(employeeDoesShifts);
+      const eligibleEmployeeIds = new Set(eligibleEmployees.map((emp) => emp.id));
+      const wishes = await storage.getShiftWishesByMonth(year, month);
+      const submittedCount = wishes.filter(
+        (wish) => wish.status === "Eingereicht" && eligibleEmployeeIds.has(wish.employeeId)
+      ).length;
+      const totalEmployees = eligibleEmployees.length;
+      const allSubmitted = totalEmployees > 0 && submittedCount >= totalEmployees;
+      const rosterShifts = await storage.getRosterShiftsByMonth(year, month);
+      const draftShiftCount = rosterShifts.length;
 
       res.json({
         year,
         month,
-        totalEmployees: employees.length,
+        totalEmployees,
         submittedCount,
-        allSubmitted
+        allSubmitted,
+        draftShiftCount,
+        hasDraft: draftShiftCount > 0
       });
     } catch (error) {
       res.status(500).json({ error: "Failed to get next planning month" });
@@ -1110,6 +1131,118 @@ export async function registerRoutes(
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete shift wish" });
+    }
+  });
+
+  // Long-term shift wishes routes
+  app.get("/api/long-term-wishes", async (req: Request, res: Response) => {
+    try {
+      const { employeeId, status } = req.query;
+
+      if (employeeId) {
+        const targetId = parseInt(employeeId as string);
+        if (req.user && !req.user.isAdmin && req.user.employeeId !== targetId) {
+          return res.status(403).json({ error: "Zugriff nur auf eigene Daten erlaubt" });
+        }
+        const wish = await storage.getLongTermShiftWishByEmployee(targetId);
+        return res.json(wish || null);
+      }
+
+      if (status) {
+        const allowed = await canApproveLongTermWishes(req);
+        if (!allowed) {
+          return res.status(403).json({ error: "Keine Berechtigung für diese Aktion" });
+        }
+        const wishes = await storage.getLongTermShiftWishesByStatus(status as string);
+        return res.json(wishes);
+      }
+
+      res.status(400).json({ error: "employeeId oder status ist erforderlich" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch long-term wishes" });
+    }
+  });
+
+  app.post("/api/long-term-wishes", async (req: Request, res: Response) => {
+    try {
+      const payload = insertLongTermShiftWishSchema.parse(req.body);
+      if (req.user && !req.user.isAdmin && req.user.employeeId !== payload.employeeId) {
+        return res.status(403).json({ error: "Zugriff nur auf eigene Daten erlaubt" });
+      }
+      const wish = await storage.upsertLongTermShiftWish(payload);
+      res.json(wish);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        const validationError = fromZodError(error);
+        return res.status(400).json({ error: validationError.message });
+      }
+      res.status(500).json({ error: "Failed to save long-term wish" });
+    }
+  });
+
+  app.post("/api/long-term-wishes/:id/submit", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const existing = await storage.getLongTermShiftWish(id);
+      if (!existing) {
+        return res.status(404).json({ error: "Long-term wish not found" });
+      }
+      if (req.user && !req.user.isAdmin && req.user.employeeId !== existing.employeeId) {
+        return res.status(403).json({ error: "Zugriff nur auf eigene Daten erlaubt" });
+      }
+      const wish = await storage.updateLongTermShiftWish(id, {
+        status: "Eingereicht",
+        submittedAt: new Date()
+      });
+      res.json(wish);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to submit long-term wish" });
+    }
+  });
+
+  app.post("/api/long-term-wishes/:id/approve", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const allowed = await canApproveLongTermWishes(req);
+      if (!allowed) {
+        return res.status(403).json({ error: "Keine Berechtigung für diese Aktion" });
+      }
+      const existing = await storage.getLongTermShiftWish(id);
+      if (!existing) {
+        return res.status(404).json({ error: "Long-term wish not found" });
+      }
+      const wish = await storage.updateLongTermShiftWish(id, {
+        status: "Genehmigt",
+        approvedAt: new Date(),
+        approvedById: req.user?.employeeId,
+        approvalNotes: req.body?.notes || null
+      });
+      res.json(wish);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to approve long-term wish" });
+    }
+  });
+
+  app.post("/api/long-term-wishes/:id/reject", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const allowed = await canApproveLongTermWishes(req);
+      if (!allowed) {
+        return res.status(403).json({ error: "Keine Berechtigung für diese Aktion" });
+      }
+      const existing = await storage.getLongTermShiftWish(id);
+      if (!existing) {
+        return res.status(404).json({ error: "Long-term wish not found" });
+      }
+      const wish = await storage.updateLongTermShiftWish(id, {
+        status: "Abgelehnt",
+        approvedAt: new Date(),
+        approvedById: req.user?.employeeId,
+        approvalNotes: req.body?.notes || null
+      });
+      res.json(wish);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to reject long-term wish" });
     }
   });
 

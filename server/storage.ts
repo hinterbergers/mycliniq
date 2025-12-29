@@ -30,6 +30,8 @@ import {
   type InsertRosterSettings,
   type ShiftWish,
   type InsertShiftWish,
+  type LongTermShiftWish,
+  type InsertLongTermShiftWish,
   type PlannedAbsence,
   type InsertPlannedAbsence,
   users,
@@ -47,6 +49,7 @@ import {
   shiftSwapRequests,
   rosterSettings,
   shiftWishes,
+  longTermShiftWishes,
   plannedAbsences
 } from "@shared/schema";
 import { eq, and, gte, lte, desc, gt } from "drizzle-orm";
@@ -152,6 +155,11 @@ export interface IStorage {
   updateShiftWish(id: number, wish: Partial<InsertShiftWish>): Promise<ShiftWish | undefined>;
   deleteShiftWish(id: number): Promise<boolean>;
   getSubmittedWishesCount(year: number, month: number): Promise<number>;
+  getLongTermShiftWishByEmployee(employeeId: number): Promise<LongTermShiftWish | undefined>;
+  getLongTermShiftWish(id: number): Promise<LongTermShiftWish | undefined>;
+  upsertLongTermShiftWish(wish: InsertLongTermShiftWish): Promise<LongTermShiftWish>;
+  updateLongTermShiftWish(id: number, wish: Partial<InsertLongTermShiftWish>): Promise<LongTermShiftWish | undefined>;
+  getLongTermShiftWishesByStatus(status: string): Promise<LongTermShiftWish[]>;
   
   // Planned absences methods
   getPlannedAbsencesByMonth(year: number, month: number): Promise<PlannedAbsence[]>;
@@ -685,6 +693,54 @@ export class DatabaseStorage implements IStorage {
         eq(shiftWishes.status, 'Eingereicht')
       ));
     return result.length;
+  }
+
+  // Long-term shift wishes methods
+  async getLongTermShiftWishByEmployee(employeeId: number): Promise<LongTermShiftWish | undefined> {
+    const result = await db.select()
+      .from(longTermShiftWishes)
+      .where(eq(longTermShiftWishes.employeeId, employeeId));
+    return result[0];
+  }
+
+  async getLongTermShiftWish(id: number): Promise<LongTermShiftWish | undefined> {
+    const result = await db.select()
+      .from(longTermShiftWishes)
+      .where(eq(longTermShiftWishes.id, id));
+    return result[0];
+  }
+
+  async upsertLongTermShiftWish(wish: InsertLongTermShiftWish): Promise<LongTermShiftWish> {
+    const existing = await this.getLongTermShiftWishByEmployee(wish.employeeId);
+    if (existing) {
+      const result = await db.update(longTermShiftWishes)
+        .set({ ...wish, updatedAt: new Date() })
+        .where(eq(longTermShiftWishes.id, existing.id))
+        .returning();
+      return result[0];
+    }
+
+    const result = await db.insert(longTermShiftWishes)
+      .values(wish as any)
+      .returning();
+    return result[0];
+  }
+
+  async updateLongTermShiftWish(
+    id: number,
+    wish: Partial<InsertLongTermShiftWish>
+  ): Promise<LongTermShiftWish | undefined> {
+    const result = await db.update(longTermShiftWishes)
+      .set({ ...wish, updatedAt: new Date() })
+      .where(eq(longTermShiftWishes.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async getLongTermShiftWishesByStatus(status: string): Promise<LongTermShiftWish[]> {
+    return await db.select()
+      .from(longTermShiftWishes)
+      .where(eq(longTermShiftWishes.status, status as any));
   }
 
   // Planned absences methods

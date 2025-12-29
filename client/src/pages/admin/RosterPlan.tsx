@@ -9,8 +9,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Calendar as CalendarIcon, Download, Filter, Printer, ArrowLeft, ArrowRight, Info, Loader2, Sparkles, ArrowRightLeft, CheckCircle2, AlertTriangle, Brain } from "lucide-react";
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { employeeApi, rosterApi, absenceApi } from "@/lib/api";
-import type { Employee, RosterShift, Absence } from "@shared/schema";
+import { employeeApi, rosterApi, absenceApi, rosterSettingsApi } from "@/lib/api";
+import type { Employee, RosterShift, Absence, RosterSettings } from "@shared/schema";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, isWeekend, getDay, getWeek } from "date-fns";
 import { de } from "date-fns/locale";
 import { useAuth } from "@/lib/auth";
@@ -30,16 +30,15 @@ const SERVICE_TYPES = [
   { id: "turnus", label: "Turnus", requiredRole: ["Assistenzarzt", "Assistenzärztin", "Turnusarzt"], color: "bg-emerald-100 text-emerald-700 border-emerald-200" }
 ];
 
-const EDIT_ALLOWED_ROLES = ["Primararzt", "1. Oberarzt", "Sekretariat"];
-const EDIT_ALLOWED_APP_ROLES = ["Admin", "Editor"];
 
 export default function RosterPlan() {
-  const { employee: currentUser } = useAuth();
+  const { employee: currentUser, capabilities, isAdmin, isTechnicalAdmin } = useAuth();
   const { toast } = useToast();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [shifts, setShifts] = useState<RosterShift[]>([]);
   const [absences, setAbsences] = useState<Absence[]>([]);
+  const [rosterSettings, setRosterSettings] = useState<RosterSettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [swapDialogOpen, setSwapDialogOpen] = useState(false);
@@ -50,17 +49,33 @@ export default function RosterPlan() {
   const [generationReasoning, setGenerationReasoning] = useState("");
   const [generationWarnings, setGenerationWarnings] = useState<string[]>([]);
   const [isApplying, setIsApplying] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
 
   const canEdit = useMemo(() => {
     if (!currentUser) return false;
-    return EDIT_ALLOWED_ROLES.includes(currentUser.role) || 
-           EDIT_ALLOWED_APP_ROLES.includes(currentUser.appRole);
-  }, [currentUser]);
+    if (isAdmin || isTechnicalAdmin) return true;
+    return capabilities.includes("dutyplan.edit");
+  }, [currentUser, isAdmin, isTechnicalAdmin, capabilities]);
+
+  const canPublish = useMemo(() => {
+    if (!currentUser) return false;
+    if (isAdmin || isTechnicalAdmin) return true;
+    return capabilities.includes("dutyplan.publish");
+  }, [currentUser, isAdmin, isTechnicalAdmin, capabilities]);
 
   const days = eachDayOfInterval({
     start: startOfMonth(currentDate),
     end: endOfMonth(currentDate)
   });
+
+  const isPublished = useMemo(() => {
+    if (!rosterSettings) return false;
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth() + 1;
+    if (year < rosterSettings.lastApprovedYear) return true;
+    if (year > rosterSettings.lastApprovedYear) return false;
+    return month <= rosterSettings.lastApprovedMonth;
+  }, [rosterSettings, currentDate]);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -70,15 +85,17 @@ export default function RosterPlan() {
       const startDate = format(startOfMonth(currentDate), 'yyyy-MM-dd');
       const endDate = format(endOfMonth(currentDate), 'yyyy-MM-dd');
       
-      const [empData, shiftData, absenceData] = await Promise.all([
+      const [empData, shiftData, absenceData, settings] = await Promise.all([
         employeeApi.getAll(),
         rosterApi.getByMonth(year, month),
-        absenceApi.getByDateRange(startDate, endDate)
+        absenceApi.getByDateRange(startDate, endDate),
+        rosterSettingsApi.get()
       ]);
       
       setEmployees(empData);
       setShifts(shiftData);
       setAbsences(absenceData);
+      setRosterSettings(settings);
     } catch (error) {
       console.error("Failed to load data:", error);
       toast({ title: "Fehler beim Laden", description: "Daten konnten nicht geladen werden", variant: "destructive" });
@@ -185,6 +202,33 @@ export default function RosterPlan() {
     }
   };
 
+  const handlePublish = async () => {
+    if (!currentUser) return;
+    setIsPublishing(true);
+    try {
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth() + 1;
+      const updated = await rosterSettingsApi.update({
+        lastApprovedYear: year,
+        lastApprovedMonth: month,
+        updatedById: currentUser.id
+      });
+      setRosterSettings(updated);
+      toast({
+        title: "Dienstplan freigegeben",
+        description: `Der Dienstplan für ${format(currentDate, 'MMMM yyyy', { locale: de })} wurde veröffentlicht.`
+      });
+    } catch (error: any) {
+      toast({
+        title: "Freigabe fehlgeschlagen",
+        description: error.message || "Bitte später erneut versuchen",
+        variant: "destructive"
+      });
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <Layout title="Dienstplan">
@@ -211,9 +255,12 @@ export default function RosterPlan() {
                 <ArrowRight className="w-4 h-4" />
               </Button>
             </div>
-            <Badge variant="outline" className="hidden md:flex gap-1 bg-primary/10 text-primary border-primary/20">
-              <Info className="w-3 h-3" /> 
-              <span>Planungsstatus: Entwurf</span>
+            <Badge
+              variant="outline"
+              className={`hidden md:flex gap-1 ${isPublished ? "bg-green-50 text-green-700 border-green-200" : "bg-primary/10 text-primary border-primary/20"}`}
+            >
+              <Info className="w-3 h-3" />
+              <span>Planungsstatus: {isPublished ? "Freigegeben" : "Entwurf"}</span>
             </Badge>
           </div>
 
@@ -248,6 +295,18 @@ export default function RosterPlan() {
                   <Sparkles className="w-4 h-4" />
                 )}
                 Auto-Generieren
+              </Button>
+            )}
+            {canPublish && (
+              <Button
+                variant={isPublished ? "outline" : "default"}
+                className="gap-2 flex-1 md:flex-none"
+                onClick={handlePublish}
+                disabled={isPublished || isPublishing}
+                data-testid="button-publish-roster"
+              >
+                {isPublishing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                {isPublished ? "Freigegeben" : "Freigeben"}
               </Button>
             )}
           </div>

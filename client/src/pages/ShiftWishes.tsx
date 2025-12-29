@@ -30,12 +30,13 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 import { format, addDays, getDaysInMonth, startOfMonth, getDay } from "date-fns";
 import { de } from "date-fns/locale";
+import { employeeDoesShifts, getServiceTypesForEmployee, type ServiceType } from "@shared/shiftTypes";
 
-const SERVICE_TYPES = [
-  { value: "gyn", label: "Gynäkologie" },
-  { value: "kreiszimmer", label: "Kreißzimmer" },
-  { value: "turnus", label: "Turnus" }
-];
+const SERVICE_TYPE_LABELS: Record<ServiceType, string> = {
+  gyn: "Gynäkologie",
+  kreiszimmer: "Geburtshilfedienst",
+  turnus: "Turnusdienst"
+};
 
 const ABSENCE_REASONS = [
   { value: "Urlaub", label: "Urlaub" },
@@ -56,7 +57,7 @@ const MONTH_NAMES = [
 ];
 
 export default function ShiftWishes() {
-  const { employee: currentUser } = useAuth();
+  const { employee: currentUser, capabilities, isAdmin, isTechnicalAdmin } = useAuth();
   const { toast } = useToast();
   
   const [loading, setLoading] = useState(true);
@@ -80,15 +81,19 @@ export default function ShiftWishes() {
   const [newAbsenceReason, setNewAbsenceReason] = useState<string>("Urlaub");
   const [newAbsenceNotes, setNewAbsenceNotes] = useState("");
   
-  const isAdmin = currentUser?.appRole === 'Admin' || 
-    currentUser?.role === 'Primararzt' || 
-    currentUser?.role === '1. Oberarzt';
+  const canViewAll = isAdmin || isTechnicalAdmin || capabilities.includes("dutyplan.edit");
+  const doesShifts = currentUser ? employeeDoesShifts(currentUser) : false;
+  const allowedServiceTypes = currentUser ? getServiceTypesForEmployee(currentUser) : [];
+  const serviceTypeOptions = allowedServiceTypes.map((type) => ({
+    value: type,
+    label: SERVICE_TYPE_LABELS[type]
+  }));
   
   const isSubmitted = wish?.status === 'Eingereicht';
   
   useEffect(() => {
     loadData();
-  }, [currentUser]);
+  }, [currentUser, canViewAll]);
   
   const loadData = async () => {
     if (!currentUser) return;
@@ -98,7 +103,7 @@ export default function ShiftWishes() {
       
       const [monthData, emps] = await Promise.all([
         rosterSettingsApi.getNextPlanningMonth(),
-        employeeApi.getAll()
+        canViewAll ? employeeApi.getAll() : Promise.resolve([])
       ]);
       
       setPlanningMonth(monthData);
@@ -111,18 +116,19 @@ export default function ShiftWishes() {
         ]);
         
         if (wishData) {
+          const allowed = new Set(allowedServiceTypes);
           setWish(wishData);
           setPreferredDays(wishData.preferredShiftDays || []);
           setAvoidDays(wishData.avoidShiftDays || []);
-          setPreferredServices(wishData.preferredServiceTypes || []);
-          setAvoidServices(wishData.avoidServiceTypes || []);
+          setPreferredServices((wishData.preferredServiceTypes || []).filter((t) => allowed.has(t as ServiceType)));
+          setAvoidServices((wishData.avoidServiceTypes || []).filter((t) => allowed.has(t as ServiceType)));
           setMaxShiftsPerWeek(wishData.maxShiftsPerWeek || undefined);
           setNotes(wishData.notes || "");
         }
         
         setAbsences(absenceData);
         
-        if (isAdmin) {
+        if (canViewAll) {
           const allWishData = await shiftWishesApi.getByMonth(monthData.year, monthData.month);
           setAllWishes(allWishData);
         }
@@ -143,15 +149,17 @@ export default function ShiftWishes() {
     
     try {
       setSaving(true);
-      
+      const allowed = new Set(allowedServiceTypes);
+      const cleanPreferred = preferredServices.filter((service) => allowed.has(service as ServiceType));
+      const cleanAvoid = avoidServices.filter((service) => allowed.has(service as ServiceType));
       const wishData = {
         employeeId: currentUser.id,
         year: planningMonth.year,
         month: planningMonth.month,
         preferredShiftDays: preferredDays,
         avoidShiftDays: avoidDays,
-        preferredServiceTypes: preferredServices,
-        avoidServiceTypes: avoidServices,
+        preferredServiceTypes: cleanPreferred,
+        avoidServiceTypes: cleanAvoid,
         maxShiftsPerWeek: maxShiftsPerWeek || null,
         notes: notes || null
       };
@@ -383,6 +391,21 @@ export default function ShiftWishes() {
     );
   }
   
+  if (!doesShifts) {
+    return (
+      <Layout>
+        <div className="p-6">
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              Für Ihr Profil sind derzeit keine Dienstwünsche erforderlich.
+            </AlertDescription>
+          </Alert>
+        </div>
+      </Layout>
+    );
+  }
+
   const monthName = MONTH_NAMES[planningMonth.month - 1];
   
   return (
@@ -423,7 +446,7 @@ export default function ShiftWishes() {
           <TabsList>
             <TabsTrigger value="wishes" data-testid="tab-wishes">Dienstwünsche</TabsTrigger>
             <TabsTrigger value="absences" data-testid="tab-absences">Abwesenheiten</TabsTrigger>
-            {isAdmin && (
+            {canViewAll && (
               <TabsTrigger value="overview" data-testid="tab-overview">Übersicht</TabsTrigger>
             )}
           </TabsList>
@@ -472,7 +495,7 @@ export default function ShiftWishes() {
                 <div>
                   <Label className="text-sm font-medium mb-2 block">Bevorzugte Diensttypen</Label>
                   <div className="flex gap-2">
-                    {SERVICE_TYPES.map(type => (
+                    {serviceTypeOptions.map(type => (
                       <Button
                         key={type.value}
                         variant={preferredServices.includes(type.value) ? "default" : "outline"}
@@ -490,7 +513,7 @@ export default function ShiftWishes() {
                 <div>
                   <Label className="text-sm font-medium mb-2 block">Zu vermeidende Diensttypen</Label>
                   <div className="flex gap-2">
-                    {SERVICE_TYPES.map(type => (
+                    {serviceTypeOptions.map(type => (
                       <Button
                         key={type.value}
                         variant={avoidServices.includes(type.value) ? "destructive" : "outline"}
@@ -705,7 +728,7 @@ export default function ShiftWishes() {
             </Card>
           </TabsContent>
           
-          {isAdmin && (
+          {canViewAll && (
             <TabsContent value="overview" className="space-y-4">
               <Card>
                 <CardHeader>
@@ -753,7 +776,7 @@ export default function ShiftWishes() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {employees.map(emp => {
+                      {employees.filter(employeeDoesShifts).map(emp => {
                         const empWish = allWishes.find(w => w.employeeId === emp.id);
                         
                         return (

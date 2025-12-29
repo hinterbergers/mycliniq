@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, serial, integer, date, timestamp, boolean, pgEnum, jsonb, index, uniqueIndex, time, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
+import type { LongTermWishRule } from "./shiftTypes";
 import { z } from "zod";
 
 // User App Role Enum (for authentication/authorization)
@@ -1088,6 +1089,13 @@ export const wishStatusEnum = pgEnum('wish_status', [
   'Eingereicht'
 ]);
 
+export const longTermWishStatusEnum = pgEnum('long_term_wish_status', [
+  'Entwurf',
+  'Eingereicht',
+  'Genehmigt',
+  'Abgelehnt'
+]);
+
 // Shift Wishes table - employee preferences for upcoming roster planning month
 export const shiftWishes = pgTable("shift_wishes", {
   id: serial("id").primaryKey(),
@@ -1114,6 +1122,32 @@ export const insertShiftWishSchema = createInsertSchema(shiftWishes).omit({
 
 export type InsertShiftWish = z.infer<typeof insertShiftWishSchema>;
 export type ShiftWish = typeof shiftWishes.$inferSelect;
+
+// Long-term shift wishes - per employee rules that require approval
+export const longTermShiftWishes = pgTable("long_term_shift_wishes", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").references(() => employees.id).notNull(),
+  status: longTermWishStatusEnum("status").notNull().default('Entwurf'),
+  rules: jsonb("rules").$type<LongTermWishRule[]>(),
+  notes: text("notes"),
+  submittedAt: timestamp("submitted_at"),
+  approvedAt: timestamp("approved_at"),
+  approvedById: integer("approved_by_id").references(() => employees.id),
+  approvalNotes: text("approval_notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (table) => [
+  uniqueIndex("long_term_shift_wishes_employee_idx").on(table.employeeId)
+]);
+
+export const insertLongTermShiftWishSchema = createInsertSchema(longTermShiftWishes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export type InsertLongTermShiftWish = z.infer<typeof insertLongTermShiftWishSchema>;
+export type LongTermShiftWish = typeof longTermShiftWishes.$inferSelect;
 
 // Planned Absences table - for requesting time off for the planning month
 export const plannedAbsences = pgTable("planned_absences", {

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -28,12 +29,13 @@ import {
   X
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
-import { employeeApi, competencyApi, roomApi, diplomaApi } from "@/lib/api";
+import { employeeApi, competencyApi, roomApi, diplomaApi, longTermWishesApi } from "@/lib/api";
 import { apiRequest } from "@/lib/queryClient";
-import type { Employee, Competency, Resource, Diploma } from "@shared/schema";
+import type { Employee, Competency, Resource, Diploma, LongTermShiftWish } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useParams, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
+import { employeeDoesShifts, type LongTermWishRule } from "@shared/shiftTypes";
 
 function formatBirthday(value: string | Date | null | undefined): string {
   if (!value) return "";
@@ -169,6 +171,41 @@ const SERVICE_CAPABILITIES: Record<ServiceType, string[]> = {
   turnus: ["Assistenzarzt", "Assistenzärztin", "Turnusarzt"]
 };
 
+const LONG_TERM_RULE_KINDS = [
+  { value: "ALWAYS_OFF", label: "Immer frei" },
+  { value: "PREFER_ON", label: "Bevorzugt" },
+  { value: "AVOID_ON", label: "Vermeiden" }
+];
+
+const LONG_TERM_RULE_STRENGTHS = [
+  { value: "SOFT", label: "Weich" },
+  { value: "HARD", label: "Hart" }
+];
+
+const LONG_TERM_WEEKDAYS = [
+  { value: "Mon", label: "Mo" },
+  { value: "Tue", label: "Di" },
+  { value: "Wed", label: "Mi" },
+  { value: "Thu", label: "Do" },
+  { value: "Fri", label: "Fr" },
+  { value: "Sat", label: "Sa" },
+  { value: "Sun", label: "So" }
+];
+
+const LONG_TERM_SERVICE_OPTIONS = [
+  { value: "any", label: "Alle Dienstschienen" },
+  { value: "gyn", label: "Gyn-Dienst" },
+  { value: "kreiszimmer", label: "Geburtshilfedienst" },
+  { value: "turnus", label: "Turnusdienst" }
+];
+
+const LONG_TERM_STATUS_LABELS: Record<string, string> = {
+  Entwurf: "Entwurf",
+  Eingereicht: "Eingereicht",
+  Genehmigt: "Genehmigt",
+  Abgelehnt: "Abgelehnt"
+};
+
 interface ShiftPreferences {
   deploymentRoomIds?: number[];
   serviceTypeOverrides?: ServiceType[];
@@ -216,6 +253,11 @@ export default function Settings() {
   const canEditRoleAndCompetencies = isAdmin;
   const canEditDiplomas = isViewingOwnProfile || isAdmin;
   const canChangePassword = isViewingOwnProfile;
+  const canApproveLongTerm =
+    isTechnicalAdmin ||
+    currentUser?.appRole === "Admin" ||
+    currentUser?.role === "Primararzt" ||
+    currentUser?.role === "1. Oberarzt";
   
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
@@ -264,6 +306,11 @@ export default function Settings() {
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
   const [loadingPermissions, setLoadingPermissions] = useState(false);
   const [savingPermissions, setSavingPermissions] = useState(false);
+  const [longTermWish, setLongTermWish] = useState<LongTermShiftWish | null>(null);
+  const [longTermRules, setLongTermRules] = useState<LongTermWishRule[]>([]);
+  const [longTermNotes, setLongTermNotes] = useState("");
+  const [longTermSaving, setLongTermSaving] = useState(false);
+  const [longTermDecisionNotes, setLongTermDecisionNotes] = useState("");
 
   const { toast } = useToast();
 
@@ -436,6 +483,19 @@ export default function Settings() {
               .filter((id): id is number => typeof id === "number");
             setSelectedDiplomaIds(fallbackIds);
           }
+        }
+
+        try {
+          const wish = await longTermWishesApi.getByEmployee(emp.id);
+          setLongTermWish(wish);
+          setLongTermRules(Array.isArray(wish?.rules) ? wish?.rules : []);
+          setLongTermNotes(wish?.notes || "");
+          setLongTermDecisionNotes("");
+        } catch {
+          setLongTermWish(null);
+          setLongTermRules([]);
+          setLongTermNotes("");
+          setLongTermDecisionNotes("");
         }
       }
     } catch (error) {
@@ -663,6 +723,123 @@ export default function Settings() {
     }
   };
 
+  const handleAddLongTermRule = () => {
+    setLongTermRules((prev) => [
+      ...prev,
+      { kind: "ALWAYS_OFF", weekday: "Mon", strength: "SOFT", serviceType: "any" }
+    ]);
+  };
+
+  const handleUpdateLongTermRule = (index: number, patch: Partial<LongTermWishRule>) => {
+    setLongTermRules((prev) =>
+      prev.map((rule, idx) => (idx === index ? { ...rule, ...patch } : rule))
+    );
+  };
+
+  const handleRemoveLongTermRule = (index: number) => {
+    setLongTermRules((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleSaveLongTermWish = async () => {
+    if (!employee || !isViewingOwnProfile) return;
+    setLongTermSaving(true);
+    try {
+      const status = longTermWish?.status === "Abgelehnt" ? "Entwurf" : longTermWish?.status || "Entwurf";
+      const wish = await longTermWishesApi.save({
+        employeeId: employee.id,
+        rules: longTermRules,
+        notes: longTermNotes || null,
+        status
+      });
+      setLongTermWish(wish);
+      toast({
+        title: "Gespeichert",
+        description: "Langfristige Dienstwünsche wurden aktualisiert"
+      });
+    } catch (error: any) {
+      toast({
+        title: "Fehler",
+        description: error.message || "Speichern fehlgeschlagen",
+        variant: "destructive"
+      });
+    } finally {
+      setLongTermSaving(false);
+    }
+  };
+
+  const handleSubmitLongTermWish = async () => {
+    if (!employee || !isViewingOwnProfile) return;
+    setLongTermSaving(true);
+    try {
+      let wish = longTermWish;
+      if (!wish || wish.status === "Abgelehnt" || wish.status === "Entwurf") {
+        wish = await longTermWishesApi.save({
+          employeeId: employee.id,
+          rules: longTermRules,
+          notes: longTermNotes || null,
+          status: "Entwurf"
+        });
+      }
+      if (!wish) return;
+      const submitted = await longTermWishesApi.submit(wish.id);
+      setLongTermWish(submitted);
+      toast({
+        title: "Eingereicht",
+        description: "Langfristige Wünsche wurden zur Freigabe eingereicht"
+      });
+    } catch (error: any) {
+      toast({
+        title: "Fehler",
+        description: error.message || "Einreichen fehlgeschlagen",
+        variant: "destructive"
+      });
+    } finally {
+      setLongTermSaving(false);
+    }
+  };
+
+  const handleApproveLongTermWish = async () => {
+    if (!longTermWish) return;
+    setLongTermSaving(true);
+    try {
+      const updated = await longTermWishesApi.approve(longTermWish.id, longTermDecisionNotes || undefined);
+      setLongTermWish(updated);
+      toast({
+        title: "Genehmigt",
+        description: "Langfristige Wünsche wurden freigegeben"
+      });
+    } catch (error: any) {
+      toast({
+        title: "Fehler",
+        description: error.message || "Freigabe fehlgeschlagen",
+        variant: "destructive"
+      });
+    } finally {
+      setLongTermSaving(false);
+    }
+  };
+
+  const handleRejectLongTermWish = async () => {
+    if (!longTermWish) return;
+    setLongTermSaving(true);
+    try {
+      const updated = await longTermWishesApi.reject(longTermWish.id, longTermDecisionNotes || undefined);
+      setLongTermWish(updated);
+      toast({
+        title: "Abgelehnt",
+        description: "Langfristige Wünsche wurden abgelehnt"
+      });
+    } catch (error: any) {
+      toast({
+        title: "Fehler",
+        description: error.message || "Ablehnung fehlgeschlagen",
+        variant: "destructive"
+      });
+    } finally {
+      setLongTermSaving(false);
+    }
+  };
+
   const handlePasswordChange = async () => {
     if (!canChangePassword) {
       toast({
@@ -777,6 +954,13 @@ export default function Settings() {
     );
   }
 
+  const viewingEmployeeDoesShifts = employeeDoesShifts(employee);
+  const longTermStatus = longTermWish?.status || "Entwurf";
+  const canEditLongTerm =
+    isViewingOwnProfile && (longTermStatus === "Entwurf" || longTermStatus === "Abgelehnt");
+  const showApproveActions =
+    !isViewingOwnProfile && canApproveLongTerm && longTermStatus === "Eingereicht";
+
   return (
     <Layout title={isViewingOwnProfile ? "Einstellungen" : `Profil: ${employee.name}`}>
       <div className="max-w-4xl mx-auto space-y-6">
@@ -829,6 +1013,9 @@ export default function Settings() {
             <TabsTrigger value="profile">Profil</TabsTrigger>
             <TabsTrigger value="security">Sicherheit</TabsTrigger>
             <TabsTrigger value="roles">Rollen & Kompetenzen</TabsTrigger>
+            {viewingEmployeeDoesShifts && (
+              <TabsTrigger value="longterm">Langfristige Dienstwünsche</TabsTrigger>
+            )}
             <TabsTrigger value="permissions">Berechtigungen</TabsTrigger>
           </TabsList>
 
@@ -1395,6 +1582,214 @@ export default function Settings() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {viewingEmployeeDoesShifts && (
+            <TabsContent value="longterm" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Langfristige Dienstwünsche</CardTitle>
+                  <CardDescription>
+                    Wiederkehrende Präferenzen für die Dienstplanung. Diese müssen freigegeben werden.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <Badge
+                      variant="outline"
+                      className={
+                        longTermStatus === "Genehmigt"
+                          ? "bg-green-50 text-green-700 border-green-200"
+                          : longTermStatus === "Eingereicht"
+                          ? "bg-blue-50 text-blue-700 border-blue-200"
+                          : longTermStatus === "Abgelehnt"
+                          ? "bg-red-50 text-red-700 border-red-200"
+                          : "bg-muted text-muted-foreground"
+                      }
+                    >
+                      Status: {LONG_TERM_STATUS_LABELS[longTermStatus] || longTermStatus}
+                    </Badge>
+                    {isViewingOwnProfile && canEditLongTerm && (
+                      <Button type="button" variant="outline" onClick={handleAddLongTermRule}>
+                        Regel hinzufügen
+                      </Button>
+                    )}
+                  </div>
+
+                  {longTermRules.length ? (
+                    <div className="space-y-3">
+                      {longTermRules.map((rule, index) => {
+                        const serviceValue = rule.serviceType || "any";
+                        return (
+                          <div key={`${rule.kind}-${index}`} className="grid md:grid-cols-5 gap-3 items-end">
+                            <div className="space-y-1">
+                              <Label>Regel</Label>
+                              <Select
+                                value={rule.kind}
+                                onValueChange={(value) => handleUpdateLongTermRule(index, { kind: value as LongTermWishRule["kind"] })}
+                              >
+                                <SelectTrigger disabled={!canEditLongTerm}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {LONG_TERM_RULE_KINDS.map((option) => (
+                                    <SelectItem key={option.value} value={option.value}>
+                                      {option.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-1">
+                              <Label>Wochentag</Label>
+                              <Select
+                                value={rule.weekday}
+                                onValueChange={(value) => handleUpdateLongTermRule(index, { weekday: value as LongTermWishRule["weekday"] })}
+                              >
+                                <SelectTrigger disabled={!canEditLongTerm}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {LONG_TERM_WEEKDAYS.map((day) => (
+                                    <SelectItem key={day.value} value={day.value}>
+                                      {day.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-1">
+                              <Label>Dienstschiene</Label>
+                              <Select
+                                value={serviceValue}
+                                onValueChange={(value) =>
+                                  handleUpdateLongTermRule(index, {
+                                    serviceType: value === "any" ? "any" : (value as LongTermWishRule["serviceType"])
+                                  })
+                                }
+                              >
+                                <SelectTrigger disabled={!canEditLongTerm}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {LONG_TERM_SERVICE_OPTIONS.map((option) => (
+                                    <SelectItem key={option.value} value={option.value}>
+                                      {option.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-1">
+                              <Label>Stärke</Label>
+                              <Select
+                                value={rule.strength}
+                                onValueChange={(value) =>
+                                  handleUpdateLongTermRule(index, { strength: value as LongTermWishRule["strength"] })
+                                }
+                              >
+                                <SelectTrigger disabled={!canEditLongTerm}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {LONG_TERM_RULE_STRENGTHS.map((option) => (
+                                    <SelectItem key={option.value} value={option.value}>
+                                      {option.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="flex justify-end">
+                              {canEditLongTerm && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleRemoveLongTermRule(index)}
+                                  aria-label="Regel entfernen"
+                                >
+                                  <X className="w-4 h-4" />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Keine Regeln hinterlegt.</p>
+                  )}
+
+                  <div className="space-y-2">
+                    <Label>Anmerkungen</Label>
+                    <Textarea
+                      value={longTermNotes}
+                      onChange={(event) => setLongTermNotes(event.target.value)}
+                      placeholder="Optional..."
+                      disabled={!canEditLongTerm}
+                    />
+                  </div>
+
+                  {showApproveActions && (
+                    <div className="space-y-2">
+                      <Label>Hinweise zur Entscheidung</Label>
+                      <Textarea
+                        value={longTermDecisionNotes}
+                        onChange={(event) => setLongTermDecisionNotes(event.target.value)}
+                        placeholder="Optional..."
+                      />
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap justify-end gap-2">
+                    {isViewingOwnProfile && (
+                      <>
+                        <Button
+                          variant="outline"
+                          onClick={handleSaveLongTermWish}
+                          disabled={!canEditLongTerm || longTermSaving}
+                        >
+                          {longTermSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                          Speichern
+                        </Button>
+                        <Button
+                          onClick={handleSubmitLongTermWish}
+                          disabled={
+                            !canEditLongTerm ||
+                            longTermSaving ||
+                            longTermStatus === "Eingereicht" ||
+                            longTermStatus === "Genehmigt"
+                          }
+                        >
+                          {longTermSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                          Einreichen
+                        </Button>
+                      </>
+                    )}
+                    {showApproveActions && (
+                      <>
+                        <Button
+                          variant="destructive"
+                          onClick={handleRejectLongTermWish}
+                          disabled={longTermSaving}
+                        >
+                          {longTermSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                          Ablehnen
+                        </Button>
+                        <Button
+                          onClick={handleApproveLongTermWish}
+                          disabled={longTermSaving}
+                        >
+                          {longTermSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                          Genehmigen
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
 
           <TabsContent value="permissions" className="space-y-4">
             <Card>

@@ -1,4 +1,4 @@
-import { Bell, Search, Calendar, CheckCircle } from "lucide-react";
+import { Bell, Search, Calendar, CheckCircle, AlertTriangle, Info } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -7,6 +7,7 @@ import { rosterSettingsApi, type NextPlanningMonth } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
+import { employeeDoesShifts } from "@shared/shiftTypes";
 
 const MONTH_NAMES = [
   "Jänner", "Februar", "März", "April", "Mai", "Juni",
@@ -14,31 +15,84 @@ const MONTH_NAMES = [
 ];
 
 export function Header({ title }: { title?: string }) {
-  const { employee } = useAuth();
+  const { employee, capabilities, isAdmin, isTechnicalAdmin } = useAuth();
   const [planningMonth, setPlanningMonth] = useState<NextPlanningMonth | null>(null);
-  const [hasNotification, setHasNotification] = useState(false);
+  const [notifications, setNotifications] = useState<
+    { id: string; tone: "success" | "warning" | "info"; title: string; description: string }[]
+  >([]);
   
-  const isAdmin = employee?.appRole === 'Admin' || 
-    employee?.role === 'Primararzt' || 
-    employee?.role === '1. Oberarzt';
+  const canEditPlan =
+    isAdmin ||
+    isTechnicalAdmin ||
+    capabilities.includes("dutyplan.edit");
+  const canPublishPlan =
+    isAdmin ||
+    isTechnicalAdmin ||
+    capabilities.includes("dutyplan.publish");
+  const doesShifts = employee ? employeeDoesShifts(employee) : false;
   
   useEffect(() => {
-    if (isAdmin) {
+    if (employee) {
       loadPlanningData();
     }
-  }, [isAdmin]);
+  }, [employee]);
   
   const loadPlanningData = async () => {
     try {
       const data = await rosterSettingsApi.getNextPlanningMonth();
       setPlanningMonth(data);
-      setHasNotification(data.allSubmitted);
     } catch (error) {
       console.error('Failed to load planning data', error);
     }
   };
+
+  useEffect(() => {
+    if (!planningMonth) {
+      setNotifications([]);
+      return;
+    }
+
+    const nextNotifications: { id: string; tone: "success" | "warning" | "info"; title: string; description: string }[] = [];
+    const monthLabel = `${MONTH_NAMES[planningMonth.month - 1]} ${planningMonth.year}`;
+
+    if (planningMonth.allSubmitted && canEditPlan) {
+      nextNotifications.push({
+        id: "all-submitted",
+        tone: "success",
+        title: "Alle Dienstwünsche eingereicht",
+        description: `Der Dienstplan für ${monthLabel} kann erstellt werden.`,
+      });
+    }
+
+    if (planningMonth.hasDraft && canPublishPlan) {
+      nextNotifications.push({
+        id: "draft-ready",
+        tone: "info",
+        title: "Dienstplan-Entwurf vorhanden",
+        description: `Der Entwurf für ${monthLabel} kann freigegeben werden.`,
+      });
+    }
+
+    if (doesShifts) {
+      const monthStart = new Date(planningMonth.year, planningMonth.month - 1, 1);
+      const warningStart = new Date(monthStart);
+      warningStart.setDate(warningStart.getDate() - 56);
+      const now = new Date();
+      if (now >= warningStart && now < monthStart) {
+        nextNotifications.push({
+          id: "wishes-reminder",
+          tone: "warning",
+          title: "Dienstwünsche demnächst fällig",
+          description: `Bitte Wünsche für ${monthLabel} eintragen.`,
+        });
+      }
+    }
+
+    setNotifications(nextNotifications);
+  }, [planningMonth, canEditPlan, canPublishPlan, doesShifts]);
   
   const today = format(new Date(), 'd. MMM yyyy', { locale: de });
+  const hasNotification = notifications.length > 0;
   
   return (
     <header className="h-16 kabeg-header sticky top-0 z-10 px-6 flex items-center justify-between shadow-sm">
@@ -72,25 +126,39 @@ export function Header({ title }: { title?: string }) {
             <div className="space-y-3">
               <h3 className="font-semibold text-sm">Benachrichtigungen</h3>
               
-              {hasNotification && planningMonth ? (
-                <div className="flex items-start gap-3 p-3 bg-green-50 rounded-lg border border-green-200">
-                  <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-medium text-green-800">
-                      Dienstplan kann erstellt werden
-                    </p>
-                    <p className="text-xs text-green-600 mt-1">
-                      Alle Mitarbeiter haben ihre Wünsche für {MONTH_NAMES[planningMonth.month - 1]} {planningMonth.year} eingereicht.
-                    </p>
-                  </div>
+              {notifications.length ? (
+                <div className="space-y-2">
+                  {notifications.map((note) => {
+                    const toneStyles =
+                      note.tone === "success"
+                        ? "bg-green-50 border-green-200 text-green-800"
+                        : note.tone === "warning"
+                        ? "bg-amber-50 border-amber-200 text-amber-800"
+                        : "bg-blue-50 border-blue-200 text-blue-800";
+                    const Icon =
+                      note.tone === "success"
+                        ? CheckCircle
+                        : note.tone === "warning"
+                        ? AlertTriangle
+                        : Info;
+                    return (
+                      <div key={note.id} className={`flex items-start gap-3 p-3 rounded-lg border ${toneStyles}`}>
+                        <Icon className="w-5 h-5 mt-0.5" />
+                        <div>
+                          <p className="text-sm font-medium">{note.title}</p>
+                          <p className="text-xs mt-1 opacity-80">{note.description}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">
                   Keine neuen Benachrichtigungen
                 </p>
               )}
-              
-              {planningMonth && !planningMonth.allSubmitted && isAdmin && (
+
+              {planningMonth && canEditPlan && !planningMonth.allSubmitted && (
                 <div className="text-xs text-muted-foreground">
                   <p>Dienstwünsche für {MONTH_NAMES[planningMonth.month - 1]} {planningMonth.year}:</p>
                   <p className="font-medium">
