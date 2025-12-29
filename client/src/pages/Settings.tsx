@@ -737,7 +737,7 @@ export default function Settings() {
                     <Popover>
                       <PopoverTrigger asChild>
                         <Button type="button" variant="outline">
-                          Kompetenzen auswaehlen
+                          Kompetenzen auswählen
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent align="start" className="w-80">
@@ -774,7 +774,7 @@ export default function Settings() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Einsatzbereiche (Ressourcen/Raeume)</Label>
+                  <Label>Einsatzbereiche (Ressourcen/Räume)</Label>
                   <div className="flex flex-wrap gap-2">
                     {selectedRoomLabels.length ? (
                       selectedRoomLabels.map((room) => (
@@ -801,7 +801,7 @@ export default function Settings() {
                     <Popover>
                       <PopoverTrigger asChild>
                         <Button type="button" variant="outline">
-                          Einsatzbereiche auswaehlen
+                          Einsatzbereiche auswählen
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent align="start" className="w-80">
@@ -809,7 +809,7 @@ export default function Settings() {
                           <Input
                             value={roomSearch}
                             onChange={(e) => setRoomSearch(e.target.value)}
-                            placeholder="Raeume/Ressourcen suchen..."
+                            placeholder="Räume/Ressourcen suchen..."
                           />
                           <div className="max-h-56 overflow-y-auto space-y-2">
                             {filteredRooms.map((room) => {
@@ -828,7 +828,7 @@ export default function Settings() {
                               );
                             })}
                             {!filteredRooms.length && (
-                              <p className="text-sm text-muted-foreground">Keine Raeume gefunden</p>
+                              <p className="text-sm text-muted-foreground">Keine Räume gefunden</p>
                             )}
                           </div>
                         </div>

@@ -11,14 +11,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
-import { Search, Plus, Filter, UserPlus, Pencil, Loader2, Shield, MapPin, Calendar, Trash2, Award, Building, Key } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar as DatePickerCalendar } from "@/components/ui/calendar";
+import { Search, Plus, Filter, UserPlus, Pencil, Loader2, Shield, MapPin, Calendar as CalendarIcon, Trash2, Award, Building, Key, X } from "lucide-react";
 import { useState, useEffect } from "react";
-import { employeeApi } from "@/lib/api";
-import type { Employee } from "@shared/schema";
+import { employeeApi, competencyApi, roomApi } from "@/lib/api";
+import { apiRequest } from "@/lib/queryClient";
+import type { Employee, Competency, Resource } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 
-const ROLES = [
+const ROLE_OPTIONS: Employee["role"][] = [
   "Primararzt",
   "1. Oberarzt",
   "Oberarzt",
@@ -29,39 +33,10 @@ const ROLES = [
   "Turnusarzt",
   "Student (KPJ)",
   "Student (Famulant)",
-  "Sekretariat"
+  "Sekretariat",
 ];
 
-const APP_ROLES = [
-  { value: "Admin", label: "Admin", description: "Voller Zugriff auf alle Funktionen" },
-  { value: "User", label: "Benutzer", description: "Nur Lesen und eigene Anfragen" }
-];
-
-const DEPLOYMENT_AREAS = [
-  { value: "GYN-Station", label: "Gynäkologische Bettenstation" },
-  { value: "GEB-Station", label: "Geburtshilfliche Bettenstation" },
-  { value: "Kreiszimmer", label: "Kreißzimmer" },
-  { value: "GYN-Ambulanz", label: "Gynäkologische Ambulanz" },
-  { value: "Schwangerenambulanz", label: "Schwangerenambulanz" },
-  { value: "OP", label: "Operationsbereich" },
-  { value: "Mamma-Zentrum", label: "Mamma-Zentrum" }
-];
-
-const COMPETENCIES = [
-  "Senior Mamma Surgeon",
-  "Endometriose",
-  "Gyn-Onkologie",
-  "Geburtshilfe",
-  "Urogynäkologie",
-  "Gynäkologische Chirurgie",
-  "ÖGUM I",
-  "ÖGUM II",
-  "Dysplasie",
-  "Allgemeine Gynäkologie",
-  "Mamma",
-  "Mamma Ambulanz",
-  "Kindergynäkologie"
-];
+const APP_ROLE_OPTIONS: Employee["appRole"][] = ["Admin", "Editor", "User"];
 
 const DUMMY_COMPETENCY_DATA = [
   { id: 1, name: "Senior Mamma Surgeon", badge: "SMS", description: "Erfahrener Brustkrebschirurg", rooms: ["OP 1 TCH", "OP 2"], requirements: "10+ Jahre Erfahrung, Mamma-Diplom" },
@@ -80,25 +55,8 @@ const SERVICE_CAPABILITIES = {
   turnus: ["Assistenzarzt", "Assistenzärztin", "Turnusarzt"]
 };
 
-const WEEKDAYS = [
-  { value: "monday", label: "Montag" },
-  { value: "tuesday", label: "Dienstag" },
-  { value: "wednesday", label: "Mittwoch" },
-  { value: "thursday", label: "Donnerstag" },
-  { value: "friday", label: "Freitag" },
-  { value: "saturday", label: "Samstag" },
-  { value: "sunday", label: "Sonntag" }
-];
-
 interface ShiftPreferences {
-  preferredDaysOff?: string[];
-  maxShiftsPerWeek?: number;
-  preferredAreas?: string[];
-  notes?: string;
-  participatesInShifts?: boolean;
-  possibleDeploymentAreas?: string[];
-  validFrom?: string;
-  validUntil?: string;
+  deploymentRoomIds?: number[];
 }
 
 interface CompetencyData {
@@ -110,14 +68,68 @@ interface CompetencyData {
   requirements: string;
 }
 
+function formatBirthday(value: string | Date | null | undefined): string {
+  if (!value) return "";
+  const toInput = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+  if (typeof value === "string") {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return toInput(parsed);
+    }
+    return "";
+  }
+  return toInput(value);
+}
+
+function formatBirthdayDisplay(value: string | Date | null | undefined): string {
+  const iso = formatBirthday(value);
+  if (!iso) return "";
+  const [year, month, day] = iso.split("-");
+  return `${day}.${month}.${year}`;
+}
+
+function parseBirthdayInput(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  let iso = "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    iso = trimmed;
+  } else {
+    const match = trimmed.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+    if (!match) return null;
+    iso = `${match[3]}-${match[2]}-${match[1]}`;
+  }
+
+  const [year, month, day] = iso.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+  return iso;
+}
+
 export default function EmployeeManagement() {
-  const { employee: currentUser } = useAuth();
+  const { employee: currentUser, isAdmin } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [resettingPassword, setResettingPassword] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [newEmployeeDialogOpen, setNewEmployeeDialogOpen] = useState(false);
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
   const [availablePermissions, setAvailablePermissions] = useState<Array<{key: string, label: string, scope: string}>>([]);
@@ -130,48 +142,213 @@ export default function EmployeeManagement() {
   const [editingCompetency, setEditingCompetency] = useState<CompetencyData | null>(null);
   const [competencySearchTerm, setCompetencySearchTerm] = useState("");
   
-  const canManageEmployees = currentUser?.appRole === 'Admin' || 
-    currentUser?.role === 'Primararzt' || 
-    currentUser?.role === '1. Oberarzt';
+  const [availableCompetencies, setAvailableCompetencies] = useState<Competency[]>([]);
+  const [availableRooms, setAvailableRooms] = useState<Resource[]>([]);
+  const [competencySearch, setCompetencySearch] = useState("");
+  const [roomSearch, setRoomSearch] = useState("");
+
+  const emptyForm = {
+    title: "",
+    firstName: "",
+    lastName: "",
+    birthday: "",
+    email: "",
+    emailPrivate: "",
+    phoneWork: "",
+    phonePrivate: "",
+    showPrivateContact: false,
+  };
+
+  const [editFormData, setEditFormData] = useState({ ...emptyForm });
+  const [editBirthdayInput, setEditBirthdayInput] = useState("");
+  const [editRoleValue, setEditRoleValue] = useState<Employee["role"] | "">("");
+  const [editAppRoleValue, setEditAppRoleValue] = useState<Employee["appRole"] | "">("");
+  const [editCompetencyIds, setEditCompetencyIds] = useState<number[]>([]);
+  const [editDeploymentRoomIds, setEditDeploymentRoomIds] = useState<number[]>([]);
+  const [resetPasswordData, setResetPasswordData] = useState({
+    newPassword: "",
+    confirmPassword: "",
+  });
+
+  const [newFormData, setNewFormData] = useState({ ...emptyForm });
+  const [newBirthdayInput, setNewBirthdayInput] = useState("");
+  const [newRoleValue, setNewRoleValue] = useState<Employee["role"] | "">("");
+  const [newAppRoleValue, setNewAppRoleValue] = useState<Employee["appRole"] | "">("User");
+  const [newCompetencyIds, setNewCompetencyIds] = useState<number[]>([]);
+  const [newDeploymentRoomIds, setNewDeploymentRoomIds] = useState<number[]>([]);
+  
+  const canManageEmployees = isAdmin;
   
   useEffect(() => {
-    loadEmployees();
+    loadData();
   }, []);
   
-  const loadEmployees = async () => {
+  const loadData = async () => {
+    setLoading(true);
     try {
-      const data = await employeeApi.getAll();
-      setEmployees(data);
+      const [employeeData, competencyData, roomData] = await Promise.all([
+        employeeApi.getAll(),
+        competencyApi.getAll(),
+        roomApi.getAll({ active: true })
+      ]);
+      setEmployees(employeeData);
+      setAvailableCompetencies(competencyData.filter((comp) => comp.isActive !== false));
+      setAvailableRooms(roomData.filter((room) => room.isActive !== false));
     } catch (error) {
       toast({
         title: "Fehler",
-        description: "Mitarbeiter konnten nicht geladen werden",
+        description: "Daten konnten nicht geladen werden",
         variant: "destructive"
       });
     } finally {
       setLoading(false);
     }
   };
+
+  const resetNewEmployeeForm = () => {
+    setNewFormData({ ...emptyForm });
+    setNewBirthdayInput("");
+    setNewRoleValue("");
+    setNewAppRoleValue("User");
+    setNewCompetencyIds([]);
+    setNewDeploymentRoomIds([]);
+    setCompetencySearch("");
+    setRoomSearch("");
+  };
+
+  const hydrateEditForm = (emp: Employee) => {
+    const nameParts = emp.name?.split(" ") ?? [];
+    const hasTitle = nameParts[0]?.includes("Dr.") || nameParts[0]?.includes("PD") || nameParts[0]?.includes("Prof.");
+    const titleValue = emp.title?.trim() || (hasTitle ? nameParts.slice(0, nameParts.length > 2 ? 2 : 1).join(" ") : "");
+    const birthdayIso = formatBirthday(emp.birthday);
+    setEditFormData({
+      ...emptyForm,
+      title: titleValue,
+      firstName: emp.firstName || "",
+      lastName: emp.lastName || (nameParts.length ? nameParts[nameParts.length - 1] : ""),
+      birthday: birthdayIso,
+      email: emp.email || "",
+      emailPrivate: emp.emailPrivate || "",
+      phoneWork: emp.phoneWork || "",
+      phonePrivate: emp.phonePrivate || "",
+      showPrivateContact: emp.showPrivateContact || false,
+    });
+    setEditBirthdayInput(formatBirthdayDisplay(birthdayIso || emp.birthday));
+    setEditRoleValue(emp.role || "");
+    setEditAppRoleValue(emp.appRole || "");
+    const prefs = (emp.shiftPreferences as ShiftPreferences | null) || null;
+    setEditDeploymentRoomIds(Array.isArray(prefs?.deploymentRoomIds) ? prefs.deploymentRoomIds : []);
+    setEditCompetencyIds([]);
+    setResetPasswordData({ newPassword: "", confirmPassword: "" });
+  };
+
+  useEffect(() => {
+    if (!editingEmployee) return;
+    loadEmployeeCompetencies(editingEmployee);
+  }, [editingEmployee, availableCompetencies]);
+
+  const loadEmployeeCompetencies = async (emp: Employee) => {
+    try {
+      const empCompetencies = await employeeApi.getCompetencies(emp.id);
+      const ids = empCompetencies
+        .map((comp) => comp.competencyId)
+        .filter((id): id is number => typeof id === "number");
+      if (ids.length) {
+        setEditCompetencyIds(ids);
+        return;
+      }
+    } catch {
+      // ignore
+    }
+
+    if (Array.isArray(emp.competencies) && availableCompetencies.length) {
+      const fallbackIds = emp.competencies
+        .map((name) => availableCompetencies.find((comp) => comp.name === name)?.id)
+        .filter((id): id is number => typeof id === "number");
+      setEditCompetencyIds(fallbackIds);
+    }
+  };
   
   const handleEditEmployee = (emp: Employee) => {
     setEditingEmployee(emp);
     setEditDialogOpen(true);
+    setCompetencySearch("");
+    setRoomSearch("");
+    hydrateEditForm(emp);
+  };
+
+  const handleEditDialogChange = (open: boolean) => {
+    setEditDialogOpen(open);
+    if (!open) {
+      setEditingEmployee(null);
+      setResetPasswordData({ newPassword: "", confirmPassword: "" });
+    }
+  };
+
+  const handleNewEmployeeDialogChange = (open: boolean) => {
+    setNewEmployeeDialogOpen(open);
+    if (open) {
+      resetNewEmployeeForm();
+    }
   };
   
   const handleSaveEmployee = async () => {
     if (!editingEmployee) return;
+
+    const parsedBirthday = parseBirthdayInput(editBirthdayInput);
+    if (parsedBirthday === null) {
+      toast({
+        title: "Fehler",
+        description: "Bitte ein gültiges Geburtsdatum eingeben (TT.MM.JJJJ oder JJJJ-MM-TT).",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!editFormData.firstName.trim() || !editFormData.lastName.trim()) {
+      toast({
+        title: "Fehler",
+        description: "Vor- und Nachname sind erforderlich",
+        variant: "destructive"
+      });
+      return;
+    }
     
     setSaving(true);
     try {
-      const updated = await employeeApi.update(editingEmployee.id, {
-        appRole: editingEmployee.appRole,
-        primaryDeploymentArea: editingEmployee.primaryDeploymentArea,
-        shiftPreferences: editingEmployee.shiftPreferences,
-        competencies: editingEmployee.competencies
-      });
+      const payload: Partial<Omit<Employee, "id" | "createdAt">> = {
+        title: editFormData.title || null,
+        firstName: editFormData.firstName.trim(),
+        lastName: editFormData.lastName.trim(),
+        name: `${editFormData.firstName} ${editFormData.lastName}`.trim(),
+        birthday: parsedBirthday || null,
+        email: editFormData.email.trim(),
+        emailPrivate: editFormData.emailPrivate.trim() || null,
+        phoneWork: editFormData.phoneWork.trim() || null,
+        phonePrivate: editFormData.phonePrivate.trim() || null,
+        showPrivateContact: editFormData.showPrivateContact,
+        role: (editRoleValue || editingEmployee.role) as Employee["role"],
+        appRole: (editAppRoleValue || editingEmployee.appRole) as Employee["appRole"],
+        shiftPreferences: {
+          ...(editingEmployee.shiftPreferences || {}),
+          deploymentRoomIds: editDeploymentRoomIds
+        }
+      };
+
+      const updated = await employeeApi.update(editingEmployee.id, payload);
+      await employeeApi.updateCompetencies(editingEmployee.id, editCompetencyIds);
+
+      const updatedCompetencies = editCompetencyIds
+        .map((id) => availableCompetencies.find((comp) => comp.id === id)?.name)
+        .filter((name): name is string => Boolean(name));
       
-      setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
+      setEmployees(prev => prev.map(e => e.id === updated.id ? {
+        ...updated,
+        competencies: updatedCompetencies.length ? updatedCompetencies : updated.competencies,
+        shiftPreferences: payload.shiftPreferences ?? updated.shiftPreferences
+      } : e));
       setEditDialogOpen(false);
+      setEditingEmployee(null);
       toast({ title: "Gespeichert", description: "Mitarbeiterdaten wurden aktualisiert" });
     } catch (error) {
       toast({ title: "Fehler", description: "Speichern fehlgeschlagen", variant: "destructive" });
@@ -179,45 +356,194 @@ export default function EmployeeManagement() {
       setSaving(false);
     }
   };
-  
-  const updateEditingEmployee = (field: keyof Employee, value: any) => {
-    if (!editingEmployee) return;
-    setEditingEmployee({ ...editingEmployee, [field]: value });
+
+  const handleCreateEmployee = async () => {
+    const parsedBirthday = parseBirthdayInput(newBirthdayInput);
+    if (parsedBirthday === null || parsedBirthday === "") {
+      toast({
+        title: "Fehler",
+        description: "Bitte ein gültiges Geburtsdatum eingeben (TT.MM.JJJJ oder JJJJ-MM-TT).",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!newFormData.firstName.trim() || !newFormData.lastName.trim() || !newFormData.email.trim()) {
+      toast({
+        title: "Fehler",
+        description: "Vorname, Nachname und E-Mail sind erforderlich",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!newRoleValue) {
+      toast({
+        title: "Fehler",
+        description: "Bitte eine Rolle auswählen",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    setCreating(true);
+    try {
+      const payload: any = {
+        title: newFormData.title || null,
+        firstName: newFormData.firstName.trim(),
+        lastName: newFormData.lastName.trim(),
+        name: `${newFormData.firstName} ${newFormData.lastName}`.trim(),
+        birthday: parsedBirthday,
+        email: newFormData.email.trim(),
+        emailPrivate: newFormData.emailPrivate.trim() || null,
+        phoneWork: newFormData.phoneWork.trim() || null,
+        phonePrivate: newFormData.phonePrivate.trim() || null,
+        showPrivateContact: newFormData.showPrivateContact,
+        role: newRoleValue as Employee["role"],
+        appRole: (newAppRoleValue || "User") as Employee["appRole"],
+        systemRole: "employee",
+        shiftPreferences: {
+          deploymentRoomIds: newDeploymentRoomIds
+        }
+      };
+      if (currentUser?.departmentId) {
+        payload.departmentId = currentUser.departmentId;
+      }
+
+      const created = await employeeApi.create(payload);
+      if (newCompetencyIds.length) {
+        await employeeApi.updateCompetencies(created.id, newCompetencyIds);
+      }
+
+      const createdCompetencies = newCompetencyIds
+        .map((id) => availableCompetencies.find((comp) => comp.id === id)?.name)
+        .filter((name): name is string => Boolean(name));
+      
+      setEmployees(prev => [...prev, {
+        ...created,
+        competencies: createdCompetencies.length ? createdCompetencies : created.competencies,
+        shiftPreferences: payload.shiftPreferences ?? created.shiftPreferences
+      }]);
+      setNewEmployeeDialogOpen(false);
+      resetNewEmployeeForm();
+      toast({ title: "Gespeichert", description: "Mitarbeiter wurde angelegt" });
+    } catch (error) {
+      toast({ title: "Fehler", description: "Mitarbeiter konnte nicht angelegt werden", variant: "destructive" });
+    } finally {
+      setCreating(false);
+    }
   };
-  
-  const updateShiftPreference = (key: keyof ShiftPreferences, value: any) => {
+
+  const handleResetPassword = async () => {
     if (!editingEmployee) return;
-    const currentPrefs = (editingEmployee.shiftPreferences as ShiftPreferences) || {};
-    setEditingEmployee({
-      ...editingEmployee,
-      shiftPreferences: { ...currentPrefs, [key]: value }
-    });
+
+    if (!resetPasswordData.newPassword || resetPasswordData.newPassword !== resetPasswordData.confirmPassword) {
+      toast({
+        title: "Fehler",
+        description: "Passwörter stimmen nicht überein",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setResettingPassword(true);
+    try {
+      await apiRequest("POST", "/api/auth/set-password", {
+        employeeId: editingEmployee.id,
+        newPassword: resetPasswordData.newPassword
+      });
+      toast({
+        title: "Passwort zurückgesetzt",
+        description: "Das neue Passwort wurde gespeichert"
+      });
+      setResetPasswordData({ newPassword: "", confirmPassword: "" });
+    } catch (error: any) {
+      toast({
+        title: "Fehler",
+        description: error.message || "Passwort konnte nicht gesetzt werden",
+        variant: "destructive"
+      });
+    } finally {
+      setResettingPassword(false);
+    }
   };
-  
-  const toggleCompetency = (comp: string) => {
-    if (!editingEmployee) return;
-    const currentComps = editingEmployee.competencies || [];
-    const newComps = currentComps.includes(comp)
-      ? currentComps.filter(c => c !== comp)
-      : [...currentComps, comp];
-    updateEditingEmployee('competencies', newComps);
+
+  const toggleEditCompetency = (id: number) => {
+    setEditCompetencyIds((prev) =>
+      prev.includes(id) ? prev.filter((compId) => compId !== id) : [...prev, id]
+    );
   };
-  
-  const toggleDeploymentArea = (area: string) => {
-    if (!editingEmployee) return;
-    const prefs = (editingEmployee.shiftPreferences as ShiftPreferences) || {};
-    const currentAreas = prefs.possibleDeploymentAreas || [];
-    const newAreas = currentAreas.includes(area)
-      ? currentAreas.filter(a => a !== area)
-      : [...currentAreas, area];
-    updateShiftPreference('possibleDeploymentAreas', newAreas);
+
+  const toggleNewCompetency = (id: number) => {
+    setNewCompetencyIds((prev) =>
+      prev.includes(id) ? prev.filter((compId) => compId !== id) : [...prev, id]
+    );
   };
-  
-  const filteredEmployees = employees.filter(emp => 
-    emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    emp.role.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    emp.competencies.some(c => c.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+
+  const toggleEditDeploymentRoom = (id: number) => {
+    setEditDeploymentRoomIds((prev) =>
+      prev.includes(id) ? prev.filter((roomId) => roomId !== id) : [...prev, id]
+    );
+  };
+
+  const toggleNewDeploymentRoom = (id: number) => {
+    setNewDeploymentRoomIds((prev) =>
+      prev.includes(id) ? prev.filter((roomId) => roomId !== id) : [...prev, id]
+    );
+  };
+
+  const filteredEmployees = employees.filter(emp => {
+    const search = searchTerm.toLowerCase();
+    return (
+      emp.name.toLowerCase().includes(search) ||
+      emp.role.toLowerCase().includes(search) ||
+      (emp.competencies || []).some(c => c.toLowerCase().includes(search))
+    );
+  });
+
+  const getCompetencyLabel = (id: number) =>
+    availableCompetencies.find((comp) => comp.id === id)?.name || `Kompetenz ${id}`;
+
+  const getRoomLabel = (id: number) =>
+    availableRooms.find((room) => room.id === id)?.name || `Raum ${id}`;
+
+  const filteredAvailableCompetencies = availableCompetencies.filter((comp) => {
+    const query = competencySearch.trim().toLowerCase();
+    if (!query) return true;
+    return (
+      comp.name.toLowerCase().includes(query) ||
+      (comp.code || "").toLowerCase().includes(query)
+    );
+  });
+
+  const filteredRooms = availableRooms.filter((room) => {
+    const query = roomSearch.trim().toLowerCase();
+    if (!query) return true;
+    return (
+      room.name.toLowerCase().includes(query) ||
+      (room.category || "").toLowerCase().includes(query)
+    );
+  });
+
+  const editSelectedCompetencyLabels = editCompetencyIds.map((id) => ({
+    id,
+    label: getCompetencyLabel(id),
+  }));
+
+  const newSelectedCompetencyLabels = newCompetencyIds.map((id) => ({
+    id,
+    label: getCompetencyLabel(id),
+  }));
+
+  const editSelectedRoomLabels = editDeploymentRoomIds.map((id) => ({
+    id,
+    label: getRoomLabel(id),
+  }));
+
+  const newSelectedRoomLabels = newDeploymentRoomIds.map((id) => ({
+    id,
+    label: getRoomLabel(id),
+  }));
 
   const filteredCompetencies = competencies.filter(comp =>
     comp.name.toLowerCase().includes(competencySearchTerm.toLowerCase()) ||
@@ -231,11 +557,25 @@ export default function EmployeeManagement() {
     if (SERVICE_CAPABILITIES.turnus.includes(role)) caps.push({ label: "Turnus", color: "bg-emerald-100 text-emerald-700 border-emerald-200" });
     return caps;
   };
+
+  const getDeploymentLabels = (emp: Employee) => {
+    const prefs = (emp.shiftPreferences as ShiftPreferences | null) || null;
+    const ids = Array.isArray(prefs?.deploymentRoomIds) ? prefs.deploymentRoomIds : [];
+    if (ids.length) {
+      return ids.map((id) => getRoomLabel(id));
+    }
+    if (emp.primaryDeploymentArea) {
+      return [emp.primaryDeploymentArea];
+    }
+    return [];
+  };
   
   const getAppRoleBadge = (appRole: string) => {
     switch (appRole) {
       case 'Admin':
         return <Badge className="bg-red-100 text-red-700 border-red-200 gap-1"><Shield className="w-3 h-3" />Admin</Badge>;
+      case 'Editor':
+        return <Badge className="bg-blue-100 text-blue-700 border-blue-200 gap-1"><Shield className="w-3 h-3" />Editor</Badge>;
       default:
         return <Badge variant="outline" className="text-muted-foreground">Benutzer</Badge>;
     }
@@ -389,66 +729,288 @@ export default function EmployeeManagement() {
                   <Filter className="w-4 h-4" /> Filter
                 </Button>
                 
-                <Dialog>
+                <Dialog open={newEmployeeDialogOpen} onOpenChange={handleNewEmployeeDialogChange}>
                   <DialogTrigger asChild>
                     <Button className="gap-2" data-testid="button-new-employee">
                       <UserPlus className="w-4 h-4" /> Neuer Mitarbeiter
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="max-w-2xl">
+                  <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                       <DialogTitle>Neuen Mitarbeiter anlegen</DialogTitle>
                     </DialogHeader>
-                    <div className="grid gap-6 py-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label>Titel</Label>
-                          <Input placeholder="Dr. med." />
+                    <div className="space-y-6 py-2">
+                      <div className="space-y-4">
+                        <h4 className="text-sm font-semibold">Basisdaten</h4>
+                        <div className="grid md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>Titel</Label>
+                            <Input
+                              value={newFormData.title}
+                              onChange={(e) => setNewFormData(prev => ({ ...prev, title: e.target.value }))}
+                              placeholder="Dr. med."
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Vorname</Label>
+                            <Input
+                              value={newFormData.firstName}
+                              onChange={(e) => setNewFormData(prev => ({ ...prev, firstName: e.target.value }))}
+                              placeholder="Max"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Nachname</Label>
+                            <Input
+                              value={newFormData.lastName}
+                              onChange={(e) => setNewFormData(prev => ({ ...prev, lastName: e.target.value }))}
+                              placeholder="Mustermann"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Geburtsdatum</Label>
+                            <div className="flex items-center gap-2">
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <Button type="button" variant="outline" size="icon" aria-label="Kalender öffnen">
+                                    <CalendarIcon className="w-4 h-4 text-muted-foreground" />
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent align="start" className="p-2">
+                                  <DatePickerCalendar
+                                    mode="single"
+                                    captionLayout="dropdown"
+                                    selected={newFormData.birthday ? new Date(`${newFormData.birthday}T00:00:00`) : undefined}
+                                    onSelect={(date) => {
+                                      if (!date) return;
+                                      const iso = formatBirthday(date);
+                                      setNewFormData(prev => ({ ...prev, birthday: iso }));
+                                      setNewBirthdayInput(formatBirthdayDisplay(iso));
+                                    }}
+                                    fromYear={1900}
+                                    toYear={new Date().getFullYear()}
+                                  />
+                                </PopoverContent>
+                              </Popover>
+                              <Input
+                                value={newBirthdayInput}
+                                onChange={(e) => setNewBirthdayInput(e.target.value)}
+                                placeholder="TT.MM.JJJJ"
+                              />
+                            </div>
+                          </div>
                         </div>
-                        <div className="space-y-2">
-                          <Label>Vorname</Label>
-                          <Input placeholder="Max" />
+
+                        <Separator />
+
+                        <div className="grid md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>E-Mail (Dienst)</Label>
+                            <Input
+                              value={newFormData.email}
+                              onChange={(e) => setNewFormData(prev => ({ ...prev, email: e.target.value }))}
+                              placeholder="name@klinik.at"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>E-Mail (privat)</Label>
+                            <Input
+                              value={newFormData.emailPrivate}
+                              onChange={(e) => setNewFormData(prev => ({ ...prev, emailPrivate: e.target.value }))}
+                              placeholder="name@privat.at"
+                            />
+                          </div>
                         </div>
-                        <div className="space-y-2">
-                          <Label>Nachname</Label>
-                          <Input placeholder="Mustermann" />
+
+                        <div className="grid md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>Telefon (Dienst)</Label>
+                            <Input
+                              value={newFormData.phoneWork}
+                              onChange={(e) => setNewFormData(prev => ({ ...prev, phoneWork: e.target.value }))}
+                              placeholder="+43 ..."
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Telefon (privat)</Label>
+                            <Input
+                              value={newFormData.phonePrivate}
+                              onChange={(e) => setNewFormData(prev => ({ ...prev, phonePrivate: e.target.value }))}
+                              placeholder="+43 ..."
+                            />
+                          </div>
                         </div>
-                        <div className="space-y-2">
-                          <Label>Rolle / Funktion</Label>
-                          <Select>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Rolle wählen" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {ROLES.map(role => (
-                                <SelectItem key={role} value={role}>{role}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+
+                        <div className="flex items-center justify-between rounded-lg border border-border p-4">
+                          <div>
+                            <Label>Private Kontaktdaten sichtbar</Label>
+                            <p className="text-xs text-muted-foreground">Erlaubt das Anzeigen privater Telefonnummer/E-Mail</p>
+                          </div>
+                          <Switch
+                            checked={newFormData.showPrivateContact}
+                            onCheckedChange={(checked) => setNewFormData(prev => ({ ...prev, showPrivateContact: Boolean(checked) }))}
+                          />
                         </div>
                       </div>
 
-                      <div className="space-y-3">
-                        <Label>Kompetenzen & Fähigkeiten</Label>
-                        <div className="grid grid-cols-2 gap-3 p-4 border border-border rounded-lg bg-muted/10 h-64 overflow-y-auto">
-                          {COMPETENCIES.map(comp => (
-                            <div key={comp} className="flex items-center space-x-2">
-                              <Checkbox id={comp} />
-                              <Label htmlFor={comp} className="text-sm font-normal cursor-pointer">{comp}</Label>
-                            </div>
-                          ))}
+                      <div className="space-y-4">
+                        <h4 className="text-sm font-semibold">Rollen & Kompetenzen</h4>
+                        <div className="grid md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>Rolle</Label>
+                            <Select value={newRoleValue} onValueChange={(value) => setNewRoleValue(value as Employee["role"])}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Rolle wählen" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {ROLE_OPTIONS.map((role) => (
+                                  <SelectItem key={role} value={role}>{role}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>App-Rolle</Label>
+                            <Select value={newAppRoleValue} onValueChange={(value) => setNewAppRoleValue(value as Employee["appRole"])}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="App-Rolle wählen" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {APP_ROLE_OPTIONS.map((role) => (
+                                  <SelectItem key={role} value={role}>{role}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
                         </div>
-                      </div>
-                      
-                      <div className="space-y-2">
-                        <Label>Befristeter Zugang (Optional)</Label>
-                        <Input type="date" />
-                        <p className="text-xs text-muted-foreground">Für Studenten und Gastärzte</p>
+
+                        <div className="space-y-2">
+                          <Label>Kompetenzen</Label>
+                          <div className="flex flex-wrap gap-2">
+                            {newSelectedCompetencyLabels.length ? (
+                              newSelectedCompetencyLabels.map((comp) => (
+                                <Badge key={comp.id} variant="secondary" className="flex items-center gap-1">
+                                  <span>{comp.label}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleNewCompetency(comp.id)}
+                                    className="ml-1 text-muted-foreground hover:text-foreground"
+                                    aria-label={`Kompetenz entfernen: ${comp.label}`}
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </Badge>
+                              ))
+                            ) : (
+                              <p className="text-sm text-muted-foreground">Keine Kompetenzen ausgewählt</p>
+                            )}
+                          </div>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button type="button" variant="outline">
+                                Kompetenzen auswählen
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent align="start" className="w-80">
+                              <div className="space-y-2">
+                                <Input
+                                  value={competencySearch}
+                                  onChange={(e) => setCompetencySearch(e.target.value)}
+                                  placeholder="Kompetenz suchen..."
+                                />
+                                <div className="max-h-56 overflow-y-auto space-y-2">
+                                  {filteredAvailableCompetencies.map((comp) => {
+                                    const checked = newCompetencyIds.includes(comp.id);
+                                    return (
+                                      <div key={comp.id} className="flex items-center gap-2">
+                                        <Checkbox
+                                          id={`new-competency-${comp.id}`}
+                                          checked={checked}
+                                          onCheckedChange={() => toggleNewCompetency(comp.id)}
+                                        />
+                                        <Label htmlFor={`new-competency-${comp.id}`} className="text-sm font-normal cursor-pointer">
+                                          {comp.code ? `${comp.code} - ${comp.name}` : comp.name}
+                                        </Label>
+                                      </div>
+                                    );
+                                  })}
+                                  {!filteredAvailableCompetencies.length && (
+                                    <p className="text-sm text-muted-foreground">Keine Kompetenzen gefunden</p>
+                                  )}
+                                </div>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label>Einsatzbereiche (Ressourcen/Räume)</Label>
+                          <div className="flex flex-wrap gap-2">
+                            {newSelectedRoomLabels.length ? (
+                              newSelectedRoomLabels.map((room) => (
+                                <Badge key={room.id} variant="secondary" className="flex items-center gap-1">
+                                  <span>{room.label}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleNewDeploymentRoom(room.id)}
+                                    className="ml-1 text-muted-foreground hover:text-foreground"
+                                    aria-label={`Einsatzbereich entfernen: ${room.label}`}
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </Badge>
+                              ))
+                            ) : (
+                              <p className="text-sm text-muted-foreground">Keine Einsatzbereiche ausgewählt</p>
+                            )}
+                          </div>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button type="button" variant="outline">
+                                Einsatzbereiche auswählen
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent align="start" className="w-80">
+                              <div className="space-y-2">
+                                <Input
+                                  value={roomSearch}
+                                  onChange={(e) => setRoomSearch(e.target.value)}
+                                  placeholder="Räume/Ressourcen suchen..."
+                                />
+                                <div className="max-h-56 overflow-y-auto space-y-2">
+                                  {filteredRooms.map((room) => {
+                                    const checked = newDeploymentRoomIds.includes(room.id);
+                                    return (
+                                      <div key={room.id} className="flex items-center gap-2">
+                                        <Checkbox
+                                          id={`new-room-${room.id}`}
+                                          checked={checked}
+                                          onCheckedChange={() => toggleNewDeploymentRoom(room.id)}
+                                        />
+                                        <Label htmlFor={`new-room-${room.id}`} className="text-sm font-normal cursor-pointer">
+                                          {room.name}
+                                        </Label>
+                                      </div>
+                                    );
+                                  })}
+                                  {!filteredRooms.length && (
+                                    <p className="text-sm text-muted-foreground">Keine Räume gefunden</p>
+                                  )}
+                                </div>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        </div>
                       </div>
                     </div>
                     <DialogFooter>
-                      <Button variant="outline">Abbrechen</Button>
-                      <Button>Speichern</Button>
+                      <DialogClose asChild>
+                        <Button variant="outline">Abbrechen</Button>
+                      </DialogClose>
+                      <Button onClick={handleCreateEmployee} disabled={creating}>
+                        {creating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                        Speichern
+                      </Button>
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
@@ -471,16 +1033,17 @@ export default function EmployeeManagement() {
                   <TableBody>
                     {filteredEmployees.map((emp) => {
                       const capabilities = getCapabilities(emp.role);
-                      const deploymentArea = DEPLOYMENT_AREAS.find(a => a.value === emp.primaryDeploymentArea);
+                      const deploymentLabels = getDeploymentLabels(emp);
+                      const employeeCompetencies = emp.competencies || [];
                       return (
                         <TableRow key={emp.id} data-testid={`row-employee-${emp.id}`}>
                           <TableCell className="font-medium">
                             <div className="flex flex-col">
                               <span>{emp.name}</span>
-                              {emp.competencies.length > 0 && (
+                              {employeeCompetencies.length > 0 && (
                                 <span className="text-xs text-muted-foreground">
-                                  {emp.competencies.slice(0, 2).join(", ")}
-                                  {emp.competencies.length > 2 && ` +${emp.competencies.length - 2}`}
+                                  {employeeCompetencies.slice(0, 2).join(", ")}
+                                  {employeeCompetencies.length > 2 && ` +${employeeCompetencies.length - 2}`}
                                 </span>
                               )}
                             </div>
@@ -492,11 +1055,18 @@ export default function EmployeeManagement() {
                             {getAppRoleBadge(emp.appRole)}
                           </TableCell>
                           <TableCell>
-                            {deploymentArea ? (
-                              <Badge variant="outline" className="gap-1 font-normal">
-                                <MapPin className="w-3 h-3" />
-                                {deploymentArea.label}
-                              </Badge>
+                            {deploymentLabels.length ? (
+                              <div className="flex gap-1 flex-wrap">
+                                <Badge variant="outline" className="gap-1 font-normal">
+                                  <MapPin className="w-3 h-3" />
+                                  {deploymentLabels[0]}
+                                </Badge>
+                                {deploymentLabels.length > 1 && (
+                                  <Badge variant="outline" className="text-xs">
+                                    +{deploymentLabels.length - 1}
+                                  </Badge>
+                                )}
+                              </div>
                             ) : (
                               <span className="text-xs text-muted-foreground">—</span>
                             )}
@@ -637,223 +1207,308 @@ export default function EmployeeManagement() {
           </TabsContent>
         </Tabs>
 
-        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <Dialog open={editDialogOpen} onOpenChange={handleEditDialogChange}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Mitarbeiter bearbeiten: {editingEmployee?.name}</DialogTitle>
             </DialogHeader>
             
             {editingEmployee && (
-              <Tabs defaultValue="permissions" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="permissions">Berechtigungen</TabsTrigger>
-                  <TabsTrigger value="preferences">Präferenzen</TabsTrigger>
+              <Tabs defaultValue="profile" className="w-full">
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="profile">Profil</TabsTrigger>
+                  <TabsTrigger value="roles">Rollen & Kompetenzen</TabsTrigger>
+                  <TabsTrigger value="security">Sicherheit</TabsTrigger>
                 </TabsList>
                 
-                <TabsContent value="permissions" className="space-y-4 py-4">
+                <TabsContent value="profile" className="space-y-4 py-4">
                   <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label className="flex items-center gap-2">
-                        <Shield className="w-4 h-4" /> App-Rolle
-                      </Label>
-                      <Select 
-                        value={editingEmployee.appRole} 
-                        onValueChange={(v) => updateEditingEmployee('appRole', v)}
-                      >
-                        <SelectTrigger data-testid="select-app-role">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {APP_ROLES.map(role => (
-                            <SelectItem key={role.value} value={role.value}>
-                              <div className="flex flex-col">
-                                <span>{role.label}</span>
-                                <span className="text-xs text-muted-foreground">{role.description}</span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    
-                    <Separator />
-                    
-                    <div className="space-y-2">
-                      <Label className="flex items-center gap-2">
-                        <MapPin className="w-4 h-4" /> Haupteinsatzbereich
-                      </Label>
-                      <Select 
-                        value={editingEmployee.primaryDeploymentArea || ""} 
-                        onValueChange={(v) => updateEditingEmployee('primaryDeploymentArea', v || null)}
-                      >
-                        <SelectTrigger data-testid="select-deployment-area">
-                          <SelectValue placeholder="Bereich wählen" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {DEPLOYMENT_AREAS.map(area => (
-                            <SelectItem key={area.value} value={area.value}>
-                              {area.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    
-                    <Separator />
-                    
-                    <div className="flex items-center space-x-2">
-                      <Checkbox 
-                        id="participates-shifts"
-                        checked={(editingEmployee.shiftPreferences as ShiftPreferences)?.participatesInShifts !== false}
-                        onCheckedChange={(checked) => updateShiftPreference('participatesInShifts', checked)}
-                        data-testid="checkbox-participates-shifts"
-                      />
-                      <Label htmlFor="participates-shifts" className="cursor-pointer">
-                        Nimmt an Diensten teil
-                      </Label>
-                    </div>
-                    
-                    <Separator />
-                    
-                    <div className="space-y-2">
-                      <Label className="flex items-center gap-2">
-                        <Award className="w-4 h-4" /> Kompetenzen
-                      </Label>
-                      <div className="grid grid-cols-2 gap-2 p-3 border border-border rounded-lg bg-muted/10 max-h-40 overflow-y-auto">
-                        {COMPETENCIES.map(comp => (
-                          <div key={comp} className="flex items-center space-x-2">
-                            <Checkbox 
-                              id={`comp-${comp}`}
-                              checked={editingEmployee.competencies.includes(comp)}
-                              onCheckedChange={() => toggleCompetency(comp)}
-                            />
-                            <Label htmlFor={`comp-${comp}`} className="text-sm font-normal cursor-pointer">
-                              {comp}
-                            </Label>
-                          </div>
-                        ))}
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Titel</Label>
+                        <Input 
+                          value={editFormData.title}
+                          onChange={(e) => setEditFormData(prev => ({ ...prev, title: e.target.value }))}
+                        />
                       </div>
-                    </div>
-                    
-                    <Separator />
-                    
-                    <div className="space-y-2">
-                      <Label className="flex items-center gap-2">
-                        <Building className="w-4 h-4" /> Mögliche Einsatzbereiche
-                      </Label>
-                      <div className="grid grid-cols-2 gap-2 p-3 border border-border rounded-lg bg-muted/10">
-                        {DEPLOYMENT_AREAS.map(area => {
-                          const prefs = (editingEmployee.shiftPreferences as ShiftPreferences) || {};
-                          const isSelected = prefs.possibleDeploymentAreas?.includes(area.value) || false;
-                          return (
-                            <div key={area.value} className="flex items-center space-x-2">
-                              <Checkbox 
-                                id={`area-${area.value}`}
-                                checked={isSelected}
-                                onCheckedChange={() => toggleDeploymentArea(area.value)}
+                      <div className="space-y-2">
+                        <Label>Vorname</Label>
+                        <Input 
+                          value={editFormData.firstName}
+                          onChange={(e) => setEditFormData(prev => ({ ...prev, firstName: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Nachname</Label>
+                        <Input 
+                          value={editFormData.lastName}
+                          onChange={(e) => setEditFormData(prev => ({ ...prev, lastName: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Geburtsdatum</Label>
+                        <div className="flex items-center gap-2">
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button type="button" variant="outline" size="icon" aria-label="Kalender öffnen">
+                                <CalendarIcon className="w-4 h-4 text-muted-foreground" />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent align="start" className="p-2">
+                              <DatePickerCalendar
+                                mode="single"
+                                captionLayout="dropdown"
+                                selected={editFormData.birthday ? new Date(`${editFormData.birthday}T00:00:00`) : undefined}
+                                onSelect={(date) => {
+                                  if (!date) return;
+                                  const iso = formatBirthday(date);
+                                  setEditFormData(prev => ({ ...prev, birthday: iso }));
+                                  setEditBirthdayInput(formatBirthdayDisplay(iso));
+                                }}
+                                fromYear={1900}
+                                toYear={new Date().getFullYear()}
                               />
-                              <Label htmlFor={`area-${area.value}`} className="text-sm font-normal cursor-pointer">
-                                {area.label}
-                              </Label>
-                            </div>
-                          );
-                        })}
+                            </PopoverContent>
+                          </Popover>
+                          <Input 
+                            value={editBirthdayInput}
+                            onChange={(e) => setEditBirthdayInput(e.target.value)}
+                            placeholder="TT.MM.JJJJ"
+                          />
+                        </div>
                       </div>
                     </div>
-                    
+
                     <Separator />
-                    
-                    <div className="space-y-2">
-                      <Label>Befristung</Label>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">Von</Label>
-                          <Input 
-                            type="date"
-                            value={(editingEmployee.shiftPreferences as ShiftPreferences)?.validFrom || ""}
-                            onChange={(e) => updateShiftPreference('validFrom', e.target.value)}
-                            data-testid="input-valid-from"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">Bis</Label>
-                          <Input 
-                            type="date"
-                            value={(editingEmployee.shiftPreferences as ShiftPreferences)?.validUntil || ""}
-                            onChange={(e) => updateShiftPreference('validUntil', e.target.value)}
-                            data-testid="input-valid-until"
-                          />
-                        </div>
+
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>E-Mail (Dienst)</Label>
+                        <Input 
+                          value={editFormData.email}
+                          onChange={(e) => setEditFormData(prev => ({ ...prev, email: e.target.value }))}
+                        />
                       </div>
-                      <p className="text-xs text-muted-foreground">Für Studenten und Gastärzte</p>
+                      <div className="space-y-2">
+                        <Label>E-Mail (privat)</Label>
+                        <Input 
+                          value={editFormData.emailPrivate}
+                          onChange={(e) => setEditFormData(prev => ({ ...prev, emailPrivate: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Telefon (Dienst)</Label>
+                        <Input 
+                          value={editFormData.phoneWork}
+                          onChange={(e) => setEditFormData(prev => ({ ...prev, phoneWork: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Telefon (privat)</Label>
+                        <Input 
+                          value={editFormData.phonePrivate}
+                          onChange={(e) => setEditFormData(prev => ({ ...prev, phonePrivate: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-lg border border-border p-4">
+                      <div>
+                        <Label>Private Kontaktdaten sichtbar</Label>
+                        <p className="text-xs text-muted-foreground">Erlaubt das Anzeigen privater Telefonnummer/E-Mail</p>
+                      </div>
+                      <Switch
+                        checked={editFormData.showPrivateContact}
+                        onCheckedChange={(checked) => setEditFormData(prev => ({ ...prev, showPrivateContact: Boolean(checked) }))}
+                      />
                     </div>
                   </div>
                 </TabsContent>
                 
-                <TabsContent value="preferences" className="space-y-4 py-4">
+                <TabsContent value="roles" className="space-y-4 py-4">
                   <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4" /> Bevorzugte freie Wochentage
-                      </Label>
-                      <div className="grid grid-cols-4 gap-2 p-3 border border-border rounded-lg bg-muted/10">
-                        {WEEKDAYS.map(day => {
-                          const prefs = (editingEmployee.shiftPreferences as ShiftPreferences) || {};
-                          const isSelected = prefs.preferredDaysOff?.includes(day.value) || false;
-                          return (
-                            <div key={day.value} className="flex items-center space-x-2">
-                              <Checkbox 
-                                id={`day-${day.value}`}
-                                checked={isSelected}
-                                onCheckedChange={(checked) => {
-                                  const currentDays = prefs.preferredDaysOff || [];
-                                  const newDays = checked 
-                                    ? [...currentDays, day.value]
-                                    : currentDays.filter(d => d !== day.value);
-                                  updateShiftPreference('preferredDaysOff', newDays);
-                                }}
-                              />
-                              <Label htmlFor={`day-${day.value}`} className="text-sm cursor-pointer">
-                                {day.label}
-                              </Label>
-                            </div>
-                          );
-                        })}
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Rolle</Label>
+                        <Select value={editRoleValue} onValueChange={(value) => setEditRoleValue(value as Employee["role"])}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Rolle wählen" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ROLE_OPTIONS.map((role) => (
+                              <SelectItem key={role} value={role}>{role}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>App-Rolle</Label>
+                        <Select value={editAppRoleValue} onValueChange={(value) => setEditAppRoleValue(value as Employee["appRole"])}>
+                          <SelectTrigger data-testid="select-app-role">
+                            <SelectValue placeholder="App-Rolle wählen" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {APP_ROLE_OPTIONS.map((role) => (
+                              <SelectItem key={role} value={role}>{role}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
-                    
-                    <Separator />
-                    
+
                     <div className="space-y-2">
-                      <Label>Max. Dienste pro Woche</Label>
-                      <Select 
-                        value={String((editingEmployee.shiftPreferences as ShiftPreferences)?.maxShiftsPerWeek ?? 5)}
-                        onValueChange={(v) => updateShiftPreference('maxShiftsPerWeek', parseInt(v))}
-                      >
-                        <SelectTrigger data-testid="select-max-shifts">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="0">0 (kein Dienstwunsch)</SelectItem>
-                          {[1, 2, 3, 4, 5, 6, 7].map(n => (
-                            <SelectItem key={n} value={String(n)}>{n} Dienste</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-muted-foreground">0 = nimmt nicht an Diensten teil</p>
+                      <Label>Kompetenzen</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {editSelectedCompetencyLabels.length ? (
+                          editSelectedCompetencyLabels.map((comp) => (
+                            <Badge key={comp.id} variant="secondary" className="flex items-center gap-1">
+                              <span>{comp.label}</span>
+                              <button
+                                type="button"
+                                onClick={() => toggleEditCompetency(comp.id)}
+                                className="ml-1 text-muted-foreground hover:text-foreground"
+                                aria-label={`Kompetenz entfernen: ${comp.label}`}
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </Badge>
+                          ))
+                        ) : (
+                          <p className="text-sm text-muted-foreground">Keine Kompetenzen ausgewählt</p>
+                        )}
+                      </div>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button type="button" variant="outline">
+                            Kompetenzen auswählen
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent align="start" className="w-80">
+                          <div className="space-y-2">
+                            <Input
+                              value={competencySearch}
+                              onChange={(e) => setCompetencySearch(e.target.value)}
+                              placeholder="Kompetenz suchen..."
+                            />
+                            <div className="max-h-56 overflow-y-auto space-y-2">
+                              {filteredAvailableCompetencies.map((comp) => {
+                                const checked = editCompetencyIds.includes(comp.id);
+                                return (
+                                  <div key={comp.id} className="flex items-center gap-2">
+                                    <Checkbox
+                                      id={`edit-competency-${comp.id}`}
+                                      checked={checked}
+                                      onCheckedChange={() => toggleEditCompetency(comp.id)}
+                                    />
+                                    <Label htmlFor={`edit-competency-${comp.id}`} className="text-sm font-normal cursor-pointer">
+                                      {comp.code ? `${comp.code} - ${comp.name}` : comp.name}
+                                    </Label>
+                                  </div>
+                                );
+                              })}
+                              {!filteredAvailableCompetencies.length && (
+                                <p className="text-sm text-muted-foreground">Keine Kompetenzen gefunden</p>
+                              )}
+                            </div>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
                     </div>
-                    
-                    <Separator />
-                    
+
                     <div className="space-y-2">
-                      <Label>Notizen für die Planung</Label>
-                      <Textarea 
-                        placeholder="z.B. Keine Nachtdienste am Wochenende, Teilzeit ab März..."
-                        value={(editingEmployee.shiftPreferences as ShiftPreferences)?.notes || ""}
-                        onChange={(e) => updateShiftPreference('notes', e.target.value)}
-                        rows={3}
-                        data-testid="input-planning-notes"
+                      <Label>Einsatzbereiche (Ressourcen/Räume)</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {editSelectedRoomLabels.length ? (
+                          editSelectedRoomLabels.map((room) => (
+                            <Badge key={room.id} variant="secondary" className="flex items-center gap-1">
+                              <span>{room.label}</span>
+                              <button
+                                type="button"
+                                onClick={() => toggleEditDeploymentRoom(room.id)}
+                                className="ml-1 text-muted-foreground hover:text-foreground"
+                                aria-label={`Einsatzbereich entfernen: ${room.label}`}
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </Badge>
+                          ))
+                        ) : (
+                          <p className="text-sm text-muted-foreground">Keine Einsatzbereiche ausgewählt</p>
+                        )}
+                      </div>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button type="button" variant="outline">
+                            Einsatzbereiche auswählen
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent align="start" className="w-80">
+                          <div className="space-y-2">
+                            <Input
+                              value={roomSearch}
+                              onChange={(e) => setRoomSearch(e.target.value)}
+                              placeholder="Räume/Ressourcen suchen..."
+                            />
+                            <div className="max-h-56 overflow-y-auto space-y-2">
+                              {filteredRooms.map((room) => {
+                                const checked = editDeploymentRoomIds.includes(room.id);
+                                return (
+                                  <div key={room.id} className="flex items-center gap-2">
+                                    <Checkbox
+                                      id={`edit-room-${room.id}`}
+                                      checked={checked}
+                                      onCheckedChange={() => toggleEditDeploymentRoom(room.id)}
+                                    />
+                                    <Label htmlFor={`edit-room-${room.id}`} className="text-sm font-normal cursor-pointer">
+                                      {room.name}
+                                    </Label>
+                                  </div>
+                                );
+                              })}
+                              {!filteredRooms.length && (
+                                <p className="text-sm text-muted-foreground">Keine Räume gefunden</p>
+                              )}
+                            </div>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="security" className="space-y-4 py-4">
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-sm text-muted-foreground">
+                        Passwort zurücksetzen ohne aktuelles Passwort.
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Neues Passwort</Label>
+                      <Input
+                        type="password"
+                        value={resetPasswordData.newPassword}
+                        onChange={(e) => setResetPasswordData(prev => ({ ...prev, newPassword: e.target.value }))}
+                        placeholder="Mindestens 6 Zeichen"
                       />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Passwort bestätigen</Label>
+                      <Input
+                        type="password"
+                        value={resetPasswordData.confirmPassword}
+                        onChange={(e) => setResetPasswordData(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                        placeholder="Passwort bestätigen"
+                      />
+                    </div>
+                    <div>
+                      <Button onClick={handleResetPassword} disabled={resettingPassword}>
+                        {resettingPassword && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                        Passwort zurücksetzen
+                      </Button>
                     </div>
                   </div>
                 </TabsContent>
@@ -919,20 +1574,20 @@ export default function EmployeeManagement() {
                 <div className="space-y-2">
                   <Label>Zugeordnete Räume/Bereiche</Label>
                   <div className="grid grid-cols-2 gap-2 p-3 border border-border rounded-lg bg-muted/10 max-h-32 overflow-y-auto">
-                    {DEPLOYMENT_AREAS.map(area => (
-                      <div key={area.value} className="flex items-center space-x-2">
+                    {availableRooms.map((room) => (
+                      <div key={room.id} className="flex items-center space-x-2">
                         <Checkbox 
-                          id={`room-${area.value}`}
-                          checked={editingCompetency.rooms.includes(area.label)}
+                          id={`room-${room.id}`}
+                          checked={editingCompetency.rooms.includes(room.name)}
                           onCheckedChange={(checked) => {
                             const newRooms = checked
-                              ? [...editingCompetency.rooms, area.label]
-                              : editingCompetency.rooms.filter(r => r !== area.label);
+                              ? [...editingCompetency.rooms, room.name]
+                              : editingCompetency.rooms.filter(r => r !== room.name);
                             setEditingCompetency({ ...editingCompetency, rooms: newRooms });
                           }}
                         />
-                        <Label htmlFor={`room-${area.value}`} className="text-sm font-normal cursor-pointer">
-                          {area.label}
+                        <Label htmlFor={`room-${room.id}`} className="text-sm font-normal cursor-pointer">
+                          {room.name}
                         </Label>
                       </div>
                     ))}
