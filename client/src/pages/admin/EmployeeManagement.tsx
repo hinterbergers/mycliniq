@@ -38,6 +38,9 @@ const ROLE_OPTIONS: Employee["role"][] = [
 
 const APP_ROLE_OPTIONS: Employee["appRole"][] = ["Admin", "Editor", "User"];
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const isValidEmail = (value: string) =>
+  EMAIL_REGEX.test(value) && !/[^\x00-\x7F]/.test(value);
 
 const SERVICE_CAPABILITIES = {
   gyn: ["Primararzt", "1. Oberarzt", "Oberarzt", "Oberärztin"],
@@ -467,6 +470,26 @@ export default function EmployeeManagement() {
       });
       return;
     }
+
+    const emailValue = editFormData.email.trim();
+    if (!emailValue || !isValidEmail(emailValue)) {
+      toast({
+        title: "Fehler",
+        description: "Bitte eine gueltige E-Mail-Adresse ohne Umlaute eingeben.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const emailPrivateValue = editFormData.emailPrivate.trim();
+    if (emailPrivateValue && !isValidEmail(emailPrivateValue)) {
+      toast({
+        title: "Fehler",
+        description: "Bitte eine gueltige private E-Mail-Adresse ohne Umlaute eingeben.",
+        variant: "destructive"
+      });
+      return;
+    }
     
     setSaving(true);
     try {
@@ -476,8 +499,8 @@ export default function EmployeeManagement() {
         lastName: editFormData.lastName.trim(),
         name: `${editFormData.firstName} ${editFormData.lastName}`.trim(),
         birthday: parsedBirthday || null,
-        email: editFormData.email.trim(),
-        emailPrivate: editFormData.emailPrivate.trim() || null,
+        email: emailValue,
+        emailPrivate: emailPrivateValue || null,
         phoneWork: editFormData.phoneWork.trim() || null,
         phonePrivate: editFormData.phonePrivate.trim() || null,
         showPrivateContact: editFormData.showPrivateContact,
@@ -548,10 +571,30 @@ export default function EmployeeManagement() {
       return;
     }
 
-    if (!newFormData.firstName.trim() || !newFormData.lastName.trim() || !newFormData.email.trim()) {
+    const emailValue = newFormData.email.trim();
+    if (!newFormData.firstName.trim() || !newFormData.lastName.trim() || !emailValue) {
       toast({
         title: "Fehler",
         description: "Vorname, Nachname und E-Mail sind erforderlich",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!isValidEmail(emailValue)) {
+      toast({
+        title: "Fehler",
+        description: "Bitte eine gueltige E-Mail-Adresse ohne Umlaute eingeben.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const emailPrivateValue = newFormData.emailPrivate.trim();
+    if (emailPrivateValue && !isValidEmail(emailPrivateValue)) {
+      toast({
+        title: "Fehler",
+        description: "Bitte eine gueltige private E-Mail-Adresse ohne Umlaute eingeben.",
         variant: "destructive"
       });
       return;
@@ -574,8 +617,8 @@ export default function EmployeeManagement() {
         lastName: newFormData.lastName.trim(),
         name: `${newFormData.firstName} ${newFormData.lastName}`.trim(),
         birthday: parsedBirthday,
-        email: newFormData.email.trim(),
-        emailPrivate: newFormData.emailPrivate.trim() || null,
+        email: emailValue,
+        emailPrivate: emailPrivateValue || null,
         phoneWork: newFormData.phoneWork.trim() || null,
         phonePrivate: newFormData.phonePrivate.trim() || null,
         showPrivateContact: newFormData.showPrivateContact,

@@ -24,10 +24,15 @@ import {
  * Extended validation schema for employee creation
  * Requires: firstName, lastName, email, birthday
  */
+const emailSchema = z.string()
+  .email("Bitte eine gueltige E-Mail-Adresse ohne Umlaute eingeben.")
+  .refine((value) => !/[^\x00-\x7F]/.test(value), "Bitte eine gueltige E-Mail-Adresse ohne Umlaute eingeben.");
+
 const createEmployeeSchema = insertEmployeeSchema.extend({
   firstName: z.string().min(1, "Vorname ist erforderlich"),
   lastName: z.string().min(1, "Nachname ist erforderlich"),
-  email: z.string().email("Gültige E-Mail-Adresse erforderlich"),
+  email: emailSchema,
+  emailPrivate: z.union([emailSchema, z.null()]).optional(),
   birthday: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Geburtsdatum im Format YYYY-MM-DD erforderlich")
 });
 

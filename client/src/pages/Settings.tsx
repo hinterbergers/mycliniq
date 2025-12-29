@@ -86,6 +86,10 @@ function parseBirthdayInput(value: string): string | null {
   return iso;
 }
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const isValidEmail = (value: string) =>
+  EMAIL_REGEX.test(value) && !/[^\x00-\x7F]/.test(value);
+
 export default function Settings() {
   const params = useParams();
   const [, setLocation] = useLocation();
@@ -412,6 +416,28 @@ export default function Settings() {
         return;
       }
 
+      const emailValue = formData.email.trim();
+      if (!emailValue || !isValidEmail(emailValue)) {
+        toast({
+          title: "Fehler",
+          description: "Bitte eine gueltige E-Mail-Adresse ohne Umlaute eingeben.",
+          variant: "destructive"
+        });
+        setSaving(false);
+        return;
+      }
+
+      const emailPrivateValue = formData.emailPrivate.trim();
+      if (emailPrivateValue && !isValidEmail(emailPrivateValue)) {
+        toast({
+          title: "Fehler",
+          description: "Bitte eine gueltige private E-Mail-Adresse ohne Umlaute eingeben.",
+          variant: "destructive"
+        });
+        setSaving(false);
+        return;
+      }
+
       // TODO: Backend schema needs title, birthday, badge fields before full persistence
       // Currently saving only fields supported by the existing API
       if (canEditBasicInfo) {
@@ -420,8 +446,8 @@ export default function Settings() {
           firstName: formData.firstName,
           lastName: formData.lastName,
           birthday: parsedBirthday || null,
-          email: formData.email,
-          emailPrivate: formData.emailPrivate,
+          email: emailValue,
+          emailPrivate: emailPrivateValue || null,
           phoneWork: formData.phoneWork,
           phonePrivate: formData.phonePrivate,
           showPrivateContact: formData.showPrivateContact,

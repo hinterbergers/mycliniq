@@ -19,6 +19,10 @@ import crypto from "crypto";
 import { generateRosterPlan } from "./services/rosterGenerator";
 import { registerModularApiRoutes } from "./api";
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const isValidEmail = (value: string) =>
+  EMAIL_REGEX.test(value) && !/[^\x00-\x7F]/.test(value);
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -243,6 +247,20 @@ export async function registerRoutes(
   app.patch("/api/employees/:id", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
+      if (typeof req.body?.email === "string") {
+        const emailValue = req.body.email.trim();
+        if (!emailValue || !isValidEmail(emailValue)) {
+          return res.status(400).json({ error: "Bitte eine gueltige E-Mail-Adresse ohne Umlaute eingeben." });
+        }
+        req.body.email = emailValue;
+      }
+      if (typeof req.body?.emailPrivate === "string") {
+        const emailPrivateValue = req.body.emailPrivate.trim();
+        if (emailPrivateValue && !isValidEmail(emailPrivateValue)) {
+          return res.status(400).json({ error: "Bitte eine gueltige private E-Mail-Adresse ohne Umlaute eingeben." });
+        }
+        req.body.emailPrivate = emailPrivateValue || null;
+      }
       const employee = await storage.updateEmployee(id, req.body);
       if (!employee) {
         return res.status(404).json({ error: "Employee not found" });
