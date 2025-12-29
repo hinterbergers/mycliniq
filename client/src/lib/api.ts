@@ -24,7 +24,8 @@ import type {
   InsertShiftWish,
   PlannedAbsence,
   InsertPlannedAbsence,
-  Competency
+  Competency,
+  Diploma
 } from "@shared/schema";
 import { readAuthToken } from "./authToken";
 
@@ -135,6 +136,23 @@ export const employeeApi = {
     const response = await apiFetch(`${API_BASE}/employees/${id}/competencies`, {
       method: "PUT",
       body: JSON.stringify({ competencyIds })
+    });
+    return handleResponse(response);
+  },
+
+  getDiplomas: async (id: number): Promise<Array<{ diplomaId: number; name?: string | null; description?: string | null; isActive?: boolean }>> => {
+    const response = await apiFetch(`${API_BASE}/employees/${id}/diplomas`);
+    return handleResponse(response);
+  },
+
+  updateDiplomas: async (id: number, diplomaIds: number[]): Promise<{
+    id: number;
+    diplomas: Array<{ diplomaId: number; name?: string | null; description?: string | null; isActive?: boolean }>;
+    count: number;
+  }> => {
+    const response = await apiFetch(`${API_BASE}/employees/${id}/diplomas`, {
+      method: "PUT",
+      body: JSON.stringify({ diplomaIds })
     });
     return handleResponse(response);
   }
@@ -418,6 +436,48 @@ export const competencyApi = {
     });
     return handleResponse<void>(response);
   },
+  getDiplomas: async (id: number): Promise<Array<{ diplomaId: number; name?: string | null; description?: string | null; isActive?: boolean }>> => {
+    const response = await apiFetch(`${API_BASE}/competencies/${id}/diplomas`);
+    return handleResponse(response);
+  },
+  updateDiplomas: async (id: number, diplomaIds: number[]): Promise<{
+    id: number;
+    diplomas: Array<{ diplomaId: number; name?: string | null; description?: string | null; isActive?: boolean }>;
+    count: number;
+  }> => {
+    const response = await apiFetch(`${API_BASE}/competencies/${id}/diplomas`, {
+      method: "PUT",
+      body: JSON.stringify({ diplomaIds })
+    });
+    return handleResponse(response);
+  }
+};
+
+export const diplomaApi = {
+  getAll: async (): Promise<Diploma[]> => {
+    const response = await apiFetch(`${API_BASE}/diplomas`);
+    return handleResponse<Diploma[]>(response);
+  },
+  create: async (data: Omit<Diploma, "id" | "createdAt" | "updatedAt">): Promise<Diploma> => {
+    const response = await apiFetch(`${API_BASE}/diplomas`, {
+      method: "POST",
+      body: JSON.stringify(data)
+    });
+    return handleResponse<Diploma>(response);
+  },
+  update: async (id: number, data: Partial<Omit<Diploma, "id" | "createdAt" | "updatedAt">>): Promise<Diploma> => {
+    const response = await apiFetch(`${API_BASE}/diplomas/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data)
+    });
+    return handleResponse<Diploma>(response);
+  },
+  delete: async (id: number): Promise<void> => {
+    const response = await apiFetch(`${API_BASE}/diplomas/${id}`, {
+      method: "DELETE"
+    });
+    return handleResponse<void>(response);
+  }
 };
 
 // Weekly Assignment API

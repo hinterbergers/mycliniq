@@ -15,6 +15,8 @@ import {
   users, 
   employeeCompetencies, 
   competencies,
+  diplomas,
+  employeeDiplomas,
   insertEmployeeSchema 
 } from "@shared/schema";
 
@@ -43,6 +45,13 @@ const preferencesSchema = z.object({
  */
 const competenciesUpdateSchema = z.object({
   competencyIds: z.array(z.number().positive("Kompetenz-ID muss positiv sein"))
+});
+
+/**
+ * Schema for updating diplomas
+ */
+const diplomasUpdateSchema = z.object({
+  diplomaIds: z.array(z.number().positive("Diplom-ID muss positiv sein"))
 });
 
 /**
@@ -405,6 +414,93 @@ export function registerEmployeeRoutes(router: Router) {
         .where(eq(employeeCompetencies.employeeId, employeeId));
       
       return ok(res, empCompetencies);
+    })
+  );
+
+  /**
+   * PUT /api/employees/:id/diplomas
+   * Replace employee diplomas with new list
+   * Body: { diplomaIds: number[] }
+   */
+  router.put("/:id/diplomas",
+    validateParams(idParamSchema),
+    validateBody(diplomasUpdateSchema),
+    asyncHandler(async (req, res) => {
+      const { id } = req.params;
+      const employeeId = Number(id);
+      const { diplomaIds } = req.body;
+
+      const existing = await storage.getEmployee(employeeId);
+      if (!existing) {
+        return notFound(res, "Mitarbeiter");
+      }
+
+      await db
+        .delete(employeeDiplomas)
+        .where(eq(employeeDiplomas.employeeId, employeeId));
+
+      if (diplomaIds.length > 0) {
+        const newDiplomas = diplomaIds.map((diplomaId: number) => ({
+          employeeId,
+          diplomaId
+        }));
+
+        await db
+          .insert(employeeDiplomas)
+          .values(newDiplomas);
+      }
+
+      const updatedDiplomas = await db
+        .select({
+          diplomaId: employeeDiplomas.diplomaId,
+          name: diplomas.name,
+          description: diplomas.description,
+          isActive: diplomas.isActive
+        })
+        .from(employeeDiplomas)
+        .leftJoin(diplomas, eq(employeeDiplomas.diplomaId, diplomas.id))
+        .where(eq(employeeDiplomas.employeeId, employeeId));
+
+      const diplomaNames = updatedDiplomas.map((d) => d.name).filter(Boolean) as string[];
+      await storage.updateEmployee(employeeId, {
+        diplomas: diplomaNames
+      });
+
+      return ok(res, {
+        id: employeeId,
+        diplomas: updatedDiplomas,
+        count: updatedDiplomas.length
+      });
+    })
+  );
+
+  /**
+   * GET /api/employees/:id/diplomas
+   * Get all diplomas for an employee
+   */
+  router.get("/:id/diplomas",
+    validateParams(idParamSchema),
+    asyncHandler(async (req, res) => {
+      const { id } = req.params;
+      const employeeId = Number(id);
+
+      const existing = await storage.getEmployee(employeeId);
+      if (!existing) {
+        return notFound(res, "Mitarbeiter");
+      }
+
+      const empDiplomas = await db
+        .select({
+          diplomaId: employeeDiplomas.diplomaId,
+          name: diplomas.name,
+          description: diplomas.description,
+          isActive: diplomas.isActive
+        })
+        .from(employeeDiplomas)
+        .leftJoin(diplomas, eq(employeeDiplomas.diplomaId, diplomas.id))
+        .where(eq(employeeDiplomas.employeeId, employeeId));
+
+      return ok(res, empDiplomas);
     })
   );
 

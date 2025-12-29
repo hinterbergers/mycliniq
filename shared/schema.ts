@@ -352,6 +352,27 @@ export const insertCompetencySchema = createInsertSchema(competencies).omit({
 export type InsertCompetency = z.infer<typeof insertCompetencySchema>;
 export type Competency = typeof competencies.$inferSelect;
 
+// Diplomas table - formal certifications (e.g. ÖGUM II)
+export const diplomas = pgTable("diplomas", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (table) => [
+  uniqueIndex("diplomas_name_idx").on(table.name)
+]);
+
+export const insertDiplomaSchema = createInsertSchema(diplomas).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export type InsertDiploma = z.infer<typeof insertDiplomaSchema>;
+export type Diploma = typeof diplomas.$inferSelect;
+
 // Employee Competencies junction table (many-to-many)
 export const employeeCompetencies = pgTable("employee_competencies", {
   employeeId: integer("employee_id").references(() => employees.id).notNull(),
@@ -366,6 +387,36 @@ export const insertEmployeeCompetencySchema = createInsertSchema(employeeCompete
 
 export type InsertEmployeeCompetency = z.infer<typeof insertEmployeeCompetencySchema>;
 export type EmployeeCompetency = typeof employeeCompetencies.$inferSelect;
+
+// Employee Diplomas junction table (many-to-many)
+export const employeeDiplomas = pgTable("employee_diplomas", {
+  employeeId: integer("employee_id").references(() => employees.id).notNull(),
+  diplomaId: integer("diploma_id").references(() => diplomas.id).notNull()
+}, (table) => [
+  primaryKey({ columns: [table.employeeId, table.diplomaId] }),
+  index("employee_diplomas_employee_id_idx").on(table.employeeId),
+  index("employee_diplomas_diploma_id_idx").on(table.diplomaId)
+]);
+
+export const insertEmployeeDiplomaSchema = createInsertSchema(employeeDiplomas);
+
+export type InsertEmployeeDiploma = z.infer<typeof insertEmployeeDiplomaSchema>;
+export type EmployeeDiploma = typeof employeeDiplomas.$inferSelect;
+
+// Competency Diplomas junction table (many-to-many prerequisites)
+export const competencyDiplomas = pgTable("competency_diplomas", {
+  competencyId: integer("competency_id").references(() => competencies.id).notNull(),
+  diplomaId: integer("diploma_id").references(() => diplomas.id).notNull()
+}, (table) => [
+  primaryKey({ columns: [table.competencyId, table.diplomaId] }),
+  index("competency_diplomas_competency_id_idx").on(table.competencyId),
+  index("competency_diplomas_diploma_id_idx").on(table.diplomaId)
+]);
+
+export const insertCompetencyDiplomaSchema = createInsertSchema(competencyDiplomas);
+
+export type InsertCompetencyDiploma = z.infer<typeof insertCompetencyDiplomaSchema>;
+export type CompetencyDiploma = typeof competencyDiplomas.$inferSelect;
 
 // Roster shifts table
 export const rosterShifts = pgTable("roster_shifts", {

@@ -28,9 +28,9 @@ import {
   X
 } from "lucide-react";
 import { useState, useEffect } from "react";
-import { employeeApi, competencyApi, roomApi } from "@/lib/api";
+import { employeeApi, competencyApi, roomApi, diplomaApi } from "@/lib/api";
 import { apiRequest } from "@/lib/queryClient";
-import type { Employee, Competency, Resource } from "@shared/schema";
+import type { Employee, Competency, Resource, Diploma } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useParams, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
@@ -129,6 +129,7 @@ export default function Settings() {
   const canEditBasicInfo = isViewingOwnProfile || isAdmin;
   const canEditPrivateInfo = isAdmin;
   const canEditRoleAndCompetencies = isAdmin;
+  const canEditDiplomas = isViewingOwnProfile || isAdmin;
   const canChangePassword = isViewingOwnProfile;
   
   const [employee, setEmployee] = useState<Employee | null>(null);
@@ -156,6 +157,9 @@ export default function Settings() {
   const [availableCompetencies, setAvailableCompetencies] = useState<Competency[]>([]);
   const [selectedCompetencyIds, setSelectedCompetencyIds] = useState<number[]>([]);
   const [competencySearch, setCompetencySearch] = useState("");
+  const [availableDiplomas, setAvailableDiplomas] = useState<Diploma[]>([]);
+  const [selectedDiplomaIds, setSelectedDiplomaIds] = useState<number[]>([]);
+  const [diplomaSearch, setDiplomaSearch] = useState("");
   const [availableRooms, setAvailableRooms] = useState<Resource[]>([]);
   const [deploymentRoomIds, setDeploymentRoomIds] = useState<number[]>([]);
   const [roomSearch, setRoomSearch] = useState("");
@@ -198,6 +202,15 @@ export default function Settings() {
       comp.name.toLowerCase().includes(query) ||
       (comp.code || "").toLowerCase().includes(query)
     );
+  });
+  const selectedDiplomaLabels = selectedDiplomaIds.map((id) => {
+    const match = availableDiplomas.find((diploma) => diploma.id === id);
+    return { id, label: match?.name || `Diplom ${id}` };
+  });
+  const filteredDiplomas = availableDiplomas.filter((diploma) => {
+    const query = diplomaSearch.trim().toLowerCase();
+    if (!query) return true;
+    return diploma.name.toLowerCase().includes(query);
   });
   const selectedRoomLabels = deploymentRoomIds.map((id) => {
     const match = availableRooms.find((room) => room.id === id);
@@ -247,13 +260,15 @@ export default function Settings() {
 
   const loadData = async () => {
     try {
-      const [employees, competencies, rooms] = await Promise.all([
+      const [employees, competencies, rooms, diplomas] = await Promise.all([
         employeeApi.getAll(),
         competencyApi.getAll(),
-        roomApi.getAll({ active: true })
+        roomApi.getAll({ active: true }),
+        diplomaApi.getAll()
       ]);
       setAllEmployees(employees);
       setAvailableCompetencies(competencies.filter((comp) => comp.isActive !== false));
+      setAvailableDiplomas(diplomas.filter((diploma) => diploma.isActive !== false));
       setAvailableRooms(rooms.filter((room) => room.isActive !== false));
       
       const emp = employees.find(e => e.id === viewingUserId);
@@ -278,6 +293,28 @@ export default function Settings() {
               .map((name) => competencies.find((comp) => comp.name === name)?.id)
               .filter((id): id is number => typeof id === "number");
             setSelectedCompetencyIds(fallbackIds);
+          }
+        }
+
+        try {
+          const empDiplomas = await employeeApi.getDiplomas(emp.id);
+          const ids = empDiplomas
+            .map((diploma) => diploma.diplomaId)
+            .filter((id) => typeof id === "number");
+          if (ids.length) {
+            setSelectedDiplomaIds(ids);
+          } else if (Array.isArray(emp.diplomas) && diplomas.length) {
+            const fallbackIds = emp.diplomas
+              .map((name) => diplomas.find((diploma) => diploma.name === name)?.id)
+              .filter((id): id is number => typeof id === "number");
+            setSelectedDiplomaIds(fallbackIds);
+          }
+        } catch {
+          if (Array.isArray(emp.diplomas) && diplomas.length) {
+            const fallbackIds = emp.diplomas
+              .map((name) => diplomas.find((diploma) => diploma.name === name)?.id)
+              .filter((id): id is number => typeof id === "number");
+            setSelectedDiplomaIds(fallbackIds);
           }
         }
       }
@@ -412,6 +449,9 @@ export default function Settings() {
       if (canEditRoleAndCompetencies) {
         await employeeApi.updateCompetencies(employee.id, selectedCompetencyIds);
       }
+      if (canEditDiplomas) {
+        await employeeApi.updateDiplomas(employee.id, selectedDiplomaIds);
+      }
       toast({
         title: "Gespeichert",
         description: "Ihre Einstellungen wurden aktualisiert"
@@ -502,6 +542,12 @@ export default function Settings() {
   const toggleCompetency = (id: number) => {
     setSelectedCompetencyIds((prev) =>
       prev.includes(id) ? prev.filter((compId) => compId !== id) : [...prev, id]
+    );
+  };
+
+  const toggleDiploma = (id: number) => {
+    setSelectedDiplomaIds((prev) =>
+      prev.includes(id) ? prev.filter((diplomaId) => diplomaId !== id) : [...prev, id]
     );
   };
 
@@ -910,6 +956,70 @@ export default function Settings() {
                             })}
                             {!filteredCompetencies.length && (
                               <p className="text-sm text-muted-foreground">Keine Kompetenzen gefunden</p>
+                            )}
+                          </div>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Diplome</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedDiplomaLabels.length ? (
+                      selectedDiplomaLabels.map((diploma) => (
+                        <Badge key={diploma.id} variant="secondary" className="flex items-center gap-1">
+                          <GraduationCap className="w-3 h-3" />
+                          <span>{diploma.label}</span>
+                          {canEditDiplomas && (
+                            <button
+                              type="button"
+                              onClick={() => toggleDiploma(diploma.id)}
+                              className="ml-1 text-muted-foreground hover:text-foreground"
+                              aria-label={`Diplom entfernen: ${diploma.label}`}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
+                        </Badge>
+                      ))
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Keine Diplome hinterlegt</p>
+                    )}
+                  </div>
+                  {canEditDiplomas && (
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button type="button" variant="outline">
+                          Diplome auswählen
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent align="start" className="w-80">
+                        <div className="space-y-2">
+                          <Input
+                            value={diplomaSearch}
+                            onChange={(e) => setDiplomaSearch(e.target.value)}
+                            placeholder="Diplom suchen..."
+                          />
+                          <div className="max-h-56 overflow-y-auto space-y-2">
+                            {filteredDiplomas.map((diploma) => {
+                              const checked = selectedDiplomaIds.includes(diploma.id);
+                              return (
+                                <div key={diploma.id} className="flex items-center gap-2">
+                                  <Checkbox
+                                    id={`diploma-${diploma.id}`}
+                                    checked={checked}
+                                    onCheckedChange={() => toggleDiploma(diploma.id)}
+                                  />
+                                  <Label htmlFor={`diploma-${diploma.id}`} className="text-sm font-normal cursor-pointer">
+                                    {diploma.name}
+                                  </Label>
+                                </div>
+                              );
+                            })}
+                            {!filteredDiplomas.length && (
+                              <p className="text-sm text-muted-foreground">Keine Diplome gefunden</p>
                             )}
                           </div>
                         </div>

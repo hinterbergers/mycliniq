@@ -2,13 +2,17 @@ import type { Router } from "express";
 import { ok, created, notFound, asyncHandler } from "../../lib/api-response";
 import { validateBody, validateParams, idParamSchema } from "../../lib/validate";
 import { db, eq } from "../../lib/db";
-import { competencies, employeeCompetencies, insertCompetencySchema } from "@shared/schema";
+import { competencies, employeeCompetencies, insertCompetencySchema, diplomas, competencyDiplomas } from "@shared/schema";
+import { z } from "zod";
 
 /**
  * Competency API Routes
  * Base path: /api/competencies
  */
 export function registerCompetencyRoutes(router: Router) {
+  const diplomasUpdateSchema = z.object({
+    diplomaIds: z.array(z.number().positive("Diplom-ID muss positiv sein"))
+  });
 
   /**
    * GET /api/competencies
@@ -102,6 +106,88 @@ export function registerCompetencyRoutes(router: Router) {
         .from(employeeCompetencies)
         .where(eq(employeeCompetencies.employeeId, Number(employeeId)));
       return ok(res, result);
+    })
+  );
+
+  /**
+   * PUT /api/competencies/:id/diplomas
+   * Replace diploma prerequisites for a competency
+   * Body: { diplomaIds: number[] }
+   */
+  router.put("/:id/diplomas",
+    validateParams(idParamSchema),
+    validateBody(diplomasUpdateSchema),
+    asyncHandler(async (req, res) => {
+      const { id } = req.params;
+      const competencyId = Number(id);
+      const { diplomaIds } = req.body;
+
+      const [existing] = await db.select().from(competencies).where(eq(competencies.id, competencyId));
+      if (!existing) {
+        return notFound(res, "Kompetenz");
+      }
+
+      await db
+        .delete(competencyDiplomas)
+        .where(eq(competencyDiplomas.competencyId, competencyId));
+
+      if (diplomaIds.length > 0) {
+        const newDiplomas = diplomaIds.map((diplomaId: number) => ({
+          competencyId,
+          diplomaId
+        }));
+
+        await db
+          .insert(competencyDiplomas)
+          .values(newDiplomas);
+      }
+
+      const updatedDiplomas = await db
+        .select({
+          diplomaId: competencyDiplomas.diplomaId,
+          name: diplomas.name,
+          description: diplomas.description,
+          isActive: diplomas.isActive
+        })
+        .from(competencyDiplomas)
+        .leftJoin(diplomas, eq(competencyDiplomas.diplomaId, diplomas.id))
+        .where(eq(competencyDiplomas.competencyId, competencyId));
+
+      return ok(res, {
+        id: competencyId,
+        diplomas: updatedDiplomas,
+        count: updatedDiplomas.length
+      });
+    })
+  );
+
+  /**
+   * GET /api/competencies/:id/diplomas
+   * Get diploma prerequisites for a competency
+   */
+  router.get("/:id/diplomas",
+    validateParams(idParamSchema),
+    asyncHandler(async (req, res) => {
+      const { id } = req.params;
+      const competencyId = Number(id);
+
+      const [existing] = await db.select().from(competencies).where(eq(competencies.id, competencyId));
+      if (!existing) {
+        return notFound(res, "Kompetenz");
+      }
+
+      const requiredDiplomas = await db
+        .select({
+          diplomaId: competencyDiplomas.diplomaId,
+          name: diplomas.name,
+          description: diplomas.description,
+          isActive: diplomas.isActive
+        })
+        .from(competencyDiplomas)
+        .leftJoin(diplomas, eq(competencyDiplomas.diplomaId, diplomas.id))
+        .where(eq(competencyDiplomas.competencyId, competencyId));
+
+      return ok(res, requiredDiplomas);
     })
   );
 

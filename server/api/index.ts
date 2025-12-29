@@ -7,6 +7,7 @@ import { authenticate } from "./middleware/auth";
 // Import route modules
 import { registerEmployeeRoutes } from "./employees";
 import { registerCompetencyRoutes } from "./competencies";
+import { registerDiplomaRoutes } from "./diplomas";
 import { registerRoomRoutes } from "./rooms";
 import { registerDutyPlanRoutes } from "./duty-plans";
 import { registerWeeklyPlanRoutes } from "./weekly-plans";
@@ -50,6 +51,12 @@ export function registerModularApiRoutes(app: Express): void {
   const competenciesRouter = Router();
   registerCompetencyRoutes(competenciesRouter);
   app.use("/api/competencies", competenciesRouter);
+
+  // Diplomas API
+  // TODO: Add requireAdmin for POST, PUT, DELETE
+  const diplomasRouter = Router();
+  registerDiplomaRoutes(diplomasRouter);
+  app.use("/api/diplomas", diplomasRouter);
 
   // Rooms API
   // TODO: Add requireAdmin for POST, PUT, DELETE, close, open
