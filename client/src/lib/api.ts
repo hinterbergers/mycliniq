@@ -26,6 +26,8 @@ import type {
   InsertLongTermShiftWish,
   LongTermAbsence,
   InsertLongTermAbsence,
+  DutyPlan,
+  InsertDutyPlan,
   PlannedAbsence,
   InsertPlannedAbsence,
   Competency,
@@ -252,6 +254,39 @@ export const rosterApi = {
       body: JSON.stringify({ year, month, shifts, replaceExisting })
     });
     return handleResponse(response);
+  }
+};
+
+// Duty Plans API
+export const dutyPlansApi = {
+  getByMonth: async (year: number, month: number): Promise<DutyPlan | null> => {
+    const response = await apiFetch(`${API_BASE}/duty-plans?year=${year}&month=${month}`);
+    const plans = await handleResponse<DutyPlan[]>(response);
+    return plans[0] ?? null;
+  },
+
+  create: async (
+    data: Pick<InsertDutyPlan, "year" | "month"> & { generatedById?: number | null }
+  ): Promise<DutyPlan> => {
+    const response = await apiFetch(`${API_BASE}/duty-plans`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<DutyPlan>(response);
+  },
+
+  updateStatus: async (
+    id: number,
+    status: DutyPlan["status"],
+    releasedById?: number | null
+  ): Promise<DutyPlan> => {
+    const response = await apiFetch(`${API_BASE}/duty-plans/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status, releasedById })
+    });
+    return handleResponse<DutyPlan>(response);
   }
 };
 

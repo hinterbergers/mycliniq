@@ -11,8 +11,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { Download, Printer, ArrowLeft, ArrowRight, Info, Loader2, Sparkles, ArrowRightLeft, CheckCircle2, AlertTriangle, Brain, Pencil } from "lucide-react";
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { employeeApi, rosterApi, absenceApi, rosterSettingsApi, longTermAbsencesApi } from "@/lib/api";
-import type { Employee, RosterShift, Absence, RosterSettings, LongTermAbsence } from "@shared/schema";
+import { employeeApi, rosterApi, absenceApi, longTermAbsencesApi, dutyPlansApi } from "@/lib/api";
+import type { Employee, RosterShift, Absence, LongTermAbsence, DutyPlan } from "@shared/schema";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, isWeekend } from "date-fns";
 import { de } from "date-fns/locale";
 import { useAuth } from "@/lib/auth";
@@ -33,6 +33,11 @@ const SERVICE_TYPES: Array<{ id: ServiceType; label: string; requiredRole: strin
   { id: "turnus", label: "Turnus", requiredRole: ["Assistenzarzt", "Assistenzärztin", "Turnusarzt"], color: "bg-emerald-100 text-emerald-700 border-emerald-200" }
 ];
 
+const PLAN_STATUS_LABELS: Record<DutyPlan["status"], string> = {
+  Entwurf: "Bearbeitung",
+  Vorläufig: "Vorschau",
+  Freigegeben: "Freigabe"
+};
 
 export default function RosterPlan() {
   const { employee: currentUser, capabilities, isAdmin, isTechnicalAdmin } = useAuth();
@@ -42,9 +47,10 @@ export default function RosterPlan() {
   const [shifts, setShifts] = useState<RosterShift[]>([]);
   const [absences, setAbsences] = useState<Absence[]>([]);
   const [longTermAbsences, setLongTermAbsences] = useState<LongTermAbsence[]>([]);
-  const [rosterSettings, setRosterSettings] = useState<RosterSettings | null>(null);
+  const [dutyPlan, setDutyPlan] = useState<DutyPlan | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isStatusUpdating, setIsStatusUpdating] = useState(false);
   const [swapDialogOpen, setSwapDialogOpen] = useState(false);
   const [selectedShiftForSwap, setSelectedShiftForSwap] = useState<RosterShift | null>(null);
   
@@ -53,11 +59,12 @@ export default function RosterPlan() {
   const [generationReasoning, setGenerationReasoning] = useState("");
   const [generationWarnings, setGenerationWarnings] = useState<string[]>([]);
   const [isApplying, setIsApplying] = useState(false);
-  const [isPublishing, setIsPublishing] = useState(false);
   const [manualEditMode, setManualEditMode] = useState(false);
   const [savingCellKey, setSavingCellKey] = useState<string | null>(null);
   const [manualDrafts, setManualDrafts] = useState<Record<string, string>>({});
   const [activeCellKey, setActiveCellKey] = useState<string | null>(null);
+  const planStatus = dutyPlan?.status ?? "Entwurf";
+  const planStatusLabel = PLAN_STATUS_LABELS[planStatus];
 
   const canEdit = useMemo(() => {
     if (!currentUser) return false;
@@ -130,14 +137,7 @@ export default function RosterPlan() {
     return reasons;
   };
 
-  const isPublished = useMemo(() => {
-    if (!rosterSettings) return false;
-    const year = currentDate.getFullYear();
-    const month = currentDate.getMonth() + 1;
-    if (year < rosterSettings.lastApprovedYear) return true;
-    if (year > rosterSettings.lastApprovedYear) return false;
-    return month <= rosterSettings.lastApprovedMonth;
-  }, [rosterSettings, currentDate]);
+  const isPublished = planStatus === "Freigegeben";
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -147,11 +147,11 @@ export default function RosterPlan() {
       const startDate = format(startOfMonth(currentDate), 'yyyy-MM-dd');
       const endDate = format(endOfMonth(currentDate), 'yyyy-MM-dd');
       
-      const [empData, shiftData, absenceData, settings] = await Promise.all([
+      const [empData, shiftData, absenceData, plan] = await Promise.all([
         employeeApi.getAll(),
         rosterApi.getByMonth(year, month),
         absenceApi.getByDateRange(startDate, endDate),
-        rosterSettingsApi.get()
+        dutyPlansApi.getByMonth(year, month)
       ]);
 
       let longTermAbsenceData: LongTermAbsence[] = [];
@@ -165,7 +165,7 @@ export default function RosterPlan() {
       setShifts(shiftData);
       setAbsences(absenceData);
       setLongTermAbsences(longTermAbsenceData);
-      setRosterSettings(settings);
+      setDutyPlan(plan);
     } catch (error) {
       console.error("Failed to load data:", error);
       toast({ title: "Fehler beim Laden", description: "Daten konnten nicht geladen werden", variant: "destructive" });
@@ -527,30 +527,37 @@ export default function RosterPlan() {
     }
   };
 
-  const handlePublish = async () => {
+  const handleUpdatePlanStatus = async (nextStatus: DutyPlan["status"]) => {
     if (!currentUser) return;
-    setIsPublishing(true);
+    setIsStatusUpdating(true);
     try {
       const year = currentDate.getFullYear();
       const month = currentDate.getMonth() + 1;
-      const updated = await rosterSettingsApi.update({
-        lastApprovedYear: year,
-        lastApprovedMonth: month,
-        updatedById: currentUser.id
-      });
-      setRosterSettings(updated);
+      const existing = dutyPlan
+        ? dutyPlan
+        : await dutyPlansApi.create({
+            year,
+            month,
+            generatedById: currentUser.id
+          });
+      const updated = await dutyPlansApi.updateStatus(
+        existing.id,
+        nextStatus,
+        nextStatus === "Freigegeben" ? currentUser.id : null
+      );
+      setDutyPlan(updated);
       toast({
-        title: "Dienstplan freigegeben",
-        description: `Der Dienstplan für ${format(currentDate, 'MMMM yyyy', { locale: de })} wurde veröffentlicht.`
+        title: "Status aktualisiert",
+        description: `Dienstplan ist jetzt ${PLAN_STATUS_LABELS[updated.status]}.`
       });
     } catch (error: any) {
       toast({
-        title: "Freigabe fehlgeschlagen",
+        title: "Status-Update fehlgeschlagen",
         description: error.message || "Bitte später erneut versuchen",
         variant: "destructive"
       });
     } finally {
-      setIsPublishing(false);
+      setIsStatusUpdating(false);
     }
   };
 
@@ -582,10 +589,16 @@ export default function RosterPlan() {
             </div>
             <Badge
               variant="outline"
-              className={`hidden md:flex gap-1 ${isPublished ? "bg-green-50 text-green-700 border-green-200" : "bg-primary/10 text-primary border-primary/20"}`}
+              className={`hidden md:flex gap-1 ${
+                planStatus === "Freigegeben"
+                  ? "bg-green-50 text-green-700 border-green-200"
+                  : planStatus === "Vorläufig"
+                  ? "bg-blue-50 text-blue-700 border-blue-200"
+                  : "bg-amber-50 text-amber-700 border-amber-200"
+              }`}
             >
               <Info className="w-3 h-3" />
-              <span>Planungsstatus: {isPublished ? "Freigegeben" : "Entwurf"}</span>
+              <span>Planungsstatus: {planStatusLabel}</span>
             </Badge>
           </div>
 
@@ -633,15 +646,39 @@ export default function RosterPlan() {
                 Auto-Generieren
               </Button>
             )}
+            {canEdit && planStatus === "Entwurf" && (
+              <Button
+                variant="outline"
+                className="gap-2 flex-1 md:flex-none"
+                onClick={() => handleUpdatePlanStatus("Vorläufig")}
+                disabled={isStatusUpdating}
+                data-testid="button-preview-roster"
+              >
+                {isStatusUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Info className="w-4 h-4" />}
+                Vorschau
+              </Button>
+            )}
+            {canEdit && planStatus === "Vorläufig" && (
+              <Button
+                variant="outline"
+                className="gap-2 flex-1 md:flex-none"
+                onClick={() => handleUpdatePlanStatus("Entwurf")}
+                disabled={isStatusUpdating}
+                data-testid="button-back-to-draft"
+              >
+                {isStatusUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pencil className="w-4 h-4" />}
+                Bearbeitung
+              </Button>
+            )}
             {canPublish && (
               <Button
                 variant={isPublished ? "outline" : "default"}
                 className="gap-2 flex-1 md:flex-none"
-                onClick={handlePublish}
-                disabled={isPublished || isPublishing}
+                onClick={() => handleUpdatePlanStatus("Freigegeben")}
+                disabled={isPublished || planStatus !== "Vorläufig" || isStatusUpdating}
                 data-testid="button-publish-roster"
               >
-                {isPublishing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                {isStatusUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
                 {isPublished ? "Freigegeben" : "Freigeben"}
               </Button>
             )}

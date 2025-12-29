@@ -9,10 +9,14 @@ import {
   Rss, RefreshCw, Heart, Info, CheckCircle2, Clock, XCircle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { format, addMonths, subMonths, getWeek } from "date-fns";
 import { de } from "date-fns/locale";
 import { useLocation } from "wouter";
+import { dutyPlansApi } from "@/lib/api";
+import type { DutyPlan } from "@shared/schema";
+import { useAuth } from "@/lib/auth";
+import { useToast } from "@/hooks/use-toast";
 
 const DUMMY_ROSTER_DATA = [
   { kw: 49, day: "Mo", date: "02.12.", kreisszimmer: "Hinterberger", gyn: "Wagner", turnus: "Lang", absences: "" },
@@ -50,6 +54,12 @@ const DUMMY_MY_REQUESTS = [
   { id: 2, from: "03.02.2025", to: "07.02.2025", days: 5, type: "Urlaub", status: "pending" },
   { id: 3, from: "15.01.2025", to: "15.01.2025", days: 1, type: "Zeitausgleich", status: "rejected" },
 ];
+
+const PLAN_STATUS_LABELS: Record<DutyPlan["status"], string> = {
+  Entwurf: "Bearbeitung",
+  Vorläufig: "Vorschau",
+  Freigegeben: "Freigabe"
+};
 
 export default function Personal() {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -117,6 +127,79 @@ export default function Personal() {
 }
 
 function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCurrentDate: (d: Date) => void }) {
+  const { employee, capabilities, isAdmin, isTechnicalAdmin } = useAuth();
+  const { toast } = useToast();
+  const [dutyPlan, setDutyPlan] = useState<DutyPlan | null>(null);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [statusUpdating, setStatusUpdating] = useState(false);
+
+  const canEditPlan =
+    isAdmin || isTechnicalAdmin || capabilities.includes("dutyplan.edit");
+  const canPublishPlan =
+    isAdmin || isTechnicalAdmin || capabilities.includes("dutyplan.publish");
+  const planStatus = dutyPlan?.status ?? "Entwurf";
+  const statusLabel = PLAN_STATUS_LABELS[planStatus];
+
+  const loadPlanStatus = async () => {
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth() + 1;
+    setPlanLoading(true);
+    try {
+      const plan = await dutyPlansApi.getByMonth(year, month);
+      setDutyPlan(plan);
+    } catch (error: any) {
+      toast({
+        title: "Fehler",
+        description: error.message || "Status konnte nicht geladen werden",
+        variant: "destructive"
+      });
+    } finally {
+      setPlanLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadPlanStatus();
+  }, [currentDate]);
+
+  const ensurePlan = async () => {
+    if (dutyPlan) return dutyPlan;
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth() + 1;
+    const created = await dutyPlansApi.create({
+      year,
+      month,
+      generatedById: employee?.id ?? null
+    });
+    setDutyPlan(created);
+    return created;
+  };
+
+  const handleSetStatus = async (nextStatus: DutyPlan["status"]) => {
+    setStatusUpdating(true);
+    try {
+      const plan = await ensurePlan();
+      const updated = await dutyPlansApi.updateStatus(
+        plan.id,
+        nextStatus,
+        nextStatus === "Freigegeben" ? employee?.id ?? null : null
+      );
+      setDutyPlan(updated);
+      toast({
+        title: "Status aktualisiert",
+        description: `Dienstplan ist jetzt ${PLAN_STATUS_LABELS[updated.status]}.`
+      });
+    } catch (error: any) {
+      toast({
+        title: "Fehler",
+        description: error.message || "Status konnte nicht aktualisiert werden",
+        variant: "destructive"
+      });
+    } finally {
+      setStatusUpdating(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <Card className="border-none kabeg-shadow overflow-hidden">
@@ -148,16 +231,59 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
             </div>
           </div>
           
-          <Select defaultValue="all">
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Bereich" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Alle Bereiche</SelectItem>
-              <SelectItem value="geb">Geburtshilfe</SelectItem>
-              <SelectItem value="gyn">Gynäkologie</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-2">
+            <Badge
+              variant="outline"
+              className={
+                planStatus === "Freigegeben"
+                  ? "bg-green-50 text-green-700 border-green-200"
+                  : planStatus === "Vorläufig"
+                  ? "bg-blue-50 text-blue-700 border-blue-200"
+                  : "bg-amber-50 text-amber-700 border-amber-200"
+              }
+            >
+              {planLoading ? "Status wird geladen..." : `Status: ${statusLabel}`}
+            </Badge>
+            {planStatus === "Entwurf" && canEditPlan && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={statusUpdating || planLoading}
+                onClick={() => handleSetStatus("Vorläufig")}
+              >
+                Vorschau
+              </Button>
+            )}
+            {planStatus === "Vorläufig" && canEditPlan && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={statusUpdating || planLoading}
+                onClick={() => handleSetStatus("Entwurf")}
+              >
+                Bearbeitung
+              </Button>
+            )}
+            {planStatus === "Vorläufig" && canPublishPlan && (
+              <Button
+                size="sm"
+                disabled={statusUpdating || planLoading}
+                onClick={() => handleSetStatus("Freigegeben")}
+              >
+                Freigeben
+              </Button>
+            )}
+            <Select defaultValue="all">
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Bereich" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Alle Bereiche</SelectItem>
+                <SelectItem value="geb">Geburtshilfe</SelectItem>
+                <SelectItem value="gyn">Gynäkologie</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         <div className="overflow-x-auto">

@@ -15,7 +15,8 @@ import {
   dutyDays, 
   dutySlots, 
   dutyAssignments,
-  employees
+  employees,
+  rosterSettings
 } from "@shared/schema";
 
 /**
@@ -76,6 +77,16 @@ function formatDate(year: number, month: number, day: number): string {
   const m = month.toString().padStart(2, '0');
   const d = day.toString().padStart(2, '0');
   return `${year}-${m}-${d}`;
+}
+
+function compareYearMonth(
+  year: number,
+  month: number,
+  otherYear: number,
+  otherMonth: number
+): number {
+  if (year === otherYear) return month - otherMonth;
+  return year - otherYear;
 }
 
 /**
@@ -335,6 +346,33 @@ export function registerDutyPlanRoutes(router: Router) {
         .set(updateData)
         .where(eq(dutyPlans.id, planId))
         .returning();
+
+      if (status === "Freigegeben") {
+        const existingSettings = await db.select().from(rosterSettings);
+        const settings = existingSettings[0];
+        const shouldUpdate =
+          !settings ||
+          compareYearMonth(existing.year, existing.month, settings.lastApprovedYear, settings.lastApprovedMonth) >= 0;
+        if (shouldUpdate) {
+          if (settings) {
+            await db
+              .update(rosterSettings)
+              .set({
+                lastApprovedYear: existing.year,
+                lastApprovedMonth: existing.month,
+                updatedById: releasedById ?? null,
+                updatedAt: new Date()
+              })
+              .where(eq(rosterSettings.id, settings.id));
+          } else {
+            await db.insert(rosterSettings).values({
+              lastApprovedYear: existing.year,
+              lastApprovedMonth: existing.month,
+              updatedById: releasedById ?? null
+            });
+          }
+        }
+      }
       
       return ok(res, plan);
     })
