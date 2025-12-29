@@ -154,6 +154,7 @@ export default function Settings() {
   const [birthdayInput, setBirthdayInput] = useState("");
   const [roleValue, setRoleValue] = useState<Employee["role"] | "">("");
   const [appRoleValue, setAppRoleValue] = useState<Employee["appRole"] | "">("");
+  const [takesShifts, setTakesShifts] = useState(true);
   const [availableCompetencies, setAvailableCompetencies] = useState<Competency[]>([]);
   const [selectedCompetencyIds, setSelectedCompetencyIds] = useState<number[]>([]);
   const [competencySearch, setCompetencySearch] = useState("");
@@ -253,6 +254,7 @@ export default function Settings() {
     setNewBadge(emp.lastName?.substring(0, 2).toUpperCase() || '');
     setRoleValue(emp.role || "");
     setAppRoleValue(emp.appRole || "");
+    setTakesShifts(emp.takesShifts ?? true);
     setSelectedCompetencyIds([]);
     const prefs = (emp.shiftPreferences as { deploymentRoomIds?: number[] } | null) || null;
     setDeploymentRoomIds(Array.isArray(prefs?.deploymentRoomIds) ? prefs.deploymentRoomIds : []);
@@ -430,6 +432,7 @@ export default function Settings() {
         Object.assign(payload, {
           role: (roleValue || employee.role) as Employee["role"],
           appRole: (appRoleValue || employee.appRole) as Employee["appRole"],
+          takesShifts,
           shiftPreferences: {
             ...(employee.shiftPreferences || {}),
             deploymentRoomIds: deploymentRoomIds
@@ -898,6 +901,20 @@ export default function Settings() {
                       )}
                     </div>
                   </div>
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg border border-border p-4">
+                  <div>
+                    <Label>Dienstplan berücksichtigen</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Wenn deaktiviert, wird die Person im Dienstplan nicht eingeplant.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={takesShifts}
+                    onCheckedChange={(checked) => setTakesShifts(Boolean(checked))}
+                    disabled={!canEditRoleAndCompetencies}
+                  />
                 </div>
 
                 <div className="space-y-2">

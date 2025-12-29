@@ -171,6 +171,7 @@ export default function EmployeeManagement() {
   const [editCompetencyIds, setEditCompetencyIds] = useState<number[]>([]);
   const [editDiplomaIds, setEditDiplomaIds] = useState<number[]>([]);
   const [editDeploymentRoomIds, setEditDeploymentRoomIds] = useState<number[]>([]);
+  const [editTakesShifts, setEditTakesShifts] = useState(true);
   const [resetPasswordData, setResetPasswordData] = useState({
     newPassword: "",
     confirmPassword: "",
@@ -183,6 +184,7 @@ export default function EmployeeManagement() {
   const [newCompetencyIds, setNewCompetencyIds] = useState<number[]>([]);
   const [newDiplomaIds, setNewDiplomaIds] = useState<number[]>([]);
   const [newDeploymentRoomIds, setNewDeploymentRoomIds] = useState<number[]>([]);
+  const [newTakesShifts, setNewTakesShifts] = useState(true);
   
   const canManageEmployees = isAdmin || isTechnicalAdmin;
   
@@ -258,6 +260,7 @@ export default function EmployeeManagement() {
     setNewCompetencyIds([]);
     setNewDiplomaIds([]);
     setNewDeploymentRoomIds([]);
+    setNewTakesShifts(true);
     setCompetencySearch("");
     setDiplomaSearch("");
     setRoomSearch("");
@@ -283,6 +286,7 @@ export default function EmployeeManagement() {
     setEditBirthdayInput(formatBirthdayDisplay(birthdayIso || emp.birthday));
     setEditRoleValue(emp.role || "");
     setEditAppRoleValue(emp.appRole || "");
+    setEditTakesShifts(emp.takesShifts ?? true);
     const prefs = (emp.shiftPreferences as ShiftPreferences | null) || null;
     setEditDeploymentRoomIds(Array.isArray(prefs?.deploymentRoomIds) ? prefs.deploymentRoomIds : []);
     setEditCompetencyIds([]);
@@ -479,6 +483,7 @@ export default function EmployeeManagement() {
         showPrivateContact: editFormData.showPrivateContact,
         role: (editRoleValue || editingEmployee.role) as Employee["role"],
         appRole: (editAppRoleValue || editingEmployee.appRole) as Employee["appRole"],
+        takesShifts: editTakesShifts,
         shiftPreferences: {
           ...(editingEmployee.shiftPreferences || {}),
           deploymentRoomIds: editDeploymentRoomIds
@@ -577,6 +582,7 @@ export default function EmployeeManagement() {
         role: newRoleValue as Employee["role"],
         appRole: (newAppRoleValue || "User") as Employee["appRole"],
         systemRole: "employee",
+        takesShifts: newTakesShifts,
         shiftPreferences: {
           deploymentRoomIds: newDeploymentRoomIds
         }
@@ -1196,34 +1202,48 @@ export default function EmployeeManagement() {
 
                       <div className="space-y-4">
                         <h4 className="text-sm font-semibold">Rollen & Kompetenzen</h4>
-                        <div className="grid md:grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label>Rolle</Label>
-                            <Select value={newRoleValue} onValueChange={(value) => setNewRoleValue(value as Employee["role"])}>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Rolle wählen" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {ROLE_OPTIONS.map((role) => (
-                                  <SelectItem key={role} value={role}>{role}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="space-y-2">
-                            <Label>App-Rolle</Label>
-                            <Select value={newAppRoleValue} onValueChange={(value) => setNewAppRoleValue(value as Employee["appRole"])}>
-                              <SelectTrigger>
-                                <SelectValue placeholder="App-Rolle wählen" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {APP_ROLE_OPTIONS.map((role) => (
-                                  <SelectItem key={role} value={role}>{role}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Rolle</Label>
+                        <Select value={newRoleValue} onValueChange={(value) => setNewRoleValue(value as Employee["role"])}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Rolle wählen" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ROLE_OPTIONS.map((role) => (
+                              <SelectItem key={role} value={role}>{role}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>App-Rolle</Label>
+                        <Select value={newAppRoleValue} onValueChange={(value) => setNewAppRoleValue(value as Employee["appRole"])}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="App-Rolle wählen" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {APP_ROLE_OPTIONS.map((role) => (
+                              <SelectItem key={role} value={role}>{role}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-lg border border-border p-4">
+                      <div>
+                        <Label>Dienstplan berücksichtigen</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Wenn deaktiviert, wird die Person im Dienstplan nicht eingeplant.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={newTakesShifts}
+                        onCheckedChange={(checked) => setNewTakesShifts(Boolean(checked))}
+                        disabled={!canManageEmployees}
+                      />
+                    </div>
 
                         <div className="space-y-2">
                           <Label>Kompetenzen</Label>
@@ -1816,6 +1836,20 @@ export default function EmployeeManagement() {
                           </SelectContent>
                         </Select>
                       </div>
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-lg border border-border p-4">
+                      <div>
+                        <Label>Dienstplan berücksichtigen</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Wenn deaktiviert, wird die Person im Dienstplan nicht eingeplant.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={editTakesShifts}
+                        onCheckedChange={(checked) => setEditTakesShifts(Boolean(checked))}
+                        disabled={!canManageEmployees}
+                      />
                     </div>
 
                     <div className="space-y-2">
