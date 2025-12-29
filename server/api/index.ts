@@ -8,6 +8,7 @@ import { authenticate } from "./middleware/auth";
 import { registerEmployeeRoutes } from "./employees";
 import { registerCompetencyRoutes } from "./competencies";
 import { registerDiplomaRoutes } from "./diplomas";
+import { registerPhysicalRoomRoutes } from "./physical-rooms";
 import { registerRoomRoutes } from "./rooms";
 import { registerDutyPlanRoutes } from "./duty-plans";
 import { registerWeeklyPlanRoutes } from "./weekly-plans";
@@ -63,6 +64,12 @@ export function registerModularApiRoutes(app: Express): void {
   const roomsRouter = Router();
   registerRoomRoutes(roomsRouter);
   app.use("/api/rooms", roomsRouter);
+
+  // Physical Rooms API
+  // TODO: Add requireAdmin for POST, PUT, DELETE
+  const physicalRoomsRouter = Router();
+  registerPhysicalRoomRoutes(physicalRoomsRouter);
+  app.use("/api/physical-rooms", physicalRoomsRouter);
 
   // Duty Plans API (Dienstplan)
   // TODO: Add requireEditor for POST, PUT slots

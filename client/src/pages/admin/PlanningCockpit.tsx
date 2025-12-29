@@ -17,8 +17,8 @@ export default function PlanningCockpit() {
       bg: "bg-blue-50"
     },
     {
-      title: "Ressourcen & Räume",
-      description: "Ambulanzen, Kreißsäle, OPs und Spezialbereiche konfigurieren.",
+      title: "Arbeitsplätze & Räume",
+      description: "Arbeitsplätze konfigurieren und physische Räume zuordnen.",
       icon: Building2,
       action: () => setLocation("/admin/resources"),
       color: "text-emerald-600",
@@ -80,7 +80,7 @@ export default function PlanningCockpit() {
         <div className="flex flex-col gap-2">
           <h2 className="text-2xl font-bold tracking-tight">Verwaltungsebene</h2>
           <p className="text-muted-foreground">
-            Zentrale Steuerung für Stammdaten, Ressourcen und Dienstplanung.
+            Zentrale Steuerung für Stammdaten, Arbeitsplätze und Dienstplanung.
           </p>
         </div>
 
@@ -132,10 +132,10 @@ export default function PlanningCockpit() {
               <Button 
                 variant="outline" 
                 className="bg-background border-dashed border-border"
-                onClick={() => console.log("Raum kurzfristig sperren clicked")}
+                onClick={() => console.log("Arbeitsplatz kurzfristig sperren clicked")}
                 data-testid="button-lock-room"
               >
-                + Raum kurzfristig sperren
+                + Arbeitsplatz kurzfristig sperren
               </Button>
               <Button 
                 variant="outline" 

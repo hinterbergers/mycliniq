@@ -25,7 +25,8 @@ import type {
   PlannedAbsence,
   InsertPlannedAbsence,
   Competency,
-  Diploma
+  Diploma,
+  PhysicalRoom
 } from "@shared/schema";
 import { readAuthToken } from "./authToken";
 
@@ -336,6 +337,11 @@ export const roomApi = {
       competencyCode?: string | null;
       competencyName?: string | null;
     }>;
+    physicalRooms?: Array<{
+      id: number;
+      name: string;
+      isActive?: boolean;
+    }>;
   }> => {
     const response = await apiFetch(`${API_BASE}/rooms/${id}`);
     return handleResponse(response);
@@ -409,6 +415,51 @@ export const roomApi = {
     });
     return handleResponse(response);
   },
+  updatePhysicalRooms: async (
+    id: number,
+    physicalRoomIds: number[]
+  ): Promise<{
+    roomId: number;
+    physicalRooms: Array<{
+      id: number;
+      name: string;
+      isActive?: boolean;
+    }>;
+    count: number;
+  }> => {
+    const response = await apiFetch(`${API_BASE}/rooms/${id}/physical-rooms`, {
+      method: "PUT",
+      body: JSON.stringify({ physicalRoomIds })
+    });
+    return handleResponse(response);
+  },
+};
+
+export const physicalRoomApi = {
+  getAll: async (): Promise<PhysicalRoom[]> => {
+    const response = await apiFetch(`${API_BASE}/physical-rooms`);
+    return handleResponse<PhysicalRoom[]>(response);
+  },
+  create: async (data: Omit<PhysicalRoom, "id" | "createdAt" | "updatedAt">): Promise<PhysicalRoom> => {
+    const response = await apiFetch(`${API_BASE}/physical-rooms`, {
+      method: "POST",
+      body: JSON.stringify(data)
+    });
+    return handleResponse<PhysicalRoom>(response);
+  },
+  update: async (id: number, data: Partial<Omit<PhysicalRoom, "id" | "createdAt" | "updatedAt">>): Promise<PhysicalRoom> => {
+    const response = await apiFetch(`${API_BASE}/physical-rooms/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data)
+    });
+    return handleResponse<PhysicalRoom>(response);
+  },
+  delete: async (id: number): Promise<{ id: number; deactivated: boolean }> => {
+    const response = await apiFetch(`${API_BASE}/physical-rooms/${id}`, {
+      method: "DELETE"
+    });
+    return handleResponse(response);
+  }
 };
 
 export const competencyApi = {

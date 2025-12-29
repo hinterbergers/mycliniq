@@ -214,7 +214,7 @@ export default function Settings() {
   });
   const selectedRoomLabels = deploymentRoomIds.map((id) => {
     const match = availableRooms.find((room) => room.id === id);
-    return { id, label: match?.name || `Raum ${id}` };
+    return { id, label: match?.name || `Arbeitsplatz ${id}` };
   });
   const filteredRooms = availableRooms.filter((room) => {
     const query = roomSearch.trim().toLowerCase();
@@ -1029,7 +1029,7 @@ export default function Settings() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Einsatzbereiche (Ressourcen/Räume)</Label>
+                  <Label>Einsatzbereiche (Arbeitsplätze)</Label>
                   <div className="flex flex-wrap gap-2">
                     {selectedRoomLabels.length ? (
                       selectedRoomLabels.map((room) => (
@@ -1064,7 +1064,7 @@ export default function Settings() {
                           <Input
                             value={roomSearch}
                             onChange={(e) => setRoomSearch(e.target.value)}
-                            placeholder="Räume/Ressourcen suchen..."
+                            placeholder="Arbeitsplätze suchen..."
                           />
                           <div className="max-h-56 overflow-y-auto space-y-2">
                             {filteredRooms.map((room) => {
@@ -1083,7 +1083,7 @@ export default function Settings() {
                               );
                             })}
                             {!filteredRooms.length && (
-                              <p className="text-sm text-muted-foreground">Keine Räume gefunden</p>
+                              <p className="text-sm text-muted-foreground">Keine Arbeitsplätze gefunden</p>
                             )}
                           </div>
                         </div>

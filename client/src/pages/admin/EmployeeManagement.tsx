@@ -709,7 +709,7 @@ export default function EmployeeManagement() {
     availableDiplomas.find((diploma) => diploma.id === id)?.name || `Diplom ${id}`;
 
   const getRoomLabel = (id: number) =>
-    availableRooms.find((room) => room.id === id)?.name || `Raum ${id}`;
+    availableRooms.find((room) => room.id === id)?.name || `Arbeitsplatz ${id}`;
 
   const filteredAvailableCompetencies = availableCompetencies.filter((comp) => {
     const query = competencySearch.trim().toLowerCase();
@@ -1344,7 +1344,7 @@ export default function EmployeeManagement() {
                         </div>
 
                         <div className="space-y-2">
-                          <Label>Einsatzbereiche (Ressourcen/Räume)</Label>
+                          <Label>Einsatzbereiche (Arbeitsplätze)</Label>
                           <div className="flex flex-wrap gap-2">
                             {newSelectedRoomLabels.length ? (
                               newSelectedRoomLabels.map((room) => (
@@ -1375,7 +1375,7 @@ export default function EmployeeManagement() {
                                 <Input
                                   value={roomSearch}
                                   onChange={(e) => setRoomSearch(e.target.value)}
-                                  placeholder="Räume/Ressourcen suchen..."
+                                  placeholder="Arbeitsplätze suchen..."
                                 />
                                 <div className="max-h-56 overflow-y-auto space-y-2">
                                   {filteredRooms.map((room) => {
@@ -1394,7 +1394,7 @@ export default function EmployeeManagement() {
                                     );
                                   })}
                                   {!filteredRooms.length && (
-                                    <p className="text-sm text-muted-foreground">Keine Räume gefunden</p>
+                                    <p className="text-sm text-muted-foreground">Keine Arbeitsplätze gefunden</p>
                                   )}
                                 </div>
                               </div>
@@ -1531,7 +1531,7 @@ export default function EmployeeManagement() {
                       <TableHead className="w-[200px]">Kompetenzname</TableHead>
                       <TableHead className="w-[100px]">Badge-Kürzel</TableHead>
                       <TableHead>Beschreibung</TableHead>
-                      <TableHead>Zugeordnete Räume/Bereiche</TableHead>
+                      <TableHead>Zugeordnete Arbeitsplätze</TableHead>
                       <TableHead>Voraussetzungen</TableHead>
                       <TableHead className="text-right">Aktionen</TableHead>
                     </TableRow>
@@ -1937,7 +1937,7 @@ export default function EmployeeManagement() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label>Einsatzbereiche (Ressourcen/Räume)</Label>
+                      <Label>Einsatzbereiche (Arbeitsplätze)</Label>
                       <div className="flex flex-wrap gap-2">
                         {editSelectedRoomLabels.length ? (
                           editSelectedRoomLabels.map((room) => (
@@ -1968,7 +1968,7 @@ export default function EmployeeManagement() {
                             <Input
                               value={roomSearch}
                               onChange={(e) => setRoomSearch(e.target.value)}
-                              placeholder="Räume/Ressourcen suchen..."
+                              placeholder="Arbeitsplätze suchen..."
                             />
                             <div className="max-h-56 overflow-y-auto space-y-2">
                               {filteredRooms.map((room) => {
@@ -1987,7 +1987,7 @@ export default function EmployeeManagement() {
                                 );
                               })}
                               {!filteredRooms.length && (
-                                <p className="text-sm text-muted-foreground">Keine Räume gefunden</p>
+                                <p className="text-sm text-muted-foreground">Keine Arbeitsplätze gefunden</p>
                               )}
                             </div>
                           </div>
@@ -2139,7 +2139,7 @@ export default function EmployeeManagement() {
                 </div>
                 
                 <div className="space-y-2">
-                  <Label>Zugeordnete Räume/Bereiche</Label>
+                  <Label>Zugeordnete Arbeitsplätze</Label>
                   <div className="flex flex-wrap gap-2">
                     {(editingCompetency.id ? (competencyAssignments[editingCompetency.id] || []) : []).map((assignment, index) => (
                       <Badge key={`${assignment.roomName}-${index}`} variant="outline" className="text-xs">
@@ -2149,7 +2149,7 @@ export default function EmployeeManagement() {
                       </Badge>
                     ))}
                     {editingCompetency.id && !(competencyAssignments[editingCompetency.id] || []).length && (
-                      <p className="text-sm text-muted-foreground">Keine Räume zugeordnet</p>
+                      <p className="text-sm text-muted-foreground">Keine Arbeitsplätze zugeordnet</p>
                     )}
                     {!editingCompetency.id && (
                       <p className="text-sm text-muted-foreground">Nach dem Speichern sichtbar</p>

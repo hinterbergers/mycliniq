@@ -13,6 +13,8 @@ import {
   rooms, 
   roomWeekdaySettings,
   roomRequiredCompetencies,
+  roomPhysicalRooms,
+  physicalRooms,
   competencies,
   insertRoomSchema 
 } from "@shared/schema";
@@ -68,6 +70,10 @@ const competencyRequirementSchema = z.object({
 
 const competenciesArraySchema = z.object({
   competencies: z.array(competencyRequirementSchema)
+});
+
+const physicalRoomsArraySchema = z.object({
+  physicalRoomIds: z.array(z.number().positive())
 });
 
 /**
@@ -150,11 +156,22 @@ export function registerRoomRoutes(router: Router) {
         .from(roomRequiredCompetencies)
         .leftJoin(competencies, eq(roomRequiredCompetencies.competencyId, competencies.id))
         .where(eq(roomRequiredCompetencies.roomId, roomId));
+
+      const assignedPhysicalRooms = await db
+        .select({
+          id: physicalRooms.id,
+          name: physicalRooms.name,
+          isActive: physicalRooms.isActive
+        })
+        .from(roomPhysicalRooms)
+        .leftJoin(physicalRooms, eq(roomPhysicalRooms.physicalRoomId, physicalRooms.id))
+        .where(eq(roomPhysicalRooms.roomId, roomId));
       
       return ok(res, {
         ...room,
         weekdaySettings,
-        requiredCompetencies
+        requiredCompetencies,
+        physicalRooms: assignedPhysicalRooms
       });
     })
   );
@@ -329,6 +346,56 @@ export function registerRoomRoutes(router: Router) {
         roomId,
         requiredCompetencies: updatedRequirements,
         count: updatedRequirements.length
+      });
+    })
+  );
+
+  /**
+   * PUT /api/rooms/:id/physical-rooms
+   * Replace physical room assignments for a workplace
+   * Body: { physicalRoomIds: number[] }
+   */
+  router.put("/:id/physical-rooms",
+    validateParams(idParamSchema),
+    validateBody(physicalRoomsArraySchema),
+    asyncHandler(async (req, res) => {
+      const { id } = req.params;
+      const roomId = Number(id);
+      const { physicalRoomIds } = req.body;
+
+      const [existing] = await db.select().from(rooms).where(eq(rooms.id, roomId));
+      if (!existing) {
+        return notFound(res, "Raum");
+      }
+
+      await db
+        .delete(roomPhysicalRooms)
+        .where(eq(roomPhysicalRooms.roomId, roomId));
+
+      if (physicalRoomIds.length > 0) {
+        const newAssignments = physicalRoomIds.map((physicalRoomId: number) => ({
+          roomId,
+          physicalRoomId
+        }));
+        await db
+          .insert(roomPhysicalRooms)
+          .values(newAssignments);
+      }
+
+      const updatedAssignments = await db
+        .select({
+          id: physicalRooms.id,
+          name: physicalRooms.name,
+          isActive: physicalRooms.isActive
+        })
+        .from(roomPhysicalRooms)
+        .leftJoin(physicalRooms, eq(roomPhysicalRooms.physicalRoomId, physicalRooms.id))
+        .where(eq(roomPhysicalRooms.roomId, roomId));
+
+      return ok(res, {
+        roomId,
+        physicalRooms: updatedAssignments,
+        count: updatedAssignments.length
       });
     })
   );

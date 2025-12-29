@@ -12,8 +12,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertCircle, Building, Pencil, Info, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { competencyApi, roomApi } from "@/lib/api";
-import type { Competency, Resource } from "@shared/schema";
+import { competencyApi, roomApi, physicalRoomApi } from "@/lib/api";
+import type { Competency, Resource, PhysicalRoom } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 
@@ -60,6 +60,7 @@ interface RoomState {
   alternativeRoleCompetencies: string[];
   requiredAdminCompetencyIds: number[];
   alternativeAdminCompetencyIds: number[];
+  physicalRoomIds: number[];
   isActive: boolean;
 }
 
@@ -77,13 +78,24 @@ export default function ResourceManagement() {
   const { toast } = useToast();
   const [rooms, setRooms] = useState<RoomState[]>([]);
   const [availableCompetencies, setAvailableCompetencies] = useState<Competency[]>([]);
+  const [physicalRooms, setPhysicalRooms] = useState<PhysicalRoom[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editingRoom, setEditingRoom] = useState<RoomState | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
+  const [physicalRoomSearch, setPhysicalRoomSearch] = useState("");
+  const [editingPhysicalRoom, setEditingPhysicalRoom] = useState<PhysicalRoom | null>(null);
+  const [isPhysicalDialogOpen, setIsPhysicalDialogOpen] = useState(false);
+  const [isCreatingPhysicalRoom, setIsCreatingPhysicalRoom] = useState(false);
 
   const canEdit = isAdmin || isTechnicalAdmin;
+  const activePhysicalRooms = physicalRooms.filter((room) => room.isActive !== false);
+  const filteredPhysicalRooms = activePhysicalRooms.filter((room) => {
+    const query = physicalRoomSearch.trim().toLowerCase();
+    if (!query) return true;
+    return room.name.toLowerCase().includes(query);
+  });
 
   useEffect(() => {
     loadRooms();
@@ -92,12 +104,14 @@ export default function ResourceManagement() {
   const loadRooms = async () => {
     setLoading(true);
     try {
-      const [roomList, competencies] = await Promise.all([
+      const [roomList, competencies, physicalRoomList] = await Promise.all([
         roomApi.getAll({ active: true }),
-        competencyApi.getAll()
+        competencyApi.getAll(),
+        physicalRoomApi.getAll()
       ]);
 
       setAvailableCompetencies(competencies.filter((comp) => comp.isActive !== false));
+      setPhysicalRooms(physicalRoomList);
 
       const detailedRooms = await Promise.all(
         roomList.map(async (room) => {
@@ -110,7 +124,7 @@ export default function ResourceManagement() {
     } catch (error) {
       toast({
         title: "Fehler",
-        description: "Räume konnten nicht geladen werden",
+        description: "Arbeitsplätze und Räume konnten nicht geladen werden",
         variant: "destructive"
       });
     } finally {
@@ -132,6 +146,11 @@ export default function ResourceManagement() {
       requiredCompetencies?: Array<{
         competencyId: number;
         relationType: "AND" | "OR";
+      }>;
+      physicalRooms?: Array<{
+        id: number;
+        name: string;
+        isActive?: boolean;
       }>;
     }
   ): RoomState => {
@@ -155,6 +174,9 @@ export default function ResourceManagement() {
     const alternativeAdminCompetencyIds = (detail.requiredCompetencies || [])
       .filter((req) => req.relationType === "OR")
       .map((req) => req.competencyId);
+    const physicalRoomIds = (detail.physicalRooms || [])
+      .map((room) => room.id)
+      .filter((id): id is number => typeof id === "number");
 
     return {
       id: room.id,
@@ -169,6 +191,7 @@ export default function ResourceManagement() {
       alternativeRoleCompetencies: room.alternativeRoleCompetencies || [],
       requiredAdminCompetencyIds,
       alternativeAdminCompetencyIds,
+      physicalRoomIds,
       isActive: room.isActive
     };
   };
@@ -186,6 +209,7 @@ export default function ResourceManagement() {
     alternativeRoleCompetencies: [],
     requiredAdminCompetencyIds: [],
     alternativeAdminCompetencyIds: [],
+    physicalRoomIds: [],
     isActive: true
   });
 
@@ -222,6 +246,7 @@ export default function ResourceManagement() {
   const openEditDialog = (room: RoomState) => {
     setIsCreatingRoom(false);
     setEditingRoom({ ...room, weeklySchedule: room.weeklySchedule.map(s => ({ ...s })) });
+    setPhysicalRoomSearch("");
     setIsDialogOpen(true);
   };
 
@@ -229,7 +254,27 @@ export default function ResourceManagement() {
     if (!canEdit) return;
     setIsCreatingRoom(true);
     setEditingRoom(buildEmptyRoom());
+    setPhysicalRoomSearch("");
     setIsDialogOpen(true);
+  };
+
+  const openPhysicalRoomEditDialog = (room: PhysicalRoom) => {
+    setIsCreatingPhysicalRoom(false);
+    setEditingPhysicalRoom(room);
+    setIsPhysicalDialogOpen(true);
+  };
+
+  const openPhysicalRoomCreateDialog = () => {
+    if (!canEdit) return;
+    setIsCreatingPhysicalRoom(true);
+    setEditingPhysicalRoom({
+      id: 0,
+      name: "",
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+    setIsPhysicalDialogOpen(true);
   };
 
   const handleDialogChange = (open: boolean) => {
@@ -237,6 +282,14 @@ export default function ResourceManagement() {
     if (!open) {
       setEditingRoom(null);
       setIsCreatingRoom(false);
+    }
+  };
+
+  const handlePhysicalDialogChange = (open: boolean) => {
+    setIsPhysicalDialogOpen(open);
+    if (!open) {
+      setEditingPhysicalRoom(null);
+      setIsCreatingPhysicalRoom(false);
     }
   };
 
@@ -249,7 +302,7 @@ export default function ResourceManagement() {
     if (!editingRoom.name.trim()) {
       toast({
         title: "Fehler",
-        description: "Bitte einen Raumnamen eingeben",
+        description: "Bitte einen Arbeitsplatznamen eingeben",
         variant: "destructive"
       });
       return;
@@ -314,15 +367,22 @@ export default function ResourceManagement() {
         warnings.push("Kompetenzen");
       }
 
+      try {
+        await roomApi.updatePhysicalRooms(roomId, editingRoom.physicalRoomIds);
+      } catch (error) {
+        console.warn("[Rooms] physical rooms save failed", error);
+        warnings.push("Räume");
+      }
+
       if (warnings.length) {
         toast({
           title: "Teilweise gespeichert",
-          description: `Raum gespeichert, aber ${warnings.join(" & ")} konnten nicht gespeichert werden.`
+          description: `Arbeitsplatz gespeichert, aber ${warnings.join(" & ")} konnten nicht gespeichert werden.`
         });
       } else {
         toast({
           title: "Gespeichert",
-          description: isCreating ? "Raum wurde angelegt" : "Raum wurde aktualisiert"
+          description: isCreating ? "Arbeitsplatz wurde angelegt" : "Arbeitsplatz wurde aktualisiert"
         });
       }
     } catch (error) {
@@ -335,15 +395,72 @@ export default function ResourceManagement() {
 
   const handleDeleteRoom = async () => {
     if (!editingRoom || isCreatingRoom || !canEdit) return;
-    const confirmed = window.confirm("Diesen Raum wirklich löschen? Er wird deaktiviert.");
+    const confirmed = window.confirm("Diesen Arbeitsplatz wirklich löschen? Er wird deaktiviert.");
     if (!confirmed) return;
 
     setSaving(true);
     try {
       await roomApi.delete(editingRoom.id);
       setRooms((prev) => prev.filter((room) => room.id !== editingRoom.id));
-      toast({ title: "Gelöscht", description: "Raum wurde deaktiviert" });
+      toast({ title: "Gelöscht", description: "Arbeitsplatz wurde deaktiviert" });
       handleDialogChange(false);
+    } catch (error) {
+      toast({ title: "Fehler", description: "Arbeitsplatz konnte nicht gelöscht werden", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSavePhysicalRoom = async () => {
+    if (!editingPhysicalRoom) return;
+    if (!canEdit) {
+      handlePhysicalDialogChange(false);
+      return;
+    }
+    if (!editingPhysicalRoom.name.trim()) {
+      toast({
+        title: "Fehler",
+        description: "Bitte einen Raumnamen eingeben",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const payload = {
+        name: editingPhysicalRoom.name.trim(),
+        isActive: editingPhysicalRoom.isActive ?? true
+      };
+
+      if (isCreatingPhysicalRoom || editingPhysicalRoom.id === 0) {
+        const created = await physicalRoomApi.create(payload);
+        setPhysicalRooms((prev) => [...prev, created]);
+        toast({ title: "Gespeichert", description: "Raum wurde angelegt" });
+      } else {
+        const updated = await physicalRoomApi.update(editingPhysicalRoom.id, payload);
+        setPhysicalRooms((prev) => prev.map((room) => (room.id === updated.id ? updated : room)));
+        toast({ title: "Gespeichert", description: "Raum wurde aktualisiert" });
+      }
+      handlePhysicalDialogChange(false);
+    } catch (error) {
+      toast({ title: "Fehler", description: "Speichern fehlgeschlagen", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeletePhysicalRoom = async () => {
+    if (!editingPhysicalRoom || isCreatingPhysicalRoom || !canEdit) return;
+    const confirmed = window.confirm("Diesen Raum wirklich löschen? Er wird deaktiviert.");
+    if (!confirmed) return;
+
+    setSaving(true);
+    try {
+      await physicalRoomApi.delete(editingPhysicalRoom.id);
+      setPhysicalRooms((prev) => prev.filter((room) => room.id !== editingPhysicalRoom.id));
+      toast({ title: "Gelöscht", description: "Raum wurde deaktiviert" });
+      handlePhysicalDialogChange(false);
     } catch (error) {
       toast({ title: "Fehler", description: "Raum konnte nicht gelöscht werden", variant: "destructive" });
     } finally {
@@ -391,126 +508,262 @@ export default function ResourceManagement() {
     }
   };
 
+  const togglePhysicalRoomAssignment = (physicalRoomId: number) => {
+    if (editingRoom) {
+      const current = editingRoom.physicalRoomIds;
+      const updated = current.includes(physicalRoomId)
+        ? current.filter((id) => id !== physicalRoomId)
+        : [...current, physicalRoomId];
+      updateEditingRoom({ physicalRoomIds: updated });
+    }
+  };
+
+  const togglePhysicalRoomActive = async (id: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!canEdit) return;
+    const target = physicalRooms.find((room) => room.id === id);
+    if (!target) return;
+
+    const nextActive = !target.isActive;
+    const updatedRooms = physicalRooms.map((room) =>
+      room.id === id ? { ...room, isActive: nextActive } : room
+    );
+    setPhysicalRooms(updatedRooms);
+
+    try {
+      await physicalRoomApi.update(id, { isActive: nextActive });
+    } catch (error) {
+      toast({
+        title: "Fehler",
+        description: "Status konnte nicht gespeichert werden",
+        variant: "destructive"
+      });
+      setPhysicalRooms(physicalRooms);
+    }
+  };
+
+  const getPhysicalRoomLabel = (id: number) =>
+    physicalRooms.find((room) => room.id === id)?.name || `Raum ${id}`;
+
+  const selectedPhysicalRoomLabels = editingRoom?.physicalRoomIds.map((id) => ({
+    id,
+    label: getPhysicalRoomLabel(id)
+  })) || [];
+
   return (
-    <Layout title="Ressourcen & Räume">
+    <Layout title="Arbeitsplätze & Räume">
       <div className="max-w-5xl mx-auto space-y-6">
         <div className="space-y-2">
-          <h1 className="text-2xl font-bold text-foreground">Ressourcen & Räume</h1>
+          <h1 className="text-2xl font-bold text-foreground">Arbeitsplätze & Räume</h1>
           <p className="text-muted-foreground">
-            Bereiche des Wochenplans, Verfügbarkeiten und Kompetenzanforderungen verwalten.
+            Arbeitsplätze steuern den Wochenplan; Räume sind die physischen Standorte vor Ort.
           </p>
         </div>
-        {canEdit && (
-          <div className="flex justify-end">
-            <Button onClick={openCreateDialog} data-testid="button-new-room">
-              Neuen Raum anlegen
-            </Button>
-          </div>
-        )}
 
-        <div className="bg-orange-50 border border-orange-100 rounded-lg p-4 flex gap-3">
-          <AlertCircle className="w-5 h-5 text-orange-600 shrink-0 mt-0.5" />
-          <div>
-            <h4 className="font-medium text-orange-800">Hinweis für die Planung</h4>
-            <p className="text-sm text-orange-700 mt-1">
-              Gesperrte Räume werden im Wochen- und Tageseinsatzplan automatisch als „nicht verfügbar" markiert. 
-              Bitte bei längeren Sperren einen Grund angeben.
-            </p>
-          </div>
-        </div>
+        <Tabs defaultValue="workplaces" className="space-y-6">
+          <TabsList className="bg-background border border-border p-1 h-12 rounded-xl shadow-sm">
+            <TabsTrigger value="workplaces" className="rounded-lg px-6 h-10">
+              Arbeitsplätze
+            </TabsTrigger>
+            <TabsTrigger value="physical-rooms" className="rounded-lg px-6 h-10">
+              Räume
+            </TabsTrigger>
+          </TabsList>
 
-        {loading ? (
-          <div className="flex items-center justify-center py-16 text-muted-foreground">
-            <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-            Räume werden geladen...
-          </div>
-        ) : (
-          <div className="grid gap-6">
-            {ROOM_CATEGORIES.filter((category) => rooms.some((room) => room.category === category)).map((category) => (
-            <div key={category} className="space-y-3">
-              <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
-                <Building className="w-4 h-4 text-muted-foreground" />
-                {category}
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {rooms.filter(r => r.category === category).map(room => (
-                  <Card 
-                    key={room.id} 
-                    className={`border-none shadow-sm transition-all cursor-pointer hover:shadow-md ${!room.isAvailable ? 'bg-secondary/50 opacity-80' : 'bg-card'}`}
-                    onClick={() => openEditDialog(room)}
-                    data-testid={`card-room-${room.id}`}
-                  >
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-1.5 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium">{room.name}</span>
-                            <Badge 
-                              variant={room.isAvailable ? 'default' : 'secondary'}
-                              className={`text-[10px] h-5 ${room.isAvailable ? 'bg-green-100 text-green-800 hover:bg-green-100' : ''}`}
-                            >
-                              {room.isAvailable ? 'Aktiv' : 'Inaktiv'}
-                            </Badge>
-                            {!room.isAvailable && (
-                              <Badge variant="destructive" className="text-[10px] h-5">Gesperrt</Badge>
-                            )}
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            {!room.isAvailable
-                              ? `Gesperrt: ${room.blockReason || 'Kein Grund angegeben'}` 
-                              : 'Verfügbar'}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-3 ml-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openEditDialog(room);
-                            }}
-                            data-testid={`button-edit-room-${room.id}`}
-                          >
-                            <Pencil className="w-4 h-4 text-muted-foreground" />
-                          </Button>
-                          <div className="flex flex-col items-center gap-1">
-                            <Switch 
-                              id={`room-${room.id}`}
-                              checked={room.isAvailable}
-                              disabled={!canEdit}
-                              onCheckedChange={() => {}}
-                              onClick={(e) => toggleRoom(room.id, e)}
-                              data-testid={`switch-room-${room.id}`}
-                            />
-                            <Label htmlFor={`room-${room.id}`} className="text-[10px] text-muted-foreground">
-                              {room.isAvailable ? 'Aktiv' : 'Inaktiv'}
-                            </Label>
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+          <TabsContent value="workplaces" className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            {canEdit && (
+              <div className="flex justify-end">
+                <Button onClick={openCreateDialog} data-testid="button-new-room">
+                  Neuen Arbeitsplatz anlegen
+                </Button>
+              </div>
+            )}
+
+            <div className="bg-orange-50 border border-orange-100 rounded-lg p-4 flex gap-3">
+              <AlertCircle className="w-5 h-5 text-orange-600 shrink-0 mt-0.5" />
+              <div>
+                <h4 className="font-medium text-orange-800">Hinweis für die Planung</h4>
+                <p className="text-sm text-orange-700 mt-1">
+                  Gesperrte Arbeitsplätze werden im Wochen- und Tageseinsatzplan automatisch als „nicht verfügbar" markiert.
+                  Bitte bei längeren Sperren einen Grund angeben.
+                </p>
               </div>
             </div>
-          ))}
-          </div>
-        )}
 
-        <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 flex gap-3">
-          <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
-          <p className="text-sm text-blue-700">
-            Regelmäßige Events (z.B. Chefvisite, Besprechungen) werden im Wochenplan-Editor konfiguriert und hier nur angezeigt.
-          </p>
-        </div>
+            {loading ? (
+              <div className="flex items-center justify-center py-16 text-muted-foreground">
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                Arbeitsplätze werden geladen...
+              </div>
+            ) : (
+              <div className="grid gap-6">
+                {ROOM_CATEGORIES.filter((category) => rooms.some((room) => room.category === category)).map((category) => (
+                <div key={category} className="space-y-3">
+                  <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                    <Building className="w-4 h-4 text-muted-foreground" />
+                    {category}
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {rooms.filter(r => r.category === category).map(room => (
+                      <Card 
+                        key={room.id} 
+                        className={`border-none shadow-sm transition-all cursor-pointer hover:shadow-md ${!room.isAvailable ? 'bg-secondary/50 opacity-80' : 'bg-card'}`}
+                        onClick={() => openEditDialog(room)}
+                        data-testid={`card-room-${room.id}`}
+                      >
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between">
+                            <div className="space-y-1.5 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-medium">{room.name}</span>
+                                <Badge 
+                                  variant={room.isAvailable ? 'default' : 'secondary'}
+                                  className={`text-[10px] h-5 ${room.isAvailable ? 'bg-green-100 text-green-800 hover:bg-green-100' : ''}`}
+                                >
+                                  {room.isAvailable ? 'Aktiv' : 'Inaktiv'}
+                                </Badge>
+                                {!room.isAvailable && (
+                                  <Badge variant="destructive" className="text-[10px] h-5">Gesperrt</Badge>
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                {!room.isAvailable
+                                  ? `Gesperrt: ${room.blockReason || 'Kein Grund angegeben'}` 
+                                  : 'Verfügbar'}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-3 ml-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openEditDialog(room);
+                                }}
+                                data-testid={`button-edit-room-${room.id}`}
+                              >
+                                <Pencil className="w-4 h-4 text-muted-foreground" />
+                              </Button>
+                              <div className="flex flex-col items-center gap-1">
+                                <Switch 
+                                  id={`room-${room.id}`}
+                                  checked={room.isAvailable}
+                                  disabled={!canEdit}
+                                  onCheckedChange={() => {}}
+                                  onClick={(e) => toggleRoom(room.id, e)}
+                                  data-testid={`switch-room-${room.id}`}
+                                />
+                                <Label htmlFor={`room-${room.id}`} className="text-[10px] text-muted-foreground">
+                                  {room.isAvailable ? 'Aktiv' : 'Inaktiv'}
+                                </Label>
+                              </div>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              </div>
+            )}
+
+            <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 flex gap-3">
+              <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+              <p className="text-sm text-blue-700">
+                Regelmäßige Events (z.B. Chefvisite, Besprechungen) werden im Wochenplan-Editor konfiguriert und hier nur angezeigt.
+              </p>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="physical-rooms" className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            {canEdit && (
+              <div className="flex justify-end">
+                <Button onClick={openPhysicalRoomCreateDialog} data-testid="button-new-physical-room">
+                  Neuen Raum anlegen
+                </Button>
+              </div>
+            )}
+
+            {loading ? (
+              <div className="flex items-center justify-center py-16 text-muted-foreground">
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                Räume werden geladen...
+              </div>
+            ) : (
+              <div className="grid gap-4">
+                {physicalRooms.length ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {physicalRooms.map((room) => (
+                      <Card
+                        key={room.id}
+                        className={`border-none shadow-sm transition-all cursor-pointer hover:shadow-md ${!room.isActive ? 'bg-secondary/50 opacity-80' : 'bg-card'}`}
+                        onClick={() => openPhysicalRoomEditDialog(room)}
+                        data-testid={`card-physical-room-${room.id}`}
+                      >
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between">
+                            <div className="space-y-1.5 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-medium">{room.name}</span>
+                                <Badge
+                                  variant={room.isActive ? 'default' : 'secondary'}
+                                  className={`text-[10px] h-5 ${room.isActive ? 'bg-green-100 text-green-800 hover:bg-green-100' : ''}`}
+                                >
+                                  {room.isActive ? 'Aktiv' : 'Inaktiv'}
+                                </Badge>
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                {room.isActive ? 'Verfügbar' : 'Deaktiviert'}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-3 ml-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openPhysicalRoomEditDialog(room);
+                                }}
+                                data-testid={`button-edit-physical-room-${room.id}`}
+                              >
+                                <Pencil className="w-4 h-4 text-muted-foreground" />
+                              </Button>
+                              <div className="flex flex-col items-center gap-1">
+                                <Switch
+                                  id={`physical-room-${room.id}`}
+                                  checked={room.isActive}
+                                  disabled={!canEdit}
+                                  onCheckedChange={() => {}}
+                                  onClick={(e) => togglePhysicalRoomActive(room.id, e)}
+                                  data-testid={`switch-physical-room-${room.id}`}
+                                />
+                                <Label htmlFor={`physical-room-${room.id}`} className="text-[10px] text-muted-foreground">
+                                  {room.isActive ? 'Aktiv' : 'Inaktiv'}
+                                </Label>
+                              </div>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Keine Räume angelegt</p>
+                )}
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {isCreatingRoom ? "Neuen Raum anlegen" : `Raum bearbeiten: ${editingRoom?.name}`}
+              {isCreatingRoom ? "Neuen Arbeitsplatz anlegen" : `Arbeitsplatz bearbeiten: ${editingRoom?.name}`}
             </DialogTitle>
           </DialogHeader>
 
@@ -560,11 +813,56 @@ export default function ResourceManagement() {
                     id="room-description"
                     value={editingRoom.description}
                     onChange={(e) => updateEditingRoom({ description: e.target.value })}
-                    placeholder="Kurze Beschreibung des Raums..."
+                    placeholder="Kurze Beschreibung des Arbeitsplatzes..."
                     rows={3}
                     disabled={!canEdit}
                     data-testid="input-room-description"
                   />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Räume (physisch)</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedPhysicalRoomLabels.length ? (
+                      selectedPhysicalRoomLabels.map((room) => (
+                        <Badge key={room.id} variant="secondary">
+                          {room.label}
+                        </Badge>
+                      ))
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Keine Räume zugeordnet</p>
+                    )}
+                  </div>
+                  {activePhysicalRooms.length ? (
+                    <div className="space-y-2">
+                      <Input
+                        value={physicalRoomSearch}
+                        onChange={(e) => setPhysicalRoomSearch(e.target.value)}
+                        placeholder="Raum suchen..."
+                        disabled={!canEdit}
+                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        {filteredPhysicalRooms.map((room) => (
+                          <div key={room.id} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`physical-room-select-${room.id}`}
+                              checked={editingRoom.physicalRoomIds.includes(room.id)}
+                              onCheckedChange={() => togglePhysicalRoomAssignment(room.id)}
+                              disabled={!canEdit}
+                            />
+                            <Label htmlFor={`physical-room-select-${room.id}`} className="text-sm cursor-pointer">
+                              {room.name}
+                            </Label>
+                          </div>
+                        ))}
+                        {!filteredPhysicalRooms.length && (
+                          <p className="text-sm text-muted-foreground">Keine Räume gefunden</p>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Keine Räume angelegt</p>
+                  )}
                 </div>
 
                 <div className="flex items-center space-x-2 pt-2">
@@ -584,7 +882,7 @@ export default function ResourceManagement() {
               <TabsContent value="weekly" className="mt-4">
                 <div className="space-y-4">
                   <p className="text-sm text-muted-foreground">
-                    Definieren Sie die wöchentliche Nutzung und Verfügbarkeit des Raums.
+                    Definieren Sie die wöchentliche Nutzung und Verfügbarkeit des Arbeitsplatzes.
                   </p>
                   
                   <div className="overflow-x-auto">
@@ -650,7 +948,7 @@ export default function ResourceManagement() {
                   </div>
 
                   <div className="space-y-2 pt-2">
-                    <Label>Globaler Sperrgrund (Raum komplett gesperrt)</Label>
+                    <Label>Globaler Sperrgrund (Arbeitsplatz komplett gesperrt)</Label>
                     <Input
                       value={editingRoom.blockReason}
                       onChange={(e) => updateEditingRoom({ blockReason: e.target.value })}
@@ -659,7 +957,7 @@ export default function ResourceManagement() {
                       data-testid="input-block-reason"
                     />
                     <p className="text-xs text-muted-foreground">
-                      Wird angezeigt, wenn der Raum über den Toggle deaktiviert wurde.
+                      Wird angezeigt, wenn der Arbeitsplatz über den Toggle deaktiviert wurde.
                     </p>
                   </div>
                 </div>
@@ -792,6 +1090,63 @@ export default function ResourceManagement() {
               Abbrechen
             </Button>
             <Button onClick={handleSave} disabled={!canEdit || saving} data-testid="button-save">
+              {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Speichern
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isPhysicalDialogOpen} onOpenChange={handlePhysicalDialogChange}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {isCreatingPhysicalRoom ? "Neuen Raum anlegen" : `Raum bearbeiten: ${editingPhysicalRoom?.name}`}
+            </DialogTitle>
+          </DialogHeader>
+
+          {editingPhysicalRoom && (
+            <div className="space-y-4 mt-4">
+              <div className="space-y-2">
+                <Label htmlFor="physical-room-name">Name</Label>
+                <Input
+                  id="physical-room-name"
+                  value={editingPhysicalRoom.name}
+                  onChange={(e) => setEditingPhysicalRoom({ ...editingPhysicalRoom, name: e.target.value })}
+                  disabled={!canEdit}
+                />
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="physical-room-active"
+                  checked={editingPhysicalRoom.isActive ?? true}
+                  onCheckedChange={(checked) =>
+                    setEditingPhysicalRoom({ ...editingPhysicalRoom, isActive: checked === true })
+                  }
+                  disabled={!canEdit}
+                />
+                <Label htmlFor="physical-room-active" className="cursor-pointer">
+                  Aktiv
+                </Label>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="mt-6">
+            {canEdit && !isCreatingPhysicalRoom && (
+              <Button
+                variant="destructive"
+                onClick={handleDeletePhysicalRoom}
+                disabled={saving}
+                className="mr-auto"
+              >
+                Löschen
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => handlePhysicalDialogChange(false)}>
+              Abbrechen
+            </Button>
+            <Button onClick={handleSavePhysicalRoom} disabled={!canEdit || saving}>
               {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Speichern
             </Button>

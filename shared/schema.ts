@@ -489,6 +489,42 @@ export const insertResourceSchema = insertRoomSchema;
 export type InsertResource = InsertRoom;
 export type Resource = Room;
 
+// Physical rooms table (actual spaces like Ultraschall 1, Ambulanz 1)
+export const physicalRooms = pgTable("physical_rooms", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (table) => [
+  uniqueIndex("physical_rooms_name_idx").on(table.name),
+  index("physical_rooms_is_active_idx").on(table.isActive)
+]);
+
+export const insertPhysicalRoomSchema = createInsertSchema(physicalRooms).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export type InsertPhysicalRoom = z.infer<typeof insertPhysicalRoomSchema>;
+export type PhysicalRoom = typeof physicalRooms.$inferSelect;
+
+// Workplaces (rooms) to physical rooms mapping (many-to-many)
+export const roomPhysicalRooms = pgTable("room_physical_rooms", {
+  roomId: integer("room_id").references(() => rooms.id).notNull(),
+  physicalRoomId: integer("physical_room_id").references(() => physicalRooms.id).notNull()
+}, (table) => [
+  primaryKey({ columns: [table.roomId, table.physicalRoomId] }),
+  index("room_physical_rooms_room_id_idx").on(table.roomId),
+  index("room_physical_rooms_physical_room_id_idx").on(table.physicalRoomId)
+]);
+
+export const insertRoomPhysicalRoomSchema = createInsertSchema(roomPhysicalRooms);
+
+export type InsertRoomPhysicalRoom = z.infer<typeof insertRoomPhysicalRoomSchema>;
+export type RoomPhysicalRoom = typeof roomPhysicalRooms.$inferSelect;
+
 // Room weekday settings - recurring schedules per room
 export const roomWeekdaySettings = pgTable("room_weekday_settings", {
   id: serial("id").primaryKey(),
