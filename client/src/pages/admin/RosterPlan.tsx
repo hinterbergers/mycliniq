@@ -7,15 +7,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Calendar as CalendarIcon, Download, Filter, Printer, ArrowLeft, ArrowRight, Info, Loader2, Sparkles, ArrowRightLeft, CheckCircle2, AlertTriangle, Brain } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Download, Printer, ArrowLeft, ArrowRight, Info, Loader2, Sparkles, ArrowRightLeft, CheckCircle2, AlertTriangle, Brain, Pencil } from "lucide-react";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { employeeApi, rosterApi, absenceApi, rosterSettingsApi } from "@/lib/api";
 import type { Employee, RosterShift, Absence, RosterSettings } from "@shared/schema";
-import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, isWeekend, getDay, getWeek } from "date-fns";
+import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, isWeekend } from "date-fns";
 import { de } from "date-fns/locale";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { ShiftSwapDialog } from "@/components/ShiftSwapDialog";
+import { getServiceTypesForEmployee, type ServiceType } from "@shared/shiftTypes";
 
 interface GeneratedShift {
   date: string;
@@ -24,7 +26,7 @@ interface GeneratedShift {
   employeeName: string;
 }
 
-const SERVICE_TYPES = [
+const SERVICE_TYPES: Array<{ id: ServiceType; label: string; requiredRole: string[]; color: string }> = [
   { id: "gyn", label: "Gynäkologie", requiredRole: ["Primararzt", "1. Oberarzt", "Funktionsoberarzt", "Ausbildungsoberarzt", "Oberarzt", "Oberärztin"], color: "bg-primary/10 text-primary border-primary/20" },
   { id: "kreiszimmer", label: "Kreißzimmer", requiredRole: ["Assistenzarzt", "Assistenzärztin"], color: "bg-pink-100 text-pink-700 border-pink-200" },
   { id: "turnus", label: "Turnus", requiredRole: ["Assistenzarzt", "Assistenzärztin", "Turnusarzt"], color: "bg-emerald-100 text-emerald-700 border-emerald-200" }
@@ -50,6 +52,8 @@ export default function RosterPlan() {
   const [generationWarnings, setGenerationWarnings] = useState<string[]>([]);
   const [isApplying, setIsApplying] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [manualEditMode, setManualEditMode] = useState(false);
+  const [savingCellKey, setSavingCellKey] = useState<string | null>(null);
 
   const canEdit = useMemo(() => {
     if (!currentUser) return false;
@@ -67,6 +71,51 @@ export default function RosterPlan() {
     start: startOfMonth(currentDate),
     end: endOfMonth(currentDate)
   });
+
+  const getShiftForDay = (date: Date, type: ServiceType) => {
+    const dateStr = format(date, 'yyyy-MM-dd');
+    return shifts.find((s) => s.date === dateStr && s.serviceType === type);
+  };
+
+  const getEmployeeById = (id?: number | null) => {
+    if (!id) return null;
+    return employees.find((e) => e.id === id) || null;
+  };
+
+  const getConflictReasons = (employee: Employee | null, dateStr: string, type: ServiceType) => {
+    if (!employee) return [];
+    const reasons: string[] = [];
+    const allowedTypes = getServiceTypesForEmployee(employee);
+    if (!allowedTypes.includes(type)) {
+      reasons.push("Nicht für diesen Dienst einsetzbar");
+    }
+    if (employee.takesShifts === false) {
+      reasons.push("Dienstplan berücksichtigen ist deaktiviert");
+    }
+    if (employee.isActive === false) {
+      reasons.push("Mitarbeiter ist deaktiviert");
+    }
+    if (employee.inactiveFrom || employee.inactiveUntil) {
+      const from = employee.inactiveFrom ? new Date(employee.inactiveFrom) : null;
+      const until = employee.inactiveUntil ? new Date(employee.inactiveUntil) : null;
+      const target = new Date(dateStr);
+      if ((from && target >= from) || (until && target <= until)) {
+        if (!from || !until || (from && until && target >= from && target <= until)) {
+          reasons.push("Langzeit-Deaktivierung aktiv");
+        }
+      }
+    }
+    const hasAbsence = absences.some(
+      (absence) =>
+        absence.employeeId === employee.id &&
+        absence.startDate <= dateStr &&
+        absence.endDate >= dateStr
+    );
+    if (hasAbsence) {
+      reasons.push("Abwesenheit eingetragen");
+    }
+    return reasons;
+  };
 
   const isPublished = useMemo(() => {
     if (!rosterSettings) return false;
@@ -108,13 +157,6 @@ export default function RosterPlan() {
     loadData();
   }, [loadData]);
 
-  const getAssignment = (date: Date, type: 'gyn' | 'kreiszimmer' | 'turnus') => {
-    const dateStr = format(date, 'yyyy-MM-dd');
-    const shift = shifts.find(s => s.date === dateStr && s.serviceType === type);
-    if (!shift) return null;
-    return employees.find(e => e.id === shift.employeeId);
-  };
-
   const getAbsences = (date: Date): { empId: number; name: string; reason: string }[] => {
     const dateStr = format(date, 'yyyy-MM-dd');
     return absences
@@ -123,6 +165,84 @@ export default function RosterPlan() {
         const emp = employees.find(e => e.id === a.employeeId);
         return { empId: a.employeeId, name: emp?.name || 'Unbekannt', reason: a.reason };
       });
+  };
+
+  const renderAssignmentCell = (date: Date, type: ServiceType, tone: "blue" | "pink" | "emerald") => {
+    const shift = getShiftForDay(date, type);
+    const employee = shift ? getEmployeeById(shift.employeeId) : null;
+    const dateStr = format(date, "yyyy-MM-dd");
+    const conflictReasons = employee ? getConflictReasons(employee, dateStr, type) : [];
+    const hasConflict = conflictReasons.length > 0;
+    const cellKey = `${dateStr}-${type}`;
+    const isSaving = savingCellKey === cellKey;
+
+    if (!manualEditMode || !canEdit) {
+      if (employee) {
+        return (
+          <div className={`relative ${hasConflict ? "border border-red-300 bg-red-50/60" : ""} rounded`}>
+            <div
+              className={`text-sm px-2 py-1.5 rounded font-medium text-center border shadow-sm ${
+                tone === "pink"
+                  ? "bg-pink-100 text-pink-800 border-pink-200"
+                  : tone === "blue"
+                  ? "bg-blue-100 text-blue-800 border-blue-200"
+                  : "bg-emerald-100 text-emerald-800 border-emerald-200"
+              }`}
+            >
+              {employee.name.split(" ").pop()}
+            </div>
+            {hasConflict && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full p-1">
+                    <AlertTriangle className="w-3 h-3" />
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <div className="text-xs space-y-1">
+                    {conflictReasons.map((reason) => (
+                      <div key={reason}>{reason}</div>
+                    ))}
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </div>
+        );
+      }
+
+      return (
+        <div className="h-8 border border-dashed border-slate-200 rounded flex items-center justify-center text-xs text-slate-400">
+          +
+        </div>
+      );
+    }
+
+    return (
+      <Select
+        value={employee ? employee.id.toString() : "none"}
+        onValueChange={(value) => handleManualAssign(date, type, value)}
+      >
+        <SelectTrigger
+          className={`h-8 text-xs ${hasConflict ? "border-red-400" : ""}`}
+          disabled={isSaving}
+        >
+          <SelectValue placeholder="+" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="none">—</SelectItem>
+          {employees.map((emp) => {
+            const reasons = getConflictReasons(emp, dateStr, type);
+            const label = reasons.length ? `${emp.name} (Konflikt)` : emp.name;
+            return (
+              <SelectItem key={emp.id} value={emp.id.toString()}>
+                {label}
+              </SelectItem>
+            );
+          })}
+        </SelectContent>
+      </Select>
+    );
   };
   
   const stats = useMemo(() => {
@@ -199,6 +319,48 @@ export default function RosterPlan() {
       });
     } finally {
       setIsApplying(false);
+    }
+  };
+
+  const handleManualAssign = async (
+    date: Date,
+    type: ServiceType,
+    nextEmployeeId: string
+  ) => {
+    const dateStr = format(date, "yyyy-MM-dd");
+    const shift = getShiftForDay(date, type);
+    const cellKey = `${dateStr}-${type}`;
+    setSavingCellKey(cellKey);
+    try {
+      if (nextEmployeeId === "none") {
+        if (shift) {
+          await rosterApi.delete(shift.id);
+          setShifts((prev) => prev.filter((item) => item.id !== shift.id));
+        }
+      } else {
+        const employeeId = parseInt(nextEmployeeId);
+        if (shift) {
+          if (shift.employeeId !== employeeId) {
+            const updated = await rosterApi.update(shift.id, { employeeId });
+            setShifts((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+          }
+        } else {
+          const created = await rosterApi.create({
+            employeeId,
+            date: dateStr,
+            serviceType: type
+          });
+          setShifts((prev) => [...prev, created]);
+        }
+      }
+    } catch (error: any) {
+      toast({
+        title: "Speichern fehlgeschlagen",
+        description: error.message || "Bitte später erneut versuchen",
+        variant: "destructive"
+      });
+    } finally {
+      setSavingCellKey(null);
     }
   };
 
@@ -283,6 +445,17 @@ export default function RosterPlan() {
               Export PDF
             </Button>
             {canEdit && (
+              <Button
+                variant={manualEditMode ? "default" : "outline"}
+                className="gap-2 flex-1 md:flex-none"
+                onClick={() => setManualEditMode((prev) => !prev)}
+                data-testid="button-manual-edit"
+              >
+                <Pencil className="w-4 h-4" />
+                {manualEditMode ? "Manuelle Eingabe aktiv" : "Manuell bearbeiten"}
+              </Button>
+            )}
+            {canEdit && (
               <Button 
                 className="gap-2 flex-1 md:flex-none" 
                 onClick={handleAutoGenerate}
@@ -314,6 +487,12 @@ export default function RosterPlan() {
 
         {/* Main Roster Table */}
         <Card className="border-none kabeg-shadow overflow-hidden">
+          {manualEditMode && canEdit && (
+            <div className="px-4 py-3 bg-amber-50 border-b border-amber-200 text-sm text-amber-800 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4" />
+              Manuelle Eingabe aktiv. Konflikte werden markiert, Speicherung bleibt erlaubt.
+            </div>
+          )}
           <div className="overflow-x-auto">
             <Table className="border-collapse w-full min-w-[1200px]">
               <TableHeader>
@@ -344,9 +523,6 @@ export default function RosterPlan() {
                   const isWeekendDay = isWeekend(day);
                   const isHoliday = format(day, 'dd.MM') === '01.01' || format(day, 'dd.MM') === '06.01';
                   
-                  const gynAssign = getAssignment(day, 'gyn');
-                  const kreisAssign = getAssignment(day, 'kreiszimmer');
-                  const turnusAssign = getAssignment(day, 'turnus');
                   // @ts-ignore
                   const absences = getAbsences(day);
 
@@ -367,41 +543,17 @@ export default function RosterPlan() {
 
                       {/* Kreißzimmer Slot */}
                       <TableCell className="border-r border-border p-1">
-                        {kreisAssign ? (
-                          <div className="bg-pink-100 text-pink-800 text-sm px-2 py-1.5 rounded font-medium text-center border border-pink-200 shadow-sm">
-                            {kreisAssign.name.split(' ').pop()}
-                          </div>
-                        ) : (
-                          <div className="h-8 border border-dashed border-slate-200 rounded flex items-center justify-center text-xs text-slate-400 hover:bg-slate-50 cursor-pointer">
-                            +
-                          </div>
-                        )}
+                        {renderAssignmentCell(day, "kreiszimmer", "pink")}
                       </TableCell>
 
                       {/* Gyn Slot */}
                       <TableCell className="border-r border-border p-1">
-                        {gynAssign ? (
-                          <div className="bg-blue-100 text-blue-800 text-sm px-2 py-1.5 rounded font-medium text-center border border-blue-200 shadow-sm">
-                            {gynAssign.name.split(' ').pop()}
-                          </div>
-                        ) : (
-                          <div className="h-8 border border-dashed border-slate-200 rounded flex items-center justify-center text-xs text-slate-400 hover:bg-slate-50 cursor-pointer">
-                            +
-                          </div>
-                        )}
+                        {renderAssignmentCell(day, "gyn", "blue")}
                       </TableCell>
 
                       {/* Turnus Slot */}
                       <TableCell className="border-r border-border p-1">
-                        {turnusAssign ? (
-                          <div className="bg-emerald-100 text-emerald-800 text-sm px-2 py-1.5 rounded font-medium text-center border border-emerald-200 shadow-sm">
-                            {turnusAssign.name.split(' ').pop()}
-                          </div>
-                        ) : (
-                          <div className="h-8 border border-dashed border-slate-200 rounded flex items-center justify-center text-xs text-slate-400 hover:bg-slate-50 cursor-pointer">
-                            +
-                          </div>
-                        )}
+                        {renderAssignmentCell(day, "turnus", "emerald")}
                       </TableCell>
 
                       {/* Absences & Info */}
