@@ -166,13 +166,27 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
     if (dutyPlan) return dutyPlan;
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth() + 1;
-    const created = await dutyPlansApi.create({
-      year,
-      month,
-      generatedById: employee?.id ?? null
-    });
-    setDutyPlan(created);
-    return created;
+    const existing = await dutyPlansApi.getByMonth(year, month);
+    if (existing) {
+      setDutyPlan(existing);
+      return existing;
+    }
+    try {
+      const created = await dutyPlansApi.create({
+        year,
+        month,
+        generatedById: employee?.id ?? null
+      });
+      setDutyPlan(created);
+      return created;
+    } catch (error: any) {
+      const fallback = await dutyPlansApi.getByMonth(year, month);
+      if (fallback) {
+        setDutyPlan(fallback);
+        return fallback;
+      }
+      throw error;
+    }
   };
 
   const handleSetStatus = async (nextStatus: DutyPlan["status"]) => {
@@ -271,6 +285,16 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
                 onClick={() => handleSetStatus("Freigegeben")}
               >
                 Freigeben
+              </Button>
+            )}
+            {planStatus === "Freigegeben" && canPublishPlan && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={statusUpdating || planLoading}
+                onClick={() => handleSetStatus("Entwurf")}
+              >
+                Bearbeitung
               </Button>
             )}
             <Select defaultValue="all">

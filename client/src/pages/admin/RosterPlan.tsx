@@ -18,7 +18,7 @@ import { de } from "date-fns/locale";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { ShiftSwapDialog } from "@/components/ShiftSwapDialog";
-import { getServiceTypesForEmployee, type ServiceType } from "@shared/shiftTypes";
+import { getServiceTypesForEmployee, employeeDoesShifts, type ServiceType } from "@shared/shiftTypes";
 
 interface GeneratedShift {
   date: string;
@@ -402,7 +402,7 @@ export default function RosterPlan() {
   };
   
   const stats = useMemo(() => {
-    return employees.map(emp => {
+    return employees.filter(employeeDoesShifts).map(emp => {
       const empShifts = shifts.filter(s => s.employeeId === emp.id);
       const empAbsences = absences.filter(a => a.employeeId === emp.id);
       return {
@@ -533,13 +533,24 @@ export default function RosterPlan() {
     try {
       const year = currentDate.getFullYear();
       const month = currentDate.getMonth() + 1;
-      const existing = dutyPlan
-        ? dutyPlan
-        : await dutyPlansApi.create({
+      let existing = dutyPlan;
+      if (!existing) {
+        existing = await dutyPlansApi.getByMonth(year, month);
+      }
+      if (!existing) {
+        try {
+          existing = await dutyPlansApi.create({
             year,
             month,
             generatedById: currentUser.id
           });
+        } catch (error: any) {
+          existing = await dutyPlansApi.getByMonth(year, month);
+          if (!existing) {
+            throw error;
+          }
+        }
+      }
       const updated = await dutyPlansApi.updateStatus(
         existing.id,
         nextStatus,
@@ -665,6 +676,18 @@ export default function RosterPlan() {
                 onClick={() => handleUpdatePlanStatus("Entwurf")}
                 disabled={isStatusUpdating}
                 data-testid="button-back-to-draft"
+              >
+                {isStatusUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pencil className="w-4 h-4" />}
+                Bearbeitung
+              </Button>
+            )}
+            {canPublish && planStatus === "Freigegeben" && (
+              <Button
+                variant="outline"
+                className="gap-2 flex-1 md:flex-none"
+                onClick={() => handleUpdatePlanStatus("Entwurf")}
+                disabled={isStatusUpdating}
+                data-testid="button-reopen-roster"
               >
                 {isStatusUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pencil className="w-4 h-4" />}
                 Bearbeitung

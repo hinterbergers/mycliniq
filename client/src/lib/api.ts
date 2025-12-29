@@ -281,10 +281,14 @@ export const dutyPlansApi = {
     status: DutyPlan["status"],
     releasedById?: number | null
   ): Promise<DutyPlan> => {
+    const payload: { status: DutyPlan["status"]; releasedById?: number } = { status };
+    if (typeof releasedById === "number") {
+      payload.releasedById = releasedById;
+    }
     const response = await apiFetch(`${API_BASE}/duty-plans/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status, releasedById })
+      body: JSON.stringify(payload)
     });
     return handleResponse<DutyPlan>(response);
   }

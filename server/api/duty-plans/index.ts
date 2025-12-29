@@ -33,7 +33,7 @@ const createDutyPlanSchema = z.object({
  */
 const updateStatusSchema = z.object({
   status: z.enum(['Entwurf', 'Vorläufig', 'Freigegeben']),
-  releasedById: z.number().positive().optional()
+  releasedById: z.number().positive().nullable().optional()
 });
 
 /**
@@ -324,7 +324,7 @@ export function registerDutyPlanRoutes(router: Router) {
       const allowedTransitions: Record<string, string[]> = {
         'Entwurf': ['Vorläufig'],
         'Vorläufig': ['Freigegeben', 'Entwurf'],
-        'Freigegeben': [] // No transitions allowed from Freigegeben
+        'Freigegeben': ['Vorläufig', 'Entwurf']
       };
       
       if (status !== currentStatus && !allowedTransitions[currentStatus]?.includes(status)) {
