@@ -29,9 +29,9 @@ import {
   X
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
-import { employeeApi, competencyApi, roomApi, diplomaApi, longTermWishesApi } from "@/lib/api";
+import { employeeApi, competencyApi, roomApi, diplomaApi, longTermWishesApi, longTermAbsencesApi } from "@/lib/api";
 import { apiRequest } from "@/lib/queryClient";
-import type { Employee, Competency, Resource, Diploma, LongTermShiftWish } from "@shared/schema";
+import type { Employee, Competency, Resource, Diploma, LongTermShiftWish, LongTermAbsence } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useParams, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
@@ -211,6 +211,20 @@ interface ShiftPreferences {
   serviceTypeOverrides?: ServiceType[];
 }
 
+type LongTermAbsenceDraft = {
+  id?: number;
+  localId: string;
+  employeeId: number;
+  startDate: string;
+  endDate: string;
+  reason: string;
+  status: LongTermAbsence["status"];
+  submittedAt?: string | null;
+  approvedAt?: string | null;
+  approvedById?: number | null;
+  approvalNotes?: string | null;
+};
+
 const getServiceTypesForRole = (role?: string | null): ServiceType[] => {
   const normalized = normalizeRoleValue(role) || "";
   return SERVICE_TYPES.filter((service) => SERVICE_CAPABILITIES[service].includes(normalized));
@@ -220,6 +234,20 @@ function parseInactiveDate(value: string): string | null {
   if (!value.trim()) return "";
   return parseBirthdayInput(value);
 }
+
+const buildLongTermAbsenceDraft = (absence: LongTermAbsence): LongTermAbsenceDraft => ({
+  localId: String(absence.id),
+  id: absence.id,
+  employeeId: absence.employeeId,
+  startDate: formatBirthday(absence.startDate),
+  endDate: formatBirthday(absence.endDate),
+  reason: absence.reason || "",
+  status: absence.status || "Entwurf",
+  submittedAt: absence.submittedAt ? String(absence.submittedAt) : null,
+  approvedAt: absence.approvedAt ? String(absence.approvedAt) : null,
+  approvedById: absence.approvedById ?? null,
+  approvalNotes: absence.approvalNotes || null
+});
 
 export default function Settings() {
   const params = useParams();
@@ -282,8 +310,6 @@ export default function Settings() {
   const [roleValue, setRoleValue] = useState<Employee["role"] | "">("");
   const [appRoleValue, setAppRoleValue] = useState<Employee["appRole"] | "">("");
   const [takesShifts, setTakesShifts] = useState(true);
-  const [inactiveFrom, setInactiveFrom] = useState("");
-  const [inactiveUntil, setInactiveUntil] = useState("");
   const [availableCompetencies, setAvailableCompetencies] = useState<Competency[]>([]);
   const [selectedCompetencyIds, setSelectedCompetencyIds] = useState<number[]>([]);
   const [competencySearch, setCompetencySearch] = useState("");
@@ -311,6 +337,9 @@ export default function Settings() {
   const [longTermNotes, setLongTermNotes] = useState("");
   const [longTermSaving, setLongTermSaving] = useState(false);
   const [longTermDecisionNotes, setLongTermDecisionNotes] = useState("");
+  const [longTermAbsences, setLongTermAbsences] = useState<LongTermAbsenceDraft[]>([]);
+  const [longTermAbsenceDecisionNotes, setLongTermAbsenceDecisionNotes] = useState<Record<string, string>>({});
+  const [longTermAbsenceSavingIds, setLongTermAbsenceSavingIds] = useState<string[]>([]);
 
   const { toast } = useToast();
 
@@ -413,8 +442,6 @@ export default function Settings() {
     setRoleValue(normalizeRoleValue(emp.role));
     setAppRoleValue(emp.appRole || "");
     setTakesShifts(emp.takesShifts ?? true);
-    setInactiveFrom(formatBirthday(emp.inactiveFrom));
-    setInactiveUntil(formatBirthday(emp.inactiveUntil));
     setSelectedCompetencyIds([]);
     const prefs = (emp.shiftPreferences as ShiftPreferences | null) || null;
     setDeploymentRoomIds(Array.isArray(prefs?.deploymentRoomIds) ? prefs.deploymentRoomIds : []);
@@ -496,6 +523,16 @@ export default function Settings() {
           setLongTermRules([]);
           setLongTermNotes("");
           setLongTermDecisionNotes("");
+        }
+
+        try {
+          const absences = await longTermAbsencesApi.getByEmployee(emp.id);
+          const sorted = [...absences].sort((a, b) => a.startDate.localeCompare(b.startDate));
+          setLongTermAbsences(sorted.map(buildLongTermAbsenceDraft));
+          setLongTermAbsenceDecisionNotes({});
+        } catch {
+          setLongTermAbsences([]);
+          setLongTermAbsenceDecisionNotes({});
         }
       }
     } catch (error) {
@@ -612,42 +649,6 @@ export default function Settings() {
         return;
       }
 
-      let parsedInactiveFrom: string | null | "" = "";
-      let parsedInactiveUntil: string | null | "" = "";
-      if (canEditRoleAndCompetencies) {
-        parsedInactiveFrom = parseInactiveDate(inactiveFrom);
-        if (parsedInactiveFrom === null) {
-          toast({
-            title: "Fehler",
-            description: "Bitte ein gueltiges Startdatum fuer die Deaktivierung eingeben (TT.MM.JJJJ oder JJJJ-MM-TT).",
-            variant: "destructive"
-          });
-          setSaving(false);
-          return;
-        }
-
-        parsedInactiveUntil = parseInactiveDate(inactiveUntil);
-        if (parsedInactiveUntil === null) {
-          toast({
-            title: "Fehler",
-            description: "Bitte ein gueltiges Enddatum fuer die Deaktivierung eingeben (TT.MM.JJJJ oder JJJJ-MM-TT).",
-            variant: "destructive"
-          });
-          setSaving(false);
-          return;
-        }
-
-        if (parsedInactiveFrom && parsedInactiveUntil && parsedInactiveFrom > parsedInactiveUntil) {
-          toast({
-            title: "Fehler",
-            description: "Das Enddatum der Deaktivierung muss nach dem Startdatum liegen.",
-            variant: "destructive"
-          });
-          setSaving(false);
-          return;
-        }
-      }
-
       // TODO: Backend schema needs title, birthday, badge fields before full persistence
       // Currently saving only fields supported by the existing API
       if (canEditBasicInfo) {
@@ -682,8 +683,6 @@ export default function Settings() {
           role: (roleValue || employee.role) as Employee["role"],
           appRole: (appRoleValue || employee.appRole) as Employee["appRole"],
           takesShifts,
-          inactiveFrom: parsedInactiveFrom || null,
-          inactiveUntil: parsedInactiveUntil || null,
           shiftPreferences: nextShiftPreferences
         });
       }
@@ -837,6 +836,188 @@ export default function Settings() {
       });
     } finally {
       setLongTermSaving(false);
+    }
+  };
+
+  const handleAddLongTermAbsence = () => {
+    if (!employee) return;
+    const localId = `new-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    setLongTermAbsences((prev) => [
+      ...prev,
+      {
+        localId,
+        employeeId: employee.id,
+        startDate: "",
+        endDate: "",
+        reason: "",
+        status: "Entwurf"
+      }
+    ]);
+  };
+
+  const updateLongTermAbsenceDraft = (localId: string, patch: Partial<LongTermAbsenceDraft>) => {
+    setLongTermAbsences((prev) =>
+      prev.map((draft) => (draft.localId === localId ? { ...draft, ...patch } : draft))
+    );
+  };
+
+  const setLongTermAbsenceSaving = (localId: string, saving: boolean) => {
+    setLongTermAbsenceSavingIds((prev) => {
+      if (saving) {
+        if (prev.includes(localId)) return prev;
+        return [...prev, localId];
+      }
+      return prev.filter((id) => id !== localId);
+    });
+  };
+
+  const validateLongTermAbsenceDraft = (draft: LongTermAbsenceDraft) => {
+    const parsedStart = parseInactiveDate(draft.startDate);
+    if (parsedStart === null || !parsedStart) {
+      toast({
+        title: "Fehler",
+        description: "Bitte ein gueltiges Startdatum eingeben (TT.MM.JJJJ oder JJJJ-MM-TT).",
+        variant: "destructive"
+      });
+      return null;
+    }
+    const parsedEnd = parseInactiveDate(draft.endDate);
+    if (parsedEnd === null || !parsedEnd) {
+      toast({
+        title: "Fehler",
+        description: "Bitte ein gueltiges Enddatum eingeben (TT.MM.JJJJ oder JJJJ-MM-TT).",
+        variant: "destructive"
+      });
+      return null;
+    }
+    if (parsedStart > parsedEnd) {
+      toast({
+        title: "Fehler",
+        description: "Das Enddatum muss nach dem Startdatum liegen.",
+        variant: "destructive"
+      });
+      return null;
+    }
+    if (!draft.reason.trim()) {
+      toast({
+        title: "Fehler",
+        description: "Bitte eine Beschreibung der Abwesenheit angeben.",
+        variant: "destructive"
+      });
+      return null;
+    }
+    return { startDate: parsedStart, endDate: parsedEnd, reason: draft.reason.trim() };
+  };
+
+  const handleSaveLongTermAbsence = async (draft: LongTermAbsenceDraft) => {
+    if (!employee || !isViewingOwnProfile) return;
+    const payload = validateLongTermAbsenceDraft(draft);
+    if (!payload) return;
+    setLongTermAbsenceSaving(draft.localId, true);
+    try {
+      const saved = draft.id
+        ? await longTermAbsencesApi.update(draft.id, payload)
+        : await longTermAbsencesApi.create({
+            employeeId: employee.id,
+            ...payload,
+            status: "Entwurf"
+          });
+      updateLongTermAbsenceDraft(draft.localId, {
+        ...buildLongTermAbsenceDraft(saved),
+        localId: draft.localId
+      });
+      toast({
+        title: "Gespeichert",
+        description: "Langzeit-Abwesenheit wurde gespeichert"
+      });
+    } catch (error: any) {
+      toast({
+        title: "Fehler",
+        description: error.message || "Speichern fehlgeschlagen",
+        variant: "destructive"
+      });
+    } finally {
+      setLongTermAbsenceSaving(draft.localId, false);
+    }
+  };
+
+  const handleSubmitLongTermAbsence = async (draft: LongTermAbsenceDraft) => {
+    if (!employee || !isViewingOwnProfile) return;
+    const payload = validateLongTermAbsenceDraft(draft);
+    if (!payload) return;
+    setLongTermAbsenceSaving(draft.localId, true);
+    try {
+      let target = draft;
+      if (!draft.id || draft.status === "Abgelehnt" || draft.status === "Entwurf") {
+        const saved = draft.id
+          ? await longTermAbsencesApi.update(draft.id, payload)
+          : await longTermAbsencesApi.create({
+              employeeId: employee.id,
+              ...payload,
+              status: "Entwurf"
+            });
+        target = { ...buildLongTermAbsenceDraft(saved), localId: draft.localId };
+        updateLongTermAbsenceDraft(draft.localId, target);
+      }
+      if (!target.id) return;
+      const submitted = await longTermAbsencesApi.submit(target.id);
+      updateLongTermAbsenceDraft(draft.localId, { ...buildLongTermAbsenceDraft(submitted), localId: draft.localId });
+      toast({
+        title: "Eingereicht",
+        description: "Langzeit-Abwesenheit wurde zur Freigabe eingereicht"
+      });
+    } catch (error: any) {
+      toast({
+        title: "Fehler",
+        description: error.message || "Einreichen fehlgeschlagen",
+        variant: "destructive"
+      });
+    } finally {
+      setLongTermAbsenceSaving(draft.localId, false);
+    }
+  };
+
+  const handleApproveLongTermAbsence = async (draft: LongTermAbsenceDraft) => {
+    if (!draft.id) return;
+    setLongTermAbsenceSaving(draft.localId, true);
+    try {
+      const notes = longTermAbsenceDecisionNotes[draft.localId];
+      const updated = await longTermAbsencesApi.approve(draft.id, notes || undefined);
+      updateLongTermAbsenceDraft(draft.localId, { ...buildLongTermAbsenceDraft(updated), localId: draft.localId });
+      toast({
+        title: "Genehmigt",
+        description: "Langzeit-Abwesenheit wurde freigegeben"
+      });
+    } catch (error: any) {
+      toast({
+        title: "Fehler",
+        description: error.message || "Freigabe fehlgeschlagen",
+        variant: "destructive"
+      });
+    } finally {
+      setLongTermAbsenceSaving(draft.localId, false);
+    }
+  };
+
+  const handleRejectLongTermAbsence = async (draft: LongTermAbsenceDraft) => {
+    if (!draft.id) return;
+    setLongTermAbsenceSaving(draft.localId, true);
+    try {
+      const notes = longTermAbsenceDecisionNotes[draft.localId];
+      const updated = await longTermAbsencesApi.reject(draft.id, notes || undefined);
+      updateLongTermAbsenceDraft(draft.localId, { ...buildLongTermAbsenceDraft(updated), localId: draft.localId });
+      toast({
+        title: "Abgelehnt",
+        description: "Langzeit-Abwesenheit wurde abgelehnt"
+      });
+    } catch (error: any) {
+      toast({
+        title: "Fehler",
+        description: error.message || "Ablehnung fehlgeschlagen",
+        variant: "destructive"
+      });
+    } finally {
+      setLongTermAbsenceSaving(draft.localId, false);
     }
   };
 
@@ -1015,6 +1196,9 @@ export default function Settings() {
             <TabsTrigger value="roles">Rollen & Kompetenzen</TabsTrigger>
             {viewingEmployeeDoesShifts && (
               <TabsTrigger value="longterm">Langfristige Dienstwünsche</TabsTrigger>
+            )}
+            {viewingEmployeeDoesShifts && (
+              <TabsTrigger value="longterm-absence">Langzeit-Abwesenheit</TabsTrigger>
             )}
             <TabsTrigger value="permissions">Berechtigungen</TabsTrigger>
           </TabsList>
@@ -1298,33 +1482,8 @@ export default function Settings() {
                   />
                 </div>
 
-                <div className="space-y-3 rounded-lg border border-border p-4">
-                  <div>
-                    <Label>Langzeit-Deaktivierung</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Von/Bis - in diesem Zeitraum nicht fuer Dienst- und Wochenplan beruecksichtigen.
-                    </p>
-                  </div>
-                  <div className="grid md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Von</Label>
-                      <Input
-                        type="date"
-                        value={inactiveFrom}
-                        onChange={(e) => setInactiveFrom(e.target.value)}
-                        disabled={!canEditRoleAndCompetencies}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Bis</Label>
-                      <Input
-                        type="date"
-                        value={inactiveUntil}
-                        onChange={(e) => setInactiveUntil(e.target.value)}
-                        disabled={!canEditRoleAndCompetencies}
-                      />
-                    </div>
-                  </div>
+                <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+                  Langzeit-Abwesenheiten werden im Reiter "Langzeit-Abwesenheit" eingereicht und freigegeben.
                 </div>
 
                 <div className="space-y-2">
@@ -1786,6 +1945,165 @@ export default function Settings() {
                       </>
                     )}
                   </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
+
+          {viewingEmployeeDoesShifts && (
+            <TabsContent value="longterm-absence" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Langzeit-Abwesenheiten</CardTitle>
+                  <CardDescription>
+                    Langfristige Abwesenheiten mit Freigabeprozess (z. B. Papamonat, Elternkarenz).
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-xs text-muted-foreground">
+                      Eintraege werden nach Einreichung freigegeben und im Dienstplan beruecksichtigt.
+                    </p>
+                    {isViewingOwnProfile && (
+                      <Button type="button" variant="outline" onClick={handleAddLongTermAbsence}>
+                        Neu hinzufügen
+                      </Button>
+                    )}
+                  </div>
+
+                  {longTermAbsences.length ? (
+                    <div className="space-y-4">
+                      {longTermAbsences.map((draft) => {
+                        const statusLabel = LONG_TERM_STATUS_LABELS[draft.status] || draft.status;
+                        const canEditDraft =
+                          isViewingOwnProfile && (draft.status === "Entwurf" || draft.status === "Abgelehnt");
+                        const canApproveDraft =
+                          !isViewingOwnProfile && canApproveLongTerm && draft.status === "Eingereicht";
+                        const isSaving = longTermAbsenceSavingIds.includes(draft.localId);
+                        return (
+                          <div key={draft.localId} className="rounded-lg border border-border p-4 space-y-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <Badge
+                                variant="outline"
+                                className={
+                                  draft.status === "Genehmigt"
+                                    ? "bg-green-50 text-green-700 border-green-200"
+                                    : draft.status === "Eingereicht"
+                                    ? "bg-blue-50 text-blue-700 border-blue-200"
+                                    : draft.status === "Abgelehnt"
+                                    ? "bg-red-50 text-red-700 border-red-200"
+                                    : "bg-muted text-muted-foreground"
+                                }
+                              >
+                                Status: {statusLabel}
+                              </Badge>
+                              {draft.startDate && draft.endDate && (
+                                <span className="text-xs text-muted-foreground">
+                                  {formatBirthdayDisplay(draft.startDate)} – {formatBirthdayDisplay(draft.endDate)}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="grid md:grid-cols-2 gap-4">
+                              <div className="space-y-2">
+                                <Label>Von</Label>
+                                <Input
+                                  value={draft.startDate}
+                                  onChange={(event) =>
+                                    updateLongTermAbsenceDraft(draft.localId, { startDate: event.target.value })
+                                  }
+                                  placeholder="TT.MM.JJJJ"
+                                  disabled={!canEditDraft}
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label>Bis</Label>
+                                <Input
+                                  value={draft.endDate}
+                                  onChange={(event) =>
+                                    updateLongTermAbsenceDraft(draft.localId, { endDate: event.target.value })
+                                  }
+                                  placeholder="TT.MM.JJJJ"
+                                  disabled={!canEditDraft}
+                                />
+                              </div>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label>Begruendung</Label>
+                              <Textarea
+                                value={draft.reason}
+                                onChange={(event) =>
+                                  updateLongTermAbsenceDraft(draft.localId, { reason: event.target.value })
+                                }
+                                placeholder="z. B. Papamonat 01.01.2026 bis 31.01.2026"
+                                disabled={!canEditDraft}
+                              />
+                            </div>
+
+                            {canApproveDraft && (
+                              <div className="space-y-2">
+                                <Label>Hinweis zur Entscheidung</Label>
+                                <Textarea
+                                  value={longTermAbsenceDecisionNotes[draft.localId] || ""}
+                                  onChange={(event) =>
+                                    setLongTermAbsenceDecisionNotes((prev) => ({
+                                      ...prev,
+                                      [draft.localId]: event.target.value
+                                    }))
+                                  }
+                                  placeholder="Optional..."
+                                />
+                              </div>
+                            )}
+
+                            <div className="flex flex-wrap justify-end gap-2">
+                              {canEditDraft && (
+                                <>
+                                  <Button
+                                    variant="outline"
+                                    onClick={() => handleSaveLongTermAbsence(draft)}
+                                    disabled={isSaving}
+                                  >
+                                    {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                                    Speichern
+                                  </Button>
+                                  <Button
+                                    onClick={() => handleSubmitLongTermAbsence(draft)}
+                                    disabled={isSaving}
+                                  >
+                                    {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                                    Einreichen
+                                  </Button>
+                                </>
+                              )}
+                              {canApproveDraft && (
+                                <>
+                                  <Button
+                                    variant="destructive"
+                                    onClick={() => handleRejectLongTermAbsence(draft)}
+                                    disabled={isSaving}
+                                  >
+                                    {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                                    Ablehnen
+                                  </Button>
+                                  <Button
+                                    onClick={() => handleApproveLongTermAbsence(draft)}
+                                    disabled={isSaving}
+                                  >
+                                    {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                                    Genehmigen
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Keine Langzeit-Abwesenheiten hinterlegt.</p>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>

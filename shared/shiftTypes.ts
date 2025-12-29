@@ -42,7 +42,9 @@ export function getServiceTypesForRole(role?: string | null): ServiceType[] {
 export function getServiceTypesForEmployee(input: {
   role?: string | null;
   shiftPreferences?: unknown;
+  takesShifts?: boolean | null;
 }): ServiceType[] {
+  if (input.takesShifts === false) return [];
   const overrides = getServiceTypeOverrides(input.shiftPreferences);
   if (overrides.length) return overrides;
   return getServiceTypesForRole(input.role);
@@ -53,6 +55,8 @@ export function employeeDoesShifts(input: {
   role?: string | null;
   shiftPreferences?: unknown;
 }): boolean {
+  if (input.takesShifts === false) return false;
   const overrides = getServiceTypeOverrides(input.shiftPreferences);
-  return input.takesShifts !== false || overrides.length > 0;
+  if (overrides.length) return true;
+  return getServiceTypesForRole(input.role).length > 0;
 }

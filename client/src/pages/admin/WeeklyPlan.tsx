@@ -11,8 +11,8 @@ import {
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { format, startOfWeek, endOfWeek, addWeeks, subWeeks, getWeek, getYear, eachDayOfInterval, addDays } from "date-fns";
 import { de } from "date-fns/locale";
-import { employeeApi } from "@/lib/api";
-import type { Employee } from "@shared/schema";
+import { employeeApi, longTermAbsencesApi } from "@/lib/api";
+import type { Employee, LongTermAbsence } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
@@ -78,19 +78,26 @@ const ROLE_BADGES: Record<string, string> = {
   "Sekretariat": "SEK",
 };
 
-const toDate = (value?: string | Date | null) => {
-  if (!value) return null;
-  if (value instanceof Date) return value;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-};
-
-const isEmployeeInactive = (employee: Employee, rangeStart: Date, rangeEnd: Date) => {
-  const inactiveFrom = toDate(employee.inactiveFrom);
-  const inactiveUntil = toDate(employee.inactiveUntil);
-  if (!inactiveFrom && !inactiveUntil) return false;
-  if (inactiveFrom && inactiveFrom > rangeEnd) return false;
-  if (inactiveUntil && inactiveUntil < rangeStart) return false;
+const isEmployeeInactive = (
+  employee: Employee,
+  rangeStart: Date,
+  rangeEnd: Date,
+  longTermAbsences: LongTermAbsence[]
+) => {
+  const fromDate = format(rangeStart, "yyyy-MM-dd");
+  const toDateStr = format(rangeEnd, "yyyy-MM-dd");
+  const hasApprovedAbsence = longTermAbsences.some(
+    (absence) =>
+      absence.employeeId === employee.id &&
+      absence.startDate <= toDateStr &&
+      absence.endDate >= fromDate
+  );
+  if (hasApprovedAbsence) return true;
+  const legacyFrom = employee.inactiveFrom ? new Date(employee.inactiveFrom) : null;
+  const legacyUntil = employee.inactiveUntil ? new Date(employee.inactiveUntil) : null;
+  if (!legacyFrom && !legacyUntil) return false;
+  if (legacyFrom && legacyFrom > rangeEnd) return false;
+  if (legacyUntil && legacyUntil < rangeStart) return false;
   return true;
 };
 
@@ -208,6 +215,7 @@ export default function WeeklyPlan() {
   const { toast } = useToast();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [longTermAbsences, setLongTermAbsences] = useState<LongTermAbsence[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedDay, setSelectedDay] = useState(0);
   const [sections, setSections] = useState<SectionData[]>(generateDummySections());
@@ -223,8 +231,14 @@ export default function WeeklyPlan() {
     const loadData = async () => {
       setIsLoading(true);
       try {
-        const empData = await employeeApi.getAll();
+        const from = format(weekStart, "yyyy-MM-dd");
+        const to = format(weekEnd, "yyyy-MM-dd");
+        const [empData, longTermData] = await Promise.all([
+          employeeApi.getAll(),
+          longTermAbsencesApi.getByStatus("Genehmigt", from, to)
+        ]);
         setEmployees(empData.filter(e => e.isActive));
+        setLongTermAbsences(longTermData);
       } catch (error) {
         console.error("Failed to load employees:", error);
       } finally {
@@ -232,7 +246,7 @@ export default function WeeklyPlan() {
       }
     };
     loadData();
-  }, []);
+  }, [currentDate, weekStart, weekEnd]);
 
   const handleGenerateAI = () => {
     console.log("KI-Vorschlag generieren für KW", weekNumber, weekYear);
@@ -293,7 +307,7 @@ export default function WeeklyPlan() {
   const availableEmployees = employees.filter((emp) =>
     emp.isActive &&
     emp.takesShifts !== false &&
-    !isEmployeeInactive(emp, weekStart, weekEnd)
+    !isEmployeeInactive(emp, weekStart, weekEnd, longTermAbsences)
   );
 
   return (

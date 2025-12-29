@@ -10,8 +10,8 @@ import {
 import { useState, useEffect } from "react";
 import { format, addDays, subDays } from "date-fns";
 import { de } from "date-fns/locale";
-import { employeeApi } from "@/lib/api";
-import type { Employee } from "@shared/schema";
+import { employeeApi, longTermAbsencesApi } from "@/lib/api";
+import type { Employee, LongTermAbsence } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
@@ -82,19 +82,20 @@ const ROLE_BADGES: Record<string, string> = {
   "Spezialist": "SPZ",
 };
 
-const toDate = (value?: string | Date | null) => {
-  if (!value) return null;
-  if (value instanceof Date) return value;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-};
-
-const isEmployeeInactive = (employee: Employee, date: Date) => {
-  const inactiveFrom = toDate(employee.inactiveFrom);
-  const inactiveUntil = toDate(employee.inactiveUntil);
-  if (!inactiveFrom && !inactiveUntil) return false;
-  if (inactiveFrom && date < inactiveFrom) return false;
-  if (inactiveUntil && date > inactiveUntil) return false;
+const isEmployeeInactive = (employee: Employee, date: Date, longTermAbsences: LongTermAbsence[]) => {
+  const dateStr = format(date, "yyyy-MM-dd");
+  const hasApprovedAbsence = longTermAbsences.some(
+    (absence) =>
+      absence.employeeId === employee.id &&
+      absence.startDate <= dateStr &&
+      absence.endDate >= dateStr
+  );
+  if (hasApprovedAbsence) return true;
+  const legacyFrom = employee.inactiveFrom ? new Date(employee.inactiveFrom) : null;
+  const legacyUntil = employee.inactiveUntil ? new Date(employee.inactiveUntil) : null;
+  if (!legacyFrom && !legacyUntil) return false;
+  if (legacyFrom && date < legacyFrom) return false;
+  if (legacyUntil && date > legacyUntil) return false;
   return true;
 };
 
@@ -214,14 +215,20 @@ export default function DailyPlanEditor() {
   const [planStatus, setPlanStatus] = useState<PlanStatus>("draft");
   const [sections] = useState<SectionData[]>(generateDummySections());
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [longTermAbsences, setLongTermAbsences] = useState<LongTermAbsence[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
       try {
-        const empData = await employeeApi.getAll();
+        const dateStr = format(date, "yyyy-MM-dd");
+        const [empData, longTermData] = await Promise.all([
+          employeeApi.getAll(),
+          longTermAbsencesApi.getByStatus("Genehmigt", dateStr, dateStr)
+        ]);
         setEmployees(empData.filter(e => e.isActive));
+        setLongTermAbsences(longTermData);
       } catch (error) {
         console.error("Failed to load employees:", error);
       } finally {
@@ -229,13 +236,13 @@ export default function DailyPlanEditor() {
       }
     };
     loadData();
-  }, []);
+  }, [date]);
 
   const availableStaff = generateAvailableStaff(
     employees.filter((emp) =>
       emp.isActive &&
       emp.takesShifts !== false &&
-      !isEmployeeInactive(emp, currentDate)
+      !isEmployeeInactive(emp, currentDate, longTermAbsences)
     )
   );
 

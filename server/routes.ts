@@ -12,7 +12,8 @@ import {
   insertProjectDocumentSchema,
   insertApprovalSchema,
   insertTaskActivitySchema,
-  insertLongTermShiftWishSchema
+  insertLongTermShiftWishSchema,
+  insertLongTermAbsenceSchema
 } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
 import bcrypt from "bcryptjs";
@@ -38,6 +39,12 @@ export async function registerRoutes(
     if (req.user.isAdmin || req.user.appRole === "Admin") return true;
     const approver = await storage.getEmployee(req.user.employeeId);
     return approver?.role === "Primararzt" || approver?.role === "1. Oberarzt";
+  };
+
+  const canViewPlanningData = (req: Request): boolean => {
+    if (!req.user) return false;
+    if (req.user.isAdmin || req.user.appRole === "Admin" || req.user.appRole === "Editor") return true;
+    return req.user.capabilities?.includes("dutyplan.edit") ?? false;
   };
   
   // Auth routes
@@ -440,8 +447,17 @@ export async function registerRoutes(
       const absences = await storage.getAbsencesByDateRange(startDate, endDate);
       const wishes = await storage.getShiftWishesByMonth(year, month);
       const longTermWishes = await storage.getLongTermShiftWishesByStatus("Genehmigt");
+      const longTermAbsences = await storage.getLongTermAbsencesByStatus("Genehmigt");
 
-      const result = await generateRosterPlan(employees, absences, year, month, wishes, longTermWishes);
+      const result = await generateRosterPlan(
+        employees,
+        absences,
+        year,
+        month,
+        wishes,
+        longTermWishes,
+        longTermAbsences
+      );
 
       res.json({
         success: true,
@@ -1281,6 +1297,181 @@ export async function registerRoutes(
       res.json(wish);
     } catch (error) {
       res.status(500).json({ error: "Failed to reject long-term wish" });
+    }
+  });
+
+  // Long-term absences routes
+  app.get("/api/long-term-absences", async (req: Request, res: Response) => {
+    try {
+      const { employeeId, status, from, to } = req.query;
+
+      if (employeeId) {
+        const targetId = parseInt(employeeId as string);
+        if (req.user && !req.user.isAdmin && req.user.employeeId !== targetId) {
+          return res.status(403).json({ error: "Zugriff nur auf eigene Daten erlaubt" });
+        }
+        const absences = await storage.getLongTermAbsencesByEmployee(targetId);
+        return res.json(absences);
+      }
+
+      if (status) {
+        if (!canViewPlanningData(req)) {
+          return res.status(403).json({ error: "Keine Berechtigung für diese Aktion" });
+        }
+        let absences = await storage.getLongTermAbsencesByStatus(status as string);
+        if (from || to) {
+          const fromDate = from ? String(from) : null;
+          const toDate = to ? String(to) : null;
+          absences = absences.filter((absence) => {
+            if (fromDate && absence.endDate < fromDate) return false;
+            if (toDate && absence.startDate > toDate) return false;
+            return true;
+          });
+        }
+        return res.json(absences);
+      }
+
+      res.status(400).json({ error: "employeeId oder status ist erforderlich" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch long-term absences" });
+    }
+  });
+
+  app.post("/api/long-term-absences", async (req: Request, res: Response) => {
+    try {
+      const payload = insertLongTermAbsenceSchema.parse(req.body);
+      if (req.user && !req.user.isAdmin && req.user.employeeId !== payload.employeeId) {
+        return res.status(403).json({ error: "Zugriff nur auf eigene Daten erlaubt" });
+      }
+      if (payload.startDate > payload.endDate) {
+        return res.status(400).json({ error: "Enddatum muss nach dem Startdatum liegen" });
+      }
+      const reason = payload.reason?.trim();
+      if (!reason) {
+        return res.status(400).json({ error: "Begruendung ist erforderlich" });
+      }
+      const absence = await storage.createLongTermAbsence({
+        ...payload,
+        reason,
+        status: "Entwurf",
+        submittedAt: null,
+        approvedAt: null,
+        approvedById: null,
+        approvalNotes: null
+      });
+      res.json(absence);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        const validationError = fromZodError(error);
+        return res.status(400).json({ error: validationError.message });
+      }
+      res.status(500).json({ error: "Failed to save long-term absence" });
+    }
+  });
+
+  app.patch("/api/long-term-absences/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const existing = await storage.getLongTermAbsence(id);
+      if (!existing) {
+        return res.status(404).json({ error: "Long-term absence not found" });
+      }
+      if (req.user && !req.user.isAdmin && req.user.employeeId !== existing.employeeId) {
+        return res.status(403).json({ error: "Zugriff nur auf eigene Daten erlaubt" });
+      }
+      if (existing.status === "Eingereicht" || existing.status === "Genehmigt") {
+        return res.status(400).json({ error: "Einreichungen koennen nicht mehr bearbeitet werden" });
+      }
+      const payload = insertLongTermAbsenceSchema.partial().parse(req.body);
+      delete (payload as { status?: unknown }).status;
+      delete (payload as { submittedAt?: unknown }).submittedAt;
+      delete (payload as { approvedAt?: unknown }).approvedAt;
+      delete (payload as { approvedById?: unknown }).approvedById;
+      delete (payload as { approvalNotes?: unknown }).approvalNotes;
+      delete (payload as { employeeId?: unknown }).employeeId;
+      if (typeof payload.reason === "string") {
+        payload.reason = payload.reason.trim();
+      }
+      if (payload.reason === "") {
+        return res.status(400).json({ error: "Begruendung ist erforderlich" });
+      }
+      if (payload.startDate && payload.endDate && payload.startDate > payload.endDate) {
+        return res.status(400).json({ error: "Enddatum muss nach dem Startdatum liegen" });
+      }
+      const updated = await storage.updateLongTermAbsence(id, payload);
+      res.json(updated);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        const validationError = fromZodError(error);
+        return res.status(400).json({ error: validationError.message });
+      }
+      res.status(500).json({ error: "Failed to update long-term absence" });
+    }
+  });
+
+  app.post("/api/long-term-absences/:id/submit", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const existing = await storage.getLongTermAbsence(id);
+      if (!existing) {
+        return res.status(404).json({ error: "Long-term absence not found" });
+      }
+      if (req.user && !req.user.isAdmin && req.user.employeeId !== existing.employeeId) {
+        return res.status(403).json({ error: "Zugriff nur auf eigene Daten erlaubt" });
+      }
+      const updated = await storage.updateLongTermAbsence(id, {
+        status: "Eingereicht",
+        submittedAt: new Date()
+      });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to submit long-term absence" });
+    }
+  });
+
+  app.post("/api/long-term-absences/:id/approve", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const allowed = await canApproveLongTermWishes(req);
+      if (!allowed) {
+        return res.status(403).json({ error: "Keine Berechtigung für diese Aktion" });
+      }
+      const existing = await storage.getLongTermAbsence(id);
+      if (!existing) {
+        return res.status(404).json({ error: "Long-term absence not found" });
+      }
+      const updated = await storage.updateLongTermAbsence(id, {
+        status: "Genehmigt",
+        approvedAt: new Date(),
+        approvedById: req.user?.employeeId,
+        approvalNotes: req.body?.notes || null
+      });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to approve long-term absence" });
+    }
+  });
+
+  app.post("/api/long-term-absences/:id/reject", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const allowed = await canApproveLongTermWishes(req);
+      if (!allowed) {
+        return res.status(403).json({ error: "Keine Berechtigung für diese Aktion" });
+      }
+      const existing = await storage.getLongTermAbsence(id);
+      if (!existing) {
+        return res.status(404).json({ error: "Long-term absence not found" });
+      }
+      const updated = await storage.updateLongTermAbsence(id, {
+        status: "Abgelehnt",
+        approvedAt: new Date(),
+        approvedById: req.user?.employeeId,
+        approvalNotes: req.body?.notes || null
+      });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to reject long-term absence" });
     }
   });
 

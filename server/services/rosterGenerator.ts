@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import type { Employee, Absence, ShiftWish, LongTermShiftWish } from "@shared/schema";
+import type { Employee, Absence, ShiftWish, LongTermShiftWish, LongTermAbsence } from "@shared/schema";
 import { SERVICE_TYPES, type ServiceType, type LongTermWishRule, getServiceTypesForEmployee, employeeDoesShifts } from "@shared/shiftTypes";
 import { format, eachDayOfInterval, isWeekend, startOfMonth, endOfMonth } from "date-fns";
 
@@ -71,7 +71,8 @@ export async function generateRosterPlan(
   year: number,
   month: number,
   shiftWishes: ShiftWish[] = [],
-  longTermWishes: LongTermShiftWish[] = []
+  longTermWishes: LongTermShiftWish[] = [],
+  longTermAbsences: LongTermAbsence[] = []
 ): Promise<GenerationResult> {
   const startDate = startOfMonth(new Date(year, month - 1));
   const endDate = endOfMonth(new Date(year, month - 1));
@@ -82,6 +83,13 @@ export async function generateRosterPlan(
   const wishesByEmployeeId = new Map(submittedWishes.map((wish) => [wish.employeeId, wish]));
   const approvedLongTerm = longTermWishes.filter((wish) => wish.status === "Genehmigt");
   const longTermByEmployeeId = new Map(approvedLongTerm.map((wish) => [wish.employeeId, wish]));
+  const approvedLongTermAbsences = longTermAbsences.filter((absence) => absence.status === "Genehmigt");
+  const longTermAbsencesByEmployeeId = new Map<number, LongTermAbsence[]>();
+  approvedLongTermAbsences.forEach((absence) => {
+    const list = longTermAbsencesByEmployeeId.get(absence.employeeId) || [];
+    list.push(absence);
+    longTermAbsencesByEmployeeId.set(absence.employeeId, list);
+  });
 
   const toServiceTypeList = (values: unknown): ServiceType[] => {
     if (!Array.isArray(values)) return [];
@@ -102,12 +110,16 @@ export async function generateRosterPlan(
     const absenceDates = existingAbsences
       .filter(a => a.employeeId === e.id)
       .map(a => `${a.startDate} bis ${a.endDate} (${a.reason})`);
+    const approvedAbsences = longTermAbsencesByEmployeeId.get(e.id) || [];
+    approvedAbsences.forEach((absence) => {
+      absenceDates.push(`Langzeitabwesenheit: ${absence.startDate} bis ${absence.endDate} (${absence.reason})`);
+    });
     const inactiveFrom = toDate(e.inactiveFrom);
     const inactiveUntil = toDate(e.inactiveUntil);
     if (inactiveFrom || inactiveUntil) {
       const formattedFrom = inactiveFrom ? format(inactiveFrom, 'yyyy-MM-dd') : "offen";
       const formattedUntil = inactiveUntil ? format(inactiveUntil, 'yyyy-MM-dd') : "offen";
-      absenceDates.push(`Langzeitabwesenheit: ${formattedFrom} bis ${formattedUntil}`);
+      absenceDates.push(`Langzeitabwesenheit (Legacy): ${formattedFrom} bis ${formattedUntil}`);
     }
     
     return {
@@ -219,10 +231,17 @@ Antworte mit folgendem JSON-Format:
         console.warn(`${employee.name} ist am ${shift.date} abwesend`);
         return false;
       }
-
-      const isInactive = isDateWithinRange(shift.date, employee.inactiveFrom, employee.inactiveUntil);
-      if (isInactive) {
-        console.warn(`${employee.name} ist am ${shift.date} langfristig deaktiviert`);
+      const longTermBlocks = longTermAbsencesByEmployeeId.get(employee.id) || [];
+      const isLongTermAbsent = longTermBlocks.some((absence) =>
+        isDateWithinRange(shift.date, absence.startDate, absence.endDate)
+      );
+      if (isLongTermAbsent) {
+        console.warn(`${employee.name} ist am ${shift.date} langfristig abwesend`);
+        return false;
+      }
+      const isLegacyInactive = isDateWithinRange(shift.date, employee.inactiveFrom, employee.inactiveUntil);
+      if (isLegacyInactive) {
+        console.warn(`${employee.name} ist am ${shift.date} langfristig deaktiviert (Legacy)`);
         return false;
       }
 
@@ -252,7 +271,8 @@ export async function validateShiftAssignment(
   date: string,
   serviceType: string,
   existingAbsences: Absence[],
-  longTermRules: LongTermWishRule[] = []
+  longTermRules: LongTermWishRule[] = [],
+  longTermAbsences: LongTermAbsence[] = []
 ): Promise<{ valid: boolean; reason?: string }> {
   const allowed = getServiceTypesForEmployee(employee);
   if (!allowed.includes(serviceType as ServiceType)) {
@@ -268,8 +288,15 @@ export async function validateShiftAssignment(
     return { valid: false, reason: `${employee.name} ist am ${date} abwesend` };
   }
 
-  const isInactive = isDateWithinRange(date, employee.inactiveFrom, employee.inactiveUntil);
-  if (isInactive) {
+  const isLongTermAbsent = longTermAbsences.some((absence) =>
+    absence.employeeId === employee.id && isDateWithinRange(date, absence.startDate, absence.endDate)
+  );
+  if (isLongTermAbsent) {
+    return { valid: false, reason: `${employee.name} ist am ${date} langfristig abwesend` };
+  }
+
+  const isLegacyInactive = isDateWithinRange(date, employee.inactiveFrom, employee.inactiveUntil);
+  if (isLegacyInactive) {
     return { valid: false, reason: `${employee.name} ist am ${date} langfristig deaktiviert` };
   }
 

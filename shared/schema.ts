@@ -1102,6 +1102,13 @@ export const longTermWishStatusEnum = pgEnum('long_term_wish_status', [
   'Abgelehnt'
 ]);
 
+export const longTermAbsenceStatusEnum = pgEnum('long_term_absence_status', [
+  'Entwurf',
+  'Eingereicht',
+  'Genehmigt',
+  'Abgelehnt'
+]);
+
 // Shift Wishes table - employee preferences for upcoming roster planning month
 export const shiftWishes = pgTable("shift_wishes", {
   id: serial("id").primaryKey(),
@@ -1154,6 +1161,30 @@ export const insertLongTermShiftWishSchema = createInsertSchema(longTermShiftWis
 
 export type InsertLongTermShiftWish = z.infer<typeof insertLongTermShiftWishSchema>;
 export type LongTermShiftWish = typeof longTermShiftWishes.$inferSelect;
+
+export const longTermAbsences = pgTable("long_term_absences", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").references(() => employees.id).notNull(),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  reason: text("reason").notNull(),
+  status: longTermAbsenceStatusEnum("status").notNull().default('Entwurf'),
+  submittedAt: timestamp("submitted_at"),
+  approvedAt: timestamp("approved_at"),
+  approvedById: integer("approved_by_id").references(() => employees.id),
+  approvalNotes: text("approval_notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+});
+
+export const insertLongTermAbsenceSchema = createInsertSchema(longTermAbsences).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export type InsertLongTermAbsence = z.infer<typeof insertLongTermAbsenceSchema>;
+export type LongTermAbsence = typeof longTermAbsences.$inferSelect;
 
 // Planned Absences table - for requesting time off for the planning month
 export const plannedAbsences = pgTable("planned_absences", {

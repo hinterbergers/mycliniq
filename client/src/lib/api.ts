@@ -24,6 +24,8 @@ import type {
   InsertShiftWish,
   LongTermShiftWish,
   InsertLongTermShiftWish,
+  LongTermAbsence,
+  InsertLongTermAbsence,
   PlannedAbsence,
   InsertPlannedAbsence,
   Competency,
@@ -922,6 +924,65 @@ export const longTermWishesApi = {
       body: JSON.stringify({ notes })
     });
     return handleResponse<LongTermShiftWish>(response);
+  }
+};
+
+// Long-term absences API
+export const longTermAbsencesApi = {
+  getByEmployee: async (employeeId: number): Promise<LongTermAbsence[]> => {
+    const response = await apiFetch(`${API_BASE}/long-term-absences?employeeId=${employeeId}`);
+    return handleResponse<LongTermAbsence[]>(response);
+  },
+
+  getByStatus: async (status: string, from?: string, to?: string): Promise<LongTermAbsence[]> => {
+    const params = new URLSearchParams({ status });
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+    const response = await apiFetch(`${API_BASE}/long-term-absences?${params.toString()}`);
+    return handleResponse<LongTermAbsence[]>(response);
+  },
+
+  create: async (data: InsertLongTermAbsence): Promise<LongTermAbsence> => {
+    const response = await apiFetch(`${API_BASE}/long-term-absences`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<LongTermAbsence>(response);
+  },
+
+  update: async (id: number, data: Partial<InsertLongTermAbsence>): Promise<LongTermAbsence> => {
+    const response = await apiFetch(`${API_BASE}/long-term-absences/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<LongTermAbsence>(response);
+  },
+
+  submit: async (id: number): Promise<LongTermAbsence> => {
+    const response = await apiFetch(`${API_BASE}/long-term-absences/${id}/submit`, {
+      method: "POST"
+    });
+    return handleResponse<LongTermAbsence>(response);
+  },
+
+  approve: async (id: number, notes?: string): Promise<LongTermAbsence> => {
+    const response = await apiFetch(`${API_BASE}/long-term-absences/${id}/approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notes })
+    });
+    return handleResponse<LongTermAbsence>(response);
+  },
+
+  reject: async (id: number, notes?: string): Promise<LongTermAbsence> => {
+    const response = await apiFetch(`${API_BASE}/long-term-absences/${id}/reject`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notes })
+    });
+    return handleResponse<LongTermAbsence>(response);
   }
 };
 

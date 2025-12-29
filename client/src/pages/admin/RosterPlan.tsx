@@ -8,10 +8,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { Download, Printer, ArrowLeft, ArrowRight, Info, Loader2, Sparkles, ArrowRightLeft, CheckCircle2, AlertTriangle, Brain, Pencil } from "lucide-react";
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { employeeApi, rosterApi, absenceApi, rosterSettingsApi } from "@/lib/api";
-import type { Employee, RosterShift, Absence, RosterSettings } from "@shared/schema";
+import { employeeApi, rosterApi, absenceApi, rosterSettingsApi, longTermAbsencesApi } from "@/lib/api";
+import type { Employee, RosterShift, Absence, RosterSettings, LongTermAbsence } from "@shared/schema";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, isWeekend } from "date-fns";
 import { de } from "date-fns/locale";
 import { useAuth } from "@/lib/auth";
@@ -40,6 +41,7 @@ export default function RosterPlan() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [shifts, setShifts] = useState<RosterShift[]>([]);
   const [absences, setAbsences] = useState<Absence[]>([]);
+  const [longTermAbsences, setLongTermAbsences] = useState<LongTermAbsence[]>([]);
   const [rosterSettings, setRosterSettings] = useState<RosterSettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -55,6 +57,7 @@ export default function RosterPlan() {
   const [manualEditMode, setManualEditMode] = useState(false);
   const [savingCellKey, setSavingCellKey] = useState<string | null>(null);
   const [manualDrafts, setManualDrafts] = useState<Record<string, string>>({});
+  const [activeCellKey, setActiveCellKey] = useState<string | null>(null);
 
   const canEdit = useMemo(() => {
     if (!currentUser) return false;
@@ -96,16 +99,6 @@ export default function RosterPlan() {
     if (employee.isActive === false) {
       reasons.push("Mitarbeiter ist deaktiviert");
     }
-    if (employee.inactiveFrom || employee.inactiveUntil) {
-      const from = employee.inactiveFrom ? new Date(employee.inactiveFrom) : null;
-      const until = employee.inactiveUntil ? new Date(employee.inactiveUntil) : null;
-      const target = new Date(dateStr);
-      if ((from && target >= from) || (until && target <= until)) {
-        if (!from || !until || (from && until && target >= from && target <= until)) {
-          reasons.push("Langzeit-Deaktivierung aktiv");
-        }
-      }
-    }
     const hasAbsence = absences.some(
       (absence) =>
         absence.employeeId === employee.id &&
@@ -114,6 +107,25 @@ export default function RosterPlan() {
     );
     if (hasAbsence) {
       reasons.push("Abwesenheit eingetragen");
+    }
+    const hasLongTermAbsence = longTermAbsences.some(
+      (absence) =>
+        absence.employeeId === employee.id &&
+        absence.startDate <= dateStr &&
+        absence.endDate >= dateStr
+    );
+    if (hasLongTermAbsence) {
+      reasons.push("Langzeit-Abwesenheit genehmigt");
+    }
+    if (employee.inactiveFrom || employee.inactiveUntil) {
+      const from = employee.inactiveFrom ? new Date(employee.inactiveFrom) : null;
+      const until = employee.inactiveUntil ? new Date(employee.inactiveUntil) : null;
+      const target = new Date(dateStr);
+      if ((from && target >= from) || (until && target <= until)) {
+        if (!from || !until || (from && until && target >= from && target <= until)) {
+          reasons.push("Langzeit-Deaktivierung (Legacy)");
+        }
+      }
     }
     return reasons;
   };
@@ -141,10 +153,18 @@ export default function RosterPlan() {
         absenceApi.getByDateRange(startDate, endDate),
         rosterSettingsApi.get()
       ]);
+
+      let longTermAbsenceData: LongTermAbsence[] = [];
+      try {
+        longTermAbsenceData = await longTermAbsencesApi.getByStatus("Genehmigt", startDate, endDate);
+      } catch {
+        longTermAbsenceData = [];
+      }
       
       setEmployees(empData);
       setShifts(shiftData);
       setAbsences(absenceData);
+      setLongTermAbsences(longTermAbsenceData);
       setRosterSettings(settings);
     } catch (error) {
       console.error("Failed to load data:", error);
@@ -161,11 +181,13 @@ export default function RosterPlan() {
   useEffect(() => {
     if (!manualEditMode) {
       setManualDrafts({});
+      setActiveCellKey(null);
     }
   }, [manualEditMode]);
 
   useEffect(() => {
     setManualDrafts({});
+    setActiveCellKey(null);
   }, [currentDate]);
 
   const clearManualDraft = useCallback((cellKey: string) => {
@@ -244,73 +266,132 @@ export default function RosterPlan() {
     }
 
     const allowedEmployees = employees
+      .filter((emp) => emp.isActive !== false)
+      .filter((emp) => emp.takesShifts !== false)
       .filter((emp) => getServiceTypesForEmployee(emp).includes(type))
       .sort((a, b) => (a.lastName || a.name).localeCompare(b.lastName || b.name));
-    const listId = `manual-assign-${type}`;
     const draftValue = manualDrafts[cellKey];
     const currentLabel = draftValue ?? employee?.name ?? freeText ?? "";
+    const isActive = activeCellKey === cellKey;
+    const normalizedInput = currentLabel.trim().toLowerCase();
+    const suggestions = normalizedInput
+      ? allowedEmployees.filter((emp) => {
+          const last = (emp.lastName || "").toLowerCase();
+          const full = emp.name.toLowerCase();
+          return last.includes(normalizedInput) || full.includes(normalizedInput);
+        })
+      : allowedEmployees;
 
     return (
       <div className="relative">
-        <Input
-          value={currentLabel}
-          onChange={(event) => {
-            const nextValue = event.target.value;
-            setManualDrafts((prev) => {
-              if (!nextValue) {
-                if (!prev[cellKey]) return prev;
-                const next = { ...prev };
-                delete next[cellKey];
-                return next;
-              }
-              return { ...prev, [cellKey]: nextValue };
-            });
-          }}
-          onBlur={(event) => {
-            const value = event.target.value.trim();
-            if (!value) {
-              handleManualAssign(date, type, null, null);
-              return;
-            }
-
-            const normalized = value.toLowerCase();
-            const exactMatch = allowedEmployees.find(
-              (emp) => emp.name.toLowerCase() === normalized || emp.lastName?.toLowerCase() === normalized
-            );
-            if (exactMatch) {
-              handleManualAssign(date, type, exactMatch.id, null);
-              return;
-            }
-
-            const matches = allowedEmployees.filter((emp) => {
-              const last = (emp.lastName || "").toLowerCase();
-              const full = emp.name.toLowerCase();
-              return last.startsWith(normalized) || full.startsWith(normalized);
-            });
-
-            if (matches.length === 1) {
-              handleManualAssign(date, type, matches[0].id, null);
-              return;
-            }
-
-            handleManualAssign(date, type, null, value);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              event.currentTarget.blur();
+        <Popover
+          open={isActive && suggestions.length > 0}
+          onOpenChange={(open) => {
+            if (!open) {
+              setActiveCellKey(null);
             }
           }}
-          list={listId}
-          placeholder="+"
-          className={`h-8 text-xs w-full min-w-0 ${hasConflict ? "border-red-400" : ""}`}
-          disabled={isSaving}
-        />
-        <datalist id={listId}>
-          {allowedEmployees.map((emp) => (
-            <option key={emp.id} value={emp.name} />
-          ))}
-        </datalist>
+        >
+          <PopoverAnchor asChild>
+            <Input
+              value={currentLabel}
+              onChange={(event) => {
+                const nextValue = event.target.value;
+                setManualDrafts((prev) => {
+                  if (!nextValue) {
+                    if (!prev[cellKey]) return prev;
+                    const next = { ...prev };
+                    delete next[cellKey];
+                    return next;
+                  }
+                  return { ...prev, [cellKey]: nextValue };
+                });
+              }}
+              onFocus={() => setActiveCellKey(cellKey)}
+              onBlur={(event) => {
+                const value = event.target.value.trim();
+                if (!value) {
+                  handleManualAssign(date, type, null, null);
+                  setActiveCellKey(null);
+                  return;
+                }
+
+                const normalized = value.toLowerCase();
+                const blockedMatch = employees.find(
+                  (emp) =>
+                    emp.takesShifts === false &&
+                    (emp.name.toLowerCase() === normalized || emp.lastName?.toLowerCase() === normalized)
+                );
+                if (blockedMatch) {
+                  toast({
+                    title: "Nicht einsetzbar",
+                    description: `${blockedMatch.name} ist im Dienstplan deaktiviert.`,
+                    variant: "destructive"
+                  });
+                  clearManualDraft(cellKey);
+                  setActiveCellKey(null);
+                  return;
+                }
+                const exactMatch = allowedEmployees.find(
+                  (emp) => emp.name.toLowerCase() === normalized || emp.lastName?.toLowerCase() === normalized
+                );
+                if (exactMatch) {
+                  handleManualAssign(date, type, exactMatch.id, null);
+                  setActiveCellKey(null);
+                  return;
+                }
+
+                const matches = allowedEmployees.filter((emp) => {
+                  const last = (emp.lastName || "").toLowerCase();
+                  const full = emp.name.toLowerCase();
+                  return last.startsWith(normalized) || full.startsWith(normalized);
+                });
+
+                if (matches.length === 1) {
+                  handleManualAssign(date, type, matches[0].id, null);
+                  setActiveCellKey(null);
+                  return;
+                }
+
+                handleManualAssign(date, type, null, value);
+                setActiveCellKey(null);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  event.currentTarget.blur();
+                }
+              }}
+              placeholder="+"
+              className={`h-8 text-xs w-full min-w-0 ${hasConflict ? "border-red-400" : ""}`}
+              disabled={isSaving}
+            />
+          </PopoverAnchor>
+          <PopoverContent
+            align="start"
+            side="bottom"
+            sideOffset={4}
+            collisionPadding={8}
+            onOpenAutoFocus={(event) => event.preventDefault()}
+            className="p-0 w-[var(--radix-popper-anchor-width)] max-h-[min(12rem,var(--radix-popper-available-height))] overflow-y-auto overflow-x-hidden"
+          >
+            {suggestions.map((emp) => (
+              <button
+                key={emp.id}
+                type="button"
+                className="flex w-full items-center justify-between px-2 py-1 text-left text-xs hover:bg-slate-100"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  handleManualAssign(date, type, emp.id, null);
+                  setActiveCellKey(null);
+                }}
+              >
+                <span className="truncate">{emp.name}</span>
+                <span className="ml-2 text-[10px] text-muted-foreground">{emp.role}</span>
+              </button>
+            ))}
+          </PopoverContent>
+        </Popover>
         {hasConflict && (
           <div className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full p-1">
             <AlertTriangle className="w-3 h-3" />
@@ -575,7 +656,7 @@ export default function RosterPlan() {
               Manuelle Eingabe aktiv. Konflikte werden markiert, Speicherung bleibt erlaubt.
             </div>
           )}
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto overflow-y-visible">
             <Table className="border-collapse w-full min-w-[1200px]">
               <TableHeader>
                 <TableRow className="bg-muted/50 hover:bg-muted/50">
