@@ -375,15 +375,7 @@ export default function RosterPlan() {
               value={currentLabel}
               onChange={(event) => {
                 const nextValue = event.target.value;
-                setManualDrafts((prev) => {
-                  if (!nextValue) {
-                    if (!prev[cellKey]) return prev;
-                    const next = { ...prev };
-                    delete next[cellKey];
-                    return next;
-                  }
-                  return { ...prev, [cellKey]: nextValue };
-                });
+                setManualDrafts((prev) => ({ ...prev, [cellKey]: nextValue }));
               }}
               onFocus={() => setActiveCellKey(cellKey)}
               onBlur={(event) => {
