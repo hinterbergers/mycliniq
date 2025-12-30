@@ -118,7 +118,9 @@ async function seed() {
     const [clinic] = await db.insert(clinics).values({
       name: "Klinikum Klagenfurt",
       slug: "klinikum-klagenfurt",
-      timezone: "Europe/Vienna"
+      timezone: "Europe/Vienna",
+      country: "AT",
+      state: "AT-2"
     }).returning();
     console.log("✓ Seeded clinic");
     

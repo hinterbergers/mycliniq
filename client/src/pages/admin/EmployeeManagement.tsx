@@ -682,16 +682,6 @@ export default function EmployeeManagement() {
       return;
     }
 
-    const parsedVacationEntitlement = parseVacationEntitlementInput(newFormData.vacationEntitlement);
-    if (newFormData.vacationEntitlement.trim() && parsedVacationEntitlement === null) {
-      toast({
-        title: "Fehler",
-        description: "Bitte einen gueltigen Urlaubsanspruch (Tage) eingeben.",
-        variant: "destructive"
-      });
-      return;
-    }
-
     const parsedVacationEntitlement = parseVacationEntitlementInput(editFormData.vacationEntitlement);
     if (editFormData.vacationEntitlement.trim() && parsedVacationEntitlement === null) {
       toast({
@@ -735,7 +725,6 @@ export default function EmployeeManagement() {
         canOverduty: editCanOverduty,
         inactiveFrom: parsedInactiveFrom || null,
         inactiveUntil: parsedInactiveUntil || null,
-        vacationEntitlement: parsedVacationEntitlement,
         vacationEntitlement: parsedVacationEntitlement,
         shiftPreferences: nextShiftPreferences
       };
@@ -864,6 +853,16 @@ export default function EmployeeManagement() {
       });
       return;
     }
+
+    const parsedVacationEntitlement = parseVacationEntitlementInput(newFormData.vacationEntitlement);
+    if (newFormData.vacationEntitlement.trim() && parsedVacationEntitlement === null) {
+      toast({
+        title: "Fehler",
+        description: "Bitte einen gueltigen Urlaubsanspruch (Tage) eingeben.",
+        variant: "destructive"
+      });
+      return;
+    }
     
     setCreating(true);
     try {
@@ -892,6 +891,7 @@ export default function EmployeeManagement() {
         canOverduty: newCanOverduty,
         inactiveFrom: parsedInactiveFrom || null,
         inactiveUntil: parsedInactiveUntil || null,
+        vacationEntitlement: parsedVacationEntitlement,
         shiftPreferences: nextShiftPreferences
       };
       if (currentUser?.departmentId) {

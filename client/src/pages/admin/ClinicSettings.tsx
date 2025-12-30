@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Building, Save, Loader2, Plus, Trash2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -16,6 +17,8 @@ interface Clinic {
   name: string;
   slug: string;
   timezone: string;
+  country?: string | null;
+  state?: string | null;
   logoUrl?: string;
 }
 
@@ -31,6 +34,28 @@ const normalizeTime = (value?: string | null) => {
   return `${hours.padStart(2, "0")}:${minutes.padStart(2, "0")}`;
 };
 
+const COUNTRY_OPTIONS = [
+  { value: "AT", label: "Österreich" }
+];
+
+const STATE_OPTIONS_BY_COUNTRY: Record<string, Array<{ value: string; label: string }>> = {
+  AT: [
+    { value: "AT-1", label: "Burgenland" },
+    { value: "AT-2", label: "Kärnten" },
+    { value: "AT-3", label: "Niederösterreich" },
+    { value: "AT-4", label: "Oberösterreich" },
+    { value: "AT-5", label: "Salzburg" },
+    { value: "AT-6", label: "Steiermark" },
+    { value: "AT-7", label: "Tirol" },
+    { value: "AT-8", label: "Vorarlberg" },
+    { value: "AT-9", label: "Wien" }
+  ]
+};
+
+const getDefaultStateForCountry = (country: string) => {
+  return STATE_OPTIONS_BY_COUNTRY[country]?.[0]?.value ?? "";
+};
+
 export default function ClinicSettings() {
   const { toast } = useToast();
   const [clinic, setClinic] = useState<Clinic | null>(null);
@@ -40,6 +65,8 @@ export default function ClinicSettings() {
     name: "",
     slug: "",
     timezone: "Europe/Vienna",
+    country: "AT",
+    state: "AT-2",
     logoUrl: ""
   });
   const [serviceLines, setServiceLines] = useState<ServiceLineForm[]>([]);
@@ -110,6 +137,8 @@ export default function ClinicSettings() {
           name: result.data.name || "",
           slug: result.data.slug || "",
           timezone: result.data.timezone || "Europe/Vienna",
+          country: result.data.country || "AT",
+          state: result.data.state || "AT-2",
           logoUrl: result.data.logoUrl || ""
         });
       }
@@ -353,6 +382,55 @@ export default function ClinicSettings() {
               <p className="text-sm text-gray-500">
                 IANA-Zeitzone (z.B. Europe/Vienna, Europe/Berlin)
               </p>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="country">Land</Label>
+                <Select
+                  value={formData.country}
+                  onValueChange={(value) => {
+                    const nextState = STATE_OPTIONS_BY_COUNTRY[value]?.some(
+                      (option) => option.value === formData.state
+                    )
+                      ? formData.state
+                      : getDefaultStateForCountry(value);
+                    setFormData({ ...formData, country: value, state: nextState });
+                  }}
+                >
+                  <SelectTrigger id="country">
+                    <SelectValue placeholder="Land waehlen" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {COUNTRY_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="state">Bundesland</Label>
+                <Select
+                  value={formData.state}
+                  onValueChange={(value) => setFormData({ ...formData, state: value })}
+                >
+                  <SelectTrigger id="state">
+                    <SelectValue placeholder="Bundesland waehlen" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(STATE_OPTIONS_BY_COUNTRY[formData.country] || []).map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-gray-500">
+                  Steuert die Schulferien-Markierungen im Urlaubsplan.
+                </p>
+              </div>
             </div>
 
             <div className="space-y-2">

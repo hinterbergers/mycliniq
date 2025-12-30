@@ -182,6 +182,8 @@ export const clinics = pgTable("clinics", {
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),
   timezone: text("timezone").notNull().default('Europe/Vienna'),
+  country: text("country").notNull().default("AT"),
+  state: text("state").notNull().default("AT-2"),
   logoUrl: text("logo_url"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull()

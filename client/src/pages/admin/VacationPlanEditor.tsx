@@ -41,9 +41,9 @@ import {
   type PlannedAbsenceAdmin,
   type VacationRuleInput
 } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
+import { getAuthToken, useAuth } from "@/lib/auth";
 import { getAustrianHoliday } from "@/lib/holidays";
-import { getAustrianSchoolHoliday } from "@/lib/schoolHolidays";
+import { getSchoolHoliday, type SchoolHolidayLocation } from "@/lib/schoolHolidays";
 import { cn } from "@/lib/utils";
 import type { Competency, Employee, VacationRule } from "@shared/schema";
 
@@ -172,6 +172,10 @@ export default function VacationPlanEditor() {
   const [absences, setAbsences] = useState<PlannedAbsenceAdmin[]>([]);
   const [rules, setRules] = useState<VacationRule[]>([]);
   const [absenceDialogOpen, setAbsenceDialogOpen] = useState(false);
+  const [holidayLocation, setHolidayLocation] = useState<SchoolHolidayLocation>({
+    country: "AT",
+    state: "AT-2"
+  });
   const [absenceDraft, setAbsenceDraft] = useState<AbsenceDraft>({
     employeeId: currentUser?.id ?? null,
     reason: "Urlaub",
@@ -225,16 +229,36 @@ export default function VacationPlanEditor() {
     try {
       const yearStart = formatDateInput(new Date(year, 0, 1));
       const yearEnd = formatDateInput(new Date(year, 11, 31));
-      const [employeeData, competencyData, absenceData, ruleData] = await Promise.all([
+      const clinicPromise = (async () => {
+        const token = getAuthToken();
+        if (!token) return null;
+        const response = await fetch("/api/admin/clinic", {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
+        if (!response.ok) return null;
+        const result = await response.json();
+        return result?.data ?? null;
+      })();
+
+      const [employeeData, competencyData, absenceData, ruleData, clinicData] = await Promise.all([
         employeeApi.getAll(),
         competencyApi.getAll(),
         plannedAbsencesAdminApi.getRange({ from: yearStart, to: yearEnd }),
-        vacationRulesApi.getAll(currentUser?.departmentId ?? undefined)
+        vacationRulesApi.getAll(currentUser?.departmentId ?? undefined),
+        clinicPromise
       ]);
       setEmployees(employeeData);
       setCompetencies(competencyData);
       setAbsences(absenceData);
       setRules(ruleData);
+      if (clinicData) {
+        setHolidayLocation({
+          country: clinicData.country || "AT",
+          state: clinicData.state || "AT-2"
+        });
+      }
     } catch (error: any) {
       toast({
         title: "Urlaubsplanung konnte nicht geladen werden",
@@ -431,7 +455,7 @@ export default function VacationPlanEditor() {
 
   const getDayClass = (date: Date) => {
     const holiday = getAustrianHoliday(date);
-    const schoolHoliday = getAustrianSchoolHoliday(date);
+    const schoolHoliday = getSchoolHoliday(date, holidayLocation);
     const isWeekend = date.getDay() === 0 || date.getDay() === 6;
 
     if (holiday) return "bg-rose-50";
@@ -442,7 +466,7 @@ export default function VacationPlanEditor() {
 
   const getDayLabel = (date: Date) => {
     const holiday = getAustrianHoliday(date);
-    const schoolHoliday = getAustrianSchoolHoliday(date);
+    const schoolHoliday = getSchoolHoliday(date, holidayLocation);
     if (holiday) return holiday.name;
     if (schoolHoliday) return schoolHoliday.name;
     return format(date, "EEEE", { locale: de });

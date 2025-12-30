@@ -115,7 +115,9 @@ export function registerAdminRoutes(app: Express): void {
             id: clinic.id,
             name: clinic.name,
             slug: clinic.slug,
-            timezone: clinic.timezone
+            timezone: clinic.timezone,
+            country: clinic.country,
+            state: clinic.state
           } : null,
           capabilities: req.user.capabilities
         }
@@ -156,7 +158,7 @@ export function registerAdminRoutes(app: Express): void {
         return res.status(404).json(createApiResponse(null, false, "Keine Klinik zugeordnet"));
       }
       
-      const { name, slug, timezone, logoUrl } = req.body;
+      const { name, slug, timezone, logoUrl, country, state } = req.body;
       
       if (!name || !slug) {
         return res.status(400).json({ success: false, error: "Name und Slug sind erforderlich" });
@@ -168,6 +170,8 @@ export function registerAdminRoutes(app: Express): void {
           name,
           slug,
           timezone: timezone || 'Europe/Vienna',
+          country: country || "AT",
+          state: state || "AT-2",
           logoUrl: logoUrl || null,
           updatedAt: new Date()
         })
