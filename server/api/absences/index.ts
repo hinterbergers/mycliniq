@@ -1,6 +1,6 @@
 import type { Router } from "express";
 import { z } from "zod";
-import { db, eq, and } from "../../lib/db";
+import { db, eq, and, gte, lte, ne } from "../../lib/db";
 import { 
   ok, 
   created, 
@@ -56,6 +56,125 @@ function getYearMonth(dateStr: string): { year: number; month: number } {
   };
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const toDate = (value: string) => new Date(`${value}T00:00:00`);
+
+const formatDate = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const countInclusiveDays = (start: Date, end: Date) => {
+  const diff = Math.floor((end.getTime() - start.getTime()) / DAY_MS);
+  return diff + 1;
+};
+
+const splitRangeByYear = (startDate: string, endDate: string) => {
+  const start = toDate(startDate);
+  const end = toDate(endDate);
+  const ranges: Array<{ year: number; start: Date; end: Date; days: number }> = [];
+  const startYear = start.getFullYear();
+  const endYear = end.getFullYear();
+
+  for (let year = startYear; year <= endYear; year += 1) {
+    const yearStart = new Date(year, 0, 1);
+    const yearEnd = new Date(year, 11, 31);
+    const rangeStart = start > yearStart ? start : yearStart;
+    const rangeEnd = end < yearEnd ? end : yearEnd;
+    if (rangeStart <= rangeEnd) {
+      ranges.push({
+        year,
+        start: rangeStart,
+        end: rangeEnd,
+        days: countInclusiveDays(rangeStart, rangeEnd)
+      });
+    }
+  }
+
+  return ranges;
+};
+
+const canApproveVacation = (reqUser: Express.Request["user"]) => {
+  if (!reqUser) return false;
+  if (reqUser.isAdmin) return true;
+  return reqUser.capabilities?.includes("vacation.approve") ?? false;
+};
+
+const isOwnerOrAdmin = (reqUser: Express.Request["user"], employeeId: number) => {
+  if (!reqUser) return false;
+  if (reqUser.isAdmin) return true;
+  return reqUser.employeeId === employeeId;
+};
+
+const countVacationDaysForYear = async (
+  employeeId: number,
+  year: number,
+  excludeAbsenceId?: number
+) => {
+  const yearStart = formatDate(new Date(year, 0, 1));
+  const yearEnd = formatDate(new Date(year, 11, 31));
+  const conditions = [
+    eq(plannedAbsences.employeeId, employeeId),
+    eq(plannedAbsences.reason, "Urlaub"),
+    ne(plannedAbsences.status, "Abgelehnt"),
+    lte(plannedAbsences.startDate, yearEnd),
+    gte(plannedAbsences.endDate, yearStart)
+  ];
+
+  if (excludeAbsenceId) {
+    conditions.push(ne(plannedAbsences.id, excludeAbsenceId));
+  }
+
+  const rows = await db
+    .select({
+      startDate: plannedAbsences.startDate,
+      endDate: plannedAbsences.endDate
+    })
+    .from(plannedAbsences)
+    .where(and(...conditions));
+
+  return rows.reduce((total, row) => {
+    const rangeStart = toDate(String(row.startDate)) > toDate(yearStart) ? toDate(String(row.startDate)) : toDate(yearStart);
+    const rangeEnd = toDate(String(row.endDate)) < toDate(yearEnd) ? toDate(String(row.endDate)) : toDate(yearEnd);
+    if (rangeStart > rangeEnd) return total;
+    return total + countInclusiveDays(rangeStart, rangeEnd);
+  }, 0);
+};
+
+const ensureVacationEntitlement = async (
+  employeeId: number,
+  startDate: string,
+  endDate: string,
+  excludeAbsenceId?: number
+) => {
+  const [employee] = await db.select().from(employees).where(eq(employees.id, employeeId));
+  if (!employee) {
+    return { ok: false, error: "Mitarbeiter nicht gefunden" };
+  }
+
+  const entitlement = employee.vacationEntitlement;
+  if (entitlement === null || entitlement === undefined) {
+    return { ok: true };
+  }
+
+  const ranges = splitRangeByYear(startDate, endDate);
+  for (const range of ranges) {
+    const usedDays = await countVacationDaysForYear(employeeId, range.year, excludeAbsenceId);
+    const totalDays = usedDays + range.days;
+    if (totalDays > entitlement) {
+      return {
+        ok: false,
+        error: `Urlaubsanspruch ${entitlement} Tage ueberschritten (bereits ${usedDays} Tage, beantragt ${range.days} Tage in ${range.year}).`
+      };
+    }
+  }
+
+  return { ok: true };
+};
+
 /**
  * Planned Absence API Routes
  * Base path: /api/absences
@@ -74,9 +193,38 @@ export function registerAbsenceRoutes(router: Router) {
    *   - to: filter to date (YYYY-MM-DD)
    */
   router.get("/", asyncHandler(async (req, res) => {
-    const { employee_id, year, month, status, from, to } = req.query;
+    const { employee_id, employeeId, year, month, status, from, to, startDate, endDate } = req.query;
+    const employeeFilter = employee_id ?? employeeId;
+    const rangeFrom = from ?? startDate;
+    const rangeTo = to ?? endDate;
     
     // Get all absences with employee details
+    const conditions = [];
+    if (employeeFilter) {
+      conditions.push(eq(plannedAbsences.employeeId, Number(employeeFilter)));
+    }
+    if (year) {
+      conditions.push(eq(plannedAbsences.year, Number(year)));
+    }
+    if (month) {
+      conditions.push(eq(plannedAbsences.month, Number(month)));
+    }
+    if (status) {
+      conditions.push(eq(plannedAbsences.status, String(status)));
+    }
+    if (rangeFrom && rangeTo) {
+      conditions.push(
+        and(
+          lte(plannedAbsences.startDate, String(rangeTo)),
+          gte(plannedAbsences.endDate, String(rangeFrom))
+        )
+      );
+    } else if (rangeFrom) {
+      conditions.push(gte(plannedAbsences.endDate, String(rangeFrom)));
+    } else if (rangeTo) {
+      conditions.push(lte(plannedAbsences.startDate, String(rangeTo)));
+    }
+
     let absences = await db
       .select({
         id: plannedAbsences.id,
@@ -98,32 +246,8 @@ export function registerAbsenceRoutes(router: Router) {
         employeeRole: employees.role
       })
       .from(plannedAbsences)
-      .leftJoin(employees, eq(plannedAbsences.employeeId, employees.id));
-    
-    // Apply filters
-    if (employee_id) {
-      absences = absences.filter(a => a.employeeId === Number(employee_id));
-    }
-    
-    if (year) {
-      absences = absences.filter(a => a.year === Number(year));
-    }
-    
-    if (month) {
-      absences = absences.filter(a => a.month === Number(month));
-    }
-    
-    if (status) {
-      absences = absences.filter(a => a.status === status);
-    }
-    
-    if (from) {
-      absences = absences.filter(a => a.startDate >= String(from));
-    }
-    
-    if (to) {
-      absences = absences.filter(a => a.endDate <= String(to));
-    }
+      .leftJoin(employees, eq(plannedAbsences.employeeId, employees.id))
+      .where(conditions.length ? and(...conditions) : undefined);
     
     return ok(res, absences);
   }));
@@ -204,6 +328,13 @@ export function registerAbsenceRoutes(router: Router) {
     validateBody(createAbsenceSchema),
     asyncHandler(async (req, res) => {
       const { employeeId, startDate, endDate, reason, notes, createdById } = req.body;
+
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: "Anmeldung erforderlich" });
+      }
+      if (!isOwnerOrAdmin(req.user, employeeId)) {
+        return res.status(403).json({ success: false, error: "Keine Berechtigung fuer diese Abwesenheit" });
+      }
       
       // Verify employee exists
       const [employee] = await db.select().from(employees).where(eq(employees.id, employeeId));
@@ -223,6 +354,13 @@ export function registerAbsenceRoutes(router: Router) {
       if (new Date(endDate) < new Date(startDate)) {
         return validationError(res, "Enddatum muss nach Startdatum liegen");
       }
+
+      if (reason === "Urlaub") {
+        const entitlementCheck = await ensureVacationEntitlement(employeeId, startDate, endDate);
+        if (!entitlementCheck.ok) {
+          return validationError(res, entitlementCheck.error || "Urlaubsanspruch ueberschritten");
+        }
+      }
       
       // Extract year and month from startDate for filtering
       const { year, month } = getYearMonth(startDate);
@@ -241,7 +379,7 @@ export function registerAbsenceRoutes(router: Router) {
           status: 'Geplant',
           isApproved: null,
           approvedById: null,
-          createdById: createdById || null
+          createdById: req.user?.employeeId ?? createdById ?? null
         })
         .returning();
       
@@ -265,6 +403,13 @@ export function registerAbsenceRoutes(router: Router) {
       const { id } = req.params;
       const absenceId = Number(id);
       const { status, approvedById } = req.body;
+
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: "Anmeldung erforderlich" });
+      }
+      if (!canApproveVacation(req.user)) {
+        return res.status(403).json({ success: false, error: "Keine Berechtigung zur Freigabe" });
+      }
       
       // Verify absence exists
       const [existing] = await db
@@ -284,6 +429,18 @@ export function registerAbsenceRoutes(router: Router) {
         }
       }
       
+      if (existing.reason === "Urlaub" && status !== "Abgelehnt") {
+        const entitlementCheck = await ensureVacationEntitlement(
+          existing.employeeId,
+          String(existing.startDate),
+          String(existing.endDate),
+          absenceId
+        );
+        if (!entitlementCheck.ok) {
+          return validationError(res, entitlementCheck.error || "Urlaubsanspruch ueberschritten");
+        }
+      }
+
       // Determine isApproved based on status
       let isApproved: boolean | null = null;
       if (status === 'Genehmigt') {
@@ -291,6 +448,9 @@ export function registerAbsenceRoutes(router: Router) {
       } else if (status === 'Abgelehnt') {
         isApproved = false;
       }
+
+      const resolvedApprovedById =
+        status === "Geplant" ? null : approvedById ?? req.user?.employeeId ?? null;
       
       // Update the absence
       const [updated] = await db
@@ -298,7 +458,7 @@ export function registerAbsenceRoutes(router: Router) {
         .set({
           status,
           isApproved,
-          approvedById: approvedById || existing.approvedById,
+          approvedById: resolvedApprovedById,
           updatedAt: new Date()
         })
         .where(eq(plannedAbsences.id, absenceId))
@@ -328,6 +488,10 @@ export function registerAbsenceRoutes(router: Router) {
     asyncHandler(async (req, res) => {
       const { id } = req.params;
       const absenceId = Number(id);
+
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: "Anmeldung erforderlich" });
+      }
       
       // Verify absence exists
       const [existing] = await db
@@ -337,6 +501,10 @@ export function registerAbsenceRoutes(router: Router) {
       
       if (!existing) {
         return notFound(res, "Abwesenheit");
+      }
+
+      if (!isOwnerOrAdmin(req.user, existing.employeeId)) {
+        return res.status(403).json({ success: false, error: "Keine Berechtigung fuer diese Aktion" });
       }
       
       // Delete the absence

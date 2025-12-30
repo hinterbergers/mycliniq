@@ -197,15 +197,23 @@ function parseInactiveDate(value: string): string | null {
   return parseBirthdayInput(value);
 }
 
+function parseVacationEntitlementInput(value: string): number | null {
+  if (!value.trim()) return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return Math.round(parsed);
+}
+
 const PERMISSION_FALLBACK = [
-  { key: "users.manage", label: "Benutzer anlegen / verwalten" },
-  { key: "dutyplan.edit", label: "Dienstplan bearbeiten" },
-  { key: "dutyplan.publish", label: "Dienstplan freigeben" },
-  { key: "vacation.lock", label: "Urlaubsplanung bearbeiten (Sperrzeitraum)" },
-  { key: "absence.create", label: "Abwesenheiten eintragen" },
-  { key: "sop.approve", label: "SOPs freigeben" },
-  { key: "project.close", label: "Projekte abschließen" },
-  { key: "training.edit", label: "Ausbildungsplan bearbeiten" }
+  { key: "users.manage", label: "Kann Benutzer anlegen / verwalten" },
+  { key: "dutyplan.edit", label: "Kann Dienstplan bearbeiten" },
+  { key: "dutyplan.publish", label: "Kann Dienstplan freigeben" },
+  { key: "vacation.lock", label: "Kann Urlaubsplanung bearbeiten (Sperrzeitraum)" },
+  { key: "vacation.approve", label: "Kann Urlaub freigeben" },
+  { key: "absence.create", label: "Kann Abwesenheiten eintragen" },
+  { key: "sop.approve", label: "Kann SOPs freigeben" },
+  { key: "project.close", label: "Kann Projekte abschliessen" },
+  { key: "training.edit", label: "Kann Ausbildungsplan bearbeiten" }
 ];
 
 export default function EmployeeManagement() {
@@ -257,6 +265,7 @@ export default function EmployeeManagement() {
     phoneWork: "",
     phonePrivate: "",
     showPrivateContact: false,
+    vacationEntitlement: "",
   };
 
   const [editFormData, setEditFormData] = useState({ ...emptyForm });
@@ -424,6 +433,9 @@ export default function EmployeeManagement() {
       phoneWork: emp.phoneWork || "",
       phonePrivate: emp.phonePrivate || "",
       showPrivateContact: emp.showPrivateContact || false,
+      vacationEntitlement: emp.vacationEntitlement !== null && emp.vacationEntitlement !== undefined
+        ? String(emp.vacationEntitlement)
+        : "",
     });
     setEditBirthdayInput(formatBirthdayDisplay(birthdayIso || emp.birthday));
     setEditRoleValue(normalizeRoleValue(emp.role));
@@ -669,6 +681,26 @@ export default function EmployeeManagement() {
       });
       return;
     }
+
+    const parsedVacationEntitlement = parseVacationEntitlementInput(newFormData.vacationEntitlement);
+    if (newFormData.vacationEntitlement.trim() && parsedVacationEntitlement === null) {
+      toast({
+        title: "Fehler",
+        description: "Bitte einen gueltigen Urlaubsanspruch (Tage) eingeben.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const parsedVacationEntitlement = parseVacationEntitlementInput(editFormData.vacationEntitlement);
+    if (editFormData.vacationEntitlement.trim() && parsedVacationEntitlement === null) {
+      toast({
+        title: "Fehler",
+        description: "Bitte einen gueltigen Urlaubsanspruch (Tage) eingeben.",
+        variant: "destructive"
+      });
+      return;
+    }
     
     setSaving(true);
     try {
@@ -703,6 +735,8 @@ export default function EmployeeManagement() {
         canOverduty: editCanOverduty,
         inactiveFrom: parsedInactiveFrom || null,
         inactiveUntil: parsedInactiveUntil || null,
+        vacationEntitlement: parsedVacationEntitlement,
+        vacationEntitlement: parsedVacationEntitlement,
         shiftPreferences: nextShiftPreferences
       };
 
@@ -1438,12 +1472,13 @@ export default function EmployeeManagement() {
     }
   };
 
-  const togglePermission = (key: string) => {
-    setUserPermissions(prev =>
-      prev.includes(key)
-        ? prev.filter(p => p !== key)
-        : [...prev, key]
-    );
+  const updatePermission = (key: string, enabled: boolean) => {
+    setUserPermissions(prev => {
+      if (enabled) {
+        return prev.includes(key) ? prev : [...prev, key];
+      }
+      return prev.filter(p => p !== key);
+    });
   };
 
   return (
@@ -1588,6 +1623,17 @@ export default function EmployeeManagement() {
                               value={newFormData.phonePrivate}
                               onChange={(e) => setNewFormData(prev => ({ ...prev, phonePrivate: e.target.value }))}
                               placeholder="+43 ..."
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Urlaubsanspruch (Tage)</Label>
+                            <Input
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={newFormData.vacationEntitlement}
+                              onChange={(e) => setNewFormData(prev => ({ ...prev, vacationEntitlement: e.target.value }))}
+                              placeholder="z.B. 25"
                             />
                           </div>
                         </div>
@@ -2289,6 +2335,17 @@ export default function EmployeeManagement() {
                           onChange={(e) => setEditFormData(prev => ({ ...prev, phonePrivate: e.target.value }))}
                         />
                       </div>
+                      <div className="space-y-2">
+                        <Label>Urlaubsanspruch (Tage)</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={editFormData.vacationEntitlement}
+                          onChange={(e) => setEditFormData(prev => ({ ...prev, vacationEntitlement: e.target.value }))}
+                          placeholder="z.B. 25"
+                        />
+                      </div>
                     </div>
 
                     <div className="flex items-center justify-between rounded-lg border border-border p-4">
@@ -2626,16 +2683,16 @@ export default function EmployeeManagement() {
                     ) : (
                       <div className="space-y-3">
                         {permissionOptions.map((perm) => (
-                          <div key={perm.key} className="flex items-center space-x-2">
-                            <Checkbox
-                              id={`perm-${perm.key}`}
-                              checked={userPermissions.includes(perm.key)}
-                              onCheckedChange={() => togglePermission(perm.key)}
-                              disabled={!isTechnicalAdmin}
-                            />
-                            <Label htmlFor={`perm-${perm.key}`} className="text-sm font-normal cursor-pointer flex-1">
+                          <div key={perm.key} className="flex items-center justify-between rounded-lg border border-border p-3">
+                            <Label htmlFor={`perm-${perm.key}`} className="text-sm font-normal flex-1">
                               {perm.label}
                             </Label>
+                            <Switch
+                              id={`perm-${perm.key}`}
+                              checked={userPermissions.includes(perm.key)}
+                              onCheckedChange={(checked) => updatePermission(perm.key, Boolean(checked))}
+                              disabled={!isTechnicalAdmin}
+                            />
                           </div>
                         ))}
                         {!permissionOptions.length && (

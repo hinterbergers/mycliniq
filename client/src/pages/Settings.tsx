@@ -88,6 +88,13 @@ function parseBirthdayInput(value: string): string | null {
   return iso;
 }
 
+function parseVacationEntitlementInput(value: string): number | null {
+  if (!value.trim()) return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return Math.round(parsed);
+}
+
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const isValidEmail = (value: string) =>
   EMAIL_REGEX.test(value) && !/[^\x00-\x7F]/.test(value);
@@ -271,14 +278,15 @@ export default function Settings() {
   const APP_ROLE_OPTIONS: Employee["appRole"][] = ["Admin", "Editor", "User"];
 
   const PERMISSION_FALLBACK = [
-    { key: "users.manage", label: "Benutzer anlegen / verwalten" },
-    { key: "dutyplan.edit", label: "Dienstplan bearbeiten" },
-    { key: "dutyplan.publish", label: "Dienstplan freigeben" },
-    { key: "vacation.lock", label: "Urlaubsplanung bearbeiten (Sperrzeitraum)" },
-    { key: "absence.create", label: "Abwesenheiten eintragen" },
-    { key: "sop.approve", label: "SOPs freigeben" },
-    { key: "project.close", label: "Projekte abschließen" },
-    { key: "training.edit", label: "Ausbildungsplan bearbeiten" }
+    { key: "users.manage", label: "Kann Benutzer anlegen / verwalten" },
+    { key: "dutyplan.edit", label: "Kann Dienstplan bearbeiten" },
+    { key: "dutyplan.publish", label: "Kann Dienstplan freigeben" },
+    { key: "vacation.lock", label: "Kann Urlaubsplanung bearbeiten (Sperrzeitraum)" },
+    { key: "vacation.approve", label: "Kann Urlaub freigeben" },
+    { key: "absence.create", label: "Kann Abwesenheiten eintragen" },
+    { key: "sop.approve", label: "Kann SOPs freigeben" },
+    { key: "project.close", label: "Kann Projekte abschliessen" },
+    { key: "training.edit", label: "Kann Ausbildungsplan bearbeiten" }
   ];
   
   const viewingUserId = params.userId
@@ -293,6 +301,7 @@ export default function Settings() {
   const canEditBasicInfo = isViewingOwnProfile || isAdmin;
   const canEditPrivateInfo = isAdmin;
   const canEditRoleAndCompetencies = isAdmin;
+  const canEditVacationEntitlement = isAdmin || isTechnicalAdmin;
   const canEditDiplomas = isViewingOwnProfile || isAdmin;
   const canChangePassword = isViewingOwnProfile;
   const canApproveLongTerm =
@@ -318,7 +327,8 @@ export default function Settings() {
     phoneWork: '',
     phonePrivate: '',
     showPrivateContact: false,
-    badge: ''
+    badge: '',
+    vacationEntitlement: ''
   });
   const [birthdayInput, setBirthdayInput] = useState("");
   const [roleValue, setRoleValue] = useState<Employee["role"] | "">("");
@@ -489,7 +499,10 @@ export default function Settings() {
       phoneWork: emp.phoneWork || '',
       phonePrivate: emp.phonePrivate || '',
       showPrivateContact: emp.showPrivateContact || false,
-      badge: emp.lastName?.substring(0, 2).toUpperCase() || emp.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || ''
+      badge: emp.lastName?.substring(0, 2).toUpperCase() || emp.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || '',
+      vacationEntitlement: emp.vacationEntitlement !== null && emp.vacationEntitlement !== undefined
+        ? String(emp.vacationEntitlement)
+        : ""
     });
     setBirthdayInput(formatBirthdayDisplay(birthdayIso || emp.birthday));
     setNewBadge(emp.lastName?.substring(0, 2).toUpperCase() || '');
@@ -661,10 +674,13 @@ export default function Settings() {
     }
   };
 
-  const togglePermission = (key: string) => {
-    setSelectedPermissions((prev) =>
-      prev.includes(key) ? prev.filter((perm) => perm !== key) : [...prev, key]
-    );
+  const updatePermission = (key: string, enabled: boolean) => {
+    setSelectedPermissions((prev) => {
+      if (enabled) {
+        return prev.includes(key) ? prev : [...prev, key];
+      }
+      return prev.filter((perm) => perm !== key);
+    });
   };
 
   const handleSave = async () => {
@@ -700,6 +716,17 @@ export default function Settings() {
         toast({
           title: "Fehler",
           description: "Bitte eine gueltige private E-Mail-Adresse ohne Umlaute eingeben.",
+          variant: "destructive"
+        });
+        setSaving(false);
+        return;
+      }
+
+      const parsedVacationEntitlement = parseVacationEntitlementInput(formData.vacationEntitlement);
+      if (formData.vacationEntitlement.trim() && parsedVacationEntitlement === null) {
+        toast({
+          title: "Fehler",
+          description: "Bitte einen gueltigen Urlaubsanspruch (Tage) eingeben.",
           variant: "destructive"
         });
         setSaving(false);
@@ -742,6 +769,12 @@ export default function Settings() {
           takesShifts,
           canOverduty,
           shiftPreferences: nextShiftPreferences
+        });
+      }
+
+      if (canEditVacationEntitlement) {
+        Object.assign(payload, {
+          vacationEntitlement: parsedVacationEntitlement
         });
       }
 
@@ -1387,6 +1420,18 @@ export default function Settings() {
                         disabled={!canEditPrivateInfo}
                       />
                     </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Urlaubsanspruch (Tage)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={formData.vacationEntitlement}
+                      onChange={(e) => setFormData(prev => ({ ...prev, vacationEntitlement: e.target.value }))}
+                      disabled={!canEditVacationEntitlement}
+                      placeholder="z.B. 25"
+                    />
                   </div>
                 </div>
 
@@ -2199,16 +2244,16 @@ export default function Settings() {
                 ) : (
                   <div className="space-y-3">
                     {permissionOptions.map((perm) => (
-                      <div key={perm.key} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={`perm-${perm.key}`}
-                          checked={selectedPermissions.includes(perm.key)}
-                          onCheckedChange={() => togglePermission(perm.key)}
-                          disabled={!isTechnicalAdmin}
-                        />
-                        <Label htmlFor={`perm-${perm.key}`} className="text-sm font-normal cursor-pointer flex-1">
+                      <div key={perm.key} className="flex items-center justify-between rounded-lg border border-border p-3">
+                        <Label htmlFor={`perm-${perm.key}`} className="text-sm font-normal flex-1">
                           {perm.label}
                         </Label>
+                        <Switch
+                          id={`perm-${perm.key}`}
+                          checked={selectedPermissions.includes(perm.key)}
+                          onCheckedChange={(checked) => updatePermission(perm.key, Boolean(checked))}
+                          disabled={!isTechnicalAdmin}
+                        />
                       </div>
                     ))}
                   </div>

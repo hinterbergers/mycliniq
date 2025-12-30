@@ -106,6 +106,19 @@ export const plannedAbsenceStatusEnum = pgEnum('planned_absence_status', [
   'Abgelehnt'
 ]);
 
+export const vacationRuleTypeEnum = pgEnum('vacation_rule_type', [
+  'role_min',
+  'competency_min',
+  'total_min',
+  'training_priority'
+]);
+
+export const vacationRoleGroupEnum = pgEnum('vacation_role_group', [
+  'ASS',
+  'OA',
+  'TA'
+]);
+
 // Room category enum
 export const roomCategoryEnum = pgEnum('room_category', [
   'Geburtshilfe',
@@ -260,6 +273,7 @@ export const employees = pgTable("employees", {
   diplomas: text("diplomas").array().notNull().default(sql`ARRAY[]::text[]`),
   takesShifts: boolean("takes_shifts").notNull().default(true),
   canOverduty: boolean("can_overduty").notNull().default(false),
+  vacationEntitlement: integer("vacation_entitlement"),
   maxShiftsPerWeek: integer("max_shifts_per_week"),
   employmentFrom: date("employment_from"),
   employmentUntil: date("employment_until"),
@@ -427,6 +441,34 @@ export const insertEmployeeCompetencySchema = createInsertSchema(employeeCompete
 
 export type InsertEmployeeCompetency = z.infer<typeof insertEmployeeCompetencySchema>;
 export type EmployeeCompetency = typeof employeeCompetencies.$inferSelect;
+
+// Vacation rules for absence planning (per department)
+export const vacationRules = pgTable("vacation_rules", {
+  id: serial("id").primaryKey(),
+  departmentId: integer("department_id").references(() => departments.id).notNull(),
+  ruleType: vacationRuleTypeEnum("rule_type").notNull(),
+  minCount: integer("min_count").notNull().default(0),
+  roleGroup: vacationRoleGroupEnum("role_group"),
+  competencyId: integer("competency_id").references(() => competencies.id),
+  isActive: boolean("is_active").notNull().default(true),
+  notes: text("notes"),
+  createdById: integer("created_by_id").references(() => employees.id),
+  updatedById: integer("updated_by_id").references(() => employees.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (table) => [
+  index("vacation_rules_department_idx").on(table.departmentId),
+  index("vacation_rules_competency_idx").on(table.competencyId)
+]);
+
+export const insertVacationRuleSchema = createInsertSchema(vacationRules).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export type InsertVacationRule = z.infer<typeof insertVacationRuleSchema>;
+export type VacationRule = typeof vacationRules.$inferSelect;
 
 // Employee Diplomas junction table (many-to-many)
 export const employeeDiplomas = pgTable("employee_diplomas", {

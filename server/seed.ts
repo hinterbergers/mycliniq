@@ -132,14 +132,15 @@ async function seed() {
     
     // Seed permissions
     const permissionData = [
-      { key: "users.manage", label: "Benutzer anlegen / verwalten", scope: "department" },
-      { key: "dutyplan.edit", label: "Dienstplan bearbeiten", scope: "department" },
-      { key: "dutyplan.publish", label: "Dienstplan freigeben", scope: "department" },
-      { key: "vacation.lock", label: "Urlaubsplanung bearbeiten (Sperrzeitraum)", scope: "department" },
-      { key: "absence.create", label: "Abwesenheiten eintragen", scope: "department" },
-      { key: "sop.approve", label: "SOPs freigeben", scope: "department" },
-      { key: "project.close", label: "Projekte abschließen", scope: "department" },
-      { key: "training.edit", label: "Ausbildungsplan bearbeiten", scope: "department" }
+      { key: "users.manage", label: "Kann Benutzer anlegen / verwalten", scope: "department" },
+      { key: "dutyplan.edit", label: "Kann Dienstplan bearbeiten", scope: "department" },
+      { key: "dutyplan.publish", label: "Kann Dienstplan freigeben", scope: "department" },
+      { key: "vacation.lock", label: "Kann Urlaubsplanung bearbeiten (Sperrzeitraum)", scope: "department" },
+      { key: "vacation.approve", label: "Kann Urlaub freigeben", scope: "department" },
+      { key: "absence.create", label: "Kann Abwesenheiten eintragen", scope: "department" },
+      { key: "sop.approve", label: "Kann SOPs freigeben", scope: "department" },
+      { key: "project.close", label: "Kann Projekte abschliessen", scope: "department" },
+      { key: "training.edit", label: "Kann Ausbildungsplan bearbeiten", scope: "department" }
     ];
     
     for (const perm of permissionData) {

@@ -16,6 +16,7 @@ import { registerDutyPlanRoutes } from "./duty-plans";
 import { registerWeeklyPlanRoutes } from "./weekly-plans";
 import { registerDailyOverrideRoutes } from "./daily-overrides";
 import { registerAbsenceRoutes } from "./absences";
+import { registerVacationRuleRoutes } from "./vacation-rules";
 import { registerProjectRoutes } from "./projects";
 import { registerSopRoutes } from "./sops";
 import { registerToolRoutes } from "./tools";
@@ -106,6 +107,11 @@ export function registerModularApiRoutes(app: Express): void {
   const absencesRouter = Router();
   registerAbsenceRoutes(absencesRouter);
   app.use("/api/absences", absencesRouter);
+
+  // Vacation rules API (Urlaubsregeln)
+  const vacationRulesRouter = Router();
+  registerVacationRuleRoutes(vacationRulesRouter);
+  app.use("/api/vacation-rules", vacationRulesRouter);
 
   // Projects API (Projekte)
   // TODO: Check project membership for access

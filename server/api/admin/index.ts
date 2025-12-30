@@ -12,24 +12,34 @@ import { authenticate, requireTechnicalAdmin, requireClinicAdmin, requireAuth } 
 // Note: Using direct response format for consistency with existing API
 
 const DEFAULT_PERMISSION_CATALOG = [
-  { key: "users.manage", label: "Benutzer anlegen / verwalten", scope: "department" },
-  { key: "dutyplan.edit", label: "Dienstplan bearbeiten", scope: "department" },
-  { key: "dutyplan.publish", label: "Dienstplan freigeben", scope: "department" },
-  { key: "vacation.lock", label: "Urlaubsplanung bearbeiten (Sperrzeitraum)", scope: "department" },
-  { key: "absence.create", label: "Abwesenheiten eintragen", scope: "department" },
-  { key: "sop.approve", label: "SOPs freigeben", scope: "department" },
-  { key: "project.close", label: "Projekte abschließen", scope: "department" },
-  { key: "training.edit", label: "Ausbildungsplan bearbeiten", scope: "department" }
+  { key: "users.manage", label: "Kann Benutzer anlegen / verwalten", scope: "department" },
+  { key: "dutyplan.edit", label: "Kann Dienstplan bearbeiten", scope: "department" },
+  { key: "dutyplan.publish", label: "Kann Dienstplan freigeben", scope: "department" },
+  { key: "vacation.lock", label: "Kann Urlaubsplanung bearbeiten (Sperrzeitraum)", scope: "department" },
+  { key: "vacation.approve", label: "Kann Urlaub freigeben", scope: "department" },
+  { key: "absence.create", label: "Kann Abwesenheiten eintragen", scope: "department" },
+  { key: "sop.approve", label: "Kann SOPs freigeben", scope: "department" },
+  { key: "project.close", label: "Kann Projekte abschliessen", scope: "department" },
+  { key: "training.edit", label: "Kann Ausbildungsplan bearbeiten", scope: "department" }
 ];
 
 async function ensurePermissionCatalog(): Promise<void> {
   const existing = await db
-    .select({ key: permissions.key })
+    .select({ key: permissions.key, label: permissions.label, scope: permissions.scope })
     .from(permissions);
-  const existingKeys = new Set(existing.map((perm) => perm.key));
-  const missing = DEFAULT_PERMISSION_CATALOG.filter((perm) => !existingKeys.has(perm.key));
+  const existingByKey = new Map(existing.map((perm) => [perm.key, perm]));
+  const missing = DEFAULT_PERMISSION_CATALOG.filter((perm) => !existingByKey.has(perm.key));
   if (missing.length) {
     await db.insert(permissions).values(missing).onConflictDoNothing();
+  }
+  const updates = DEFAULT_PERMISSION_CATALOG.filter((perm) => {
+    const current = existingByKey.get(perm.key);
+    return current && (current.label !== perm.label || current.scope !== perm.scope);
+  });
+  for (const perm of updates) {
+    await db.update(permissions)
+      .set({ label: perm.label, scope: perm.scope, updatedAt: new Date() })
+      .where(eq(permissions.key, perm.key));
   }
 }
 

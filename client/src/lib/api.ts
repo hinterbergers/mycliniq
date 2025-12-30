@@ -30,6 +30,8 @@ import type {
   InsertDutyPlan,
   PlannedAbsence,
   InsertPlannedAbsence,
+  VacationRule,
+  InsertVacationRule,
   Competency,
   Diploma,
   PhysicalRoom,
@@ -1101,6 +1103,20 @@ export const plannedAbsencesAdminApi = {
     const response = await apiFetch(`${API_BASE}/absences/month/${year}/${month}`);
     return handleResponse<PlannedAbsenceMonthSummary>(response);
   },
+  getRange: async (options: {
+    from: string;
+    to: string;
+    status?: "Geplant" | "Genehmigt" | "Abgelehnt";
+    employeeId?: number;
+  }): Promise<PlannedAbsenceAdmin[]> => {
+    const params = new URLSearchParams();
+    params.set("from", options.from);
+    params.set("to", options.to);
+    if (options.status) params.set("status", options.status);
+    if (typeof options.employeeId === "number") params.set("employeeId", String(options.employeeId));
+    const response = await apiFetch(`${API_BASE}/absences?${params.toString()}`);
+    return handleResponse<PlannedAbsenceAdmin[]>(response);
+  },
 
   updateStatus: async (
     id: number,
@@ -1113,6 +1129,42 @@ export const plannedAbsencesAdminApi = {
       body: JSON.stringify({ status, approvedById })
     });
     return handleResponse<PlannedAbsenceAdmin>(response);
+  }
+};
+
+export type VacationRuleInput = Omit<InsertVacationRule, "createdById" | "updatedById" | "createdAt" | "updatedAt">;
+
+export const vacationRulesApi = {
+  getAll: async (departmentId?: number): Promise<VacationRule[]> => {
+    const params = new URLSearchParams();
+    if (typeof departmentId === "number") {
+      params.set("departmentId", String(departmentId));
+    }
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    const response = await apiFetch(`${API_BASE}/vacation-rules${suffix}`);
+    return handleResponse<VacationRule[]>(response);
+  },
+  create: async (data: VacationRuleInput): Promise<VacationRule> => {
+    const response = await apiFetch(`${API_BASE}/vacation-rules`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<VacationRule>(response);
+  },
+  update: async (id: number, data: Partial<VacationRuleInput>): Promise<VacationRule> => {
+    const response = await apiFetch(`${API_BASE}/vacation-rules/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<VacationRule>(response);
+  },
+  delete: async (id: number): Promise<void> => {
+    const response = await apiFetch(`${API_BASE}/vacation-rules/${id}`, {
+      method: "DELETE"
+    });
+    return handleResponse<void>(response);
   }
 };
 

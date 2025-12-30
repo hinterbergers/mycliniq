@@ -1,11 +1,12 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { db, eq, asc } from "./lib/db";
+import { db, eq, asc, and, gte, lte, ne } from "./lib/db";
 import { 
   insertEmployeeSchema, 
   insertRosterShiftSchema, 
   insertAbsenceSchema, 
+  insertPlannedAbsenceSchema,
   insertResourceSchema, 
   insertWeeklyAssignmentSchema,
   insertProjectInitiativeSchema,
@@ -15,6 +16,7 @@ import {
   insertTaskActivitySchema,
   insertLongTermShiftWishSchema,
   insertLongTermAbsenceSchema,
+  plannedAbsences,
   serviceLines,
   type RosterShift
 } from "@shared/schema";
@@ -157,6 +159,113 @@ const addMonth = (year: number, month: number, delta = 1) => {
     nextYear -= 1;
   }
   return { year: nextYear, month: nextMonth };
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const toDate = (value: string) => new Date(`${value}T00:00:00`);
+
+const formatDate = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const countInclusiveDays = (start: Date, end: Date) => {
+  const diff = Math.floor((end.getTime() - start.getTime()) / DAY_MS);
+  return diff + 1;
+};
+
+const splitRangeByYear = (startDate: string, endDate: string) => {
+  const start = toDate(startDate);
+  const end = toDate(endDate);
+  const ranges: Array<{ year: number; start: Date; end: Date; days: number }> = [];
+  const startYear = start.getFullYear();
+  const endYear = end.getFullYear();
+
+  for (let year = startYear; year <= endYear; year += 1) {
+    const yearStart = new Date(year, 0, 1);
+    const yearEnd = new Date(year, 11, 31);
+    const rangeStart = start > yearStart ? start : yearStart;
+    const rangeEnd = end < yearEnd ? end : yearEnd;
+    if (rangeStart <= rangeEnd) {
+      ranges.push({
+        year,
+        start: rangeStart,
+        end: rangeEnd,
+        days: countInclusiveDays(rangeStart, rangeEnd)
+      });
+    }
+  }
+
+  return ranges;
+};
+
+const countPlannedVacationDaysForYear = async (
+  employeeId: number,
+  year: number,
+  excludeAbsenceId?: number
+) => {
+  const yearStart = formatDate(new Date(year, 0, 1));
+  const yearEnd = formatDate(new Date(year, 11, 31));
+  const conditions = [
+    eq(plannedAbsences.employeeId, employeeId),
+    eq(plannedAbsences.reason, "Urlaub"),
+    ne(plannedAbsences.status, "Abgelehnt"),
+    lte(plannedAbsences.startDate, yearEnd),
+    gte(plannedAbsences.endDate, yearStart)
+  ];
+
+  if (excludeAbsenceId) {
+    conditions.push(ne(plannedAbsences.id, excludeAbsenceId));
+  }
+
+  const rows = await db
+    .select({
+      startDate: plannedAbsences.startDate,
+      endDate: plannedAbsences.endDate
+    })
+    .from(plannedAbsences)
+    .where(and(...conditions));
+
+  return rows.reduce((total, row) => {
+    const rangeStart = toDate(String(row.startDate)) > toDate(yearStart) ? toDate(String(row.startDate)) : toDate(yearStart);
+    const rangeEnd = toDate(String(row.endDate)) < toDate(yearEnd) ? toDate(String(row.endDate)) : toDate(yearEnd);
+    if (rangeStart > rangeEnd) return total;
+    return total + countInclusiveDays(rangeStart, rangeEnd);
+  }, 0);
+};
+
+const ensurePlannedVacationEntitlement = async (
+  employeeId: number,
+  startDate: string,
+  endDate: string,
+  excludeAbsenceId?: number
+) => {
+  const employee = await storage.getEmployee(employeeId);
+  if (!employee) {
+    return { ok: false, error: "Mitarbeiter nicht gefunden" };
+  }
+
+  const entitlement = employee.vacationEntitlement;
+  if (entitlement === null || entitlement === undefined) {
+    return { ok: true };
+  }
+
+  const ranges = splitRangeByYear(startDate, endDate);
+  for (const range of ranges) {
+    const usedDays = await countPlannedVacationDaysForYear(employeeId, range.year, excludeAbsenceId);
+    const totalDays = usedDays + range.days;
+    if (totalDays > entitlement) {
+      return {
+        ok: false,
+        error: `Urlaubsanspruch ${entitlement} Tage ueberschritten (bereits ${usedDays} Tage, beantragt ${range.days} Tage in ${range.year}).`
+      };
+    }
+  }
+
+  return { ok: true };
 };
 
 export async function registerRoutes(
@@ -1924,8 +2033,20 @@ export async function registerRoutes(
   app.get("/api/planned-absences", async (req: Request, res: Response) => {
     try {
       const { year, month, employeeId } = req.query;
+
+      if (!req.user) {
+        return res.status(401).json({ error: "Anmeldung erforderlich" });
+      }
+
+      const canViewAll =
+        req.user.isAdmin ||
+        (req.user.capabilities?.includes("vacation.approve") ?? false) ||
+        (req.user.capabilities?.includes("vacation.lock") ?? false);
       
       if (employeeId && year && month) {
+        if (!canViewAll && req.user.employeeId !== parseInt(employeeId as string)) {
+          return res.status(403).json({ error: "Keine Berechtigung" });
+        }
         const absences = await storage.getPlannedAbsencesByEmployee(
           parseInt(employeeId as string),
           parseInt(year as string),
@@ -1935,6 +2056,9 @@ export async function registerRoutes(
       }
       
       if (year && month) {
+        if (!canViewAll) {
+          return res.status(403).json({ error: "Keine Berechtigung" });
+        }
         const absences = await storage.getPlannedAbsencesByMonth(
           parseInt(year as string),
           parseInt(month as string)
@@ -1950,16 +2074,78 @@ export async function registerRoutes(
 
   app.post("/api/planned-absences", async (req: Request, res: Response) => {
     try {
-      const absence = await storage.createPlannedAbsence(req.body);
+      if (!req.user) {
+        return res.status(401).json({ error: "Anmeldung erforderlich" });
+      }
+
+      const validatedData = insertPlannedAbsenceSchema.parse(req.body);
+      if (!req.user.isAdmin && req.user.employeeId !== validatedData.employeeId) {
+        return res.status(403).json({ error: "Keine Berechtigung" });
+      }
+
+      if (validatedData.reason === "Urlaub") {
+        const entitlementCheck = await ensurePlannedVacationEntitlement(
+          validatedData.employeeId,
+          String(validatedData.startDate),
+          String(validatedData.endDate)
+        );
+        if (!entitlementCheck.ok) {
+          return res.status(400).json({ error: entitlementCheck.error || "Urlaubsanspruch ueberschritten" });
+        }
+      }
+
+      const absence = await storage.createPlannedAbsence({
+        ...validatedData,
+        createdById: req.user.employeeId
+      });
       res.status(201).json(absence);
     } catch (error) {
+      if (error instanceof Error && error.name === "ZodError") {
+        const validationError = fromZodError(error as any);
+        return res.status(400).json({ error: validationError.message });
+      }
       res.status(500).json({ error: "Failed to create planned absence" });
     }
   });
 
   app.patch("/api/planned-absences/:id", async (req: Request, res: Response) => {
     try {
+      if (!req.user) {
+        return res.status(401).json({ error: "Anmeldung erforderlich" });
+      }
+
       const id = parseInt(req.params.id);
+      const existing = await db
+        .select()
+        .from(plannedAbsences)
+        .where(eq(plannedAbsences.id, id));
+
+      if (!existing.length) {
+        return res.status(404).json({ error: "Planned absence not found" });
+      }
+
+      const current = existing[0];
+      if (!req.user.isAdmin && req.user.employeeId !== current.employeeId) {
+        return res.status(403).json({ error: "Keine Berechtigung" });
+      }
+
+      const next = {
+        ...current,
+        ...req.body
+      } as any;
+
+      if (next.reason === "Urlaub" && next.status !== "Abgelehnt") {
+        const entitlementCheck = await ensurePlannedVacationEntitlement(
+          current.employeeId,
+          String(next.startDate),
+          String(next.endDate),
+          id
+        );
+        if (!entitlementCheck.ok) {
+          return res.status(400).json({ error: entitlementCheck.error || "Urlaubsanspruch ueberschritten" });
+        }
+      }
+
       const absence = await storage.updatePlannedAbsence(id, req.body);
       if (!absence) {
         return res.status(404).json({ error: "Planned absence not found" });
@@ -1972,7 +2158,24 @@ export async function registerRoutes(
 
   app.delete("/api/planned-absences/:id", async (req: Request, res: Response) => {
     try {
+      if (!req.user) {
+        return res.status(401).json({ error: "Anmeldung erforderlich" });
+      }
+
       const id = parseInt(req.params.id);
+      const existing = await db
+        .select()
+        .from(plannedAbsences)
+        .where(eq(plannedAbsences.id, id));
+
+      if (!existing.length) {
+        return res.status(404).json({ error: "Planned absence not found" });
+      }
+
+      if (!req.user.isAdmin && req.user.employeeId !== existing[0].employeeId) {
+        return res.status(403).json({ error: "Keine Berechtigung" });
+      }
+
       await storage.deletePlannedAbsence(id);
       res.status(204).send();
     } catch (error) {
