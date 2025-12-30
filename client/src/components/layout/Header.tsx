@@ -3,7 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useEffect, useState } from "react";
-import { rosterSettingsApi, type NextPlanningMonth } from "@/lib/api";
+import { rosterSettingsApi, shiftSwapApi, type NextPlanningMonth } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
@@ -17,6 +17,7 @@ const MONTH_NAMES = [
 export function Header({ title }: { title?: string }) {
   const { employee, capabilities, isAdmin, isTechnicalAdmin } = useAuth();
   const [planningMonth, setPlanningMonth] = useState<NextPlanningMonth | null>(null);
+  const [pendingSwapCount, setPendingSwapCount] = useState(0);
   const [notifications, setNotifications] = useState<
     { id: string; tone: "success" | "warning" | "info"; title: string; description: string }[]
   >([]);
@@ -34,6 +35,7 @@ export function Header({ title }: { title?: string }) {
   useEffect(() => {
     if (employee) {
       loadPlanningData();
+      loadSwapRequests();
     }
   }, [employee]);
   
@@ -43,6 +45,18 @@ export function Header({ title }: { title?: string }) {
       setPlanningMonth(data);
     } catch (error) {
       console.error('Failed to load planning data', error);
+    }
+  };
+
+  const loadSwapRequests = async () => {
+    if (!employee) return;
+    try {
+      const requests = await shiftSwapApi.getByTargetEmployee(employee.id);
+      const pendingCount = requests.filter((request) => request.status === "Ausstehend").length;
+      setPendingSwapCount(pendingCount);
+    } catch (error) {
+      console.error("Failed to load shift swap requests", error);
+      setPendingSwapCount(0);
     }
   };
 
@@ -73,6 +87,15 @@ export function Header({ title }: { title?: string }) {
       });
     }
 
+    if (pendingSwapCount > 0) {
+      nextNotifications.push({
+        id: "swap-requests",
+        tone: "info",
+        title: "Diensttausch-Anfrage",
+        description: `${pendingSwapCount} Anfrage(n) warten auf Ihre Antwort.`,
+      });
+    }
+
     if (doesShifts) {
       const monthStart = new Date(planningMonth.year, planningMonth.month - 1, 1);
       const warningStart = new Date(monthStart);
@@ -89,7 +112,7 @@ export function Header({ title }: { title?: string }) {
     }
 
     setNotifications(nextNotifications);
-  }, [planningMonth, canEditPlan, canPublishPlan, doesShifts]);
+  }, [planningMonth, canEditPlan, canPublishPlan, doesShifts, pendingSwapCount]);
   
   const today = format(new Date(), 'd. MMM yyyy', { locale: de });
   const hasNotification = notifications.length > 0;

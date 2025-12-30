@@ -13,7 +13,8 @@ import {
   insertApprovalSchema,
   insertTaskActivitySchema,
   insertLongTermShiftWishSchema,
-  insertLongTermAbsenceSchema
+  insertLongTermAbsenceSchema,
+  type RosterShift
 } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
 import bcrypt from "bcryptjs";
@@ -21,6 +22,8 @@ import crypto from "crypto";
 import { generateRosterPlan } from "./services/rosterGenerator";
 import { registerModularApiRoutes } from "./api";
 import { employeeDoesShifts } from "@shared/shiftTypes";
+import { requireAuth } from "./api/middleware/auth";
+import { getWeek } from "date-fns";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const isValidEmail = (value: string) =>
@@ -510,10 +513,193 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/roster/calendar", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const monthsParam = Number(req.query.months);
+      const months = Number.isFinite(monthsParam) ? Math.min(Math.max(monthsParam, 1), 12) : 6;
+      const startParam = typeof req.query.start === "string" ? new Date(req.query.start) : null;
+      const startDate = startParam && !Number.isNaN(startParam.getTime())
+        ? new Date(startParam.getFullYear(), startParam.getMonth(), 1)
+        : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+
+      const monthStarts: Array<{ year: number; month: number }> = [];
+      for (let i = 0; i < months; i += 1) {
+        const date = new Date(startDate.getFullYear(), startDate.getMonth() + i, 1);
+        monthStarts.push({ year: date.getFullYear(), month: date.getMonth() + 1 });
+      }
+
+      const allShifts: RosterShift[] = [];
+      for (const { year, month } of monthStarts) {
+        const monthShifts = await storage.getRosterShiftsByMonth(year, month);
+        allShifts.push(...monthShifts);
+      }
+
+      const employees = await storage.getEmployees();
+      const employeesById = new Map(employees.map((emp) => [emp.id, emp.name]));
+
+      const shiftsByDate = allShifts.reduce<Record<string, typeof allShifts>>((acc, shift) => {
+        if (!acc[shift.date]) {
+          acc[shift.date] = [];
+        }
+        acc[shift.date].push(shift);
+        return acc;
+      }, {});
+
+      const currentEmployeeId = req.user?.employeeId;
+      if (!currentEmployeeId) {
+        return res.status(401).json({ error: "Anmeldung erforderlich" });
+      }
+
+      const escapeIcs = (value: string) =>
+        value
+          .replace(/\\/g, "\\\\")
+          .replace(/;/g, "\\;")
+          .replace(/,/g, "\\,")
+          .replace(/\n/g, "\\n");
+
+      const toIcsDate = (date: Date) => {
+        const year = String(date.getFullYear());
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const day = String(date.getDate()).padStart(2, "0");
+        return `${year}${month}${day}`;
+      };
+
+      const dtStamp = new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+      const serviceLabels: Record<string, string> = {
+        gyn: "Gyn-Dienst",
+        kreiszimmer: "Kreißzimmer",
+        turnus: "Turnus"
+      };
+
+      const events = allShifts
+        .filter((shift) => shift.employeeId === currentEmployeeId)
+        .map((shift) => {
+          const dateObj = new Date(`${shift.date}T00:00:00`);
+          const endDate = new Date(dateObj);
+          endDate.setDate(endDate.getDate() + 1);
+          const serviceLabel = serviceLabels[shift.serviceType] || shift.serviceType;
+
+          const others = (shiftsByDate[shift.date] || [])
+            .filter((other) => other.employeeId !== currentEmployeeId)
+            .map((other) => {
+              const label = serviceLabels[other.serviceType] || other.serviceType;
+              const assignee =
+                other.employeeId ? employeesById.get(other.employeeId) : other.assigneeFreeText;
+              return `${label}: ${assignee || "Unbekannt"}`;
+            });
+
+          const description = others.length
+            ? `Weitere Dienste:\\n${others.join("\\n")}`
+            : "Keine weiteren Dienste";
+
+          return [
+            "BEGIN:VEVENT",
+            `UID:roster-${shift.id}-${currentEmployeeId}@mycliniq`,
+            `DTSTAMP:${dtStamp}`,
+            `DTSTART;VALUE=DATE:${toIcsDate(dateObj)}`,
+            `DTEND;VALUE=DATE:${toIcsDate(endDate)}`,
+            `SUMMARY:${escapeIcs(`Dienst: ${serviceLabel}`)}`,
+            `DESCRIPTION:${escapeIcs(description)}`,
+            "END:VEVENT"
+          ].join("\r\n");
+        });
+
+      const calendar = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//MyCliniQ//Roster//DE",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        ...events,
+        "END:VCALENDAR"
+      ].join("\r\n");
+
+      res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+      res.setHeader("Content-Disposition", "inline; filename=\"dienstplan.ics\"");
+      res.send(calendar);
+    } catch (error: any) {
+      console.error("Roster calendar export error:", error);
+      res.status(500).json({ error: "Kalender konnte nicht erstellt werden" });
+    }
+  });
+
+  app.get("/api/roster/export", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const year = Number(req.query.year) || new Date().getFullYear();
+      const month = Number(req.query.month) || new Date().getMonth() + 1;
+
+      const shifts = await storage.getRosterShiftsByMonth(year, month);
+      const employees = await storage.getEmployees();
+      const employeesById = new Map(employees.map((emp) => [emp.id, emp.name]));
+      const shiftsByDate = shifts.reduce<Record<string, Partial<Record<"gyn" | "kreiszimmer" | "turnus", RosterShift>>>>(
+        (acc, shift) => {
+          if (!acc[shift.date]) {
+            acc[shift.date] = {};
+          }
+          if (shift.serviceType === "gyn" || shift.serviceType === "kreiszimmer" || shift.serviceType === "turnus") {
+            acc[shift.date][shift.serviceType] = shift;
+          }
+          return acc;
+        },
+        {}
+      );
+
+      const toLabel = (shift?: RosterShift) => {
+        if (!shift) return "-";
+        if (shift.employeeId) {
+          return employeesById.get(shift.employeeId) || "-";
+        }
+        return shift.assigneeFreeText || "-";
+      };
+
+      const startDate = new Date(year, month - 1, 1);
+      const endDate = new Date(year, month, 0);
+
+      const rows = [
+        ["Datum", "KW", "Tag", "Kreißzimmer", "Gynäkologie", "Turnus"]
+      ];
+
+      for (let date = new Date(startDate); date <= endDate; date.setDate(date.getDate() + 1)) {
+        const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+          date.getDate()
+        ).padStart(2, "0")}`;
+        const weekNumber = getWeek(date, { weekStartsOn: 1, firstWeekContainsDate: 4 });
+        const weekday = date.toLocaleDateString("de-DE", { weekday: "short" }).replace(".", "");
+        const dayShifts = shiftsByDate[dateKey] || {};
+        rows.push([
+          date.toLocaleDateString("de-DE"),
+          String(weekNumber),
+          weekday,
+          toLabel(dayShifts.kreiszimmer),
+          toLabel(dayShifts.gyn),
+          toLabel(dayShifts.turnus)
+        ]);
+      }
+
+      const escapeCsv = (value: string) => {
+        if (value.includes(";") || value.includes("\"") || value.includes("\n")) {
+          return `"${value.replace(/\"/g, "\"\"")}"`;
+        }
+        return value;
+      };
+
+      const csv = "\uFEFF" + rows.map((row) => row.map(escapeCsv).join(";")).join("\r\n");
+      res.setHeader("Content-Type", "application/vnd.ms-excel; charset=utf-8");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="dienstplan-${year}-${String(month).padStart(2, "0")}.xls"`
+      );
+      res.send(csv);
+    } catch (error: any) {
+      console.error("Roster export error:", error);
+      res.status(500).json({ error: "Export fehlgeschlagen" });
+    }
+  });
+
   // Shift swap request routes
   app.get("/api/shift-swaps", async (req: Request, res: Response) => {
     try {
-      const { status, employeeId } = req.query;
+      const { status, employeeId, targetEmployeeId } = req.query;
       
       if (status === 'Ausstehend') {
         const requests = await storage.getPendingShiftSwapRequests();
@@ -522,6 +708,11 @@ export async function registerRoutes(
       
       if (employeeId) {
         const requests = await storage.getShiftSwapRequestsByEmployee(parseInt(employeeId as string));
+        return res.json(requests);
+      }
+
+      if (targetEmployeeId) {
+        const requests = await storage.getShiftSwapRequestsByTargetEmployee(parseInt(targetEmployeeId as string));
         return res.json(requests);
       }
       

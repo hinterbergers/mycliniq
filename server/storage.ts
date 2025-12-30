@@ -135,6 +135,7 @@ export interface IStorage {
   // Shift swap request methods
   getShiftSwapRequests(): Promise<ShiftSwapRequest[]>;
   getShiftSwapRequestsByEmployee(employeeId: number): Promise<ShiftSwapRequest[]>;
+  getShiftSwapRequestsByTargetEmployee(employeeId: number): Promise<ShiftSwapRequest[]>;
   getPendingShiftSwapRequests(): Promise<ShiftSwapRequest[]>;
   getShiftSwapRequest(id: number): Promise<ShiftSwapRequest | undefined>;
   createShiftSwapRequest(request: InsertShiftSwapRequest): Promise<ShiftSwapRequest>;
@@ -561,6 +562,13 @@ export class DatabaseStorage implements IStorage {
     return await db.select()
       .from(shiftSwapRequests)
       .where(eq(shiftSwapRequests.requesterId, employeeId))
+      .orderBy(desc(shiftSwapRequests.requestedAt));
+  }
+
+  async getShiftSwapRequestsByTargetEmployee(employeeId: number): Promise<ShiftSwapRequest[]> {
+    return await db.select()
+      .from(shiftSwapRequests)
+      .where(eq(shiftSwapRequests.targetEmployeeId, employeeId))
       .orderBy(desc(shiftSwapRequests.requestedAt));
   }
 

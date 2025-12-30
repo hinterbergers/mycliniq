@@ -48,6 +48,10 @@ function extractToken(req: Request): string | null {
   if (authHeader?.startsWith('Bearer ')) {
     return authHeader.substring(7);
   }
+  const queryToken = req.query?.token;
+  if (typeof queryToken === "string" && queryToken.trim().length > 0) {
+    return queryToken.trim();
+  }
   return null;
 }
 

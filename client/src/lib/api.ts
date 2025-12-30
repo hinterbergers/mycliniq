@@ -792,6 +792,11 @@ export const shiftSwapApi = {
     const response = await apiFetch(`${API_BASE}/shift-swaps?employeeId=${employeeId}`);
     return handleResponse<ShiftSwapRequest[]>(response);
   },
+
+  getByTargetEmployee: async (employeeId: number): Promise<ShiftSwapRequest[]> => {
+    const response = await apiFetch(`${API_BASE}/shift-swaps?targetEmployeeId=${employeeId}`);
+    return handleResponse<ShiftSwapRequest[]>(response);
+  },
   
   getById: async (id: number): Promise<ShiftSwapRequest> => {
     const response = await apiFetch(`${API_BASE}/shift-swaps/${id}`);

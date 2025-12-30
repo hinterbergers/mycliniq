@@ -3,35 +3,36 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { 
-  Calendar as CalendarIcon, ChevronLeft, ChevronRight, Download, 
-  Rss, RefreshCw, Heart, Info, CheckCircle2, Clock, XCircle
+  ArrowRightLeft,
+  Calendar as CalendarIcon,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Heart,
+  Info,
+  Loader2,
+  RefreshCw,
+  Rss,
+  X,
+  CheckCircle2,
+  Clock,
+  XCircle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEffect, useState } from "react";
-import { format, addMonths, subMonths, getWeek } from "date-fns";
+import { format, addMonths, subMonths, getWeek, eachDayOfInterval, startOfMonth, endOfMonth, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
 import { useLocation } from "wouter";
-import { dutyPlansApi } from "@/lib/api";
-import type { DutyPlan } from "@shared/schema";
+import { dutyPlansApi, employeeApi, rosterApi, shiftSwapApi } from "@/lib/api";
+import type { DutyPlan, Employee, RosterShift, ShiftSwapRequest } from "@shared/schema";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
-
-const DUMMY_ROSTER_DATA = [
-  { kw: 49, day: "Mo", date: "02.12.", kreisszimmer: "Hinterberger", gyn: "Wagner", turnus: "Lang", absences: "" },
-  { kw: 49, day: "Di", date: "03.12.", kreisszimmer: "Brunner", gyn: "Fischer", turnus: "Hofer", absences: "Müller (U)" },
-  { kw: 49, day: "Mi", date: "04.12.", kreisszimmer: "Wagner", gyn: "Hinterberger", turnus: "Lang", absences: "" },
-  { kw: 49, day: "Do", date: "05.12.", kreisszimmer: "Fischer", gyn: "Brunner", turnus: "Hofer", absences: "Gruber (FB)" },
-  { kw: 49, day: "Fr", date: "06.12.", kreisszimmer: "Hinterberger", gyn: "Wagner", turnus: "Lang", absences: "" },
-  { kw: 49, day: "Sa", date: "07.12.", kreisszimmer: "Brunner", gyn: "-", turnus: "-", absences: "" },
-  { kw: 49, day: "So", date: "08.12.", kreisszimmer: "Fischer", gyn: "-", turnus: "-", absences: "" },
-  { kw: 50, day: "Mo", date: "09.12.", kreisszimmer: "Wagner", gyn: "Hinterberger", turnus: "Hofer", absences: "" },
-  { kw: 50, day: "Di", date: "10.12.", kreisszimmer: "Hinterberger", gyn: "Fischer", turnus: "Lang", absences: "Berger (ZA)" },
-  { kw: 50, day: "Mi", date: "11.12.", kreisszimmer: "Brunner", gyn: "Wagner", turnus: "Hofer", absences: "" },
-  { kw: 50, day: "Do", date: "12.12.", kreisszimmer: "Fischer", gyn: "Brunner", turnus: "Lang", absences: "" },
-  { kw: 50, day: "Fr", date: "13.12.", kreisszimmer: "Wagner", gyn: "Hinterberger", turnus: "Hofer", absences: "Krenn (U)" },
-];
 
 const DUMMY_WEEK_AREAS = [
   { area: "Kreißsaal 1", mon: "Hinterberger", tue: "Brunner", wed: "Wagner", thu: "Fischer", fri: "Hinterberger" },
@@ -56,16 +57,104 @@ const DUMMY_MY_REQUESTS = [
 ];
 
 const PLAN_STATUS_LABELS: Record<DutyPlan["status"], string> = {
-  Entwurf: "Bearbeitung",
+  Entwurf: "Vorschau",
   Vorläufig: "Vorschau",
   Freigegeben: "Freigabe"
+};
+
+const SERVICE_TYPE_LABELS: Record<string, string> = {
+  gyn: "Gyn-Dienst",
+  kreiszimmer: "Kreißzimmer",
+  turnus: "Turnus"
+};
+
+const SHIFT_STATUS_BADGES: Record<string, { icon: typeof Clock; className: string }> = {
+  Ausstehend: { icon: Clock, className: "text-amber-600 border-amber-300" },
+  Genehmigt: { icon: Check, className: "text-green-600 border-green-300" },
+  Abgelehnt: { icon: X, className: "text-red-600 border-red-300" }
 };
 
 export default function Personal() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [, setLocation] = useLocation();
-  const currentMonth = format(currentDate, "MMMM yyyy", { locale: de });
+  const { token } = useAuth();
+  const { toast } = useToast();
+  const [swapDialogOpen, setSwapDialogOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const nextMonth = format(addMonths(new Date(), 1), "MMMM", { locale: de });
+
+  const handleSubscribe = async () => {
+    if (!token) {
+      toast({
+        title: "Nicht angemeldet",
+        description: "Bitte melden Sie sich erneut an, um den Kalender zu abonnieren.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const baseUrl = window.location.origin.replace(/\/$/, "");
+    const calendarUrl = `${baseUrl}/api/roster/calendar?token=${encodeURIComponent(token)}&months=6`;
+    const webcalUrl = calendarUrl.replace(/^https?:\/\//, "webcal://");
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(calendarUrl);
+      }
+      window.open(webcalUrl, "_blank");
+      toast({
+        title: "Kalender-Abo",
+        description: "Der Abo-Link wurde geöffnet und in die Zwischenablage kopiert."
+      });
+    } catch (error) {
+      window.open(calendarUrl, "_blank");
+      toast({
+        title: "Kalender-Abo",
+        description: "Der Abo-Link wurde geöffnet."
+      });
+    }
+  };
+
+  const handleExport = async () => {
+    if (!token) {
+      toast({
+        title: "Nicht angemeldet",
+        description: "Bitte melden Sie sich erneut an, um den Dienstplan zu exportieren.",
+        variant: "destructive"
+      });
+      return;
+    }
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth() + 1;
+    setExporting(true);
+    try {
+      const response = await fetch(`/api/roster/export?year=${year}&month=${month}`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      if (!response.ok) {
+        throw new Error("Export fehlgeschlagen");
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `dienstplan-${year}-${String(month).padStart(2, "0")}.xls`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error: any) {
+      toast({
+        title: "Export fehlgeschlagen",
+        description: error.message || "Bitte versuchen Sie es erneut.",
+        variant: "destructive"
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <Layout title="Dienstpläne">
@@ -77,15 +166,26 @@ export default function Personal() {
           </div>
           
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" className="gap-2" data-testid="button-subscribe">
+            <Button variant="outline" className="gap-2" onClick={handleSubscribe} data-testid="button-subscribe">
               <Rss className="w-4 h-4" />
               Abonnieren
             </Button>
-            <Button variant="outline" className="gap-2" data-testid="button-export">
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={handleExport}
+              disabled={exporting}
+              data-testid="button-export"
+            >
               <Download className="w-4 h-4" />
-              Export
+              {exporting ? "Export läuft..." : "Export"}
             </Button>
-            <Button variant="outline" className="gap-2" data-testid="button-swap">
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={() => setSwapDialogOpen(true)}
+              data-testid="button-swap"
+            >
               <RefreshCw className="w-4 h-4" />
               Diensttausch
             </Button>
@@ -122,97 +222,93 @@ export default function Personal() {
           </TabsContent>
         </Tabs>
       </div>
+
+      <ShiftSwapRosterDialog
+        open={swapDialogOpen}
+        onOpenChange={setSwapDialogOpen}
+        currentDate={currentDate}
+      />
     </Layout>
   );
 }
 
 function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCurrentDate: (d: Date) => void }) {
-  const { employee, capabilities, isAdmin, isTechnicalAdmin } = useAuth();
+  const { employee: currentUser } = useAuth();
   const { toast } = useToast();
   const [dutyPlan, setDutyPlan] = useState<DutyPlan | null>(null);
   const [planLoading, setPlanLoading] = useState(false);
-  const [statusUpdating, setStatusUpdating] = useState(false);
+  const [rosterLoading, setRosterLoading] = useState(false);
+  const [shifts, setShifts] = useState<RosterShift[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
 
-  const canEditPlan =
-    isAdmin || isTechnicalAdmin || capabilities.includes("dutyplan.edit");
-  const canPublishPlan =
-    isAdmin || isTechnicalAdmin || capabilities.includes("dutyplan.publish");
-  const planStatus = dutyPlan?.status ?? "Entwurf";
-  const statusLabel = PLAN_STATUS_LABELS[planStatus];
+  const planStatus = dutyPlan?.status;
+  const statusLabel = planStatus ? PLAN_STATUS_LABELS[planStatus] : "Vorschau";
 
-  const loadPlanStatus = async () => {
+  const loadRoster = async () => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth() + 1;
     setPlanLoading(true);
+    setRosterLoading(true);
     try {
-      const plan = await dutyPlansApi.getByMonth(year, month);
+      const [plan, rosterData, employeeData] = await Promise.all([
+        dutyPlansApi.getByMonth(year, month),
+        rosterApi.getByMonth(year, month),
+        employeeApi.getAll()
+      ]);
       setDutyPlan(plan);
+      setShifts(rosterData);
+      setEmployees(employeeData);
     } catch (error: any) {
       toast({
         title: "Fehler",
-        description: error.message || "Status konnte nicht geladen werden",
+        description: error.message || "Dienstplan konnte nicht geladen werden",
         variant: "destructive"
       });
     } finally {
       setPlanLoading(false);
+      setRosterLoading(false);
     }
   };
 
   useEffect(() => {
-    loadPlanStatus();
+    loadRoster();
   }, [currentDate]);
 
-  const ensurePlan = async () => {
-    if (dutyPlan) return dutyPlan;
-    const year = currentDate.getFullYear();
-    const month = currentDate.getMonth() + 1;
-    const existing = await dutyPlansApi.getByMonth(year, month);
-    if (existing) {
-      setDutyPlan(existing);
-      return existing;
-    }
-    try {
-      const created = await dutyPlansApi.create({
-        year,
-        month,
-        generatedById: employee?.id ?? null
-      });
-      setDutyPlan(created);
-      return created;
-    } catch (error: any) {
-      const fallback = await dutyPlansApi.getByMonth(year, month);
-      if (fallback) {
-        setDutyPlan(fallback);
-        return fallback;
+  const employeesById = new Map(employees.map((emp) => [emp.id, emp]));
+  const shiftsByDate = shifts.reduce<Record<string, Partial<Record<"gyn" | "kreiszimmer" | "turnus", RosterShift>>>>(
+    (acc, shift) => {
+      if (!acc[shift.date]) {
+        acc[shift.date] = {};
       }
-      throw error;
+      if (shift.serviceType === "gyn" || shift.serviceType === "kreiszimmer" || shift.serviceType === "turnus") {
+        acc[shift.date][shift.serviceType] = shift;
+      }
+      return acc;
+    },
+    {}
+  );
+
+  const days = eachDayOfInterval({
+    start: startOfMonth(currentDate),
+    end: endOfMonth(currentDate)
+  });
+
+  const getShiftLabel = (shift?: RosterShift) => {
+    if (!shift) return "-";
+    if (shift.employeeId) {
+      return employeesById.get(shift.employeeId)?.name ?? "—";
     }
+    return shift.assigneeFreeText?.trim() || "-";
   };
 
-  const handleSetStatus = async (nextStatus: DutyPlan["status"]) => {
-    setStatusUpdating(true);
-    try {
-      const plan = await ensurePlan();
-      const updated = await dutyPlansApi.updateStatus(
-        plan.id,
-        nextStatus,
-        nextStatus === "Freigegeben" ? employee?.id ?? null : null
-      );
-      setDutyPlan(updated);
-      toast({
-        title: "Status aktualisiert",
-        description: `Dienstplan ist jetzt ${PLAN_STATUS_LABELS[updated.status]}.`
-      });
-    } catch (error: any) {
-      toast({
-        title: "Fehler",
-        description: error.message || "Status konnte nicht aktualisiert werden",
-        variant: "destructive"
-      });
-    } finally {
-      setStatusUpdating(false);
-    }
-  };
+  const myShifts = currentUser
+    ? shifts.filter((shift) => shift.employeeId === currentUser.id)
+    : [];
+  const weekendCount = myShifts.filter((shift) => {
+    const date = new Date(`${shift.date}T00:00:00`);
+    const day = date.getDay();
+    return day === 0 || day === 6;
+  }).length;
 
   return (
     <div className="space-y-6">
@@ -258,45 +354,6 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
             >
               {planLoading ? "Status wird geladen..." : `Status: ${statusLabel}`}
             </Badge>
-            {planStatus === "Entwurf" && canEditPlan && (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={statusUpdating || planLoading}
-                onClick={() => handleSetStatus("Vorläufig")}
-              >
-                Vorschau
-              </Button>
-            )}
-            {planStatus === "Vorläufig" && canEditPlan && (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={statusUpdating || planLoading}
-                onClick={() => handleSetStatus("Entwurf")}
-              >
-                Bearbeitung
-              </Button>
-            )}
-            {planStatus === "Vorläufig" && canPublishPlan && (
-              <Button
-                size="sm"
-                disabled={statusUpdating || planLoading}
-                onClick={() => handleSetStatus("Freigegeben")}
-              >
-                Freigeben
-              </Button>
-            )}
-            {planStatus === "Freigegeben" && canPublishPlan && (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={statusUpdating || planLoading}
-                onClick={() => handleSetStatus("Entwurf")}
-              >
-                Bearbeitung
-              </Button>
-            )}
             <Select defaultValue="all">
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="Bereich" />
@@ -324,55 +381,71 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
               </tr>
             </thead>
             <tbody>
-              {DUMMY_ROSTER_DATA.map((row, i) => {
-                const isWeekend = row.day === "Sa" || row.day === "So";
-                const showKW = i === 0 || DUMMY_ROSTER_DATA[i - 1].kw !== row.kw;
-                
-                return (
-                  <tr 
-                    key={i} 
-                    className={cn(
-                      "border-b border-border hover:bg-muted/30 transition-colors",
-                      isWeekend && "bg-muted/20"
-                    )}
-                    data-testid={`roster-row-${i}`}
-                  >
-                    <td className="p-3 font-medium text-primary">
-                      {showKW ? row.kw : ""}
-                    </td>
-                    <td className={cn("p-3 font-medium", isWeekend && "text-primary")}>
-                      {row.day}
-                    </td>
-                    <td className="p-3 text-muted-foreground">{row.date}</td>
-                    <td className="p-3">
-                      <Badge variant="outline" className="bg-pink-50 text-pink-700 border-pink-200">
-                        {row.kreisszimmer}
-                      </Badge>
-                    </td>
-                    <td className="p-3">
-                      {row.gyn !== "-" ? (
-                        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                          {row.gyn}
-                        </Badge>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
+              {rosterLoading ? (
+                <tr>
+                  <td colSpan={7} className="p-6 text-center text-muted-foreground">
+                    Dienstplan wird geladen...
+                  </td>
+                </tr>
+              ) : (
+                days.map((day, i) => {
+                  const weekNumber = getWeek(day, { weekStartsOn: 1, firstWeekContainsDate: 4 });
+                  const prevWeekNumber =
+                    i > 0 ? getWeek(days[i - 1], { weekStartsOn: 1, firstWeekContainsDate: 4 }) : null;
+                  const showKW = i === 0 || weekNumber !== prevWeekNumber;
+                  const dayLabel = format(day, "EEE", { locale: de }).replace(".", "");
+                  const dateLabel = format(day, "dd.MM.yyyy", { locale: de });
+                  const dateKey = format(day, "yyyy-MM-dd");
+                  const dayShifts = shiftsByDate[dateKey] || {};
+                  const kreisLabel = getShiftLabel(dayShifts.kreiszimmer);
+                  const gynLabel = getShiftLabel(dayShifts.gyn);
+                  const turnusLabel = getShiftLabel(dayShifts.turnus);
+                  const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+
+                  return (
+                    <tr
+                      key={dateKey}
+                      className={cn(
+                        "border-b border-border hover:bg-muted/30 transition-colors",
+                        isWeekend && "bg-muted/20"
                       )}
-                    </td>
-                    <td className="p-3">
-                      {row.turnus !== "-" ? (
-                        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
-                          {row.turnus}
-                        </Badge>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </td>
-                    <td className="p-3 text-muted-foreground text-xs">
-                      {row.absences || "-"}
-                    </td>
-                  </tr>
-                );
-              })}
+                      data-testid={`roster-row-${dateKey}`}
+                    >
+                      <td className="p-3 font-medium text-primary">{showKW ? weekNumber : ""}</td>
+                      <td className={cn("p-3 font-medium", isWeekend && "text-primary")}>{dayLabel}</td>
+                      <td className="p-3 text-muted-foreground">{dateLabel}</td>
+                      <td className="p-3">
+                        {kreisLabel !== "-" ? (
+                          <Badge variant="outline" className="bg-pink-50 text-pink-700 border-pink-200">
+                            {kreisLabel}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </td>
+                      <td className="p-3">
+                        {gynLabel !== "-" ? (
+                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                            {gynLabel}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </td>
+                      <td className="p-3">
+                        {turnusLabel !== "-" ? (
+                          <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                            {turnusLabel}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </td>
+                      <td className="p-3 text-muted-foreground text-xs">-</td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
@@ -386,20 +459,398 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="p-4 bg-primary/5 rounded-lg border border-primary/10">
               <p className="text-sm text-muted-foreground">Anzahl Dienste</p>
-              <p className="text-2xl font-bold text-primary">8</p>
+              <p className="text-2xl font-bold text-primary">{myShifts.length}</p>
             </div>
             <div className="p-4 bg-amber-50 rounded-lg border border-amber-100">
               <p className="text-sm text-muted-foreground">Abwesenheiten</p>
-              <p className="text-2xl font-bold text-amber-700">2</p>
+              <p className="text-2xl font-bold text-amber-700">0</p>
             </div>
             <div className="p-4 bg-pink-50 rounded-lg border border-pink-100">
               <p className="text-sm text-muted-foreground">Wochenenddienste</p>
-              <p className="text-2xl font-bold text-pink-700">3</p>
+              <p className="text-2xl font-bold text-pink-700">{weekendCount}</p>
             </div>
           </div>
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function ShiftSwapRosterDialog({
+  open,
+  onOpenChange,
+  currentDate
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  currentDate: Date;
+}) {
+  const { employee: currentUser } = useAuth();
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [processingId, setProcessingId] = useState<number | null>(null);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [shifts, setShifts] = useState<RosterShift[]>([]);
+  const [myRequests, setMyRequests] = useState<ShiftSwapRequest[]>([]);
+  const [incomingRequests, setIncomingRequests] = useState<ShiftSwapRequest[]>([]);
+  const [sourceShiftId, setSourceShiftId] = useState("");
+  const [targetShiftId, setTargetShiftId] = useState("");
+  const [reason, setReason] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      loadData();
+    }
+  }, [open, currentDate]);
+
+  const loadData = async () => {
+    if (!currentUser) return;
+    setLoading(true);
+    try {
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth() + 1;
+      const [shiftData, employeeData, myData, incomingData] = await Promise.all([
+        rosterApi.getByMonth(year, month),
+        employeeApi.getAll(),
+        shiftSwapApi.getByEmployee(currentUser.id),
+        shiftSwapApi.getByTargetEmployee(currentUser.id)
+      ]);
+      setShifts(shiftData);
+      setEmployees(employeeData);
+      setMyRequests(myData);
+      setIncomingRequests(incomingData);
+    } catch (error: any) {
+      toast({
+        title: "Fehler",
+        description: error.message || "Diensttausch-Daten konnten nicht geladen werden",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const employeesById = new Map(employees.map((emp) => [emp.id, emp]));
+  const shiftsById = new Map(shifts.map((shift) => [shift.id, shift]));
+  const myShifts = shifts
+    .filter((shift) => shift.employeeId === currentUser?.id)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const targetShifts = shifts
+    .filter((shift) => shift.employeeId && shift.employeeId !== currentUser?.id)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const formatShiftOption = (shift: RosterShift) => {
+    const dateLabel = format(parseISO(shift.date), "dd.MM.yyyy", { locale: de });
+    const serviceLabel = SERVICE_TYPE_LABELS[shift.serviceType] || shift.serviceType;
+    const assignee =
+      shift.employeeId ? employeesById.get(shift.employeeId)?.name : shift.assigneeFreeText;
+    return `${dateLabel} · ${serviceLabel} · ${assignee || "Unbekannt"}`;
+  };
+
+  const selectedSourceShift = sourceShiftId ? shiftsById.get(Number(sourceShiftId)) : null;
+  const selectedTargetShift = targetShiftId ? shiftsById.get(Number(targetShiftId)) : null;
+  const incomingPending = incomingRequests.filter((req) => req.status === "Ausstehend");
+
+  const handleSubmitSwapRequest = async () => {
+    if (!currentUser || !selectedSourceShift || !selectedTargetShift || !selectedTargetShift.employeeId) {
+      toast({
+        title: "Unvollständige Auswahl",
+        description: "Bitte zwei Dienste auswählen, die getauscht werden sollen.",
+        variant: "destructive"
+      });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await shiftSwapApi.create({
+        requesterId: currentUser.id,
+        requesterShiftId: selectedSourceShift.id,
+        targetShiftId: selectedTargetShift.id,
+        targetEmployeeId: selectedTargetShift.employeeId,
+        reason: reason || null,
+        status: "Ausstehend"
+      });
+      toast({ title: "Anfrage gesendet", description: "Die Tausch-Anfrage wurde eingereicht." });
+      setSourceShiftId("");
+      setTargetShiftId("");
+      setReason("");
+      loadData();
+    } catch (error: any) {
+      toast({
+        title: "Fehler",
+        description: error.message || "Die Anfrage konnte nicht gesendet werden.",
+        variant: "destructive"
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleApprove = async (requestId: number) => {
+    if (!currentUser) return;
+    setProcessingId(requestId);
+    try {
+      await shiftSwapApi.approve(requestId, currentUser.id);
+      toast({ title: "Tausch genehmigt", description: "Die Dienste wurden getauscht." });
+      loadData();
+    } catch (error: any) {
+      toast({
+        title: "Fehler",
+        description: error.message || "Genehmigung fehlgeschlagen.",
+        variant: "destructive"
+      });
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleReject = async (requestId: number) => {
+    if (!currentUser) return;
+    setProcessingId(requestId);
+    try {
+      await shiftSwapApi.reject(requestId, currentUser.id);
+      toast({ title: "Tausch abgelehnt", description: "Die Anfrage wurde abgelehnt." });
+      loadData();
+    } catch (error: any) {
+      toast({
+        title: "Fehler",
+        description: error.message || "Ablehnung fehlgeschlagen.",
+        variant: "destructive"
+      });
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const renderShiftSummary = (shiftId?: number | null) => {
+    if (!shiftId) return "Unbekannter Dienst";
+    const shift = shiftsById.get(shiftId);
+    if (!shift) return `Dienst #${shiftId}`;
+    const dateLabel = format(parseISO(shift.date), "dd.MM.yyyy", { locale: de });
+    const serviceLabel = SERVICE_TYPE_LABELS[shift.serviceType] || shift.serviceType;
+    return `${dateLabel} · ${serviceLabel}`;
+  };
+
+  const renderStatusBadge = (status: string) => {
+    const config = SHIFT_STATUS_BADGES[status];
+    const StatusIcon = config?.icon || Clock;
+    return (
+      <Badge variant="outline" className={config?.className}>
+        <StatusIcon className="w-3 h-3 mr-1" />
+        {status}
+      </Badge>
+    );
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ArrowRightLeft className="w-5 h-5" />
+            Diensttausch
+          </DialogTitle>
+          <DialogDescription>
+            Wählen Sie zwei Dienste aus, um eine Tausch-Anfrage zu senden.
+          </DialogDescription>
+        </DialogHeader>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-6 h-6 animate-spin" />
+          </div>
+        ) : (
+          <Tabs defaultValue="new" className="w-full">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="new">Neue Anfrage</TabsTrigger>
+              <TabsTrigger value="my">Meine Anfragen</TabsTrigger>
+              <TabsTrigger value="incoming">
+                An mich
+                {incomingPending.length > 0 && (
+                  <Badge className="ml-2 bg-primary text-primary-foreground h-5 w-5 p-0 flex items-center justify-center text-xs">
+                    {incomingPending.length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="new" className="space-y-4 py-4">
+              <div className="grid gap-4">
+                <div className="space-y-2">
+                  <Label>Mein Dienst</Label>
+                  <Select value={sourceShiftId} onValueChange={setSourceShiftId}>
+                    <SelectTrigger data-testid="select-swap-source">
+                      <SelectValue placeholder="Dienst auswählen" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {myShifts.length === 0 && (
+                        <SelectItem value="none" disabled>
+                          Keine Dienste im aktuellen Monat
+                        </SelectItem>
+                      )}
+                      {myShifts.map((shift) => (
+                        <SelectItem key={shift.id} value={String(shift.id)}>
+                          {formatShiftOption(shift)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Ziel-Dienst</Label>
+                  <Select value={targetShiftId} onValueChange={setTargetShiftId}>
+                    <SelectTrigger data-testid="select-swap-target">
+                      <SelectValue placeholder="Ziel-Dienst auswählen" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {targetShifts.length === 0 && (
+                        <SelectItem value="none" disabled>
+                          Keine Ziel-Dienste verfügbar
+                        </SelectItem>
+                      )}
+                      {targetShifts.map((shift) => (
+                        <SelectItem key={shift.id} value={String(shift.id)}>
+                          {formatShiftOption(shift)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Grund (optional)</Label>
+                  <Textarea
+                    placeholder="z.B. Familienangelegenheit, Arzttermin..."
+                    value={reason}
+                    onChange={(event) => setReason(event.target.value)}
+                    data-testid="input-swap-reason"
+                  />
+                </div>
+
+                <Button
+                  onClick={handleSubmitSwapRequest}
+                  disabled={submitting || !sourceShiftId || !targetShiftId}
+                  className="w-full"
+                  data-testid="button-submit-swap"
+                >
+                  {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  Tausch-Anfrage senden
+                </Button>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="my" className="py-4">
+              {myRequests.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Clock className="w-12 h-12 mx-auto mb-4 opacity-30" />
+                  <p>Keine Tausch-Anfragen vorhanden</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {myRequests.map((request) => (
+                    <Card key={request.id} data-testid={`card-my-swap-${request.id}`}>
+                      <CardContent className="p-4">
+                        <div className="flex justify-between items-start gap-4">
+                          <div className="space-y-2">
+                            {renderStatusBadge(request.status)}
+                            <p className="text-sm font-medium">
+                              Mein Dienst: {renderShiftSummary(request.requesterShiftId)}
+                            </p>
+                            <p className="text-sm">
+                              Ziel: {renderShiftSummary(request.targetShiftId)}
+                            </p>
+                            {request.reason && (
+                              <p className="text-xs text-muted-foreground">{request.reason}</p>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {format(new Date(request.requestedAt), "dd.MM.yyyy", { locale: de })}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="incoming" className="py-4">
+              {incomingRequests.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Check className="w-12 h-12 mx-auto mb-4 opacity-30" />
+                  <p>Keine eingehenden Anfragen</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {incomingRequests.map((request) => (
+                    <Card key={request.id} data-testid={`card-incoming-swap-${request.id}`}>
+                      <CardContent className="p-4">
+                        <div className="flex justify-between items-start gap-4">
+                          <div className="space-y-2">
+                            {renderStatusBadge(request.status)}
+                            <p className="text-sm font-medium">
+                              Anfrage von {employeesById.get(request.requesterId)?.name || "Unbekannt"}
+                            </p>
+                            <p className="text-sm">
+                              Mein Dienst: {renderShiftSummary(request.targetShiftId)}
+                            </p>
+                            <p className="text-sm">
+                              Tausch mit: {renderShiftSummary(request.requesterShiftId)}
+                            </p>
+                            {request.reason && (
+                              <p className="text-xs text-muted-foreground">{request.reason}</p>
+                            )}
+                          </div>
+                          <div className="flex flex-col items-end gap-2">
+                            <span className="text-xs text-muted-foreground">
+                              {format(new Date(request.requestedAt), "dd.MM.yyyy", { locale: de })}
+                            </span>
+                            {request.status === "Ausstehend" && (
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-green-600 border-green-300 hover:bg-green-50"
+                                  onClick={() => handleApprove(request.id)}
+                                  disabled={processingId === request.id}
+                                  data-testid={`button-approve-${request.id}`}
+                                >
+                                  {processingId === request.id ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                  ) : (
+                                    <Check className="w-4 h-4" />
+                                  )}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-red-600 border-red-300 hover:bg-red-50"
+                                  onClick={() => handleReject(request.id)}
+                                  disabled={processingId === request.id}
+                                  data-testid={`button-reject-${request.id}`}
+                                >
+                                  {processingId === request.id ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                  ) : (
+                                    <X className="w-4 h-4" />
+                                  )}
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
