@@ -29,7 +29,7 @@ import { useEffect, useState } from "react";
 import { format, addMonths, subMonths, getWeek, eachDayOfInterval, startOfMonth, endOfMonth, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
 import { useLocation } from "wouter";
-import { dutyPlansApi, employeeApi, rosterApi, shiftSwapApi } from "@/lib/api";
+import { dutyPlansApi, employeeApi, rosterApi, rosterSettingsApi, shiftSwapApi, type NextPlanningMonth } from "@/lib/api";
 import type { DutyPlan, Employee, RosterShift, ShiftSwapRequest } from "@shared/schema";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
@@ -81,7 +81,27 @@ export default function Personal() {
   const { toast } = useToast();
   const [swapDialogOpen, setSwapDialogOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const nextMonth = format(addMonths(new Date(), 1), "MMMM", { locale: de });
+  const [planningMonth, setPlanningMonth] = useState<NextPlanningMonth | null>(null);
+
+  useEffect(() => {
+    const loadPlanningMonth = async () => {
+      try {
+        const data = await rosterSettingsApi.getNextPlanningMonth();
+        setPlanningMonth(data);
+      } catch (error) {
+        toast({
+          title: "Dienstwünsche",
+          description: "Planungsmonat konnte nicht geladen werden.",
+          variant: "destructive"
+        });
+      }
+    };
+    loadPlanningMonth();
+  }, [toast]);
+
+  const wishLabel = planningMonth
+    ? format(new Date(planningMonth.year, planningMonth.month - 1, 1), "MMMM yyyy", { locale: de })
+    : format(addMonths(new Date(), 1), "MMMM", { locale: de });
 
   const handleSubscribe = async () => {
     if (!token) {
@@ -191,7 +211,7 @@ export default function Personal() {
             </Button>
             <Button className="gap-2" onClick={() => setLocation('/dienstwuensche')} data-testid="button-wishes">
               <Heart className="w-4 h-4" />
-              Dienstwünsche für {nextMonth}
+              Dienstwünsche für {wishLabel}
             </Button>
           </div>
         </div>

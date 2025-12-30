@@ -1054,6 +1054,8 @@ export const rosterSettings = pgTable("roster_settings", {
   id: serial("id").primaryKey(),
   lastApprovedYear: integer("last_approved_year").notNull(),
   lastApprovedMonth: integer("last_approved_month").notNull(),
+  wishYear: integer("wish_year"),
+  wishMonth: integer("wish_month"),
   updatedById: integer("updated_by_id").references(() => employees.id),
   updatedAt: timestamp("updated_at").defaultNow().notNull()
 });
@@ -1120,7 +1122,10 @@ export const shiftWishes = pgTable("shift_wishes", {
   avoidShiftDays: jsonb("avoid_shift_days").$type<number[]>(),
   preferredServiceTypes: jsonb("preferred_service_types").$type<string[]>(),
   avoidServiceTypes: jsonb("avoid_service_types").$type<string[]>(),
+  avoidWeekdays: jsonb("avoid_weekdays").$type<number[]>(),
   maxShiftsPerWeek: integer("max_shifts_per_week"),
+  maxShiftsPerMonth: integer("max_shifts_per_month"),
+  maxWeekendShifts: integer("max_weekend_shifts"),
   notes: text("notes"),
   submittedAt: timestamp("submitted_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

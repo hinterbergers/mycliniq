@@ -10,6 +10,7 @@ import {
   type InsertAbsence,
   type Resource,
   type InsertResource,
+  type DutyPlan,
   type WeeklyAssignment,
   type InsertWeeklyAssignment,
   type ProjectInitiative,
@@ -50,6 +51,7 @@ import {
   sessions,
   shiftSwapRequests,
   rosterSettings,
+  dutyPlans,
   shiftWishes,
   longTermShiftWishes,
   longTermAbsences,
@@ -75,6 +77,7 @@ export interface IStorage {
   getRosterShiftsByDate(date: string): Promise<RosterShift[]>;
   createRosterShift(shift: InsertRosterShift): Promise<RosterShift>;
   deleteRosterShift(id: number): Promise<boolean>;
+  getLatestDutyPlanByStatus(status: DutyPlan["status"]): Promise<DutyPlan | undefined>;
   
   // Absence methods
   getAbsencesByDateRange(startDate: string, endDate: string): Promise<Absence[]>;
@@ -642,6 +645,16 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
+  async getLatestDutyPlanByStatus(status: DutyPlan["status"]): Promise<DutyPlan | undefined> {
+    const result = await db
+      .select()
+      .from(dutyPlans)
+      .where(eq(dutyPlans.status, status))
+      .orderBy(desc(dutyPlans.year), desc(dutyPlans.month))
+      .limit(1);
+    return result[0];
+  }
+
   async upsertRosterSettings(settings: InsertRosterSettings): Promise<RosterSettings> {
     const existing = await this.getRosterSettings();
     if (existing) {
@@ -683,7 +696,10 @@ export class DatabaseStorage implements IStorage {
       preferredShiftDays: wish.preferredShiftDays ? wish.preferredShiftDays : null,
       avoidShiftDays: wish.avoidShiftDays ? wish.avoidShiftDays : null,
       preferredServiceTypes: wish.preferredServiceTypes ? wish.preferredServiceTypes : null,
-      avoidServiceTypes: wish.avoidServiceTypes ? wish.avoidServiceTypes : null
+      avoidServiceTypes: wish.avoidServiceTypes ? wish.avoidServiceTypes : null,
+      avoidWeekdays: wish.avoidWeekdays ? wish.avoidWeekdays : null,
+      maxShiftsPerMonth: wish.maxShiftsPerMonth ?? null,
+      maxWeekendShifts: wish.maxWeekendShifts ?? null
     };
     const result = await db.insert(shiftWishes).values(wishData as any).returning();
     return result[0];

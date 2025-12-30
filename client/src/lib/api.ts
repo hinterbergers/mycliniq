@@ -876,6 +876,15 @@ export const rosterSettingsApi = {
   getNextPlanningMonth: async (): Promise<NextPlanningMonth> => {
     const response = await apiFetch(`${API_BASE}/roster-settings/next-planning-month`);
     return handleResponse<NextPlanningMonth>(response);
+  },
+
+  setWishMonth: async (year: number, month: number): Promise<RosterSettings> => {
+    const response = await apiFetch(`${API_BASE}/roster-settings/wishes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ year, month })
+    });
+    return handleResponse<RosterSettings>(response);
   }
 };
 

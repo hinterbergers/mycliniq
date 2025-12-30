@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
@@ -28,27 +29,13 @@ import { shiftWishesApi, plannedAbsencesApi, rosterSettingsApi, employeeApi, typ
 import type { ShiftWish, PlannedAbsence, Employee } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
-import { format, addDays, getDaysInMonth, startOfMonth, getDay } from "date-fns";
+import { format, getDaysInMonth, startOfMonth, getDay, isWeekend } from "date-fns";
 import { de } from "date-fns/locale";
-import { employeeDoesShifts, getServiceTypesForEmployee, type ServiceType } from "@shared/shiftTypes";
-
-const SERVICE_TYPE_LABELS: Record<ServiceType, string> = {
-  gyn: "Gynäkologie",
-  kreiszimmer: "Geburtshilfedienst",
-  turnus: "Turnusdienst"
-};
+import { employeeDoesShifts } from "@shared/shiftTypes";
 
 const ABSENCE_REASONS = [
   { value: "Urlaub", label: "Urlaub" },
-  { value: "Zeitausgleich", label: "ZA - Zeitausgleich" },
-  { value: "Ruhezeit", label: "RZ - Ruhezeit" },
-  { value: "Fortbildung", label: "FB - Fortbildung" },
-  { value: "Gebührenurlaub", label: "GU - Gebührenurlaub" },
-  { value: "Sonderurlaub", label: "SU - Sonderurlaub" },
-  { value: "Zusatzurlaub", label: "ZU - Zusatzurlaub" },
-  { value: "Pflegeurlaub", label: "PU - Pflegeurlaub" },
-  { value: "Krankenstand", label: "Krank - Krankenstand" },
-  { value: "Quarantäne", label: "Qu - Quarantäne" }
+  { value: "Fortbildung", label: "Fortbildung" }
 ];
 
 const MONTH_NAMES = [
@@ -68,11 +55,12 @@ export default function ShiftWishes() {
   const [allWishes, setAllWishes] = useState<ShiftWish[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   
-  const [preferredDays, setPreferredDays] = useState<number[]>([]);
+  const [weekendWishDays, setWeekendWishDays] = useState<number[]>([]);
   const [avoidDays, setAvoidDays] = useState<number[]>([]);
-  const [preferredServices, setPreferredServices] = useState<string[]>([]);
-  const [avoidServices, setAvoidServices] = useState<string[]>([]);
+  const [avoidWeekdays, setAvoidWeekdays] = useState<number[]>([]);
   const [maxShiftsPerWeek, setMaxShiftsPerWeek] = useState<number | undefined>();
+  const [maxShiftsPerMonth, setMaxShiftsPerMonth] = useState<number | undefined>();
+  const [maxWeekendShifts, setMaxWeekendShifts] = useState<number | undefined>();
   const [notes, setNotes] = useState("");
   
   const [absenceDialogOpen, setAbsenceDialogOpen] = useState(false);
@@ -83,12 +71,6 @@ export default function ShiftWishes() {
   
   const canViewAll = isAdmin || isTechnicalAdmin || capabilities.includes("dutyplan.edit");
   const doesShifts = currentUser ? employeeDoesShifts(currentUser) : false;
-  const allowedServiceTypes = currentUser ? getServiceTypesForEmployee(currentUser) : [];
-  const serviceTypeOptions = allowedServiceTypes.map((type) => ({
-    value: type,
-    label: SERVICE_TYPE_LABELS[type]
-  }));
-  
   const isSubmitted = wish?.status === 'Eingereicht';
   
   useEffect(() => {
@@ -116,13 +98,17 @@ export default function ShiftWishes() {
         ]);
         
         if (wishData) {
-          const allowed = new Set(allowedServiceTypes);
+          const weekendOnly = (wishData.preferredShiftDays || []).filter((day) => {
+            const date = new Date(monthData.year, monthData.month - 1, day);
+            return isWeekend(date);
+          });
           setWish(wishData);
-          setPreferredDays(wishData.preferredShiftDays || []);
+          setWeekendWishDays(weekendOnly);
           setAvoidDays(wishData.avoidShiftDays || []);
-          setPreferredServices((wishData.preferredServiceTypes || []).filter((t) => allowed.has(t as ServiceType)));
-          setAvoidServices((wishData.avoidServiceTypes || []).filter((t) => allowed.has(t as ServiceType)));
+          setAvoidWeekdays(wishData.avoidWeekdays || []);
           setMaxShiftsPerWeek(wishData.maxShiftsPerWeek || undefined);
+          setMaxShiftsPerMonth(wishData.maxShiftsPerMonth || undefined);
+          setMaxWeekendShifts(wishData.maxWeekendShifts || undefined);
           setNotes(wishData.notes || "");
         }
         
@@ -149,18 +135,16 @@ export default function ShiftWishes() {
     
     try {
       setSaving(true);
-      const allowed = new Set(allowedServiceTypes);
-      const cleanPreferred = preferredServices.filter((service) => allowed.has(service as ServiceType));
-      const cleanAvoid = avoidServices.filter((service) => allowed.has(service as ServiceType));
       const wishData = {
         employeeId: currentUser.id,
         year: planningMonth.year,
         month: planningMonth.month,
-        preferredShiftDays: preferredDays,
+        preferredShiftDays: weekendWishDays,
         avoidShiftDays: avoidDays,
-        preferredServiceTypes: cleanPreferred,
-        avoidServiceTypes: cleanAvoid,
-        maxShiftsPerWeek: maxShiftsPerWeek || null,
+        avoidWeekdays: avoidWeekdays,
+        maxShiftsPerWeek: typeof maxShiftsPerWeek === "number" ? maxShiftsPerWeek : null,
+        maxShiftsPerMonth: typeof maxShiftsPerMonth === "number" ? maxShiftsPerMonth : null,
+        maxWeekendShifts: typeof maxWeekendShifts === "number" ? maxWeekendShifts : null,
         notes: notes || null
       };
       
@@ -278,32 +262,47 @@ export default function ShiftWishes() {
     }
   };
   
-  const toggleDay = (day: number, list: number[], setList: (days: number[]) => void) => {
+  const toggleAvoidDay = (day: number) => {
     if (isSubmitted) return;
-    
-    if (list.includes(day)) {
-      setList(list.filter(d => d !== day));
+    if (avoidDays.includes(day)) {
+      setAvoidDays(avoidDays.filter(d => d !== day));
+      return;
+    }
+    setAvoidDays([...avoidDays, day]);
+    if (weekendWishDays.includes(day)) {
+      setWeekendWishDays(weekendWishDays.filter(d => d !== day));
+    }
+  };
+
+  const toggleWeekendWishDay = (day: number) => {
+    if (isSubmitted) return;
+    if (!planningMonth) return;
+    const date = new Date(planningMonth.year, planningMonth.month - 1, day);
+    if (!isWeekend(date)) return;
+    if (weekendWishDays.includes(day)) {
+      setWeekendWishDays(weekendWishDays.filter(d => d !== day));
+      return;
+    }
+    setWeekendWishDays([...weekendWishDays, day]);
+    if (avoidDays.includes(day)) {
+      setAvoidDays(avoidDays.filter(d => d !== day));
+    }
+  };
+
+  const toggleWeekday = (weekday: number) => {
+    if (isSubmitted) return;
+    if (avoidWeekdays.includes(weekday)) {
+      setAvoidWeekdays(avoidWeekdays.filter(d => d !== weekday));
     } else {
-      setList([...list, day]);
+      setAvoidWeekdays([...avoidWeekdays, weekday]);
     }
   };
   
-  const toggleService = (service: string, list: string[], setList: (services: string[]) => void) => {
-    if (isSubmitted) return;
-    
-    if (list.includes(service)) {
-      setList(list.filter(s => s !== service));
-    } else {
-      setList([...list, service]);
-    }
-  };
-  
-  const getEmployeeName = (id: number) => {
-    const emp = employees.find(e => e.id === id);
-    return emp?.name || `Mitarbeiter ${id}`;
-  };
-  
-  const renderCalendarDays = () => {
+  const renderCalendarDays = (
+    selectedDays: number[],
+    onToggle: (day: number) => void,
+    options: { selectedClass: string; weekendOnly?: boolean; testIdPrefix: string }
+  ) => {
     if (!planningMonth) return null;
     
     const year = planningMonth.year;
@@ -329,33 +328,25 @@ export default function ShiftWishes() {
     }
     
     for (let day = 1; day <= daysInMonth; day++) {
-      const isPreferred = preferredDays.includes(day);
-      const isAvoided = avoidDays.includes(day);
       const date = new Date(year, month, day);
-      const isWeekend = getDay(date) === 0 || getDay(date) === 6;
-      
+      const isWeekendDay = getDay(date) === 0 || getDay(date) === 6;
+      const isSelectable = options.weekendOnly ? isWeekendDay : true;
+      const isSelected = selectedDays.includes(day);
+
       days.push(
         <div
           key={day}
-          data-testid={`calendar-day-${day}`}
+          data-testid={`${options.testIdPrefix}-day-${day}`}
           className={`
-            p-2 text-center rounded-md cursor-pointer transition-colors border
-            ${isPreferred ? 'bg-green-100 border-green-500 text-green-800' : ''}
-            ${isAvoided ? 'bg-red-100 border-red-500 text-red-800' : ''}
-            ${!isPreferred && !isAvoided ? 'border-gray-200 hover:bg-gray-100' : ''}
-            ${isWeekend ? 'font-semibold' : ''}
+            p-2 text-center rounded-md border transition-colors
+            ${isSelected ? options.selectedClass : 'border-gray-200 hover:bg-gray-100'}
+            ${isWeekendDay ? 'font-semibold' : ''}
+            ${!isSelectable ? 'text-muted-foreground opacity-50 cursor-not-allowed' : 'cursor-pointer'}
             ${isSubmitted ? 'cursor-not-allowed opacity-75' : ''}
           `}
           onClick={() => {
-            if (isSubmitted) return;
-            if (isPreferred) {
-              setPreferredDays(prev => prev.filter(d => d !== day));
-              setAvoidDays(prev => [...prev, day]);
-            } else if (isAvoided) {
-              setAvoidDays(prev => prev.filter(d => d !== day));
-            } else {
-              setPreferredDays(prev => [...prev, day]);
-            }
+            if (isSubmitted || !isSelectable) return;
+            onToggle(day);
           }}
         >
           {day}
@@ -437,15 +428,14 @@ export default function ShiftWishes() {
         <Alert className="bg-blue-50 border-blue-200">
           <Info className="h-4 w-4 text-blue-600" />
           <AlertDescription className="text-blue-800">
-            <strong>Planungszeitraum:</strong> Wünsche für {monthName} {planningMonth.year} können 
-            eingegeben werden, da der Dienstplan für {planningMonth.month === 1 ? MONTH_NAMES[11] : MONTH_NAMES[planningMonth.month - 2]} {planningMonth.month === 1 ? planningMonth.year - 1 : planningMonth.year} bereits freigegeben wurde.
+            <strong>Planungszeitraum:</strong> Wünsche für {monthName} {planningMonth.year} sind aktuell freigeschaltet.
           </AlertDescription>
         </Alert>
         
         <Tabs defaultValue="wishes" className="space-y-4">
           <TabsList>
             <TabsTrigger value="wishes" data-testid="tab-wishes">Dienstwünsche</TabsTrigger>
-            <TabsTrigger value="absences" data-testid="tab-absences">Abwesenheiten</TabsTrigger>
+            <TabsTrigger value="absences" data-testid="tab-absences">Urlaub/Fortbildung</TabsTrigger>
             {canViewAll && (
               <TabsTrigger value="overview" data-testid="tab-overview">Übersicht</TabsTrigger>
             )}
@@ -456,25 +446,24 @@ export default function ShiftWishes() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <CalendarIcon className="w-5 h-5" />
-                  Tagesauswahl
+                  Nicht mögliche Tage
                 </CardTitle>
                 <CardDescription>
-                  Klicken Sie auf die Tage: 1x = bevorzugt (grün), 2x = vermeiden (rot), 3x = neutral
+                  Klicken Sie auf Tage, an denen Sie keinen Dienst machen können.
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-7 gap-1">
-                  {renderCalendarDays()}
+                  {renderCalendarDays(avoidDays, toggleAvoidDay, {
+                    selectedClass: "bg-red-100 border-red-500 text-red-800",
+                    testIdPrefix: "avoid"
+                  })}
                 </div>
                 
                 <div className="flex gap-6 mt-4 text-sm">
                   <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded bg-green-100 border border-green-500" />
-                    <span>Bevorzugt</span>
-                  </div>
-                  <div className="flex items-center gap-2">
                     <div className="w-4 h-4 rounded bg-red-100 border border-red-500" />
-                    <span>Vermeiden</span>
+                    <span>Nicht möglich</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-4 h-4 rounded bg-white border border-gray-200" />
@@ -486,45 +475,27 @@ export default function ShiftWishes() {
             
             <Card>
               <CardHeader>
-                <CardTitle>Diensttyp-Präferenzen</CardTitle>
+                <CardTitle>Wochenendwünsche</CardTitle>
                 <CardDescription>
-                  Wählen Sie bevorzugte oder zu vermeidende Diensttypen
+                  Wählen Sie gewünschte Wochenenddienste (nur Sa/So).
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label className="text-sm font-medium mb-2 block">Bevorzugte Diensttypen</Label>
-                  <div className="flex gap-2">
-                    {serviceTypeOptions.map(type => (
-                      <Button
-                        key={type.value}
-                        variant={preferredServices.includes(type.value) ? "default" : "outline"}
-                        size="sm"
-                        disabled={isSubmitted}
-                        onClick={() => toggleService(type.value, preferredServices, setPreferredServices)}
-                        data-testid={`preferred-service-${type.value}`}
-                      >
-                        {type.label}
-                      </Button>
-                    ))}
-                  </div>
+              <CardContent>
+                <div className="grid grid-cols-7 gap-1">
+                  {renderCalendarDays(weekendWishDays, toggleWeekendWishDay, {
+                    selectedClass: "bg-blue-100 border-blue-500 text-blue-800",
+                    weekendOnly: true,
+                    testIdPrefix: "weekend"
+                  })}
                 </div>
-                
-                <div>
-                  <Label className="text-sm font-medium mb-2 block">Zu vermeidende Diensttypen</Label>
-                  <div className="flex gap-2">
-                    {serviceTypeOptions.map(type => (
-                      <Button
-                        key={type.value}
-                        variant={avoidServices.includes(type.value) ? "destructive" : "outline"}
-                        size="sm"
-                        disabled={isSubmitted}
-                        onClick={() => toggleService(type.value, avoidServices, setAvoidServices)}
-                        data-testid={`avoid-service-${type.value}`}
-                      >
-                        {type.label}
-                      </Button>
-                    ))}
+                <div className="flex gap-6 mt-4 text-sm">
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded bg-blue-100 border border-blue-500" />
+                    <span>Gewünscht</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded bg-white border border-gray-200" />
+                    <span>Neutral</span>
                   </div>
                 </div>
               </CardContent>
@@ -535,6 +506,32 @@ export default function ShiftWishes() {
                 <CardTitle>Weitere Einstellungen</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div>
+                  <Label className="text-sm font-medium mb-2 block">Nicht mögliche Wochentage</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { value: 1, label: "Mo" },
+                      { value: 2, label: "Di" },
+                      { value: 3, label: "Mi" },
+                      { value: 4, label: "Do" },
+                      { value: 5, label: "Fr" },
+                      { value: 6, label: "Sa" },
+                      { value: 7, label: "So" }
+                    ].map((day) => (
+                      <Button
+                        key={day.value}
+                        variant={avoidWeekdays.includes(day.value) ? "destructive" : "outline"}
+                        size="sm"
+                        disabled={isSubmitted}
+                        onClick={() => toggleWeekday(day.value)}
+                        data-testid={`avoid-weekday-${day.value}`}
+                      >
+                        {day.label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
                 <div>
                   <Label htmlFor="maxShifts">Maximale Dienste pro Woche</Label>
                   <Select
@@ -549,15 +546,49 @@ export default function ShiftWishes() {
                       <SelectItem value="">Keine Einschränkung</SelectItem>
                       <SelectItem value="1">1 Dienst</SelectItem>
                       <SelectItem value="2">2 Dienste</SelectItem>
-                      <SelectItem value="3">3 Dienste</SelectItem>
-                      <SelectItem value="4">4 Dienste</SelectItem>
-                      <SelectItem value="5">5 Dienste</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="maxShiftsPerMonth">Gesamtdienste im Monat</Label>
+                    <Input
+                      id="maxShiftsPerMonth"
+                      type="number"
+                      min={0}
+                      value={typeof maxShiftsPerMonth === "number" ? maxShiftsPerMonth : ""}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setMaxShiftsPerMonth(value ? parseInt(value, 10) : undefined);
+                      }}
+                      disabled={isSubmitted}
+                      data-testid="input-max-shifts-month"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="maxWeekendShifts">WE-Limit</Label>
+                    <Select
+                      value={maxWeekendShifts?.toString() || ""}
+                      onValueChange={(v) => setMaxWeekendShifts(v ? parseInt(v) : undefined)}
+                      disabled={isSubmitted}
+                    >
+                      <SelectTrigger className="w-48" data-testid="select-max-weekend-shifts">
+                        <SelectValue placeholder="Keine Einschränkung" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">Keine Einschränkung</SelectItem>
+                        <SelectItem value="0">0 Wochenenden</SelectItem>
+                        <SelectItem value="1">1 Wochenende</SelectItem>
+                        <SelectItem value="2">2 Wochenenden</SelectItem>
+                        <SelectItem value="3">3 Wochenenden</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
                 
                 <div>
-                  <Label htmlFor="notes">Anmerkungen</Label>
+                  <Label htmlFor="notes">Besondere Hinweise</Label>
                   <Textarea
                     id="notes"
                     value={notes}
@@ -596,9 +627,9 @@ export default function ShiftWishes() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
-                  <CardTitle>Geplante Abwesenheiten</CardTitle>
+                  <CardTitle>Urlaub / Fortbildung</CardTitle>
                   <CardDescription>
-                    Urlaub, Zeitausgleich und andere Abwesenheiten für {monthName} {planningMonth.year}
+                    Zeitraum für Urlaub oder Fortbildung im {monthName} {planningMonth.year}
                   </CardDescription>
                 </div>
                 
@@ -606,12 +637,12 @@ export default function ShiftWishes() {
                   <DialogTrigger asChild>
                     <Button data-testid="button-add-absence">
                       <Plus className="w-4 h-4 mr-2" />
-                      Abwesenheit hinzufügen
+                      Urlaub/Fortbildung hinzufügen
                     </Button>
                   </DialogTrigger>
                   <DialogContent>
                     <DialogHeader>
-                      <DialogTitle>Abwesenheit eintragen</DialogTitle>
+                      <DialogTitle>Urlaub/Fortbildung eintragen</DialogTitle>
                     </DialogHeader>
                     
                     <div className="space-y-4 py-4">
@@ -770,8 +801,8 @@ export default function ShiftWishes() {
                       <TableRow>
                         <TableHead>Mitarbeiter</TableHead>
                         <TableHead>Status</TableHead>
-                        <TableHead>Bevorzugte Tage</TableHead>
-                        <TableHead>Vermiedene Tage</TableHead>
+                        <TableHead>Wochenendwünsche</TableHead>
+                        <TableHead>Nicht mögliche Tage</TableHead>
                         <TableHead>Eingereicht am</TableHead>
                       </TableRow>
                     </TableHeader>

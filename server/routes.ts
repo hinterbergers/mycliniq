@@ -28,6 +28,32 @@ import { getWeek } from "date-fns";
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const isValidEmail = (value: string) =>
   EMAIL_REGEX.test(value) && !/[^\x00-\x7F]/.test(value);
+const DEFAULT_LAST_APPROVED = { year: 2026, month: 1 };
+
+const compareYearMonth = (
+  yearA: number,
+  monthA: number,
+  yearB: number,
+  monthB: number
+) => {
+  if (yearA === yearB && monthA === monthB) return 0;
+  if (yearA > yearB || (yearA === yearB && monthA > monthB)) return 1;
+  return -1;
+};
+
+const addMonth = (year: number, month: number, delta = 1) => {
+  let nextYear = year;
+  let nextMonth = month + delta;
+  while (nextMonth > 12) {
+    nextMonth -= 12;
+    nextYear += 1;
+  }
+  while (nextMonth < 1) {
+    nextMonth += 12;
+    nextYear -= 1;
+  }
+  return { year: nextYear, month: nextMonth };
+};
 
 export async function registerRoutes(
   httpServer: Server,
@@ -48,6 +74,32 @@ export async function registerRoutes(
     if (!req.user) return false;
     if (req.user.isAdmin || req.user.appRole === "Admin" || req.user.appRole === "Editor") return true;
     return req.user.capabilities?.includes("dutyplan.edit") ?? false;
+  };
+
+  const resolvePlanningMonth = async () => {
+    const settings = await storage.getRosterSettings();
+    const previewPlan = await storage.getLatestDutyPlanByStatus("Vorläufig");
+    const lastApproved = settings
+      ? { year: settings.lastApprovedYear, month: settings.lastApprovedMonth }
+      : DEFAULT_LAST_APPROVED;
+    const base = previewPlan
+      ? { year: previewPlan.year, month: previewPlan.month }
+      : lastApproved;
+    const auto = addMonth(base.year, base.month);
+    const storedWish =
+      settings?.wishYear && settings?.wishMonth
+        ? { year: settings.wishYear, month: settings.wishMonth }
+        : null;
+    const current =
+      storedWish && compareYearMonth(storedWish.year, storedWish.month, auto.year, auto.month) >= 0
+        ? storedWish
+        : auto;
+    const shouldPersist =
+      !settings ||
+      !storedWish ||
+      compareYearMonth(auto.year, auto.month, storedWish.year, storedWish.month) > 0;
+
+    return { settings, lastApproved, auto, current, shouldPersist };
   };
   
   // Auth routes
@@ -1263,17 +1315,18 @@ export async function registerRoutes(
   // Get the next planning month (month after last approved)
   app.get("/api/roster-settings/next-planning-month", async (req: Request, res: Response) => {
     try {
-      const settings = await storage.getRosterSettings();
-      let year = 2026;
-      let month = 2; // February 2026 default
+      const { settings, lastApproved, auto, current, shouldPersist } = await resolvePlanningMonth();
+      const year = current.year;
+      const month = current.month;
 
-      if (settings) {
-        month = settings.lastApprovedMonth + 1;
-        year = settings.lastApprovedYear;
-        if (month > 12) {
-          month = 1;
-          year += 1;
-        }
+      if (shouldPersist) {
+        await storage.upsertRosterSettings({
+          lastApprovedYear: lastApproved.year,
+          lastApprovedMonth: lastApproved.month,
+          wishYear: auto.year,
+          wishMonth: auto.month,
+          updatedById: settings?.updatedById ?? null
+        });
       }
 
       // Get eligible employees and submitted wishes count
@@ -1300,6 +1353,36 @@ export async function registerRoutes(
       });
     } catch (error) {
       res.status(500).json({ error: "Failed to get next planning month" });
+    }
+  });
+
+  app.post("/api/roster-settings/wishes", requireAuth, async (req: Request, res: Response) => {
+    try {
+      if (!canViewPlanningData(req)) {
+        return res.status(403).json({ error: "Keine Berechtigung" });
+      }
+
+      const { year, month } = req.body;
+      if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+        return res.status(400).json({ error: "Ungültiger Monat" });
+      }
+
+      const { settings, lastApproved, current } = await resolvePlanningMonth();
+      if (compareYearMonth(year, month, current.year, current.month) < 0) {
+        return res.status(400).json({ error: "Wunschmonat darf nicht in die Vergangenheit gesetzt werden" });
+      }
+
+      const updated = await storage.upsertRosterSettings({
+        lastApprovedYear: lastApproved.year,
+        lastApprovedMonth: lastApproved.month,
+        wishYear: year,
+        wishMonth: month,
+        updatedById: req.user?.employeeId ?? settings?.updatedById ?? null
+      });
+
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update wish month" });
     }
   });
 

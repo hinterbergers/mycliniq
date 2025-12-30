@@ -2,6 +2,7 @@ import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -9,9 +10,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
-import { Download, Printer, ArrowLeft, ArrowRight, Info, Loader2, Sparkles, ArrowRightLeft, CheckCircle2, AlertTriangle, Brain, Pencil } from "lucide-react";
+import { Download, Printer, ArrowLeft, ArrowRight, Info, Loader2, Sparkles, ArrowRightLeft, CheckCircle2, AlertTriangle, Brain, Pencil, Calendar } from "lucide-react";
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { employeeApi, rosterApi, absenceApi, longTermAbsencesApi, dutyPlansApi } from "@/lib/api";
+import { employeeApi, rosterApi, absenceApi, longTermAbsencesApi, dutyPlansApi, rosterSettingsApi, type NextPlanningMonth } from "@/lib/api";
 import type { Employee, RosterShift, Absence, LongTermAbsence, DutyPlan } from "@shared/schema";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, isWeekend } from "date-fns";
 import { de } from "date-fns/locale";
@@ -39,6 +40,11 @@ const PLAN_STATUS_LABELS: Record<DutyPlan["status"], string> = {
   Freigegeben: "Freigabe"
 };
 
+const MONTH_NAMES = [
+  "Jänner", "Februar", "März", "April", "Mai", "Juni",
+  "Juli", "August", "September", "Oktober", "November", "Dezember"
+];
+
 export default function RosterPlan() {
   const { employee: currentUser, capabilities, isAdmin, isTechnicalAdmin } = useAuth();
   const { toast } = useToast();
@@ -63,6 +69,11 @@ export default function RosterPlan() {
   const [savingCellKey, setSavingCellKey] = useState<string | null>(null);
   const [manualDrafts, setManualDrafts] = useState<Record<string, string>>({});
   const [activeCellKey, setActiveCellKey] = useState<string | null>(null);
+  const [planningMonth, setPlanningMonth] = useState<NextPlanningMonth | null>(null);
+  const [wishDialogOpen, setWishDialogOpen] = useState(false);
+  const [wishMonth, setWishMonth] = useState<number>(currentDate.getMonth() + 1);
+  const [wishYear, setWishYear] = useState<number>(currentDate.getFullYear());
+  const [wishSaving, setWishSaving] = useState(false);
   const planStatus = dutyPlan?.status ?? "Entwurf";
   const planStatusLabel = PLAN_STATUS_LABELS[planStatus];
 
@@ -77,6 +88,11 @@ export default function RosterPlan() {
     if (isAdmin || isTechnicalAdmin) return true;
     return capabilities.includes("dutyplan.publish");
   }, [currentUser, isAdmin, isTechnicalAdmin, capabilities]);
+
+  const yearOptions = useMemo(() => {
+    const baseYear = currentDate.getFullYear();
+    return [baseYear, baseYear + 1, baseYear + 2];
+  }, [currentDate]);
 
   const days = eachDayOfInterval({
     start: startOfMonth(currentDate),
@@ -177,6 +193,25 @@ export default function RosterPlan() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    const loadPlanningMonth = async () => {
+      try {
+        const data = await rosterSettingsApi.getNextPlanningMonth();
+        setPlanningMonth(data);
+      } catch (error) {
+        setPlanningMonth(null);
+      }
+    };
+    loadPlanningMonth();
+  }, []);
+
+  useEffect(() => {
+    if (planningMonth) {
+      setWishMonth(planningMonth.month);
+      setWishYear(planningMonth.year);
+    }
+  }, [planningMonth]);
 
   useEffect(() => {
     if (!manualEditMode) {
@@ -572,6 +607,28 @@ export default function RosterPlan() {
     }
   };
 
+  const handleSetWishMonth = async () => {
+    setWishSaving(true);
+    try {
+      await rosterSettingsApi.setWishMonth(wishYear, wishMonth);
+      const updated = await rosterSettingsApi.getNextPlanningMonth();
+      setPlanningMonth(updated);
+      toast({
+        title: "Dienstwünsche freigeschaltet",
+        description: `Dienstwünsche sind jetzt für ${MONTH_NAMES[wishMonth - 1]} ${wishYear} geöffnet.`
+      });
+      setWishDialogOpen(false);
+    } catch (error: any) {
+      toast({
+        title: "Freischaltung fehlgeschlagen",
+        description: error.message || "Bitte später erneut versuchen",
+        variant: "destructive"
+      });
+    } finally {
+      setWishSaving(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <Layout title="Dienstplan">
@@ -657,6 +714,17 @@ export default function RosterPlan() {
                 Auto-Generieren
               </Button>
             )}
+            {canEdit && (
+              <Button
+                variant="outline"
+                className="gap-2 flex-1 md:flex-none"
+                onClick={() => setWishDialogOpen(true)}
+                data-testid="button-release-wishes"
+              >
+                <Calendar className="w-4 h-4" />
+                Dienstwünsche freigeben
+              </Button>
+            )}
             {canEdit && planStatus === "Entwurf" && (
               <Button
                 variant="outline"
@@ -707,6 +775,73 @@ export default function RosterPlan() {
             )}
           </div>
         </div>
+
+        <Dialog open={wishDialogOpen} onOpenChange={setWishDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Dienstwünsche freigeben</DialogTitle>
+              <DialogDescription>
+                Legt den Monat fest, für den Dienstwünsche eingegeben werden können.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              {planningMonth && (
+                <div className="text-sm text-muted-foreground">
+                  Aktuell freigeschaltet: {MONTH_NAMES[planningMonth.month - 1]} {planningMonth.year}
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Monat</Label>
+                  <Select
+                    value={wishMonth.toString()}
+                    onValueChange={(value) => setWishMonth(parseInt(value, 10))}
+                    disabled={wishSaving}
+                  >
+                    <SelectTrigger data-testid="select-wish-month">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MONTH_NAMES.map((name, index) => (
+                        <SelectItem key={name} value={(index + 1).toString()}>
+                          {name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Jahr</Label>
+                  <Select
+                    value={wishYear.toString()}
+                    onValueChange={(value) => setWishYear(parseInt(value, 10))}
+                    disabled={wishSaving}
+                  >
+                    <SelectTrigger data-testid="select-wish-year">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {yearOptions.map((year) => (
+                        <SelectItem key={year} value={year.toString()}>
+                          {year}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setWishDialogOpen(false)} disabled={wishSaving}>
+                Abbrechen
+              </Button>
+              <Button onClick={handleSetWishMonth} disabled={wishSaving}>
+                {wishSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                Freigeben
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Main Roster Table */}
         <Card className="border-none kabeg-shadow overflow-hidden">

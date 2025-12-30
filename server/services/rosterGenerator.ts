@@ -10,6 +10,9 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 interface ShiftPreferences {
   preferredDaysOff?: string[];
   maxShiftsPerWeek?: number;
+  maxShiftsPerMonth?: number;
+  maxWeekendShifts?: number;
+  avoidWeekdays?: number[];
   preferredAreas?: string[];
   notes?: string;
   serviceTypeOverrides?: ServiceType[];
@@ -103,6 +106,15 @@ export async function generateRosterPlan(
       .map((day) => format(new Date(year, month - 1, day), "yyyy-MM-dd"));
   };
 
+  const toWeekdayList = (values: unknown): string[] => {
+    if (!Array.isArray(values)) return [];
+    const weekdayMap = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    return values
+      .filter((value): value is number => Number.isInteger(value))
+      .map((value) => weekdayMap[value - 1])
+      .filter((value): value is string => Boolean(value));
+  };
+
   const employeeData = activeEmployees.map(e => {
     const prefs = e.shiftPreferences as ShiftPreferences | null;
     const wish = wishesByEmployeeId.get(e.id);
@@ -130,10 +142,14 @@ export async function generateRosterPlan(
       competencies: e.competencies,
       serviceTypes: getServiceTypesForEmployee(e),
       preferredDays: toIsoDateList(wish?.preferredShiftDays),
+      preferredWeekendDays: toIsoDateList(wish?.preferredShiftDays),
       avoidDays: toIsoDateList(wish?.avoidShiftDays),
+      avoidWeekdays: toWeekdayList(wish?.avoidWeekdays),
       preferredServiceTypes: toServiceTypeList(wish?.preferredServiceTypes),
       avoidServiceTypes: toServiceTypeList(wish?.avoidServiceTypes),
       maxShiftsPerWeek: wish?.maxShiftsPerWeek || e.maxShiftsPerWeek || prefs?.maxShiftsPerWeek || 5,
+      maxShiftsPerMonth: wish?.maxShiftsPerMonth || prefs?.maxShiftsPerMonth || null,
+      maxWeekendShifts: wish?.maxWeekendShifts || prefs?.maxWeekendShifts || null,
       notes: wish?.notes || prefs?.notes || "",
       longTermRules: Array.isArray(longTerm?.rules) ? longTerm?.rules : [],
       absences: absenceDates
@@ -162,8 +178,11 @@ ${JSON.stringify(daysData, null, 2)}
 - turnus (Turnus): Assistenzarzt, Assistenzärztin, Turnusarzt
 Wenn im Mitarbeiterobjekt "serviceTypes" gesetzt sind, dürfen nur diese Diensttypen zugewiesen werden (Abweichung vom Rollenstandard).
 Beachte in den Mitarbeiterdaten:
-- preferredDays / avoidDays (Datumsliste für ${format(startDate, 'MMMM yyyy')})
+- preferredWeekendDays (Datumsliste für Wochenendwünsche in ${format(startDate, 'MMMM yyyy')})
+- avoidDays (nicht mögliche Tage in ${format(startDate, 'MMMM yyyy')})
+- avoidWeekdays (Wochentage vermeiden, z. B. Mon, Tue)
 - preferredServiceTypes / avoidServiceTypes
+- maxShiftsPerWeek / maxShiftsPerMonth / maxWeekendShifts
 - longTermRules: wiederkehrende Regeln mit kind/weekday/strength/serviceType (serviceType optional oder "any")
 
 ## Regeln:
@@ -171,12 +190,14 @@ Beachte in den Mitarbeiterdaten:
 2. Turnus-Dienste sind optional, aber erwünscht wenn Personal verfügbar
 3. Respektiere Abwesenheiten - kein Mitarbeiter darf an Tagen eingeteilt werden, an denen er/sie abwesend ist
 4. Respektiere longTermRules mit strength=HARD (ALWAYS_OFF oder AVOID_ON) als harte Sperre
-5. preferredDays möglichst bevorzugen, avoidDays möglichst vermeiden
-6. preferredServiceTypes bevorzugen, avoidServiceTypes möglichst vermeiden
-7. Maximale Dienste pro Woche pro Mitarbeiter beachten
-8. Gleichmäßige Verteilung der Dienste anstreben
-9. Wochenenden fair verteilen
-10. Kompetenzen berücksichtigen für komplexe Fälle
+5. preferredWeekendDays möglichst berücksichtigen, avoidDays möglichst vermeiden
+6. avoidWeekdays berücksichtigen (keine Einteilung an diesen Wochentagen)
+7. preferredServiceTypes bevorzugen, avoidServiceTypes möglichst vermeiden
+8. Maximale Dienste pro Woche und Monat pro Mitarbeiter beachten
+9. Maximale Wochenenddienste beachten
+10. Gleichmäßige Verteilung der Dienste anstreben
+11. Wochenenden fair verteilen
+12. Kompetenzen berücksichtigen für komplexe Fälle
 
 Antworte mit folgendem JSON-Format:
 {
