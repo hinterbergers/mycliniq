@@ -229,8 +229,9 @@ export class DatabaseStorage implements IStorage {
 
   // Roster methods
   async getRosterShiftsByMonth(year: number, month: number): Promise<RosterShift[]> {
+    const lastDay = new Date(year, month, 0).getDate();
     const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-    const endDate = `${year}-${String(month).padStart(2, '0')}-31`;
+    const endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
     
     return await db.select()
       .from(rosterShifts)
