@@ -535,15 +535,15 @@ export default function ShiftWishes() {
                 <div>
                   <Label htmlFor="maxShifts">Maximale Dienste pro Woche</Label>
                   <Select
-                    value={maxShiftsPerWeek?.toString() || ""}
-                    onValueChange={(v) => setMaxShiftsPerWeek(v ? parseInt(v) : undefined)}
+                    value={typeof maxShiftsPerWeek === "number" ? maxShiftsPerWeek.toString() : "none"}
+                    onValueChange={(v) => setMaxShiftsPerWeek(v === "none" ? undefined : parseInt(v, 10))}
                     disabled={isSubmitted}
                   >
                     <SelectTrigger className="w-48" data-testid="select-max-shifts">
                       <SelectValue placeholder="Keine Einschränkung" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Keine Einschränkung</SelectItem>
+                      <SelectItem value="none">Keine Einschränkung</SelectItem>
                       <SelectItem value="1">1 Dienst</SelectItem>
                       <SelectItem value="2">2 Dienste</SelectItem>
                     </SelectContent>
@@ -569,15 +569,15 @@ export default function ShiftWishes() {
                   <div>
                     <Label htmlFor="maxWeekendShifts">WE-Limit</Label>
                     <Select
-                      value={maxWeekendShifts?.toString() || ""}
-                      onValueChange={(v) => setMaxWeekendShifts(v ? parseInt(v) : undefined)}
+                      value={typeof maxWeekendShifts === "number" ? maxWeekendShifts.toString() : "none"}
+                      onValueChange={(v) => setMaxWeekendShifts(v === "none" ? undefined : parseInt(v, 10))}
                       disabled={isSubmitted}
                     >
                       <SelectTrigger className="w-48" data-testid="select-max-weekend-shifts">
                         <SelectValue placeholder="Keine Einschränkung" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Keine Einschränkung</SelectItem>
+                        <SelectItem value="none">Keine Einschränkung</SelectItem>
                         <SelectItem value="0">0 Wochenenden</SelectItem>
                         <SelectItem value="1">1 Wochenende</SelectItem>
                         <SelectItem value="2">2 Wochenenden</SelectItem>
