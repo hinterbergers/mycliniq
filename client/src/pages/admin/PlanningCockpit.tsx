@@ -1,29 +1,13 @@
 import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Users, Building2, CalendarClock, UserCog, CalendarRange, Briefcase, Building } from "lucide-react";
+import { Users, Building2, CalendarClock, UserCog, CalendarRange, Briefcase, Building, CalendarDays } from "lucide-react";
 import { useLocation } from "wouter";
 
 export default function PlanningCockpit() {
   const [, setLocation] = useLocation();
 
   const modules = [
-    {
-      title: "Mitarbeiter & Kompetenzen",
-      description: "Stammdaten, Qualifikationen und Rollen verwalten.",
-      icon: Users,
-      action: () => setLocation("/admin/employees"),
-      color: "text-blue-600",
-      bg: "bg-blue-50"
-    },
-    {
-      title: "Arbeitsplätze & Räume",
-      description: "Arbeitsplätze konfigurieren und physische Räume zuordnen.",
-      icon: Building2,
-      action: () => setLocation("/admin/resources"),
-      color: "text-emerald-600",
-      bg: "bg-emerald-50"
-    },
     {
       title: "Dienstplan-Editor",
       description: "Monatsdienstplan generieren, prüfen und freigeben.",
@@ -41,12 +25,28 @@ export default function PlanningCockpit() {
       bg: "bg-primary/10"
     },
     {
-      title: "Tageseinsatzplan",
-      description: "Tagesplan manuell korrigieren und kurzfristige Ausfälle abfangen.",
-      icon: CalendarClock,
-      action: () => setLocation("/admin/daily-plan"),
-      color: "text-purple-600",
-      bg: "bg-purple-50"
+      title: "Urlaubsplan-Editor",
+      description: "Urlaube, Fortbildungen und Abwesenheiten verwalten.",
+      icon: CalendarDays,
+      action: () => setLocation("/admin/urlaubsplan"),
+      color: "text-amber-600",
+      bg: "bg-amber-50"
+    },
+    {
+      title: "Mitarbeiter & Kompetenzen",
+      description: "Stammdaten, Qualifikationen und Rollen verwalten.",
+      icon: Users,
+      action: () => setLocation("/admin/employees"),
+      color: "text-blue-600",
+      bg: "bg-blue-50"
+    },
+    {
+      title: "Arbeitsplätze & Räume",
+      description: "Arbeitsplätze konfigurieren und physische Räume zuordnen.",
+      icon: Building2,
+      action: () => setLocation("/admin/resources"),
+      color: "text-emerald-600",
+      bg: "bg-emerald-50"
     },
     {
       title: "Projektmanagement",

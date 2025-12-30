@@ -1042,6 +1042,45 @@ export const longTermAbsencesApi = {
   }
 };
 
+export interface PlannedAbsenceAdmin extends PlannedAbsence {
+  employeeName?: string | null;
+  employeeLastName?: string | null;
+  employeeRole?: string | null;
+}
+
+export interface PlannedAbsenceMonthSummary {
+  year: number;
+  month: number;
+  absences: PlannedAbsenceAdmin[];
+  summary: {
+    total: number;
+    geplant: number;
+    genehmigt: number;
+    abgelehnt: number;
+  };
+  byReason?: Record<string, PlannedAbsenceAdmin[]>;
+}
+
+export const plannedAbsencesAdminApi = {
+  getMonthSummary: async (year: number, month: number): Promise<PlannedAbsenceMonthSummary> => {
+    const response = await apiFetch(`${API_BASE}/absences/month/${year}/${month}`);
+    return handleResponse<PlannedAbsenceMonthSummary>(response);
+  },
+
+  updateStatus: async (
+    id: number,
+    status: "Geplant" | "Genehmigt" | "Abgelehnt",
+    approvedById?: number
+  ): Promise<PlannedAbsenceAdmin> => {
+    const response = await apiFetch(`${API_BASE}/absences/${id}/status`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status, approvedById })
+    });
+    return handleResponse<PlannedAbsenceAdmin>(response);
+  }
+};
+
 // Planned Absences API
 export const plannedAbsencesApi = {
   getByMonth: async (year: number, month: number): Promise<PlannedAbsence[]> => {

@@ -595,7 +595,7 @@ export default function ResourceManagement() {
               <div>
                 <h4 className="font-medium text-orange-800">Hinweis für die Planung</h4>
                 <p className="text-sm text-orange-700 mt-1">
-                  Gesperrte Arbeitsplätze werden im Wochen- und Tageseinsatzplan automatisch als „nicht verfügbar" markiert.
+                  Gesperrte Arbeitsplätze werden im Wochenplan automatisch als „nicht verfügbar" markiert.
                   Bitte bei längeren Sperren einen Grund angeben.
                 </p>
               </div>
@@ -1097,7 +1097,7 @@ export default function ResourceManagement() {
                   <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 flex gap-2">
                     <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                     <p className="text-xs text-blue-700">
-                      Die Kombination aus AND/OR wird später von der KI bei der Wochen- und Tageseinsatzplanung berücksichtigt.
+                      Die Kombination aus AND/OR wird später von der KI bei der Wochenplanung berücksichtigt.
                     </p>
                   </div>
                 </div>

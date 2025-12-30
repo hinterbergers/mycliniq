@@ -13,7 +13,7 @@ import ShiftWishes from "@/pages/ShiftWishes";
 import PlanningCockpit from "@/pages/admin/PlanningCockpit";
 import EmployeeManagement from "@/pages/admin/EmployeeManagement";
 import ResourceManagement from "@/pages/admin/ResourceManagement";
-import DailyPlanEditor from "@/pages/admin/DailyPlanEditor";
+import VacationPlanEditor from "@/pages/admin/VacationPlanEditor";
 import RosterPlan from "@/pages/admin/RosterPlan";
 import WeeklyPlan from "@/pages/admin/WeeklyPlan";
 import Projects from "@/pages/admin/Projects";
@@ -96,8 +96,8 @@ function Router() {
       <Route path="/admin/resources">
         {() => <ProtectedRoute component={ResourceManagement} />}
       </Route>
-      <Route path="/admin/daily-plan">
-        {() => <ProtectedRoute component={DailyPlanEditor} />}
+      <Route path="/admin/urlaubsplan">
+        {() => <ProtectedRoute component={VacationPlanEditor} />}
       </Route>
       <Route path="/admin/roster">
         {() => <ProtectedRoute component={RosterPlan} />}
