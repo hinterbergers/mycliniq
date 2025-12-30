@@ -781,7 +781,7 @@ export async function registerRoutes(
               return name;
             });
 
-          const description = others.length ? others.join("\\n") : "Keine weiteren Dienste";
+          const description = others.length ? others.join("\n") : "Keine weiteren Dienste";
 
           return [
             "BEGIN:VEVENT",
@@ -789,7 +789,7 @@ export async function registerRoutes(
             `DTSTAMP:${dtStamp}`,
             `DTSTART:${toIcsDateTimeLocal(startDateTime)}`,
             `DTEND:${toIcsDateTimeLocal(endDateTime)}`,
-            `SUMMARY:${escapeIcs(`Dienst: ${serviceLabel}`)}`,
+            `SUMMARY:${escapeIcs(serviceLabel)}`,
             `DESCRIPTION:${escapeIcs(description)}`,
             "END:VEVENT"
           ].join("\r\n");
