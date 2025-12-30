@@ -11,7 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
-import { Download, Printer, ArrowLeft, ArrowRight, Info, Loader2, Sparkles, ArrowRightLeft, CheckCircle2, AlertTriangle, Brain, Pencil, Calendar } from "lucide-react";
+import { Download, ArrowLeft, ArrowRight, Info, Loader2, Sparkles, CheckCircle2, AlertTriangle, Brain, Pencil, Calendar } from "lucide-react";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { employeeApi, rosterApi, absenceApi, longTermAbsencesApi, dutyPlansApi, rosterSettingsApi, type NextPlanningMonth } from "@/lib/api";
 import type { Employee, RosterShift, Absence, LongTermAbsence, DutyPlan } from "@shared/schema";
@@ -19,8 +19,8 @@ import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterv
 import { de } from "date-fns/locale";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
-import { ShiftSwapDialog } from "@/components/ShiftSwapDialog";
 import { getServiceTypesForEmployee, employeeDoesShifts, type ServiceType } from "@shared/shiftTypes";
+import { getAustrianHoliday } from "@/lib/holidays";
 
 interface GeneratedShift {
   date: string;
@@ -46,8 +46,45 @@ const MONTH_NAMES = [
   "Juli", "August", "September", "Oktober", "November", "Dezember"
 ];
 
+const ROLE_SORT_ORDER: Record<string, number> = {
+  "Primararzt": 1,
+  "1. Oberarzt": 2,
+  "Funktionsoberarzt": 3,
+  "Ausbildungsoberarzt": 4,
+  "Oberarzt": 5,
+  "Oberärztin": 5,
+  "Facharzt": 6,
+  "Assistenzarzt": 7,
+  "Assistenzärztin": 7,
+  "Turnusarzt": 8,
+  "Student (KPJ)": 9,
+  "Student (Famulant)": 9
+};
+
+const normalizeRoleValue = (role?: string | null) => {
+  if (!role) return "";
+  if (role === "Oberärztin") return "Oberarzt";
+  if (role === "Assistenzärztin") return "Assistenzarzt";
+  return role;
+};
+
+const getRoleSortRank = (role?: string | null) => ROLE_SORT_ORDER[normalizeRoleValue(role)] ?? 999;
+
+const getRoleGroup = (role?: string | null) => {
+  const normalized = normalizeRoleValue(role);
+  if (
+    normalized === "Assistenzarzt" ||
+    normalized === "Turnusarzt" ||
+    normalized === "Student (KPJ)" ||
+    normalized === "Student (Famulant)"
+  ) {
+    return "ass";
+  }
+  return "oa";
+};
+
 export default function RosterPlan() {
-  const { employee: currentUser, capabilities, isAdmin, isTechnicalAdmin } = useAuth();
+  const { employee: currentUser, capabilities, isAdmin, isTechnicalAdmin, token } = useAuth();
   const { toast } = useToast();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -58,8 +95,7 @@ export default function RosterPlan() {
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isStatusUpdating, setIsStatusUpdating] = useState(false);
-  const [swapDialogOpen, setSwapDialogOpen] = useState(false);
-  const [selectedShiftForSwap, setSelectedShiftForSwap] = useState<RosterShift | null>(null);
+  const [exporting, setExporting] = useState(false);
   
   const [generationDialogOpen, setGenerationDialogOpen] = useState(false);
   const [generatedShifts, setGeneratedShifts] = useState<GeneratedShift[]>([]);
@@ -245,7 +281,7 @@ export default function RosterPlan() {
       });
   };
 
-  const renderAssignmentCell = (date: Date, type: ServiceType, tone: "blue" | "pink" | "emerald") => {
+  const renderAssignmentCell = (date: Date, type: ServiceType, tone: "blue" | "pink" | "emerald" | "violet") => {
     const shift = getShiftForDay(date, type);
     const employee = shift ? getEmployeeById(shift.employeeId) : null;
     const freeText = shift?.assigneeFreeText?.trim() || "";
@@ -257,17 +293,23 @@ export default function RosterPlan() {
 
     if (!manualEditMode || !canEdit) {
       if (employee || freeText) {
-        const label = employee ? employee.name.split(" ").pop() : freeText;
+        const label = employee
+          ? isPublished
+            ? employee.name.split(" ").pop()
+            : employee.name
+          : freeText;
         return (
           <div className={`relative ${hasConflict ? "border border-red-300 bg-red-50/60" : ""} rounded`}>
             <div
               className={`text-sm px-2 py-1.5 rounded font-medium text-center border shadow-sm ${
                 employee
                   ? tone === "pink"
-                    ? "bg-pink-100 text-pink-800 border-pink-200"
-                    : tone === "blue"
-                    ? "bg-blue-100 text-blue-800 border-blue-200"
-                    : "bg-emerald-100 text-emerald-800 border-emerald-200"
+                  ? "bg-pink-100 text-pink-800 border-pink-200"
+                  : tone === "blue"
+                  ? "bg-blue-100 text-blue-800 border-blue-200"
+                  : tone === "violet"
+                  ? "bg-violet-100 text-violet-800 border-violet-200"
+                  : "bg-emerald-100 text-emerald-800 border-emerald-200"
                   : "bg-slate-100 text-slate-700 border-slate-200 italic"
               }`}
               title={employee ? employee.name : freeText}
@@ -438,7 +480,7 @@ export default function RosterPlan() {
   };
   
   const stats = useMemo(() => {
-    return employees.filter(employeeDoesShifts).map(emp => {
+    const base = employees.filter(employeeDoesShifts).map(emp => {
       const empShifts = shifts.filter(s => s.employeeId === emp.id);
       const empAbsences = absences.filter(a => a.employeeId === emp.id);
       return {
@@ -452,7 +494,73 @@ export default function RosterPlan() {
         }
       };
     });
+
+    return base.sort((a, b) => {
+      const roleRank = getRoleSortRank(a.role) - getRoleSortRank(b.role);
+      if (roleRank !== 0) return roleRank;
+      const lastNameA = (a.lastName || a.name || "").toLowerCase();
+      const lastNameB = (b.lastName || b.name || "").toLowerCase();
+      if (lastNameA !== lastNameB) return lastNameA.localeCompare(lastNameB);
+      const firstNameA = (a.firstName || "").toLowerCase();
+      const firstNameB = (b.firstName || "").toLowerCase();
+      return firstNameA.localeCompare(firstNameB);
+    });
   }, [employees, shifts, absences]);
+
+  const statsRows = useMemo(() => {
+    const rows: Array<{ type: "separator" } | { type: "data"; emp: typeof stats[number] }> = [];
+    let lastGroup: string | null = null;
+    stats.forEach((emp) => {
+      const group = getRoleGroup(emp.role);
+      if (lastGroup && lastGroup !== group && group === "ass") {
+        rows.push({ type: "separator" });
+      }
+      rows.push({ type: "data", emp });
+      lastGroup = group;
+    });
+    return rows;
+  }, [stats]);
+
+  const handleExport = async () => {
+    if (!token) {
+      toast({
+        title: "Nicht angemeldet",
+        description: "Bitte melden Sie sich erneut an, um den Dienstplan zu exportieren.",
+        variant: "destructive"
+      });
+      return;
+    }
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth() + 1;
+    setExporting(true);
+    try {
+      const response = await fetch(`/api/roster/export?year=${year}&month=${month}`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      if (!response.ok) {
+        throw new Error("Export fehlgeschlagen");
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `dienstplan-${year}-${String(month).padStart(2, "0")}.xls`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error: any) {
+      toast({
+        title: "Export fehlgeschlagen",
+        description: error.message || "Bitte versuchen Sie es erneut.",
+        variant: "destructive"
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const handleAutoGenerate = async () => {
     setIsGenerating(true);
@@ -645,54 +753,49 @@ export default function RosterPlan() {
       <div className="space-y-6">
         
         {/* Controls Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-card p-4 rounded-xl kabeg-shadow">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-1 bg-secondary rounded-lg p-1">
-              <Button variant="ghost" size="icon" onClick={() => setCurrentDate(subMonths(currentDate, 1))}>
-                <ArrowLeft className="w-4 h-4" />
-              </Button>
-              <span className="font-bold w-40 text-center text-lg">{format(currentDate, 'MMMM yyyy', { locale: de })}</span>
-              <Button variant="ghost" size="icon" onClick={() => setCurrentDate(addMonths(currentDate, 1))}>
-                <ArrowRight className="w-4 h-4" />
-              </Button>
+        <div className="bg-card p-4 rounded-xl kabeg-shadow space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1 bg-secondary rounded-lg p-1">
+                <Button variant="ghost" size="icon" onClick={() => setCurrentDate(subMonths(currentDate, 1))}>
+                  <ArrowLeft className="w-4 h-4" />
+                </Button>
+                <span className="font-bold w-40 text-center text-lg">{format(currentDate, 'MMMM yyyy', { locale: de })}</span>
+                <Button variant="ghost" size="icon" onClick={() => setCurrentDate(addMonths(currentDate, 1))}>
+                  <ArrowRight className="w-4 h-4" />
+                </Button>
+              </div>
+              <Badge
+                variant="outline"
+                className={`gap-1 whitespace-nowrap ${
+                  planStatus === "Freigegeben"
+                    ? "bg-green-50 text-green-700 border-green-200"
+                    : planStatus === "Vorläufig"
+                    ? "bg-blue-50 text-blue-700 border-blue-200"
+                    : "bg-amber-50 text-amber-700 border-amber-200"
+                }`}
+              >
+                <Info className="w-3 h-3" />
+                <span>Planungsstatus: {planStatusLabel}</span>
+              </Badge>
             </div>
-            <Badge
+            <Button
               variant="outline"
-              className={`hidden md:flex gap-1 ${
-                planStatus === "Freigegeben"
-                  ? "bg-green-50 text-green-700 border-green-200"
-                  : planStatus === "Vorläufig"
-                  ? "bg-blue-50 text-blue-700 border-blue-200"
-                  : "bg-amber-50 text-amber-700 border-amber-200"
-              }`}
+              className="gap-2"
+              onClick={handleExport}
+              disabled={exporting}
+              data-testid="button-export-excel"
             >
-              <Info className="w-3 h-3" />
-              <span>Planungsstatus: {planStatusLabel}</span>
-            </Badge>
+              <Download className="w-4 h-4" />
+              {exporting ? "Export läuft..." : "Excel Export"}
+            </Button>
           </div>
 
-          <div className="flex gap-2 w-full md:w-auto">
-            <Button 
-              variant="outline" 
-              className="gap-2 flex-1 md:flex-none" 
-              onClick={() => setSwapDialogOpen(true)}
-              data-testid="button-swap-dialog"
-            >
-              <ArrowRightLeft className="w-4 h-4" />
-              Diensttausch
-            </Button>
-            <Button variant="outline" className="gap-2 flex-1 md:flex-none" data-testid="button-print">
-              <Printer className="w-4 h-4" />
-              Drucken
-            </Button>
-            <Button variant="outline" className="gap-2 flex-1 md:flex-none" data-testid="button-export-pdf">
-              <Download className="w-4 h-4" />
-              Export PDF
-            </Button>
+          <div className="flex flex-wrap gap-2">
             {canEdit && (
               <Button
                 variant={manualEditMode ? "default" : "outline"}
-                className="gap-2 flex-1 md:flex-none"
+                className="gap-2"
                 onClick={() => setManualEditMode((prev) => !prev)}
                 data-testid="button-manual-edit"
               >
@@ -701,8 +804,8 @@ export default function RosterPlan() {
               </Button>
             )}
             {canEdit && (
-              <Button 
-                className="gap-2 flex-1 md:flex-none" 
+              <Button
+                className="gap-2"
                 onClick={handleAutoGenerate}
                 disabled={isGenerating}
                 data-testid="button-auto-generate"
@@ -715,21 +818,10 @@ export default function RosterPlan() {
                 Auto-Generieren
               </Button>
             )}
-            {canEdit && (
-              <Button
-                variant="outline"
-                className="gap-2 flex-1 md:flex-none"
-                onClick={() => setWishDialogOpen(true)}
-                data-testid="button-release-wishes"
-              >
-                <Calendar className="w-4 h-4" />
-                Dienstwünsche freigeben
-              </Button>
-            )}
             {canEdit && planStatus === "Entwurf" && (
               <Button
                 variant="outline"
-                className="gap-2 flex-1 md:flex-none"
+                className="gap-2"
                 onClick={() => handleUpdatePlanStatus("Vorläufig")}
                 disabled={isStatusUpdating}
                 data-testid="button-preview-roster"
@@ -741,7 +833,7 @@ export default function RosterPlan() {
             {canEdit && planStatus === "Vorläufig" && (
               <Button
                 variant="outline"
-                className="gap-2 flex-1 md:flex-none"
+                className="gap-2"
                 onClick={() => handleUpdatePlanStatus("Entwurf")}
                 disabled={isStatusUpdating}
                 data-testid="button-back-to-draft"
@@ -753,7 +845,7 @@ export default function RosterPlan() {
             {canPublish && planStatus === "Freigegeben" && (
               <Button
                 variant="outline"
-                className="gap-2 flex-1 md:flex-none"
+                className="gap-2"
                 onClick={() => handleUpdatePlanStatus("Entwurf")}
                 disabled={isStatusUpdating}
                 data-testid="button-reopen-roster"
@@ -765,13 +857,24 @@ export default function RosterPlan() {
             {canPublish && (
               <Button
                 variant={isPublished ? "outline" : "default"}
-                className="gap-2 flex-1 md:flex-none"
+                className="gap-2"
                 onClick={() => handleUpdatePlanStatus("Freigegeben")}
                 disabled={isPublished || planStatus !== "Vorläufig" || isStatusUpdating}
                 data-testid="button-publish-roster"
               >
                 {isStatusUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
                 {isPublished ? "Freigegeben" : "Freigeben"}
+              </Button>
+            )}
+            {canEdit && (
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => setWishDialogOpen(true)}
+                data-testid="button-release-wishes"
+              >
+                <Calendar className="w-4 h-4" />
+                Dienstwünsche freigeben
               </Button>
             )}
           </div>
@@ -853,7 +956,7 @@ export default function RosterPlan() {
             </div>
           )}
           <div className="overflow-x-auto overflow-y-visible">
-            <Table className="border-collapse w-full min-w-[1200px]">
+            <Table className="border-collapse w-full min-w-[1400px]">
               <TableHeader>
                 <TableRow className="bg-muted/50 hover:bg-muted/50">
                   <TableHead className="w-12 text-center border-r border-border font-bold">KW</TableHead>
@@ -870,6 +973,9 @@ export default function RosterPlan() {
                   <TableHead className="w-48 bg-emerald-50/50 border-r border-emerald-100 text-emerald-900 font-bold text-center">
                     Turnus (Ass./TA)
                   </TableHead>
+                  <TableHead className="w-48 bg-violet-50/50 border-r border-violet-100 text-violet-900 font-bold text-center">
+                    Überdienst (Ruf)
+                  </TableHead>
                   
                   {/* Absence Column */}
                   <TableHead className="min-w-[300px] bg-slate-50/50 text-slate-700 font-bold text-center">
@@ -880,23 +986,24 @@ export default function RosterPlan() {
               <TableBody>
                 {days.map((day) => {
                   const isWeekendDay = isWeekend(day);
-                  const isHoliday = format(day, 'dd.MM') === '01.01' || format(day, 'dd.MM') === '06.01';
+                  const holiday = getAustrianHoliday(day);
+                  const isHoliday = Boolean(holiday);
                   
                   // @ts-ignore
                   const absences = getAbsences(day);
 
                   return (
                     <TableRow key={day.toISOString()} className={`
-                      ${isWeekendDay || isHoliday ? 'bg-slate-50/60' : 'bg-white'} 
+                      ${isWeekendDay || isHoliday ? 'bg-amber-50/60' : 'bg-white'} 
                       hover:bg-slate-100/80 transition-colors border-b border-border/60
                     `}>
                       <TableCell className="text-center text-xs text-muted-foreground border-r border-border">
                         {format(day, 'w')}
                       </TableCell>
-                      <TableCell className={`text-center font-medium border-r border-border ${isWeekendDay || isHoliday ? 'text-red-500' : ''}`}>
+                      <TableCell className={`text-center font-medium border-r border-border ${isWeekendDay || isHoliday ? 'text-rose-600' : ''}`}>
                         {format(day, 'EEE', { locale: de })}.
                       </TableCell>
-                      <TableCell className={`border-r border-border ${isWeekendDay || isHoliday ? 'text-red-500 font-bold' : ''}`}>
+                      <TableCell className={`border-r border-border ${isWeekendDay || isHoliday ? 'text-rose-600 font-bold' : ''}`}>
                         {format(day, 'dd.MM.')}
                       </TableCell>
 
@@ -915,12 +1022,17 @@ export default function RosterPlan() {
                         {renderAssignmentCell(day, "turnus", "emerald")}
                       </TableCell>
 
+                      {/* Überdienst Slot */}
+                      <TableCell className="border-r border-border p-1">
+                        {renderAssignmentCell(day, "overduty", "violet")}
+                      </TableCell>
+
                       {/* Absences & Info */}
                       <TableCell className="p-1 text-sm text-muted-foreground">
                         <div className="flex flex-wrap gap-1">
                           {isHoliday && (
                             <Badge variant="outline" className="bg-red-50 text-red-600 border-red-200 mr-2">
-                              {format(day, 'dd.MM') === '01.01' ? 'Neujahr' : 'Hl. 3 Könige'}
+                              {holiday?.name}
                             </Badge>
                           )}
                           {/* @ts-ignore */}
@@ -961,34 +1073,37 @@ export default function RosterPlan() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {stats.slice(0, 10).map(emp => (
-                    <TableRow key={emp.id} className="hover:bg-muted/20">
-                      <TableCell className="font-medium">{emp.name}</TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">
-                        {emp.name.split(' ').pop()?.substring(0, 2).toUpperCase()}
-                      </TableCell>
-                      <TableCell className="text-center bg-blue-50/20">{emp.stats.gyn}</TableCell>
-                      <TableCell className="text-center bg-pink-50/20">{emp.stats.geb}</TableCell>
-                      <TableCell className="text-center bg-emerald-50/20">{emp.stats.tu}</TableCell>
-                      <TableCell className="text-center font-bold">{emp.stats.sum}</TableCell>
-                      <TableCell className="text-center text-slate-500 bg-slate-50/20">{emp.stats.abw}</TableCell>
-                    </TableRow>
-                  ))}
+                  {statsRows.map((row, index) => {
+                    if (row.type === "separator") {
+                      return (
+                        <TableRow key={`sep-${index}`} className="bg-transparent">
+                          <TableCell colSpan={7} className="p-0">
+                            <div className="border-t border-slate-200" />
+                          </TableCell>
+                        </TableRow>
+                      );
+                    }
+
+                    const emp = row.emp;
+                    return (
+                      <TableRow key={emp.id} className="hover:bg-muted/20">
+                        <TableCell className="font-medium">{emp.name}</TableCell>
+                        <TableCell className="font-mono text-xs text-muted-foreground">
+                          {emp.name.split(' ').pop()?.substring(0, 2).toUpperCase()}
+                        </TableCell>
+                        <TableCell className="text-center bg-blue-50/20">{emp.stats.gyn}</TableCell>
+                        <TableCell className="text-center bg-pink-50/20">{emp.stats.geb}</TableCell>
+                        <TableCell className="text-center bg-emerald-50/20">{emp.stats.tu}</TableCell>
+                        <TableCell className="text-center font-bold">{emp.stats.sum}</TableCell>
+                        <TableCell className="text-center text-slate-500 bg-slate-50/20">{emp.stats.abw}</TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
           </CardContent>
         </Card>
-
-        <ShiftSwapDialog
-          open={swapDialogOpen}
-          onOpenChange={setSwapDialogOpen}
-          sourceShift={selectedShiftForSwap}
-          onSwapComplete={() => {
-            loadData();
-            setSelectedShiftForSwap(null);
-          }}
-        />
 
         {/* AI Generation Results Dialog */}
         <Dialog open={generationDialogOpen} onOpenChange={setGenerationDialogOpen}>

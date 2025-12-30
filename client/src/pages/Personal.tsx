@@ -25,6 +25,7 @@ import {
   XCircle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getAustrianHoliday } from "@/lib/holidays";
 import { useEffect, useState } from "react";
 import { format, addMonths, subMonths, getWeek, eachDayOfInterval, startOfMonth, endOfMonth, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
@@ -65,7 +66,8 @@ const PLAN_STATUS_LABELS: Record<DutyPlan["status"], string> = {
 const SERVICE_TYPE_LABELS: Record<string, string> = {
   gyn: "Gyn-Dienst",
   kreiszimmer: "Kreißzimmer",
-  turnus: "Turnus"
+  turnus: "Turnus",
+  overduty: "Überdienst"
 };
 
 const SHIFT_STATUS_BADGES: Record<string, { icon: typeof Clock; className: string }> = {
@@ -295,12 +297,19 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
   }, [currentDate]);
 
   const employeesById = new Map(employees.map((emp) => [emp.id, emp]));
-  const shiftsByDate = shifts.reduce<Record<string, Partial<Record<"gyn" | "kreiszimmer" | "turnus", RosterShift>>>>(
+  const shiftsByDate = shifts.reduce<
+    Record<string, Partial<Record<"gyn" | "kreiszimmer" | "turnus" | "overduty", RosterShift>>>
+  >(
     (acc, shift) => {
       if (!acc[shift.date]) {
         acc[shift.date] = {};
       }
-      if (shift.serviceType === "gyn" || shift.serviceType === "kreiszimmer" || shift.serviceType === "turnus") {
+      if (
+        shift.serviceType === "gyn" ||
+        shift.serviceType === "kreiszimmer" ||
+        shift.serviceType === "turnus" ||
+        shift.serviceType === "overduty"
+      ) {
         acc[shift.date][shift.serviceType] = shift;
       }
       return acc;
@@ -313,12 +322,36 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
     end: endOfMonth(currentDate)
   });
 
+  const isPublished = planStatus === "Freigegeben";
+  const getLastName = (value: string) => {
+    const parts = value.trim().split(/\s+/);
+    return parts[parts.length - 1] || value;
+  };
   const getShiftLabel = (shift?: RosterShift) => {
     if (!shift) return "-";
     if (shift.employeeId) {
       return employeesById.get(shift.employeeId)?.name ?? "—";
     }
     return shift.assigneeFreeText?.trim() || "-";
+  };
+  const getShiftDisplay = (shift?: RosterShift) => {
+    const label = getShiftLabel(shift);
+    if (label === "-") return "-";
+    return isPublished ? getLastName(label) : label;
+  };
+  const isMyShift = (shift?: RosterShift) =>
+    Boolean(shift?.employeeId && currentUser?.id && shift.employeeId === currentUser.id);
+  const getBadgeClass = (tone: "pink" | "blue" | "amber" | "violet", highlight: boolean) => {
+    if (!isPublished || highlight) {
+      return tone === "pink"
+        ? "bg-pink-50 text-pink-700 border-pink-200"
+        : tone === "blue"
+        ? "bg-blue-50 text-blue-700 border-blue-200"
+        : tone === "violet"
+        ? "bg-violet-50 text-violet-700 border-violet-200"
+        : "bg-amber-50 text-amber-700 border-amber-200";
+    }
+    return "bg-slate-100 text-slate-500 border-slate-200";
   };
 
   const myShifts = currentUser
@@ -397,13 +430,14 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
                 <th className="p-3 text-left font-medium">Kreißzimmer</th>
                 <th className="p-3 text-left font-medium">Gynäkologie</th>
                 <th className="p-3 text-left font-medium">Turnus</th>
+                <th className="p-3 text-left font-medium">Überdienst</th>
                 <th className="p-3 text-left font-medium">Abwesenheiten</th>
               </tr>
             </thead>
             <tbody>
               {rosterLoading ? (
                 <tr>
-                  <td colSpan={7} className="p-6 text-center text-muted-foreground">
+                  <td colSpan={8} className="p-6 text-center text-muted-foreground">
                     Dienstplan wird geladen...
                   </td>
                 </tr>
@@ -417,26 +451,33 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
                   const dateLabel = format(day, "dd.MM.yyyy", { locale: de });
                   const dateKey = format(day, "yyyy-MM-dd");
                   const dayShifts = shiftsByDate[dateKey] || {};
-                  const kreisLabel = getShiftLabel(dayShifts.kreiszimmer);
-                  const gynLabel = getShiftLabel(dayShifts.gyn);
-                  const turnusLabel = getShiftLabel(dayShifts.turnus);
+                  const holiday = getAustrianHoliday(day);
+                  const isHoliday = Boolean(holiday);
+                  const kreisLabel = getShiftDisplay(dayShifts.kreiszimmer);
+                  const gynLabel = getShiftDisplay(dayShifts.gyn);
+                  const turnusLabel = getShiftDisplay(dayShifts.turnus);
+                  const overdutyLabel = getShiftDisplay(dayShifts.overduty);
                   const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+                  const highlightRow = isWeekend || isHoliday;
 
                   return (
                     <tr
                       key={dateKey}
                       className={cn(
                         "border-b border-border hover:bg-muted/30 transition-colors",
-                        isWeekend && "bg-muted/20"
+                        highlightRow && "bg-amber-50/60"
                       )}
                       data-testid={`roster-row-${dateKey}`}
                     >
                       <td className="p-3 font-medium text-primary">{showKW ? weekNumber : ""}</td>
-                      <td className={cn("p-3 font-medium", isWeekend && "text-primary")}>{dayLabel}</td>
-                      <td className="p-3 text-muted-foreground">{dateLabel}</td>
+                      <td className={cn("p-3 font-medium", highlightRow && "text-rose-600")}>{dayLabel}</td>
+                      <td className={cn("p-3 text-muted-foreground", highlightRow && "text-rose-600")}>{dateLabel}</td>
                       <td className="p-3">
                         {kreisLabel !== "-" ? (
-                          <Badge variant="outline" className="bg-pink-50 text-pink-700 border-pink-200">
+                          <Badge
+                            variant="outline"
+                            className={getBadgeClass("pink", isMyShift(dayShifts.kreiszimmer))}
+                          >
                             {kreisLabel}
                           </Badge>
                         ) : (
@@ -445,7 +486,10 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
                       </td>
                       <td className="p-3">
                         {gynLabel !== "-" ? (
-                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                          <Badge
+                            variant="outline"
+                            className={getBadgeClass("blue", isMyShift(dayShifts.gyn))}
+                          >
                             {gynLabel}
                           </Badge>
                         ) : (
@@ -454,8 +498,23 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
                       </td>
                       <td className="p-3">
                         {turnusLabel !== "-" ? (
-                          <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                          <Badge
+                            variant="outline"
+                            className={getBadgeClass("amber", isMyShift(dayShifts.turnus))}
+                          >
                             {turnusLabel}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </td>
+                      <td className="p-3">
+                        {overdutyLabel !== "-" ? (
+                          <Badge
+                            variant="outline"
+                            className={getBadgeClass("violet", isMyShift(dayShifts.overduty))}
+                          >
+                            {overdutyLabel}
                           </Badge>
                         ) : (
                           <span className="text-muted-foreground">-</span>

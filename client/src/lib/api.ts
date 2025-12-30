@@ -367,6 +367,7 @@ export const roomApi = {
       id: number;
       roomId: number;
       weekday: number;
+      recurrence?: "weekly" | "monthly_first_third" | "monthly_once";
       usageLabel?: string | null;
       timeFrom?: string | null;
       timeTo?: string | null;
@@ -412,6 +413,7 @@ export const roomApi = {
     id: number,
     settings: Array<{
       weekday: number;
+      recurrence?: "weekly" | "monthly_first_third" | "monthly_once";
       usageLabel?: string | null;
       timeFrom?: string | null;
       timeTo?: string | null;
@@ -424,6 +426,7 @@ export const roomApi = {
       id: number;
       roomId: number;
       weekday: number;
+      recurrence?: "weekly" | "monthly_first_third" | "monthly_once";
       usageLabel?: string | null;
       timeFrom?: string | null;
       timeTo?: string | null;

@@ -620,7 +620,8 @@ export async function registerRoutes(
       const serviceLabels: Record<string, string> = {
         gyn: "Gyn-Dienst",
         kreiszimmer: "Kreißzimmer",
-        turnus: "Turnus"
+        turnus: "Turnus",
+        overduty: "Überdienst"
       };
 
       const events = allShifts
@@ -683,12 +684,19 @@ export async function registerRoutes(
       const shifts = await storage.getRosterShiftsByMonth(year, month);
       const employees = await storage.getEmployees();
       const employeesById = new Map(employees.map((emp) => [emp.id, emp.name]));
-      const shiftsByDate = shifts.reduce<Record<string, Partial<Record<"gyn" | "kreiszimmer" | "turnus", RosterShift>>>>(
+      const shiftsByDate = shifts.reduce<
+        Record<string, Partial<Record<"gyn" | "kreiszimmer" | "turnus" | "overduty", RosterShift>>>
+      >(
         (acc, shift) => {
           if (!acc[shift.date]) {
             acc[shift.date] = {};
           }
-          if (shift.serviceType === "gyn" || shift.serviceType === "kreiszimmer" || shift.serviceType === "turnus") {
+          if (
+            shift.serviceType === "gyn" ||
+            shift.serviceType === "kreiszimmer" ||
+            shift.serviceType === "turnus" ||
+            shift.serviceType === "overduty"
+          ) {
             acc[shift.date][shift.serviceType] = shift;
           }
           return acc;
@@ -708,7 +716,7 @@ export async function registerRoutes(
       const endDate = new Date(year, month, 0);
 
       const rows = [
-        ["Datum", "KW", "Tag", "Kreißzimmer", "Gynäkologie", "Turnus"]
+        ["Datum", "KW", "Tag", "Kreißzimmer", "Gynäkologie", "Turnus", "Überdienst"]
       ];
 
       for (let date = new Date(startDate); date <= endDate; date.setDate(date.getDate() + 1)) {
@@ -724,7 +732,8 @@ export async function registerRoutes(
           weekday,
           toLabel(dayShifts.kreiszimmer),
           toLabel(dayShifts.gyn),
-          toLabel(dayShifts.turnus)
+          toLabel(dayShifts.turnus),
+          toLabel(dayShifts.overduty)
         ]);
       }
 

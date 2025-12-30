@@ -233,6 +233,7 @@ export default function EmployeeManagement() {
   const [editDeploymentRoomIds, setEditDeploymentRoomIds] = useState<number[]>([]);
   const [editServiceTypeOverrides, setEditServiceTypeOverrides] = useState<ServiceType[]>([]);
   const [editTakesShifts, setEditTakesShifts] = useState(true);
+  const [editCanOverduty, setEditCanOverduty] = useState(false);
   const [editInactiveFrom, setEditInactiveFrom] = useState("");
   const [editInactiveUntil, setEditInactiveUntil] = useState("");
   const [resetPasswordData, setResetPasswordData] = useState({
@@ -249,6 +250,7 @@ export default function EmployeeManagement() {
   const [newDeploymentRoomIds, setNewDeploymentRoomIds] = useState<number[]>([]);
   const [newServiceTypeOverrides, setNewServiceTypeOverrides] = useState<ServiceType[]>([]);
   const [newTakesShifts, setNewTakesShifts] = useState(true);
+  const [newCanOverduty, setNewCanOverduty] = useState(false);
   const [newInactiveFrom, setNewInactiveFrom] = useState("");
   const [newInactiveUntil, setNewInactiveUntil] = useState("");
   
@@ -328,6 +330,7 @@ export default function EmployeeManagement() {
     setNewDeploymentRoomIds([]);
     setNewServiceTypeOverrides([]);
     setNewTakesShifts(true);
+    setNewCanOverduty(false);
     setNewInactiveFrom("");
     setNewInactiveUntil("");
     setCompetencySearch("");
@@ -356,6 +359,7 @@ export default function EmployeeManagement() {
     setEditRoleValue(normalizeRoleValue(emp.role));
     setEditAppRoleValue(emp.appRole || "");
     setEditTakesShifts(emp.takesShifts ?? true);
+    setEditCanOverduty(emp.canOverduty ?? false);
     setEditInactiveFrom(formatBirthday(emp.inactiveFrom));
     setEditInactiveUntil(formatBirthday(emp.inactiveUntil));
     const prefs = (emp.shiftPreferences as ShiftPreferences | null) || null;
@@ -626,6 +630,7 @@ export default function EmployeeManagement() {
         role: (editRoleValue || editingEmployee.role) as Employee["role"],
         appRole: (editAppRoleValue || editingEmployee.appRole) as Employee["appRole"],
         takesShifts: editTakesShifts,
+        canOverduty: editCanOverduty,
         inactiveFrom: parsedInactiveFrom || null,
         inactiveUntil: parsedInactiveUntil || null,
         shiftPreferences: nextShiftPreferences
@@ -780,6 +785,7 @@ export default function EmployeeManagement() {
         appRole: (newAppRoleValue || "User") as Employee["appRole"],
         systemRole: "employee",
         takesShifts: newTakesShifts,
+        canOverduty: newCanOverduty,
         inactiveFrom: parsedInactiveFrom || null,
         inactiveUntil: parsedInactiveUntil || null,
         shiftPreferences: nextShiftPreferences
@@ -1582,6 +1588,20 @@ export default function EmployeeManagement() {
                       <Switch
                         checked={newTakesShifts}
                         onCheckedChange={(checked) => setNewTakesShifts(Boolean(checked))}
+                        disabled={!canManageEmployees}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-lg border border-border p-4">
+                      <div>
+                        <Label>Kann Überdienst machen</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Erlaubt Eintragung im Überdienst (Rufbereitschaft).
+                        </p>
+                      </div>
+                      <Switch
+                        checked={newCanOverduty}
+                        onCheckedChange={(checked) => setNewCanOverduty(Boolean(checked))}
                         disabled={!canManageEmployees}
                       />
                     </div>
@@ -2528,6 +2548,19 @@ export default function EmployeeManagement() {
                     <p className="text-sm text-muted-foreground">
                       Berechtigungen gelten pro Abteilung und steuern Detailrechte in der Verwaltung.
                     </p>
+                    <div className="flex items-center justify-between rounded-lg border border-border p-4">
+                      <div>
+                        <Label>Kann Überdienst machen</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Nur Mitarbeiter mit dieser Freigabe können im Überdienst eingetragen werden.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={editCanOverduty}
+                        onCheckedChange={(checked) => setEditCanOverduty(Boolean(checked))}
+                        disabled={!canManageEmployees}
+                      />
+                    </div>
                     {loadingPermissions ? (
                       <div className="flex items-center justify-center py-6 text-muted-foreground">
                         <Loader2 className="w-5 h-5 mr-2 animate-spin" />

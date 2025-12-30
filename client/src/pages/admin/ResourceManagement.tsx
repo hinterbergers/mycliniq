@@ -39,12 +39,19 @@ const ROLE_COMPETENCIES = [
   { id: "sekretaerin", label: "Sekretärin" },
 ];
 
+const RECURRENCE_OPTIONS: Array<{ value: "weekly" | "monthly_first_third" | "monthly_once"; label: string }> = [
+  { value: "weekly", label: "Wöchentlich" },
+  { value: "monthly_first_third", label: "1. & 3. im Monat" },
+  { value: "monthly_once", label: "1x pro Monat" }
+];
+
 interface WeeklySchedule {
   usage: string;
   timeFrom: string;
   timeTo: string;
   blocked: boolean;
   blockReason: string;
+  recurrence: "weekly" | "monthly_first_third" | "monthly_once";
 }
 
 interface RoomState {
@@ -70,7 +77,8 @@ const initialWeeklySchedule = (): WeeklySchedule[] =>
     timeFrom: "08:00",
     timeTo: "16:00",
     blocked: false,
-    blockReason: ""
+    blockReason: "",
+    recurrence: "weekly"
   }));
 
 export default function ResourceManagement() {
@@ -137,6 +145,7 @@ export default function ResourceManagement() {
     detail: Resource & {
       weekdaySettings?: Array<{
         weekday: number;
+        recurrence?: "weekly" | "monthly_first_third" | "monthly_once";
         usageLabel?: string | null;
         timeFrom?: string | null;
         timeTo?: string | null;
@@ -163,7 +172,8 @@ export default function ResourceManagement() {
           timeFrom: setting.timeFrom || schedule[index].timeFrom,
           timeTo: setting.timeTo || schedule[index].timeTo,
           blocked: Boolean(setting.isClosed),
-          blockReason: setting.closedReason || ""
+          blockReason: setting.closedReason || "",
+          recurrence: setting.recurrence || "weekly"
         };
       });
     }
@@ -343,6 +353,7 @@ export default function ResourceManagement() {
       const warnings: string[] = [];
       const weekdaySettings = editingRoom.weeklySchedule.map((entry, index) => ({
         weekday: index + 1,
+        recurrence: entry.recurrence,
         usageLabel: entry.usage || null,
         timeFrom: entry.timeFrom || null,
         timeTo: entry.timeTo || null,
@@ -891,7 +902,7 @@ export default function ResourceManagement() {
                         <div key={day} className={`p-3 rounded-lg border ${editingRoom.weeklySchedule[index].blocked ? 'bg-red-50 border-red-200' : 'bg-card'}`}>
                           <div className="flex items-center gap-4">
                             <span className="font-medium w-8">{day}</span>
-                            <div className="flex-1 grid grid-cols-1 md:grid-cols-4 gap-2 items-center">
+                            <div className="flex-1 grid grid-cols-1 md:grid-cols-5 gap-2 items-center">
                               <Input
                                 value={editingRoom.weeklySchedule[index].usage}
                                 onChange={(e) => updateWeeklySchedule(index, { usage: e.target.value })}
@@ -919,6 +930,26 @@ export default function ResourceManagement() {
                                   data-testid={`input-time-to-${day}`}
                                 />
                               </div>
+                              <Select
+                                value={editingRoom.weeklySchedule[index].recurrence}
+                                onValueChange={(value) =>
+                                  updateWeeklySchedule(index, {
+                                    recurrence: value as WeeklySchedule["recurrence"]
+                                  })
+                                }
+                                disabled={!canEdit}
+                              >
+                                <SelectTrigger className="h-8 text-xs">
+                                  <SelectValue placeholder="Wiederholung" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {RECURRENCE_OPTIONS.map((option) => (
+                                    <SelectItem key={option.value} value={option.value}>
+                                      {option.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                               <div className="flex items-center gap-2">
                                 <Checkbox
                                   checked={editingRoom.weeklySchedule[index].blocked}

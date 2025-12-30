@@ -35,7 +35,8 @@ interface ShiftSwapDialogProps {
 const SERVICE_TYPE_LABELS: Record<string, string> = {
   gyn: "Gynäkologie",
   kreiszimmer: "Kreißzimmer",
-  turnus: "Turnus"
+  turnus: "Turnus",
+  overduty: "Überdienst"
 };
 
 const STATUS_BADGES = {

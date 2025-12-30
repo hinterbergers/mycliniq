@@ -310,6 +310,7 @@ export default function Settings() {
   const [roleValue, setRoleValue] = useState<Employee["role"] | "">("");
   const [appRoleValue, setAppRoleValue] = useState<Employee["appRole"] | "">("");
   const [takesShifts, setTakesShifts] = useState(true);
+  const [canOverduty, setCanOverduty] = useState(false);
   const [availableCompetencies, setAvailableCompetencies] = useState<Competency[]>([]);
   const [selectedCompetencyIds, setSelectedCompetencyIds] = useState<number[]>([]);
   const [competencySearch, setCompetencySearch] = useState("");
@@ -442,6 +443,7 @@ export default function Settings() {
     setRoleValue(normalizeRoleValue(emp.role));
     setAppRoleValue(emp.appRole || "");
     setTakesShifts(emp.takesShifts ?? true);
+    setCanOverduty(emp.canOverduty ?? false);
     setSelectedCompetencyIds([]);
     const prefs = (emp.shiftPreferences as ShiftPreferences | null) || null;
     setDeploymentRoomIds(Array.isArray(prefs?.deploymentRoomIds) ? prefs.deploymentRoomIds : []);
@@ -683,6 +685,7 @@ export default function Settings() {
           role: (roleValue || employee.role) as Employee["role"],
           appRole: (appRoleValue || employee.appRole) as Employee["appRole"],
           takesShifts,
+          canOverduty,
           shiftPreferences: nextShiftPreferences
         });
       }
@@ -2120,6 +2123,19 @@ export default function Settings() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div className="flex items-center justify-between rounded-lg border border-border p-4">
+                  <div>
+                    <Label>Kann Überdienst machen</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Nur Mitarbeiter mit dieser Freigabe können im Überdienst eingetragen werden.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={canOverduty}
+                    onCheckedChange={(checked) => setCanOverduty(Boolean(checked))}
+                    disabled={!canEditRoleAndCompetencies}
+                  />
+                </div>
                 {loadingPermissions ? (
                   <div className="flex items-center justify-center py-8 text-muted-foreground">
                     <Loader2 className="w-5 h-5 mr-2 animate-spin" />
@@ -2147,6 +2163,14 @@ export default function Settings() {
                     <Button onClick={handleSavePermissions} disabled={savingPermissions}>
                       {savingPermissions && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                       Speichern
+                    </Button>
+                  </div>
+                )}
+                {canEditRoleAndCompetencies && (
+                  <div className="pt-2">
+                    <Button onClick={handleSave} disabled={saving}>
+                      {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                      Überdienst speichern
                     </Button>
                   </div>
                 )}

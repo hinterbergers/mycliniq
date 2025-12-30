@@ -52,7 +52,7 @@ export const roleEnum = pgEnum('role', [
   'Sekretariat'
 ]);
 
-export const serviceTypeEnum = pgEnum('service_type', ['gyn', 'kreiszimmer', 'turnus']);
+export const serviceTypeEnum = pgEnum('service_type', ['gyn', 'kreiszimmer', 'turnus', 'overduty']);
 
 export const absenceReasonEnum = pgEnum('absence_reason', [
   'Urlaub',
@@ -117,6 +117,12 @@ export const roomCategoryEnum = pgEnum('room_category', [
   'Station',
   'Verwaltung',
   'Sonstiges'
+]);
+
+export const roomWeekdayRecurrenceEnum = pgEnum("room_weekday_recurrence", [
+  "weekly",
+  "monthly_first_third",
+  "monthly_once"
 ]);
 
 // Competency relation type enum (for room requirements)
@@ -225,6 +231,7 @@ export const employees = pgTable("employees", {
   showPrivateContact: boolean("show_private_contact").notNull().default(false),
   diplomas: text("diplomas").array().notNull().default(sql`ARRAY[]::text[]`),
   takesShifts: boolean("takes_shifts").notNull().default(true),
+  canOverduty: boolean("can_overduty").notNull().default(false),
   maxShiftsPerWeek: integer("max_shifts_per_week"),
   employmentFrom: date("employment_from"),
   employmentUntil: date("employment_until"),
@@ -541,6 +548,7 @@ export const roomWeekdaySettings = pgTable("room_weekday_settings", {
   id: serial("id").primaryKey(),
   roomId: integer("room_id").references(() => rooms.id).notNull(),
   weekday: integer("weekday").notNull(),
+  recurrence: roomWeekdayRecurrenceEnum("recurrence").notNull().default("weekly"),
   usageLabel: text("usage_label"),
   timeFrom: time("time_from"),
   timeTo: time("time_to"),
