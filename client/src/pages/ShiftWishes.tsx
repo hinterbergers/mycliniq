@@ -24,9 +24,9 @@ import {
   Loader2,
   Info
 } from "lucide-react";
-import { useState, useEffect } from "react";
-import { shiftWishesApi, plannedAbsencesApi, rosterSettingsApi, employeeApi, type NextPlanningMonth } from "@/lib/api";
-import type { ShiftWish, PlannedAbsence, Employee } from "@shared/schema";
+import { useState, useEffect, useMemo } from "react";
+import { shiftWishesApi, plannedAbsencesApi, rosterSettingsApi, employeeApi, serviceLinesApi, type NextPlanningMonth } from "@/lib/api";
+import type { ShiftWish, PlannedAbsence, Employee, ServiceLine } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 import { format, getDaysInMonth, startOfMonth, getDay, isWeekend } from "date-fns";
@@ -54,6 +54,7 @@ export default function ShiftWishes() {
   const [absences, setAbsences] = useState<PlannedAbsence[]>([]);
   const [allWishes, setAllWishes] = useState<ShiftWish[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [serviceLines, setServiceLines] = useState<ServiceLine[]>([]);
   
   const [weekendWishDays, setWeekendWishDays] = useState<number[]>([]);
   const [avoidDays, setAvoidDays] = useState<number[]>([]);
@@ -70,7 +71,11 @@ export default function ShiftWishes() {
   const [newAbsenceNotes, setNewAbsenceNotes] = useState("");
   
   const canViewAll = isAdmin || isTechnicalAdmin || capabilities.includes("dutyplan.edit");
-  const doesShifts = currentUser ? employeeDoesShifts(currentUser) : false;
+  const serviceLineMeta = useMemo(
+    () => serviceLines.map((line) => ({ key: line.key, roleGroup: line.roleGroup, label: line.label })),
+    [serviceLines]
+  );
+  const doesShifts = currentUser ? employeeDoesShifts(currentUser, serviceLineMeta) : false;
   const isSubmitted = wish?.status === 'Eingereicht';
   
   useEffect(() => {
@@ -83,13 +88,15 @@ export default function ShiftWishes() {
     try {
       setLoading(true);
       
-      const [monthData, emps] = await Promise.all([
+      const [monthData, emps, serviceLineData] = await Promise.all([
         rosterSettingsApi.getNextPlanningMonth(),
-        canViewAll ? employeeApi.getAll() : Promise.resolve([])
+        canViewAll ? employeeApi.getAll() : Promise.resolve([]),
+        serviceLinesApi.getAll().catch(() => [])
       ]);
       
       setPlanningMonth(monthData);
       setEmployees(emps);
+      setServiceLines(serviceLineData);
       
       if (monthData) {
         const [wishData, absenceData] = await Promise.all([
@@ -807,7 +814,7 @@ export default function ShiftWishes() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {employees.filter(employeeDoesShifts).map(emp => {
+                      {employees.filter((employee) => employeeDoesShifts(employee, serviceLineMeta)).map(emp => {
                         const empWish = allWishes.find(w => w.employeeId === emp.id);
                         
                         return (

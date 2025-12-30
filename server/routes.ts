@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { db, eq, asc } from "./lib/db";
 import { 
   insertEmployeeSchema, 
   insertRosterShiftSchema, 
@@ -14,6 +15,7 @@ import {
   insertTaskActivitySchema,
   insertLongTermShiftWishSchema,
   insertLongTermAbsenceSchema,
+  serviceLines,
   type RosterShift
 } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
@@ -21,7 +23,7 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { generateRosterPlan } from "./services/rosterGenerator";
 import { registerModularApiRoutes } from "./api";
-import { employeeDoesShifts } from "@shared/shiftTypes";
+import { employeeDoesShifts, OVERDUTY_KEY } from "@shared/shiftTypes";
 import { requireAuth } from "./api/middleware/auth";
 import { getWeek } from "date-fns";
 
@@ -29,6 +31,108 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const isValidEmail = (value: string) =>
   EMAIL_REGEX.test(value) && !/[^\x00-\x7F]/.test(value);
 const DEFAULT_LAST_APPROVED = { year: 2026, month: 1 };
+const DEFAULT_SERVICE_LINES = [
+  {
+    key: "kreiszimmer",
+    label: "Kreißzimmer (Ass.)",
+    startTime: "07:30",
+    endTime: "08:00",
+    endsNextDay: true,
+    sortOrder: 1,
+    isActive: true
+  },
+  {
+    key: "gyn",
+    label: "Gynäkologie (OA)",
+    startTime: "07:30",
+    endTime: "08:00",
+    endsNextDay: true,
+    sortOrder: 2,
+    isActive: true
+  },
+  {
+    key: "turnus",
+    label: "Turnus (Ass./TA)",
+    startTime: "07:30",
+    endTime: "08:00",
+    endsNextDay: true,
+    sortOrder: 3,
+    isActive: true
+  },
+  {
+    key: OVERDUTY_KEY,
+    label: "Überdienst",
+    startTime: "07:30",
+    endTime: "08:00",
+    endsNextDay: true,
+    sortOrder: 4,
+    isActive: true
+  }
+];
+
+type ServiceLineInfo = {
+  key: string;
+  label: string;
+  startTime: string;
+  endTime: string;
+  endsNextDay: boolean;
+  sortOrder: number;
+  isActive: boolean;
+};
+
+const normalizeTime = (value: unknown, fallback: string): string => {
+  if (!value) return fallback;
+  if (value instanceof Date) {
+    const hours = String(value.getHours()).padStart(2, "0");
+    const minutes = String(value.getMinutes()).padStart(2, "0");
+    return `${hours}:${minutes}`;
+  }
+  if (typeof value === "string") {
+    const [hours, minutes] = value.split(":");
+    if (hours && minutes) {
+      return `${hours.padStart(2, "0")}:${minutes.padStart(2, "0")}`;
+    }
+  }
+  return fallback;
+};
+
+const buildDateTime = (date: string, time: string): Date => {
+  const [hours, minutes] = time.split(":").map((value) => Number(value));
+  const dateTime = new Date(`${date}T00:00:00`);
+  dateTime.setHours(Number.isNaN(hours) ? 0 : hours, Number.isNaN(minutes) ? 0 : minutes, 0, 0);
+  return dateTime;
+};
+
+const toIcsDateTimeLocal = (date: Date) => {
+  const year = String(date.getFullYear());
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${year}${month}${day}T${hours}${minutes}00`;
+};
+
+const loadServiceLines = async (clinicId: number): Promise<ServiceLineInfo[]> => {
+  const rows = await db
+    .select()
+    .from(serviceLines)
+    .where(eq(serviceLines.clinicId, clinicId))
+    .orderBy(asc(serviceLines.sortOrder), asc(serviceLines.label));
+
+  if (!rows.length) {
+    return DEFAULT_SERVICE_LINES;
+  }
+
+  return rows.map((row) => ({
+    key: row.key,
+    label: row.label,
+    startTime: normalizeTime(row.startTime, "07:30"),
+    endTime: normalizeTime(row.endTime, "08:00"),
+    endsNextDay: Boolean(row.endsNextDay),
+    sortOrder: row.sortOrder ?? 0,
+    isActive: row.isActive !== false
+  }));
+};
 
 const compareYearMonth = (
   yearA: number,
@@ -503,6 +607,18 @@ export async function registerRoutes(
       const wishes = await storage.getShiftWishesByMonth(year, month);
       const longTermWishes = await storage.getLongTermShiftWishesByStatus("Genehmigt");
       const longTermAbsences = await storage.getLongTermAbsencesByStatus("Genehmigt");
+      const clinicId = (req as any).user?.clinicId;
+      const serviceLineMeta = clinicId
+        ? await db
+            .select({
+              key: serviceLines.key,
+              roleGroup: serviceLines.roleGroup,
+              label: serviceLines.label
+            })
+            .from(serviceLines)
+            .where(eq(serviceLines.clinicId, clinicId))
+            .orderBy(asc(serviceLines.sortOrder), asc(serviceLines.label))
+        : [];
 
       const result = await generateRosterPlan(
         employees,
@@ -511,7 +627,8 @@ export async function registerRoutes(
         month,
         wishes,
         longTermWishes,
-        longTermAbsences
+        longTermAbsences,
+        serviceLineMeta
       );
 
       res.json({
@@ -586,8 +703,31 @@ export async function registerRoutes(
         allShifts.push(...monthShifts);
       }
 
+      const clinicId = req.user?.clinicId;
+      if (!clinicId) {
+        return res.status(400).json({ error: "Klinik-ID fehlt" });
+      }
+
+      const serviceLineRows = await loadServiceLines(clinicId);
+      const serviceLineByKey = new Map(serviceLineRows.map((line) => [line.key, line]));
+
       const employees = await storage.getEmployees();
-      const employeesById = new Map(employees.map((emp) => [emp.id, emp.name]));
+      const employeesById = new Map(
+        employees.map((emp) => {
+          const displayName =
+            [emp.firstName, emp.lastName].filter(Boolean).join(" ").trim() ||
+            emp.name ||
+            emp.lastName ||
+            "Unbekannt";
+          return [
+            emp.id,
+            {
+              displayName,
+              phonePrivate: emp.phonePrivate || null
+            }
+          ];
+        })
+      );
 
       const shiftsByDate = allShifts.reduce<Record<string, typeof allShifts>>((acc, shift) => {
         if (!acc[shift.date]) {
@@ -609,48 +749,46 @@ export async function registerRoutes(
           .replace(/,/g, "\\,")
           .replace(/\n/g, "\\n");
 
-      const toIcsDate = (date: Date) => {
-        const year = String(date.getFullYear());
-        const month = String(date.getMonth() + 1).padStart(2, "0");
-        const day = String(date.getDate()).padStart(2, "0");
-        return `${year}${month}${day}`;
-      };
-
       const dtStamp = new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
-      const serviceLabels: Record<string, string> = {
-        gyn: "Gyn-Dienst",
-        kreiszimmer: "Kreißzimmer",
-        turnus: "Turnus",
-        overduty: "Überdienst"
-      };
 
       const events = allShifts
         .filter((shift) => shift.employeeId === currentEmployeeId)
         .map((shift) => {
-          const dateObj = new Date(`${shift.date}T00:00:00`);
-          const endDate = new Date(dateObj);
-          endDate.setDate(endDate.getDate() + 1);
-          const serviceLabel = serviceLabels[shift.serviceType] || shift.serviceType;
+          const line = serviceLineByKey.get(shift.serviceType) || {
+            key: shift.serviceType,
+            label: shift.serviceType,
+            startTime: "07:30",
+            endTime: "08:00",
+            endsNextDay: true,
+            sortOrder: 0,
+            isActive: true
+          };
+          const startDateTime = buildDateTime(shift.date, line.startTime);
+          const endDateTime = buildDateTime(shift.date, line.endTime);
+          if (line.endsNextDay) {
+            endDateTime.setDate(endDateTime.getDate() + 1);
+          }
+          const serviceLabel = line.label || shift.serviceType;
 
           const others = (shiftsByDate[shift.date] || [])
             .filter((other) => other.employeeId !== currentEmployeeId)
             .map((other) => {
-              const label = serviceLabels[other.serviceType] || other.serviceType;
-              const assignee =
-                other.employeeId ? employeesById.get(other.employeeId) : other.assigneeFreeText;
-              return `${label}: ${assignee || "Unbekannt"}`;
+              const otherEmployee = other.employeeId ? employeesById.get(other.employeeId) : null;
+              const name = otherEmployee?.displayName || other.assigneeFreeText || "Unbekannt";
+              if (other.serviceType === OVERDUTY_KEY && otherEmployee?.phonePrivate) {
+                return `${name} (${otherEmployee.phonePrivate})`;
+              }
+              return name;
             });
 
-          const description = others.length
-            ? `Weitere Dienste:\\n${others.join("\\n")}`
-            : "Keine weiteren Dienste";
+          const description = others.length ? others.join("\\n") : "Keine weiteren Dienste";
 
           return [
             "BEGIN:VEVENT",
             `UID:roster-${shift.id}-${currentEmployeeId}@mycliniq`,
             `DTSTAMP:${dtStamp}`,
-            `DTSTART;VALUE=DATE:${toIcsDate(dateObj)}`,
-            `DTEND;VALUE=DATE:${toIcsDate(endDate)}`,
+            `DTSTART:${toIcsDateTimeLocal(startDateTime)}`,
+            `DTEND:${toIcsDateTimeLocal(endDateTime)}`,
             `SUMMARY:${escapeIcs(`Dienst: ${serviceLabel}`)}`,
             `DESCRIPTION:${escapeIcs(description)}`,
             "END:VEVENT"
@@ -684,21 +822,36 @@ export async function registerRoutes(
       const shifts = await storage.getRosterShiftsByMonth(year, month);
       const employees = await storage.getEmployees();
       const employeesById = new Map(employees.map((emp) => [emp.id, emp.name]));
-      const shiftsByDate = shifts.reduce<
-        Record<string, Partial<Record<"gyn" | "kreiszimmer" | "turnus" | "overduty", RosterShift>>>
-      >(
+      const clinicId = req.user?.clinicId;
+      if (!clinicId) {
+        return res.status(400).json({ error: "Klinik-ID fehlt" });
+      }
+
+      const serviceLineRows = await loadServiceLines(clinicId);
+      const serviceLineMap = new Map(serviceLineRows.map((line) => [line.key, line]));
+      const keysWithShifts = new Set(shifts.map((shift) => shift.serviceType));
+      const extraKeys = Array.from(keysWithShifts).filter((key) => !serviceLineMap.has(key));
+      const extraLines = extraKeys
+        .sort((a, b) => a.localeCompare(b))
+        .map((key) => ({
+          key,
+          label: key,
+          startTime: "07:30",
+          endTime: "08:00",
+          endsNextDay: true,
+          sortOrder: 999,
+          isActive: true
+        }));
+      const allLines = [...serviceLineRows, ...extraLines].filter(
+        (line) => line.isActive || keysWithShifts.has(line.key)
+      );
+
+      const shiftsByDate = shifts.reduce<Record<string, Record<string, RosterShift>>>(
         (acc, shift) => {
           if (!acc[shift.date]) {
             acc[shift.date] = {};
           }
-          if (
-            shift.serviceType === "gyn" ||
-            shift.serviceType === "kreiszimmer" ||
-            shift.serviceType === "turnus" ||
-            shift.serviceType === "overduty"
-          ) {
-            acc[shift.date][shift.serviceType] = shift;
-          }
+          acc[shift.date][shift.serviceType] = shift;
           return acc;
         },
         {}
@@ -716,7 +869,7 @@ export async function registerRoutes(
       const endDate = new Date(year, month, 0);
 
       const rows = [
-        ["Datum", "KW", "Tag", "Kreißzimmer", "Gynäkologie", "Turnus", "Überdienst"]
+        ["Datum", "KW", "Tag", ...allLines.map((line) => line.label)]
       ];
 
       for (let date = new Date(startDate); date <= endDate; date.setDate(date.getDate() + 1)) {
@@ -730,10 +883,7 @@ export async function registerRoutes(
           date.toLocaleDateString("de-DE"),
           String(weekNumber),
           weekday,
-          toLabel(dayShifts.kreiszimmer),
-          toLabel(dayShifts.gyn),
-          toLabel(dayShifts.turnus),
-          toLabel(dayShifts.overduty)
+          ...allLines.map((line) => toLabel(dayShifts[line.key]))
         ]);
       }
 
@@ -1340,7 +1490,19 @@ export async function registerRoutes(
 
       // Get eligible employees and submitted wishes count
       const employees = await storage.getEmployees();
-      const eligibleEmployees = employees.filter(employeeDoesShifts);
+      const clinicId = (req as any).user?.clinicId;
+      const serviceLineMeta = clinicId
+        ? await db
+            .select({
+              key: serviceLines.key,
+              roleGroup: serviceLines.roleGroup,
+              label: serviceLines.label
+            })
+            .from(serviceLines)
+            .where(eq(serviceLines.clinicId, clinicId))
+            .orderBy(asc(serviceLines.sortOrder), asc(serviceLines.label))
+        : [];
+      const eligibleEmployees = employees.filter((employee) => employeeDoesShifts(employee, serviceLineMeta));
       const eligibleEmployeeIds = new Set(eligibleEmployees.map((emp) => emp.id));
       const wishes = await storage.getShiftWishesByMonth(year, month);
       const submittedCount = wishes.filter(

@@ -26,12 +26,12 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getAustrianHoliday } from "@/lib/holidays";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { format, addMonths, subMonths, getWeek, eachDayOfInterval, startOfMonth, endOfMonth, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
 import { useLocation } from "wouter";
-import { dutyPlansApi, employeeApi, rosterApi, rosterSettingsApi, shiftSwapApi, type NextPlanningMonth } from "@/lib/api";
-import type { DutyPlan, Employee, RosterShift, ShiftSwapRequest } from "@shared/schema";
+import { dutyPlansApi, employeeApi, rosterApi, rosterSettingsApi, serviceLinesApi, shiftSwapApi, type NextPlanningMonth } from "@/lib/api";
+import type { DutyPlan, Employee, RosterShift, ShiftSwapRequest, ServiceLine } from "@shared/schema";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 
@@ -63,11 +63,55 @@ const PLAN_STATUS_LABELS: Record<DutyPlan["status"], string> = {
   Freigegeben: "Freigabe"
 };
 
-const SERVICE_TYPE_LABELS: Record<string, string> = {
-  gyn: "Gyn-Dienst",
-  kreiszimmer: "Kreißzimmer",
-  turnus: "Turnus",
-  overduty: "Überdienst"
+const SERVICE_LINE_PALETTE = [
+  {
+    header: "bg-pink-50/50 border-pink-100 text-pink-900",
+    cell: "bg-pink-50 text-pink-700 border-pink-200"
+  },
+  {
+    header: "bg-blue-50/50 border-blue-100 text-blue-900",
+    cell: "bg-blue-50 text-blue-700 border-blue-200"
+  },
+  {
+    header: "bg-amber-50/50 border-amber-100 text-amber-900",
+    cell: "bg-amber-50 text-amber-700 border-amber-200"
+  },
+  {
+    header: "bg-violet-50/50 border-violet-100 text-violet-900",
+    cell: "bg-violet-50 text-violet-700 border-violet-200"
+  },
+  {
+    header: "bg-emerald-50/50 border-emerald-100 text-emerald-900",
+    cell: "bg-emerald-50 text-emerald-700 border-emerald-200"
+  }
+];
+
+const FALLBACK_SERVICE_LINES = [
+  { key: "kreiszimmer", label: "Kreißzimmer", sortOrder: 1, isActive: true },
+  { key: "gyn", label: "Gyn-Dienst", sortOrder: 2, isActive: true },
+  { key: "turnus", label: "Turnus", sortOrder: 3, isActive: true },
+  { key: "overduty", label: "Überdienst", sortOrder: 4, isActive: true }
+];
+
+const buildServiceLineDisplay = (lines: ServiceLine[], shifts: RosterShift[]) => {
+  const source = lines.length ? lines : FALLBACK_SERVICE_LINES;
+  const shiftKeys = new Set(shifts.map((shift) => shift.serviceType));
+  const knownKeys = new Set(source.map((line) => line.key));
+  const extras = [...shiftKeys]
+    .filter((key) => !knownKeys.has(key))
+    .map((key) => ({ key, label: key, sortOrder: 999, isActive: true }));
+  return [...source, ...extras]
+    .filter((line) => line.isActive !== false || shiftKeys.has(line.key))
+    .sort((a, b) => {
+      const order = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+      if (order !== 0) return order;
+      return a.label.localeCompare(b.label);
+    })
+    .map((line, index) => ({
+      key: line.key,
+      label: line.label,
+      style: SERVICE_LINE_PALETTE[index % SERVICE_LINE_PALETTE.length]
+    }));
 };
 
 const SHIFT_STATUS_BADGES: Record<string, { icon: typeof Clock; className: string }> = {
@@ -262,9 +306,18 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
   const [rosterLoading, setRosterLoading] = useState(false);
   const [shifts, setShifts] = useState<RosterShift[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [serviceLines, setServiceLines] = useState<ServiceLine[]>([]);
 
   const planStatus = dutyPlan?.status;
   const statusLabel = planStatus ? PLAN_STATUS_LABELS[planStatus] : "Vorschau";
+  const serviceLineDisplay = useMemo(
+    () => buildServiceLineDisplay(serviceLines, shifts),
+    [serviceLines, shifts]
+  );
+  const serviceLineLookup = useMemo(() => {
+    return new Map(serviceLineDisplay.map((line) => [line.key, line]));
+  }, [serviceLineDisplay]);
+  const rosterColumnCount = 3 + serviceLineDisplay.length + 1;
 
   const loadRoster = async () => {
     const year = currentDate.getFullYear();
@@ -277,9 +330,16 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
         rosterApi.getByMonth(year, month),
         employeeApi.getAll()
       ]);
+      let serviceLineData: ServiceLine[] = [];
+      try {
+        serviceLineData = await serviceLinesApi.getAll();
+      } catch {
+        serviceLineData = [];
+      }
       setDutyPlan(plan);
       setShifts(rosterData);
       setEmployees(employeeData);
+      setServiceLines(serviceLineData);
     } catch (error: any) {
       toast({
         title: "Fehler",
@@ -297,21 +357,12 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
   }, [currentDate]);
 
   const employeesById = new Map(employees.map((emp) => [emp.id, emp]));
-  const shiftsByDate = shifts.reduce<
-    Record<string, Partial<Record<"gyn" | "kreiszimmer" | "turnus" | "overduty", RosterShift>>>
-  >(
+  const shiftsByDate = shifts.reduce<Record<string, Record<string, RosterShift>>>(
     (acc, shift) => {
       if (!acc[shift.date]) {
         acc[shift.date] = {};
       }
-      if (
-        shift.serviceType === "gyn" ||
-        shift.serviceType === "kreiszimmer" ||
-        shift.serviceType === "turnus" ||
-        shift.serviceType === "overduty"
-      ) {
-        acc[shift.date][shift.serviceType] = shift;
-      }
+      acc[shift.date][shift.serviceType] = shift;
       return acc;
     },
     {}
@@ -341,15 +392,9 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
   };
   const isMyShift = (shift?: RosterShift) =>
     Boolean(shift?.employeeId && currentUser?.id && shift.employeeId === currentUser.id);
-  const getBadgeClass = (tone: "pink" | "blue" | "amber" | "violet", highlight: boolean) => {
+  const getBadgeClass = (style: { cell: string }, highlight: boolean) => {
     if (!isPublished || highlight) {
-      return tone === "pink"
-        ? "bg-pink-50 text-pink-700 border-pink-200"
-        : tone === "blue"
-        ? "bg-blue-50 text-blue-700 border-blue-200"
-        : tone === "violet"
-        ? "bg-violet-50 text-violet-700 border-violet-200"
-        : "bg-amber-50 text-amber-700 border-amber-200";
+      return style.cell;
     }
     return "bg-slate-100 text-slate-500 border-slate-200";
   };
@@ -427,17 +472,18 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
                 <th className="p-3 text-left font-medium w-16">KW</th>
                 <th className="p-3 text-left font-medium w-12">Tag</th>
                 <th className="p-3 text-left font-medium w-24">Datum</th>
-                <th className="p-3 text-left font-medium">Kreißzimmer</th>
-                <th className="p-3 text-left font-medium">Gynäkologie</th>
-                <th className="p-3 text-left font-medium">Turnus</th>
-                <th className="p-3 text-left font-medium">Überdienst</th>
+                {serviceLineDisplay.map((line) => (
+                  <th key={line.key} className="p-3 text-left font-medium">
+                    {line.label}
+                  </th>
+                ))}
                 <th className="p-3 text-left font-medium">Abwesenheiten</th>
               </tr>
             </thead>
             <tbody>
               {rosterLoading ? (
                 <tr>
-                  <td colSpan={8} className="p-6 text-center text-muted-foreground">
+                  <td colSpan={rosterColumnCount} className="p-6 text-center text-muted-foreground">
                     Dienstplan wird geladen...
                   </td>
                 </tr>
@@ -453,10 +499,6 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
                   const dayShifts = shiftsByDate[dateKey] || {};
                   const holiday = getAustrianHoliday(day);
                   const isHoliday = Boolean(holiday);
-                  const kreisLabel = getShiftDisplay(dayShifts.kreiszimmer);
-                  const gynLabel = getShiftDisplay(dayShifts.gyn);
-                  const turnusLabel = getShiftDisplay(dayShifts.turnus);
-                  const overdutyLabel = getShiftDisplay(dayShifts.overduty);
                   const isWeekend = day.getDay() === 0 || day.getDay() === 6;
                   const highlightRow = isWeekend || isHoliday;
 
@@ -472,54 +514,24 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
                       <td className="p-3 font-medium text-primary">{showKW ? weekNumber : ""}</td>
                       <td className={cn("p-3 font-medium", highlightRow && "text-rose-600")}>{dayLabel}</td>
                       <td className={cn("p-3 text-muted-foreground", highlightRow && "text-rose-600")}>{dateLabel}</td>
-                      <td className="p-3">
-                        {kreisLabel !== "-" ? (
-                          <Badge
-                            variant="outline"
-                            className={getBadgeClass("pink", isMyShift(dayShifts.kreiszimmer))}
-                          >
-                            {kreisLabel}
-                          </Badge>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </td>
-                      <td className="p-3">
-                        {gynLabel !== "-" ? (
-                          <Badge
-                            variant="outline"
-                            className={getBadgeClass("blue", isMyShift(dayShifts.gyn))}
-                          >
-                            {gynLabel}
-                          </Badge>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </td>
-                      <td className="p-3">
-                        {turnusLabel !== "-" ? (
-                          <Badge
-                            variant="outline"
-                            className={getBadgeClass("amber", isMyShift(dayShifts.turnus))}
-                          >
-                            {turnusLabel}
-                          </Badge>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </td>
-                      <td className="p-3">
-                        {overdutyLabel !== "-" ? (
-                          <Badge
-                            variant="outline"
-                            className={getBadgeClass("violet", isMyShift(dayShifts.overduty))}
-                          >
-                            {overdutyLabel}
-                          </Badge>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </td>
+                      {serviceLineDisplay.map((line) => {
+                        const shift = dayShifts[line.key];
+                        const label = getShiftDisplay(shift);
+                        return (
+                          <td key={line.key} className="p-3">
+                            {label !== "-" ? (
+                              <Badge
+                                variant="outline"
+                                className={getBadgeClass(line.style, isMyShift(shift))}
+                              >
+                                {label}
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </td>
+                        );
+                      })}
                       <td className="p-3 text-muted-foreground text-xs">-</td>
                     </tr>
                   );
@@ -571,6 +583,7 @@ function ShiftSwapRosterDialog({
   const [processingId, setProcessingId] = useState<number | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [shifts, setShifts] = useState<RosterShift[]>([]);
+  const [serviceLines, setServiceLines] = useState<ServiceLine[]>([]);
   const [myRequests, setMyRequests] = useState<ShiftSwapRequest[]>([]);
   const [incomingRequests, setIncomingRequests] = useState<ShiftSwapRequest[]>([]);
   const [sourceShiftId, setSourceShiftId] = useState("");
@@ -595,8 +608,15 @@ function ShiftSwapRosterDialog({
         shiftSwapApi.getByEmployee(currentUser.id),
         shiftSwapApi.getByTargetEmployee(currentUser.id)
       ]);
+      let serviceLineData: ServiceLine[] = [];
+      try {
+        serviceLineData = await serviceLinesApi.getAll();
+      } catch {
+        serviceLineData = [];
+      }
       setShifts(shiftData);
       setEmployees(employeeData);
+      setServiceLines(serviceLineData);
       setMyRequests(myData);
       setIncomingRequests(incomingData);
     } catch (error: any) {
@@ -612,6 +632,12 @@ function ShiftSwapRosterDialog({
 
   const employeesById = new Map(employees.map((emp) => [emp.id, emp]));
   const shiftsById = new Map(shifts.map((shift) => [shift.id, shift]));
+  const serviceLineLabelLookup = useMemo(() => {
+    const map = new Map<string, string>();
+    FALLBACK_SERVICE_LINES.forEach((line) => map.set(line.key, line.label));
+    serviceLines.forEach((line) => map.set(line.key, line.label));
+    return map;
+  }, [serviceLines]);
   const myShifts = shifts
     .filter((shift) => shift.employeeId === currentUser?.id)
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -621,7 +647,7 @@ function ShiftSwapRosterDialog({
 
   const formatShiftOption = (shift: RosterShift) => {
     const dateLabel = format(parseISO(shift.date), "dd.MM.yyyy", { locale: de });
-    const serviceLabel = SERVICE_TYPE_LABELS[shift.serviceType] || shift.serviceType;
+    const serviceLabel = serviceLineLabelLookup.get(shift.serviceType) || shift.serviceType;
     const assignee =
       shift.employeeId ? employeesById.get(shift.employeeId)?.name : shift.assigneeFreeText;
     return `${dateLabel} · ${serviceLabel} · ${assignee || "Unbekannt"}`;
@@ -707,7 +733,7 @@ function ShiftSwapRosterDialog({
     const shift = shiftsById.get(shiftId);
     if (!shift) return `Dienst #${shiftId}`;
     const dateLabel = format(parseISO(shift.date), "dd.MM.yyyy", { locale: de });
-    const serviceLabel = SERVICE_TYPE_LABELS[shift.serviceType] || shift.serviceType;
+    const serviceLabel = serviceLineLabelLookup.get(shift.serviceType) || shift.serviceType;
     return `${dateLabel} · ${serviceLabel}`;
   };
 

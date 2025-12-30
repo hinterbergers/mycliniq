@@ -2,12 +2,13 @@ import { Bell, Search, Calendar, CheckCircle, AlertTriangle, Info } from "lucide
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { useEffect, useState } from "react";
-import { rosterSettingsApi, shiftSwapApi, type NextPlanningMonth } from "@/lib/api";
+import { useEffect, useMemo, useState } from "react";
+import { rosterSettingsApi, shiftSwapApi, serviceLinesApi, type NextPlanningMonth } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { employeeDoesShifts } from "@shared/shiftTypes";
+import type { ServiceLine } from "@shared/schema";
 
 const MONTH_NAMES = [
   "Jänner", "Februar", "März", "April", "Mai", "Juni",
@@ -17,6 +18,7 @@ const MONTH_NAMES = [
 export function Header({ title }: { title?: string }) {
   const { employee, capabilities, isAdmin, isTechnicalAdmin } = useAuth();
   const [planningMonth, setPlanningMonth] = useState<NextPlanningMonth | null>(null);
+  const [serviceLines, setServiceLines] = useState<ServiceLine[]>([]);
   const [pendingSwapCount, setPendingSwapCount] = useState(0);
   const [notifications, setNotifications] = useState<
     { id: string; tone: "success" | "warning" | "info"; title: string; description: string }[]
@@ -30,7 +32,11 @@ export function Header({ title }: { title?: string }) {
     isAdmin ||
     isTechnicalAdmin ||
     capabilities.includes("dutyplan.publish");
-  const doesShifts = employee ? employeeDoesShifts(employee) : false;
+  const serviceLineMeta = useMemo(
+    () => serviceLines.map((line) => ({ key: line.key, roleGroup: line.roleGroup, label: line.label })),
+    [serviceLines]
+  );
+  const doesShifts = employee ? employeeDoesShifts(employee, serviceLineMeta) : false;
   
   useEffect(() => {
     if (employee) {
@@ -41,8 +47,12 @@ export function Header({ title }: { title?: string }) {
   
   const loadPlanningData = async () => {
     try {
-      const data = await rosterSettingsApi.getNextPlanningMonth();
+      const [data, serviceLineData] = await Promise.all([
+        rosterSettingsApi.getNextPlanningMonth(),
+        serviceLinesApi.getAll().catch(() => [])
+      ]);
       setPlanningMonth(data);
+      setServiceLines(serviceLineData);
     } catch (error) {
       console.error('Failed to load planning data', error);
     }

@@ -207,6 +207,34 @@ export const insertDepartmentSchema = createInsertSchema(departments).omit({
 export type InsertDepartment = z.infer<typeof insertDepartmentSchema>;
 export type Department = typeof departments.$inferSelect;
 
+// Service lines (Dienstschienen) table
+export const serviceLines = pgTable("service_lines", {
+  id: serial("id").primaryKey(),
+  clinicId: integer("clinic_id").references(() => clinics.id).notNull(),
+  key: text("key").notNull(),
+  label: text("label").notNull(),
+  roleGroup: text("role_group").notNull().default("ALL"),
+  startTime: time("start_time").notNull(),
+  endTime: time("end_time").notNull(),
+  endsNextDay: boolean("ends_next_day").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (table) => [
+  index("service_lines_clinic_id_idx").on(table.clinicId),
+  uniqueIndex("service_lines_clinic_key_idx").on(table.clinicId, table.key)
+]);
+
+export const insertServiceLineSchema = createInsertSchema(serviceLines).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export type InsertServiceLine = z.infer<typeof insertServiceLineSchema>;
+export type ServiceLine = typeof serviceLines.$inferSelect;
+
 // Employees table
 export const employees = pgTable("employees", {
   id: serial("id").primaryKey(),
@@ -434,7 +462,7 @@ export type CompetencyDiploma = typeof competencyDiplomas.$inferSelect;
 export const rosterShifts = pgTable("roster_shifts", {
   id: serial("id").primaryKey(),
   date: date("date").notNull(),
-  serviceType: serviceTypeEnum("service_type").notNull(),
+  serviceType: text("service_type").notNull(),
   employeeId: integer("employee_id").references(() => employees.id),
   assigneeFreeText: text("assignee_free_text"),
   notes: text("notes"),

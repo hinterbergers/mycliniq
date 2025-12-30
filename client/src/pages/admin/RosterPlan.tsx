@@ -13,8 +13,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { Download, ArrowLeft, ArrowRight, Info, Loader2, Sparkles, CheckCircle2, AlertTriangle, Brain, Pencil, Calendar } from "lucide-react";
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { employeeApi, rosterApi, absenceApi, longTermAbsencesApi, dutyPlansApi, rosterSettingsApi, type NextPlanningMonth } from "@/lib/api";
-import type { Employee, RosterShift, Absence, LongTermAbsence, DutyPlan } from "@shared/schema";
+import { employeeApi, rosterApi, absenceApi, longTermAbsencesApi, dutyPlansApi, rosterSettingsApi, serviceLinesApi, type NextPlanningMonth } from "@/lib/api";
+import type { Employee, RosterShift, Absence, LongTermAbsence, DutyPlan, ServiceLine } from "@shared/schema";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, isWeekend } from "date-fns";
 import { de } from "date-fns/locale";
 import { useAuth } from "@/lib/auth";
@@ -29,10 +29,44 @@ interface GeneratedShift {
   employeeName: string;
 }
 
-const SERVICE_TYPES: Array<{ id: ServiceType; label: string; requiredRole: string[]; color: string }> = [
-  { id: "gyn", label: "Gynäkologie", requiredRole: ["Primararzt", "1. Oberarzt", "Funktionsoberarzt", "Ausbildungsoberarzt", "Oberarzt", "Oberärztin"], color: "bg-primary/10 text-primary border-primary/20" },
-  { id: "kreiszimmer", label: "Kreißzimmer", requiredRole: ["Assistenzarzt", "Assistenzärztin"], color: "bg-pink-100 text-pink-700 border-pink-200" },
-  { id: "turnus", label: "Turnus", requiredRole: ["Assistenzarzt", "Assistenzärztin", "Turnusarzt"], color: "bg-emerald-100 text-emerald-700 border-emerald-200" }
+const SERVICE_LINE_PALETTE = [
+  {
+    header: "bg-pink-50/50 border-pink-100 text-pink-900",
+    cell: "bg-pink-100 text-pink-800 border-pink-200",
+    stat: "bg-pink-50/20 text-pink-900"
+  },
+  {
+    header: "bg-blue-50/50 border-blue-100 text-blue-900",
+    cell: "bg-blue-100 text-blue-800 border-blue-200",
+    stat: "bg-blue-50/20 text-blue-900"
+  },
+  {
+    header: "bg-emerald-50/50 border-emerald-100 text-emerald-900",
+    cell: "bg-emerald-100 text-emerald-800 border-emerald-200",
+    stat: "bg-emerald-50/20 text-emerald-900"
+  },
+  {
+    header: "bg-violet-50/50 border-violet-100 text-violet-900",
+    cell: "bg-violet-100 text-violet-800 border-violet-200",
+    stat: "bg-violet-50/20 text-violet-900"
+  },
+  {
+    header: "bg-amber-50/50 border-amber-100 text-amber-900",
+    cell: "bg-amber-100 text-amber-800 border-amber-200",
+    stat: "bg-amber-50/20 text-amber-900"
+  },
+  {
+    header: "bg-sky-50/50 border-sky-100 text-sky-900",
+    cell: "bg-sky-100 text-sky-800 border-sky-200",
+    stat: "bg-sky-50/20 text-sky-900"
+  }
+];
+
+const FALLBACK_SERVICE_LINES = [
+  { key: "kreiszimmer", label: "Kreißzimmer (Ass.)", roleGroup: "ASS", sortOrder: 1, isActive: true },
+  { key: "gyn", label: "Gynäkologie (OA)", roleGroup: "OA", sortOrder: 2, isActive: true },
+  { key: "turnus", label: "Turnus (Ass./TA)", roleGroup: "TURNUS", sortOrder: 3, isActive: true },
+  { key: "overduty", label: "Überdienst (Ruf)", roleGroup: "OA", sortOrder: 4, isActive: true }
 ];
 
 const PLAN_STATUS_LABELS: Record<DutyPlan["status"], string> = {
@@ -88,6 +122,7 @@ export default function RosterPlan() {
   const { toast } = useToast();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [serviceLines, setServiceLines] = useState<ServiceLine[]>([]);
   const [shifts, setShifts] = useState<RosterShift[]>([]);
   const [absences, setAbsences] = useState<Absence[]>([]);
   const [longTermAbsences, setLongTermAbsences] = useState<LongTermAbsence[]>([]);
@@ -113,6 +148,37 @@ export default function RosterPlan() {
   const [wishSaving, setWishSaving] = useState(false);
   const planStatus = dutyPlan?.status ?? "Entwurf";
   const planStatusLabel = PLAN_STATUS_LABELS[planStatus];
+
+  const serviceLineDisplay = useMemo(() => {
+    const lines = serviceLines.length ? serviceLines : FALLBACK_SERVICE_LINES;
+    const shiftKeys = new Set(shifts.map((shift) => shift.serviceType));
+    const knownKeys = new Set(lines.map((line) => line.key));
+    const extras = [...shiftKeys]
+      .filter((key) => !knownKeys.has(key))
+      .map((key) => ({ key, label: key, sortOrder: 999, isActive: true }));
+    return [...lines, ...extras]
+      .filter((line) => line.isActive !== false || shiftKeys.has(line.key))
+      .sort((a, b) => {
+        const order = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+        if (order !== 0) return order;
+        return a.label.localeCompare(b.label);
+      })
+      .map((line, index) => ({
+        key: line.key as ServiceType,
+        label: line.label,
+        roleGroup: line.roleGroup,
+        style: SERVICE_LINE_PALETTE[index % SERVICE_LINE_PALETTE.length]
+      }));
+  }, [serviceLines, shifts]);
+
+  const serviceLineMeta = useMemo(
+    () => serviceLineDisplay.map((line) => ({ key: line.key, roleGroup: line.roleGroup })),
+    [serviceLineDisplay]
+  );
+
+  const serviceLineLookup = useMemo(() => {
+    return new Map(serviceLineDisplay.map((line) => [line.key, line]));
+  }, [serviceLineDisplay]);
 
   const canEdit = useMemo(() => {
     if (!currentUser) return false;
@@ -149,7 +215,7 @@ export default function RosterPlan() {
   const getConflictReasons = (employee: Employee | null, dateStr: string, type: ServiceType) => {
     if (!employee) return [];
     const reasons: string[] = [];
-    const allowedTypes = getServiceTypesForEmployee(employee);
+    const allowedTypes = getServiceTypesForEmployee(employee, serviceLineMeta);
     if (!allowedTypes.includes(type)) {
       reasons.push("Nicht für diesen Dienst einsetzbar");
     }
@@ -206,6 +272,12 @@ export default function RosterPlan() {
         absenceApi.getByDateRange(startDate, endDate),
         dutyPlansApi.getByMonth(year, month)
       ]);
+      let serviceLineData: ServiceLine[] = [];
+      try {
+        serviceLineData = await serviceLinesApi.getAll();
+      } catch {
+        serviceLineData = [];
+      }
 
       let longTermAbsenceData: LongTermAbsence[] = [];
       try {
@@ -215,6 +287,7 @@ export default function RosterPlan() {
       }
       
       setEmployees(empData);
+      setServiceLines(serviceLineData);
       setShifts(shiftData);
       setAbsences(absenceData);
       setLongTermAbsences(longTermAbsenceData);
@@ -281,7 +354,15 @@ export default function RosterPlan() {
       });
   };
 
-  const renderAssignmentCell = (date: Date, type: ServiceType, tone: "blue" | "pink" | "emerald" | "violet") => {
+  const renderAssignmentCell = (
+    date: Date,
+    line: {
+      key: ServiceType;
+      label: string;
+      style: { cell: string };
+    }
+  ) => {
+    const type = line.key;
     const shift = getShiftForDay(date, type);
     const employee = shift ? getEmployeeById(shift.employeeId) : null;
     const freeText = shift?.assigneeFreeText?.trim() || "";
@@ -302,15 +383,7 @@ export default function RosterPlan() {
           <div className={`relative ${hasConflict ? "border border-red-300 bg-red-50/60" : ""} rounded`}>
             <div
               className={`text-sm px-2 py-1.5 rounded font-medium text-center border shadow-sm ${
-                employee
-                  ? tone === "pink"
-                  ? "bg-pink-100 text-pink-800 border-pink-200"
-                  : tone === "blue"
-                  ? "bg-blue-100 text-blue-800 border-blue-200"
-                  : tone === "violet"
-                  ? "bg-violet-100 text-violet-800 border-violet-200"
-                  : "bg-emerald-100 text-emerald-800 border-emerald-200"
-                  : "bg-slate-100 text-slate-700 border-slate-200 italic"
+                employee ? line.style.cell : "bg-slate-100 text-slate-700 border-slate-200 italic"
               }`}
               title={employee ? employee.name : freeText}
             >
@@ -346,7 +419,7 @@ export default function RosterPlan() {
     const allowedEmployees = employees
       .filter((emp) => emp.isActive !== false)
       .filter((emp) => emp.takesShifts !== false)
-      .filter((emp) => getServiceTypesForEmployee(emp).includes(type))
+      .filter((emp) => getServiceTypesForEmployee(emp, serviceLineMeta).includes(type))
       .sort((a, b) => (a.lastName || a.name).localeCompare(b.lastName || b.name));
     const draftValue = manualDrafts[cellKey];
     const currentLabel = draftValue ?? employee?.name ?? freeText ?? "";
@@ -472,20 +545,28 @@ export default function RosterPlan() {
   };
   
   const stats = useMemo(() => {
-    const base = employees.filter(employeeDoesShifts).map(emp => {
-      const empShifts = shifts.filter(s => s.employeeId === emp.id);
-      const empAbsences = absences.filter(a => a.employeeId === emp.id);
-      return {
-        ...emp,
-        stats: {
-          gyn: empShifts.filter(s => s.serviceType === 'gyn').length,
-          geb: empShifts.filter(s => s.serviceType === 'kreiszimmer').length,
-          tu: empShifts.filter(s => s.serviceType === 'turnus').length,
-          sum: empShifts.length,
-          abw: empAbsences.length
-        }
-      };
-    });
+    const serviceKeys = serviceLineDisplay.length
+      ? serviceLineDisplay.map((line) => line.key)
+      : ["gyn", "kreiszimmer", "turnus"];
+
+    const base = employees
+      .filter((employee) => employeeDoesShifts(employee, serviceLineMeta))
+      .map((emp) => {
+        const empShifts = shifts.filter((s) => s.employeeId === emp.id);
+        const empAbsences = absences.filter((a) => a.employeeId === emp.id);
+        const byService = serviceKeys.reduce<Record<string, number>>((acc, key) => {
+          acc[key] = empShifts.filter((s) => s.serviceType === key).length;
+          return acc;
+        }, {});
+        return {
+          ...emp,
+          stats: {
+            byService,
+            sum: empShifts.length,
+            abw: empAbsences.length
+          }
+        };
+      });
 
     return base.sort((a, b) => {
       const roleRank = getRoleSortRank(a.role) - getRoleSortRank(b.role);
@@ -497,7 +578,7 @@ export default function RosterPlan() {
       const firstNameB = (b.firstName || "").toLowerCase();
       return firstNameA.localeCompare(firstNameB);
     });
-  }, [employees, shifts, absences]);
+  }, [employees, shifts, absences, serviceLineDisplay, serviceLineMeta]);
 
   const statsRows = useMemo(() => {
     const rows: Array<{ type: "separator" } | { type: "data"; emp: typeof stats[number] }> = [];
@@ -512,6 +593,8 @@ export default function RosterPlan() {
     });
     return rows;
   }, [stats]);
+
+  const statsColumnCount = 2 + serviceLineDisplay.length + 2;
 
   const handleExport = async () => {
     if (!token) {
@@ -956,18 +1039,14 @@ export default function RosterPlan() {
                   <TableHead className="w-24 border-r border-border font-bold">Datum</TableHead>
                   
                   {/* Service Columns */}
-                  <TableHead className="w-48 bg-pink-50/50 border-r border-pink-100 text-pink-900 font-bold text-center">
-                    Kreißzimmer (Ass.)
-                  </TableHead>
-                  <TableHead className="w-48 bg-blue-50/50 border-r border-blue-100 text-blue-900 font-bold text-center">
-                    Gynäkologie (OA)
-                  </TableHead>
-                  <TableHead className="w-48 bg-emerald-50/50 border-r border-emerald-100 text-emerald-900 font-bold text-center">
-                    Turnus (Ass./TA)
-                  </TableHead>
-                  <TableHead className="w-48 bg-violet-50/50 border-r border-violet-100 text-violet-900 font-bold text-center">
-                    Überdienst (Ruf)
-                  </TableHead>
+                  {serviceLineDisplay.map((line) => (
+                    <TableHead
+                      key={line.key}
+                      className={`w-48 border-r border-border font-bold text-center ${line.style.header}`}
+                    >
+                      {line.label}
+                    </TableHead>
+                  ))}
                   
                   {/* Absence Column */}
                   <TableHead className="min-w-[300px] bg-slate-50/50 text-slate-700 font-bold text-center">
@@ -999,25 +1078,11 @@ export default function RosterPlan() {
                         {format(day, 'dd.MM.')}
                       </TableCell>
 
-                      {/* Kreißzimmer Slot */}
-                      <TableCell className="border-r border-border p-1">
-                        {renderAssignmentCell(day, "kreiszimmer", "pink")}
-                      </TableCell>
-
-                      {/* Gyn Slot */}
-                      <TableCell className="border-r border-border p-1">
-                        {renderAssignmentCell(day, "gyn", "blue")}
-                      </TableCell>
-
-                      {/* Turnus Slot */}
-                      <TableCell className="border-r border-border p-1">
-                        {renderAssignmentCell(day, "turnus", "emerald")}
-                      </TableCell>
-
-                      {/* Überdienst Slot */}
-                      <TableCell className="border-r border-border p-1">
-                        {renderAssignmentCell(day, "overduty", "violet")}
-                      </TableCell>
+                      {serviceLineDisplay.map((line) => (
+                        <TableCell key={line.key} className="border-r border-border p-1">
+                          {renderAssignmentCell(day, line)}
+                        </TableCell>
+                      ))}
 
                       {/* Absences & Info */}
                       <TableCell className="p-1 text-sm text-muted-foreground">
@@ -1057,9 +1122,14 @@ export default function RosterPlan() {
                   <TableRow>
                     <TableHead className="w-[200px]">Mitarbeiter</TableHead>
                     <TableHead>Kürzel</TableHead>
-                    <TableHead className="text-center text-blue-700 bg-blue-50/50">Gyn</TableHead>
-                    <TableHead className="text-center text-pink-700 bg-pink-50/50">Geb</TableHead>
-                    <TableHead className="text-center text-emerald-700 bg-emerald-50/50">Turnus</TableHead>
+                    {serviceLineDisplay.map((line) => (
+                      <TableHead
+                        key={line.key}
+                        className={`text-center ${line.style.header}`}
+                      >
+                        {line.label}
+                      </TableHead>
+                    ))}
                     <TableHead className="text-center font-bold">Summe</TableHead>
                     <TableHead className="text-center text-slate-500 bg-slate-50/50">Abwesend</TableHead>
                   </TableRow>
@@ -1069,7 +1139,7 @@ export default function RosterPlan() {
                     if (row.type === "separator") {
                       return (
                         <TableRow key={`sep-${index}`} className="bg-transparent">
-                          <TableCell colSpan={7} className="p-0">
+                          <TableCell colSpan={statsColumnCount} className="p-0">
                             <div className="border-t border-slate-200" />
                           </TableCell>
                         </TableRow>
@@ -1083,9 +1153,11 @@ export default function RosterPlan() {
                         <TableCell className="font-mono text-xs text-muted-foreground">
                           {emp.name.split(' ').pop()?.substring(0, 2).toUpperCase()}
                         </TableCell>
-                        <TableCell className="text-center bg-blue-50/20">{emp.stats.gyn}</TableCell>
-                        <TableCell className="text-center bg-pink-50/20">{emp.stats.geb}</TableCell>
-                        <TableCell className="text-center bg-emerald-50/20">{emp.stats.tu}</TableCell>
+                        {serviceLineDisplay.map((line) => (
+                          <TableCell key={line.key} className={`text-center ${line.style.stat}`}>
+                            {emp.stats.byService[line.key] ?? 0}
+                          </TableCell>
+                        ))}
                         <TableCell className="text-center font-bold">{emp.stats.sum}</TableCell>
                         <TableCell className="text-center text-slate-500 bg-slate-50/20">{emp.stats.abw}</TableCell>
                       </TableRow>
@@ -1149,27 +1221,24 @@ export default function RosterPlan() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {generatedShifts.map((shift, i) => (
-                        <TableRow key={i}>
-                          <TableCell className="font-mono text-sm">
-                            {shift.date}
-                          </TableCell>
-                          <TableCell>
-                            <Badge 
-                              variant="outline" 
-                              className={
-                                shift.serviceType === 'gyn' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                                shift.serviceType === 'kreiszimmer' ? 'bg-pink-50 text-pink-700 border-pink-200' :
-                                'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              }
-                            >
-                              {shift.serviceType === 'gyn' ? 'Gynäkologie' :
-                               shift.serviceType === 'kreiszimmer' ? 'Kreißzimmer' : 'Turnus'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{shift.employeeName}</TableCell>
-                        </TableRow>
-                      ))}
+                      {generatedShifts.map((shift, i) => {
+                        const line = serviceLineLookup.get(shift.serviceType);
+                        const label = line?.label || shift.serviceType;
+                        const badgeClass = line?.style.cell || "bg-slate-100 text-slate-700 border-slate-200";
+                        return (
+                          <TableRow key={i}>
+                            <TableCell className="font-mono text-sm">
+                              {shift.date}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={badgeClass}>
+                                {label}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>{shift.employeeName}</TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </ScrollArea>

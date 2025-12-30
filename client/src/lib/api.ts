@@ -32,7 +32,9 @@ import type {
   InsertPlannedAbsence,
   Competency,
   Diploma,
-  PhysicalRoom
+  PhysicalRoom,
+  ServiceLine,
+  InsertServiceLine
 } from "@shared/schema";
 import { readAuthToken } from "./authToken";
 
@@ -254,6 +256,39 @@ export const rosterApi = {
       body: JSON.stringify({ year, month, shifts, replaceExisting })
     });
     return handleResponse(response);
+  }
+};
+
+// Service Lines API (Dienstschienen)
+type ServiceLineInput = Omit<InsertServiceLine, "clinicId">;
+
+export const serviceLinesApi = {
+  getAll: async (): Promise<ServiceLine[]> => {
+    const response = await apiFetch(`${API_BASE}/service-lines`);
+    return handleResponse<ServiceLine[]>(response);
+  },
+
+  create: async (data: ServiceLineInput): Promise<ServiceLine> => {
+    const response = await apiFetch(`${API_BASE}/service-lines`, {
+      method: "POST",
+      body: JSON.stringify(data)
+    });
+    return handleResponse<ServiceLine>(response);
+  },
+
+  update: async (id: number, data: Partial<ServiceLineInput>): Promise<ServiceLine> => {
+    const response = await apiFetch(`${API_BASE}/service-lines/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data)
+    });
+    return handleResponse<ServiceLine>(response);
+  },
+
+  delete: async (id: number): Promise<void> => {
+    const response = await apiFetch(`${API_BASE}/service-lines/${id}`, {
+      method: "DELETE"
+    });
+    return handleResponse<void>(response);
   }
 };
 

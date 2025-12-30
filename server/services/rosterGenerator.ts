@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { Employee, Absence, ShiftWish, LongTermShiftWish, LongTermAbsence } from "@shared/schema";
-import { SERVICE_TYPES, type ServiceType, type LongTermWishRule, getServiceTypesForEmployee, employeeDoesShifts } from "@shared/shiftTypes";
+import { SERVICE_TYPES, type ServiceType, type LongTermWishRule, type ServiceLineMeta, getServiceTypesForEmployee, employeeDoesShifts } from "@shared/shiftTypes";
 import { format, eachDayOfInterval, isWeekend, startOfMonth, endOfMonth } from "date-fns";
 
 // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
@@ -75,13 +75,18 @@ export async function generateRosterPlan(
   month: number,
   shiftWishes: ShiftWish[] = [],
   longTermWishes: LongTermShiftWish[] = [],
-  longTermAbsences: LongTermAbsence[] = []
+  longTermAbsences: LongTermAbsence[] = [],
+  serviceLines: ServiceLineMeta[] = []
 ): Promise<GenerationResult> {
   const startDate = startOfMonth(new Date(year, month - 1));
   const endDate = endOfMonth(new Date(year, month - 1));
   const days = eachDayOfInterval({ start: startDate, end: endDate });
 
-  const activeEmployees = employees.filter(e => e.isActive && employeeDoesShifts(e));
+  const serviceTypeKeys = serviceLines.length
+    ? serviceLines.map((line) => line.key).filter((key) => Boolean(key))
+    : SERVICE_TYPES;
+
+  const activeEmployees = employees.filter(e => e.isActive && employeeDoesShifts(e, serviceLines));
   const submittedWishes = shiftWishes.filter((wish) => wish.status === "Eingereicht");
   const wishesByEmployeeId = new Map(submittedWishes.map((wish) => [wish.employeeId, wish]));
   const approvedLongTerm = longTermWishes.filter((wish) => wish.status === "Genehmigt");
@@ -96,7 +101,7 @@ export async function generateRosterPlan(
 
   const toServiceTypeList = (values: unknown): ServiceType[] => {
     if (!Array.isArray(values)) return [];
-    return values.filter((value): value is ServiceType => SERVICE_TYPES.includes(value as ServiceType));
+    return values.filter((value): value is ServiceType => serviceTypeKeys.includes(value as ServiceType));
   };
 
   const toIsoDateList = (daysList: unknown): string[] => {
@@ -140,7 +145,7 @@ export async function generateRosterPlan(
       role: e.role,
       primaryArea: e.primaryDeploymentArea,
       competencies: e.competencies,
-      serviceTypes: getServiceTypesForEmployee(e),
+      serviceTypes: getServiceTypesForEmployee(e, serviceLines),
       preferredDays: toIsoDateList(wish?.preferredShiftDays),
       preferredWeekendDays: toIsoDateList(wish?.preferredShiftDays),
       avoidDays: toIsoDateList(wish?.avoidShiftDays),
@@ -162,6 +167,10 @@ export async function generateRosterPlan(
     isWeekend: isWeekend(d)
   }));
 
+  const serviceLineSummary = serviceLines.length
+    ? serviceLines.map((line) => `- ${line.key}: ${line.label}`).join("\n")
+    : `- gyn (Gynäkologie-Dienst)\n- kreiszimmer (Kreißzimmer)\n- turnus (Turnus)`;
+
   const prompt = `Du bist ein Dienstplan-Experte für eine gynäkologische Abteilung eines Krankenhauses.
 
 Erstelle einen optimalen Dienstplan für ${format(startDate, 'MMMM yyyy')}.
@@ -172,11 +181,9 @@ ${JSON.stringify(employeeData, null, 2)}
 ## Zu besetzende Tage:
 ${JSON.stringify(daysData, null, 2)}
 
-## Diensttypen und berechtigte Rollen:
-- gyn (Gynäkologie-Dienst): Primararzt, 1. Oberarzt, Funktionsoberarzt, Ausbildungsoberarzt, Oberarzt, Oberärztin
-- kreiszimmer (Kreißzimmer): Assistenzarzt, Assistenzärztin
-- turnus (Turnus): Assistenzarzt, Assistenzärztin, Turnusarzt
-Wenn im Mitarbeiterobjekt "serviceTypes" gesetzt sind, dürfen nur diese Diensttypen zugewiesen werden (Abweichung vom Rollenstandard).
+## Dienstschienen:
+${serviceLineSummary}
+Wenn im Mitarbeiterobjekt "serviceTypes" gesetzt sind, dürfen nur diese Dienstschienen zugewiesen werden.
 Beachte in den Mitarbeiterdaten:
 - preferredWeekendDays (Datumsliste für Wochenendwünsche in ${format(startDate, 'MMMM yyyy')})
 - avoidDays (nicht mögliche Tage in ${format(startDate, 'MMMM yyyy')})
@@ -186,8 +193,8 @@ Beachte in den Mitarbeiterdaten:
 - longTermRules: wiederkehrende Regeln mit kind/weekday/strength/serviceType (serviceType optional oder "any")
 
 ## Regeln:
-1. Jeder Tag muss einen gyn-Dienst und einen kreiszimmer-Dienst haben
-2. Turnus-Dienste sind optional, aber erwünscht wenn Personal verfügbar
+1. Jeder Tag muss alle Pflicht-Dienstschienen besetzen (falls ServiceLines dafür vorhanden sind)
+2. Optionale Dienstschienen nur besetzen, wenn Personal verfügbar
 3. Respektiere Abwesenheiten - kein Mitarbeiter darf an Tagen eingeteilt werden, an denen er/sie abwesend ist
 4. Respektiere longTermRules mit strength=HARD (ALWAYS_OFF oder AVOID_ON) als harte Sperre
 5. preferredWeekendDays möglichst berücksichtigen, avoidDays möglichst vermeiden
@@ -237,7 +244,7 @@ Antworte mit folgendem JSON-Format:
         return false;
       }
       
-      const allowed = getServiceTypesForEmployee(employee);
+      const allowed = getServiceTypesForEmployee(employee, serviceLines);
       if (!allowed.includes(shift.serviceType)) {
         console.warn(`${employee.name} ist nicht berechtigt für ${shift.serviceType}`);
         return false;
@@ -293,9 +300,10 @@ export async function validateShiftAssignment(
   serviceType: string,
   existingAbsences: Absence[],
   longTermRules: LongTermWishRule[] = [],
-  longTermAbsences: LongTermAbsence[] = []
+  longTermAbsences: LongTermAbsence[] = [],
+  serviceLines: ServiceLineMeta[] = []
 ): Promise<{ valid: boolean; reason?: string }> {
-  const allowed = getServiceTypesForEmployee(employee);
+  const allowed = getServiceTypesForEmployee(employee, serviceLines);
   if (!allowed.includes(serviceType as ServiceType)) {
     return { valid: false, reason: `${employee.name} ist nicht berechtigt für ${serviceType}-Dienste` };
   }

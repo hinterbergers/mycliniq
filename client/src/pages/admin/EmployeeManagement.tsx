@@ -15,12 +15,13 @@ import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as DatePickerCalendar } from "@/components/ui/calendar";
 import { Search, Plus, Filter, UserPlus, Pencil, Loader2, Shield, MapPin, Calendar as CalendarIcon, Award, Building, Trash2, X } from "lucide-react";
-import { useState, useEffect } from "react";
-import { employeeApi, competencyApi, roomApi, diplomaApi } from "@/lib/api";
+import { useState, useEffect, useMemo } from "react";
+import { employeeApi, competencyApi, roomApi, diplomaApi, serviceLinesApi } from "@/lib/api";
 import { apiRequest } from "@/lib/queryClient";
-import type { Employee, Competency, Resource, Diploma } from "@shared/schema";
+import type { Employee, Competency, Resource, Diploma, ServiceLine } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
+import { OVERDUTY_KEY, getServiceTypesForEmployee } from "@shared/shiftTypes";
 
 const ROLE_LABELS: Record<string, string> = {
   "Primararzt": "Primararzt:in",
@@ -81,20 +82,53 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const isValidEmail = (value: string) =>
   EMAIL_REGEX.test(value) && !/[^\x00-\x7F]/.test(value);
 
-type ServiceType = "gyn" | "kreiszimmer" | "turnus";
+type ServiceType = string;
 
-const SERVICE_TYPES: ServiceType[] = ["gyn", "kreiszimmer", "turnus"];
+const SERVICE_LINE_PALETTE = [
+  { badge: "bg-pink-100 text-pink-700 border-pink-200" },
+  { badge: "bg-blue-100 text-blue-700 border-blue-200" },
+  { badge: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  { badge: "bg-amber-100 text-amber-700 border-amber-200" },
+  { badge: "bg-violet-100 text-violet-700 border-violet-200" }
+];
 
-const SERVICE_TYPE_META: Record<ServiceType, { label: string; color: string }> = {
-  gyn: { label: "Gyn-Dienst", color: "bg-blue-100 text-blue-700 border-blue-200" },
-  kreiszimmer: { label: "Kreißzimmer", color: "bg-pink-100 text-pink-700 border-pink-200" },
-  turnus: { label: "Turnus", color: "bg-emerald-100 text-emerald-700 border-emerald-200" }
-};
+const FALLBACK_SERVICE_LINES: Array<Pick<ServiceLine, "key" | "label" | "roleGroup" | "sortOrder" | "isActive">> = [
+  { key: "kreiszimmer", label: "Kreißzimmer", roleGroup: "ASS", sortOrder: 1, isActive: true },
+  { key: "gyn", label: "Gyn-Dienst", roleGroup: "OA", sortOrder: 2, isActive: true },
+  { key: "turnus", label: "Turnus", roleGroup: "TURNUS", sortOrder: 3, isActive: true },
+  { key: "overduty", label: "Überdienst", roleGroup: "OA", sortOrder: 4, isActive: true }
+];
 
-const SERVICE_CAPABILITIES: Record<ServiceType, string[]> = {
-  gyn: ["Primararzt", "1. Oberarzt", "Funktionsoberarzt", "Ausbildungsoberarzt", "Oberarzt", "Oberärztin"],
-  kreiszimmer: ["Assistenzarzt", "Assistenzärztin"],
-  turnus: ["Assistenzarzt", "Assistenzärztin", "Turnusarzt"]
+const buildServiceLineDisplay = (
+  lines: ServiceLine[],
+  includeKeys: Set<string>
+) => {
+  const source = lines.length ? lines : FALLBACK_SERVICE_LINES;
+  const knownKeys = new Set(source.map((line) => line.key));
+  const extras = [...includeKeys]
+    .filter((key) => !knownKeys.has(key))
+    .map((key) => ({
+      key,
+      label: key,
+      roleGroup: "ALL",
+      sortOrder: 999,
+      isActive: true
+    }));
+  const allLines = [...source, ...extras];
+  return allLines
+    .filter((line) => line.isActive !== false || includeKeys.has(line.key))
+    .sort((a, b) => {
+      const order = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+      if (order !== 0) return order;
+      return a.label.localeCompare(b.label);
+    })
+    .map((line, index) => ({
+      key: line.key,
+      label: line.label,
+      roleGroup: line.roleGroup || "ALL",
+      isActive: line.isActive !== false,
+      style: SERVICE_LINE_PALETTE[index % SERVICE_LINE_PALETTE.length]
+    }));
 };
 
 interface ShiftPreferences {
@@ -208,6 +242,7 @@ export default function EmployeeManagement() {
   const [availableCompetencies, setAvailableCompetencies] = useState<Competency[]>([]);
   const [availableDiplomas, setAvailableDiplomas] = useState<Diploma[]>([]);
   const [availableRooms, setAvailableRooms] = useState<Resource[]>([]);
+  const [serviceLines, setServiceLines] = useState<ServiceLine[]>([]);
   const [competencySearch, setCompetencySearch] = useState("");
   const [diplomaSearch, setDiplomaSearch] = useState("");
   const [roomSearch, setRoomSearch] = useState("");
@@ -255,6 +290,39 @@ export default function EmployeeManagement() {
   const [newInactiveUntil, setNewInactiveUntil] = useState("");
   
   const canManageEmployees = isAdmin || isTechnicalAdmin;
+
+  const serviceTypeOverrideKeys = useMemo(() => {
+    const keys = new Set<string>();
+    employees.forEach((emp) => {
+      const prefs = (emp.shiftPreferences as ShiftPreferences | null) || null;
+      if (!Array.isArray(prefs?.serviceTypeOverrides)) return;
+      prefs.serviceTypeOverrides.forEach((value) => {
+        if (typeof value === "string") keys.add(value);
+      });
+    });
+    return keys;
+  }, [employees]);
+
+  const serviceLineDisplay = useMemo(
+    () => buildServiceLineDisplay(serviceLines, serviceTypeOverrideKeys),
+    [serviceLines, serviceTypeOverrideKeys]
+  );
+  const serviceLineLookup = useMemo(
+    () => new Map(serviceLineDisplay.map((line) => [line.key, line])),
+    [serviceLineDisplay]
+  );
+  const serviceLineKeySet = useMemo(
+    () => new Set(serviceLineDisplay.map((line) => line.key)),
+    [serviceLineDisplay]
+  );
+  const selectableServiceLines = useMemo(
+    () => serviceLineDisplay.filter((line) => line.key !== OVERDUTY_KEY),
+    [serviceLineDisplay]
+  );
+  const serviceLineMeta = useMemo(
+    () => serviceLineDisplay.map((line) => ({ key: line.key, roleGroup: line.roleGroup, label: line.label })),
+    [serviceLineDisplay]
+  );
   
   useEffect(() => {
     loadData();
@@ -263,15 +331,17 @@ export default function EmployeeManagement() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [employeeData, competencyData, roomData, diplomaData] = await Promise.all([
+      const [employeeData, competencyData, roomData, diplomaData, serviceLineData] = await Promise.all([
         employeeApi.getAll(),
         competencyApi.getAll(),
         roomApi.getAll(),
-        diplomaApi.getAll()
+        diplomaApi.getAll(),
+        serviceLinesApi.getAll().catch(() => [])
       ]);
       setEmployees(employeeData);
       setCompetencyList(competencyData);
       setDiplomaList(diplomaData);
+      setServiceLines(serviceLineData);
       setAvailableCompetencies(competencyData.filter((comp) => comp.isActive !== false));
       setAvailableDiplomas(diplomaData.filter((diploma) => diploma.isActive !== false));
       setAvailableRooms(roomData);
@@ -366,7 +436,7 @@ export default function EmployeeManagement() {
     setEditDeploymentRoomIds(Array.isArray(prefs?.deploymentRoomIds) ? prefs.deploymentRoomIds : []);
     setEditServiceTypeOverrides(
       Array.isArray(prefs?.serviceTypeOverrides)
-        ? prefs.serviceTypeOverrides.filter((value): value is ServiceType => SERVICE_TYPES.includes(value))
+        ? prefs.serviceTypeOverrides.filter((value): value is ServiceType => typeof value === "string" && serviceLineKeySet.has(value))
         : []
     );
     setEditCompetencyIds([]);
@@ -929,7 +999,8 @@ export default function EmployeeManagement() {
   const getRoomLabel = (id: number) =>
     availableRooms.find((room) => room.id === id)?.name || `Arbeitsplatz ${id}`;
 
-  const getServiceTypeLabel = (type: ServiceType) => SERVICE_TYPE_META[type]?.label || type;
+  const getServiceTypeLabel = (type: ServiceType) =>
+    serviceLineLookup.get(type)?.label || type;
 
   const getRoleLabel = (role: string) => ROLE_LABELS[role] || role;
 
@@ -1076,25 +1147,11 @@ export default function EmployeeManagement() {
       )
     : PERMISSION_FALLBACK;
 
-  const getServiceTypesForRole = (role: string): ServiceType[] => {
-    const normalizedRole = normalizeRoleValue(role) || role;
-    return SERVICE_TYPES.filter((service) => SERVICE_CAPABILITIES[service].includes(normalizedRole));
-  };
-
-  const getServiceTypesForEmployee = (emp: Employee): ServiceType[] => {
-    const prefs = (emp.shiftPreferences as ShiftPreferences | null) || null;
-    const overrides = Array.isArray(prefs?.serviceTypeOverrides)
-      ? prefs.serviceTypeOverrides.filter((value): value is ServiceType => SERVICE_TYPES.includes(value))
-      : [];
-    if (overrides.length) return overrides;
-    return getServiceTypesForRole(emp.role);
-  };
-
   const getCapabilities = (emp: Employee) => {
-    const types = getServiceTypesForEmployee(emp);
+    const types = getServiceTypesForEmployee(emp, serviceLineMeta);
     return types.map((type) => ({
-      label: SERVICE_TYPE_META[type].label,
-      color: SERVICE_TYPE_META[type].color
+      label: serviceLineLookup.get(type)?.label || type,
+      color: serviceLineLookup.get(type)?.style.badge || "bg-muted text-muted-foreground border-border"
     }));
   };
 
@@ -1633,16 +1690,16 @@ export default function EmployeeManagement() {
                         )}
                       </div>
                       <div className="grid gap-2 md:grid-cols-3">
-                        {SERVICE_TYPES.map((service) => (
-                          <div key={service} className="flex items-center gap-2">
+                        {selectableServiceLines.map((line) => (
+                          <div key={line.key} className="flex items-center gap-2">
                             <Checkbox
-                              id={`new-service-${service}`}
-                              checked={newServiceTypeOverrides.includes(service)}
-                              onCheckedChange={() => toggleNewServiceType(service)}
+                              id={`new-service-${line.key}`}
+                              checked={newServiceTypeOverrides.includes(line.key)}
+                              onCheckedChange={() => toggleNewServiceType(line.key)}
                               disabled={!canManageEmployees}
                             />
-                            <Label htmlFor={`new-service-${service}`} className="text-sm font-normal cursor-pointer">
-                              {SERVICE_TYPE_META[service].label}
+                            <Label htmlFor={`new-service-${line.key}`} className="text-sm font-normal cursor-pointer">
+                              {line.label}
                             </Label>
                           </div>
                         ))}
@@ -2319,16 +2376,16 @@ export default function EmployeeManagement() {
                         )}
                       </div>
                       <div className="grid gap-2 md:grid-cols-3">
-                        {SERVICE_TYPES.map((service) => (
-                          <div key={service} className="flex items-center gap-2">
+                        {selectableServiceLines.map((line) => (
+                          <div key={line.key} className="flex items-center gap-2">
                             <Checkbox
-                              id={`edit-service-${service}`}
-                              checked={editServiceTypeOverrides.includes(service)}
-                              onCheckedChange={() => toggleEditServiceType(service)}
+                              id={`edit-service-${line.key}`}
+                              checked={editServiceTypeOverrides.includes(line.key)}
+                              onCheckedChange={() => toggleEditServiceType(line.key)}
                               disabled={!canManageEmployees}
                             />
-                            <Label htmlFor={`edit-service-${service}`} className="text-sm font-normal cursor-pointer">
-                              {SERVICE_TYPE_META[service].label}
+                            <Label htmlFor={`edit-service-${line.key}`} className="text-sm font-normal cursor-pointer">
+                              {line.label}
                             </Label>
                           </div>
                         ))}

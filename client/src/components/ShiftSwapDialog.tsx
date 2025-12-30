@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -8,8 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
-import { employeeApi, shiftSwapApi, rosterApi } from "@/lib/api";
-import type { Employee, RosterShift, ShiftSwapRequest } from "@shared/schema";
+import { employeeApi, shiftSwapApi, rosterApi, serviceLinesApi } from "@/lib/api";
+import type { Employee, RosterShift, ShiftSwapRequest, ServiceLine } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 import { format, parseISO } from "date-fns";
@@ -32,12 +32,12 @@ interface ShiftSwapDialogProps {
   onSwapComplete?: () => void;
 }
 
-const SERVICE_TYPE_LABELS: Record<string, string> = {
-  gyn: "Gynäkologie",
-  kreiszimmer: "Kreißzimmer",
-  turnus: "Turnus",
-  overduty: "Überdienst"
-};
+const FALLBACK_SERVICE_LINES = [
+  { key: "gyn", label: "Gynäkologie" },
+  { key: "kreiszimmer", label: "Kreißzimmer" },
+  { key: "turnus", label: "Turnus" },
+  { key: "overduty", label: "Überdienst" }
+];
 
 const STATUS_BADGES = {
   Ausstehend: { variant: "outline" as const, icon: Clock, className: "text-amber-600 border-amber-300" },
@@ -51,6 +51,7 @@ export function ShiftSwapDialog({ open, onOpenChange, sourceShift, onSwapComplet
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [myRequests, setMyRequests] = useState<ShiftSwapRequest[]>([]);
   const [pendingRequests, setPendingRequests] = useState<ShiftSwapRequest[]>([]);
+  const [serviceLines, setServiceLines] = useState<ServiceLine[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   
@@ -75,9 +76,16 @@ export function ShiftSwapDialog({ open, onOpenChange, sourceShift, onSwapComplet
         employeeApi.getAll(),
         shiftSwapApi.getPending()
       ]);
-      
+      let serviceLineData: ServiceLine[] = [];
+      try {
+        serviceLineData = await serviceLinesApi.getAll();
+      } catch {
+        serviceLineData = [];
+      }
+
       setEmployees(empData);
       setPendingRequests(pendingData);
+      setServiceLines(serviceLineData);
       
       if (currentUser) {
         const myData = await shiftSwapApi.getByEmployee(currentUser.id);
@@ -141,6 +149,13 @@ export function ShiftSwapDialog({ open, onOpenChange, sourceShift, onSwapComplet
 
   const getEmployeeName = (id: number) => employees.find(e => e.id === id)?.name || "Unbekannt";
 
+  const serviceLineLabelLookup = useMemo(() => {
+    const map = new Map<string, string>();
+    FALLBACK_SERVICE_LINES.forEach((line) => map.set(line.key, line.label));
+    serviceLines.forEach((line) => map.set(line.key, line.label));
+    return map;
+  }, [serviceLines]);
+
   const eligibleEmployees = employees.filter(e => 
     e.id !== currentUser?.id && 
     e.isActive
@@ -195,7 +210,7 @@ export function ShiftSwapDialog({ open, onOpenChange, sourceShift, onSwapComplet
                         </span>
                       </div>
                       <Badge variant="outline">
-                        {SERVICE_TYPE_LABELS[sourceShift.serviceType] || sourceShift.serviceType}
+                        {serviceLineLabelLookup.get(sourceShift.serviceType) || sourceShift.serviceType}
                       </Badge>
                     </CardContent>
                   </Card>

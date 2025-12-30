@@ -41,7 +41,7 @@ const updateStatusSchema = z.object({
  */
 const createSlotSchema = z.object({
   dutyDayId: z.number().positive(),
-  serviceType: z.enum(['gyn', 'kreiszimmer', 'turnus', 'oa_dienst', 'fa_dienst', 'tagdienst', 'nachtdienst']),
+  serviceType: z.string().min(1),
   label: z.string().min(1),
   startTime: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/, "Zeit im Format HH:MM"),
   endTime: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/, "Zeit im Format HH:MM")

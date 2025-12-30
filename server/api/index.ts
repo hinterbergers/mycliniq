@@ -11,6 +11,7 @@ import { registerCompetencyRoutes } from "./competencies";
 import { registerDiplomaRoutes } from "./diplomas";
 import { registerPhysicalRoomRoutes } from "./physical-rooms";
 import { registerRoomRoutes } from "./rooms";
+import { registerServiceLineRoutes } from "./service-lines";
 import { registerDutyPlanRoutes } from "./duty-plans";
 import { registerWeeklyPlanRoutes } from "./weekly-plans";
 import { registerDailyOverrideRoutes } from "./daily-overrides";
@@ -72,6 +73,12 @@ export function registerModularApiRoutes(app: Express): void {
   const physicalRoomsRouter = Router();
   registerPhysicalRoomRoutes(physicalRoomsRouter);
   app.use("/api/physical-rooms", physicalRoomsRouter);
+
+  // Service Lines API (Dienstschienen)
+  // TODO: Add requireAdmin for POST, PUT, DELETE
+  const serviceLinesRouter = Router();
+  registerServiceLineRoutes(serviceLinesRouter);
+  app.use("/api/service-lines", serviceLinesRouter);
 
   // Duty Plans API (Dienstplan)
   // TODO: Add requireEditor for POST, PUT slots
