@@ -36,12 +36,13 @@ import {
   absenceApi,
   competencyApi,
   employeeApi,
+  meApi,
   plannedAbsencesAdminApi,
   vacationRulesApi,
   type PlannedAbsenceAdmin,
   type VacationRuleInput
 } from "@/lib/api";
-import { getAuthToken, useAuth } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
 import { getAustrianHoliday } from "@/lib/holidays";
 import { getSchoolHoliday, type SchoolHolidayLocation } from "@/lib/schoolHolidays";
 import { cn } from "@/lib/utils";
@@ -229,18 +230,10 @@ export default function VacationPlanEditor() {
     try {
       const yearStart = formatDateInput(new Date(year, 0, 1));
       const yearEnd = formatDateInput(new Date(year, 11, 31));
-      const clinicPromise = (async () => {
-        const token = getAuthToken();
-        if (!token) return null;
-        const response = await fetch("/api/admin/clinic", {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        });
-        if (!response.ok) return null;
-        const result = await response.json();
-        return result?.data ?? null;
-      })();
+      const clinicPromise = meApi
+        .get()
+        .then((data) => data?.clinic ?? null)
+        .catch(() => null);
 
       const [employeeData, competencyData, absenceData, ruleData, clinicData] = await Promise.all([
         employeeApi.getAll(),

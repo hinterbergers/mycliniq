@@ -1,786 +1,1170 @@
 import { Layout } from "@/components/layout/Layout";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
-import { 
-  Search, 
-  Plus, 
-  Filter, 
-  FolderOpen, 
-  Users, 
-  FileText, 
-  Calendar,
-  Clock,
+import {
+  Plus,
   CheckCircle2,
-  Circle,
-  AlertCircle,
-  MoreHorizontal,
-  ArrowRight,
-  Briefcase,
-  Trash2,
-  Edit,
-  User,
-  Info,
-  RefreshCw
+  X,
+  Pencil,
+  Users,
+  FileText,
+  Archive,
+  RefreshCw,
+  Check,
+  BookOpen
 } from "lucide-react";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { useState, useEffect } from "react";
-import { projectApi, taskApi, documentApi, employeeApi } from "@/lib/api";
-import type { ProjectInitiative, ProjectTask, ProjectDocument, Employee } from "@shared/schema";
+import { useEffect, useMemo, useState } from "react";
+import type { Employee, ProjectInitiative, Sop } from "@shared/schema";
+import { employeeApi, projectApi, sopApi, type SopDetail, type SopReferenceSuggestion } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { useLocation } from "wouter";
-import { format } from "date-fns";
-import { de } from "date-fns/locale";
 import { useAuth } from "@/lib/auth";
 
-const PROJECT_STATUS_OPTIONS = ['Offen', 'In Arbeit', 'In Review', 'Abgeschlossen'];
-const PROJECT_STATUS_COLORS: Record<string, string> = {
-  'Offen': 'bg-gray-100 text-gray-700 border-gray-200',
-  'In Arbeit': 'bg-blue-100 text-blue-700 border-blue-200',
-  'In Review': 'bg-amber-100 text-amber-700 border-amber-200',
-  'Abgeschlossen': 'bg-emerald-100 text-emerald-700 border-emerald-200',
-  'Entwurf': 'bg-gray-100 text-gray-700 border-gray-200',
-  'Aktiv': 'bg-blue-100 text-blue-700 border-blue-200',
-  'In Prüfung': 'bg-amber-100 text-amber-700 border-amber-200',
-  'Archiviert': 'bg-slate-100 text-slate-500 border-slate-200'
-};
-
+const SOP_CATEGORIES = ["SOP", "Leitlinie", "Checkliste", "Formular"] as const;
 const PROJECT_CATEGORIES = [
-  { value: 'SOP', label: 'SOP' },
-  { value: 'Studie', label: 'Studie' },
-  { value: 'Administrativ', label: 'Administrativ' },
-  { value: 'Qualitätsprojekt', label: 'Qualitätsprojekt' }
-];
+  { value: "SOP", label: "SOP" },
+  { value: "Studie", label: "Studie" },
+  { value: "Administrativ", label: "Administrativ" },
+  { value: "Qualitätsprojekt", label: "Qualitätsprojekt" },
+] as const;
 
-const CATEGORY_COLORS: Record<string, string> = {
-  'SOP': 'bg-purple-100 text-purple-700 border-purple-200',
-  'Studie': 'bg-blue-100 text-blue-700 border-blue-200',
-  'Administrativ': 'bg-slate-100 text-slate-700 border-slate-200',
-  'Qualitätsprojekt': 'bg-emerald-100 text-emerald-700 border-emerald-200'
+const STATUS_STYLES: Record<string, string> = {
+  proposed: "bg-slate-100 text-slate-700 border-slate-200",
+  in_progress: "bg-blue-100 text-blue-700 border-blue-200",
+  review: "bg-amber-100 text-amber-700 border-amber-200",
+  published: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  archived: "bg-slate-100 text-slate-500 border-slate-200",
+  active: "bg-blue-100 text-blue-700 border-blue-200",
+  done: "bg-emerald-100 text-emerald-700 border-emerald-200"
 };
 
-interface MockProject {
-  id: number;
-  title: string;
-  description?: string;
-  category: string;
-  status: string;
-  ownerId: number;
-  ownerName: string;
-  participants: { id: number; name: string; initials: string }[];
-  dueDate?: string;
-  taskCount: number;
-  completedTaskCount: number;
+const SOP_LABELS: Record<string, string> = {
+  proposed: "Vorgeschlagen",
+  in_progress: "Laufend",
+  review: "Review",
+  published: "Freigegeben",
+  archived: "Archiviert"
+};
+
+const PROJECT_LABELS: Record<string, string> = {
+  proposed: "Vorgeschlagen",
+  active: "Laufend",
+  done: "Abgeschlossen",
+  archived: "Archiviert"
+};
+
+function normalizeSopStatus(status?: string | null) {
+  const value = (status || "").toLowerCase();
+  if (["entwurf", "draft", "proposed"].includes(value)) return "proposed";
+  if (["in review", "review"].includes(value)) return "review";
+  if (["freigegeben", "published"].includes(value)) return "published";
+  if (["in bearbeitung", "in_progress"].includes(value)) return "in_progress";
+  if (["archiviert", "archived"].includes(value)) return "archived";
+  return value || "proposed";
 }
 
-const MOCK_PROJECTS: MockProject[] = [
-  {
-    id: 1001,
-    title: "SOP PPROM",
-    description: "Standardarbeitsanweisung für vorzeitigen Blasensprung erstellen",
-    category: "SOP",
-    status: "In Arbeit",
-    ownerId: 2,
-    ownerName: "Dr. Hinterberger",
-    participants: [
-      { id: 9, name: "Dr. Barbara Markota", initials: "BM" },
-      { id: 11, name: "Dr. Lucia Gerhold", initials: "LG" }
-    ],
-    dueDate: "2025-01-15",
-    taskCount: 5,
-    completedTaskCount: 2
-  },
-  {
-    id: 1002,
-    title: "Qualitätszirkel Sectio-Rate",
-    description: "Analyse und Optimierung der Kaiserschnitt-Indikationen",
-    category: "Qualitätsprojekt",
-    status: "In Arbeit",
-    ownerId: 1,
-    ownerName: "PD Dr. Lermann",
-    participants: [
-      { id: 2, name: "Dr. Stefan Hinterberger", initials: "SH" },
-      { id: 4, name: "Dr. Andreja Gornjec", initials: "AG" },
-      { id: 5, name: "Dr. Christoph Herbst", initials: "CH" }
-    ],
-    dueDate: "2025-02-28",
-    taskCount: 8,
-    completedTaskCount: 3
-  },
-  {
-    id: 1003,
-    title: "Endometriose-Studie ENDO-2025",
-    description: "Multizentrische Beobachtungsstudie zu Endometriose-Behandlungsergebnissen",
-    category: "Studie",
-    status: "Offen",
-    ownerId: 4,
-    ownerName: "Dr. Gornjec",
-    participants: [
-      { id: 7, name: "Dr. Martina Krenn", initials: "MK" }
-    ],
-    dueDate: "2025-06-30",
-    taskCount: 12,
-    completedTaskCount: 0
-  },
-  {
-    id: 1004,
-    title: "Dienstplan-Optimierung",
-    description: "Überarbeitung der Dienstplan-Regularien und Fairness-Kriterien",
-    category: "Administrativ",
-    status: "In Review",
-    ownerId: 2,
-    ownerName: "Dr. Hinterberger",
-    participants: [
-      { id: 1, name: "PD Dr. Johannes Lermann", initials: "JL" }
-    ],
-    dueDate: "2024-12-20",
-    taskCount: 4,
-    completedTaskCount: 4
-  },
-  {
-    id: 1005,
-    title: "SOP Postpartale Hämorrhagie",
-    description: "Aktualisierung der PPH-Leitlinie nach neuesten AWMF-Standards",
-    category: "SOP",
-    status: "Abgeschlossen",
-    ownerId: 9,
-    ownerName: "Dr. Markota",
-    participants: [
-      { id: 2, name: "Dr. Stefan Hinterberger", initials: "SH" },
-      { id: 5, name: "Dr. Christoph Herbst", initials: "CH" }
-    ],
-    dueDate: "2024-11-30",
-    taskCount: 6,
-    completedTaskCount: 6
+function normalizeProjectStatus(status?: string | null) {
+  const value = (status || "").toLowerCase();
+  if (["entwurf", "proposed"].includes(value)) return "proposed";
+  if (["aktiv", "active"].includes(value)) return "active";
+  if (["abgeschlossen", "done"].includes(value)) return "done";
+  if (["archiviert", "archived"].includes(value)) return "archived";
+  return value || "proposed";
+}
+
+const NATIONAL_GUIDELINE_KEYS = ["OGGG", "DGGG"];
+const INTERNATIONAL_GUIDELINE_KEYS = ["ESGE", "ACOG", "RCOG", "NICE"];
+
+const normalizeReferenceText = (value?: string | null) =>
+  (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
+
+const getReferenceRank = (ref: Pick<SopDetail["references"][number], "type" | "title" | "publisher">) => {
+  const text = `${normalizeReferenceText(ref.publisher)} ${normalizeReferenceText(ref.title)}`.trim();
+  if (ref.type === "awmf" || text.includes("AWMF")) return 0;
+  if (ref.type === "guideline") {
+    if (NATIONAL_GUIDELINE_KEYS.some((key) => text.includes(key))) return 1;
+    if (INTERNATIONAL_GUIDELINE_KEYS.some((key) => text.includes(key))) return 2;
+    return 3;
   }
-];
+  if (ref.type === "study") return 4;
+  return 5;
+};
 
-const MOCK_EMPLOYEES = [
-  { id: 1, name: "PD Dr. Johannes Lermann", initials: "JL" },
-  { id: 2, name: "Dr. Stefan Hinterberger", initials: "SH" },
-  { id: 3, name: "Dr. Janos Gellen", initials: "JG" },
-  { id: 4, name: "Dr. Andreja Gornjec", initials: "AG" },
-  { id: 5, name: "Dr. Christoph Herbst", initials: "CH" },
-  { id: 7, name: "Dr. Martina Krenn", initials: "MK" },
-  { id: 9, name: "Dr. Barbara Markota", initials: "BM" },
-  { id: 11, name: "Dr. Lucia Gerhold", initials: "LG" }
-];
-
-export default function Projects() {
-  const { employee: currentUser, isAdmin } = useAuth();
-  const [searchTerm, setSearchTerm] = useState("");
-  const [projects, setProjects] = useState<MockProject[]>(MOCK_PROJECTS);
-  const [selectedCategory, setSelectedCategory] = useState<string>("Alle");
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
-  const [selectedProject, setSelectedProject] = useState<MockProject | null>(null);
-  const [newProject, setNewProject] = useState({
-    title: '',
-    category: '',
-    client: '',
-    description: '',
-    participants: [] as number[],
-    dueDate: ''
+function sortReferences(references: SopDetail["references"] = []) {
+  return [...references].sort((a, b) => {
+    const aRank = getReferenceRank(a);
+    const bRank = getReferenceRank(b);
+    if (aRank !== bRank) return aRank - bRank;
+    return (a.title || "").localeCompare(b.title || "", "de");
   });
-  const { toast } = useToast();
-  const [, setLocation] = useLocation();
+}
 
-  const handleCreateProject = () => {
-    if (!newProject.title || !newProject.category) {
+export default function AdminProjects() {
+  const { toast } = useToast();
+  const { employee, isAdmin, isTechnicalAdmin, capabilities } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [sops, setSops] = useState<Sop[]>([]);
+  const [projects, setProjects] = useState<ProjectInitiative[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [sopSearch, setSopSearch] = useState("");
+  const [projectSearch, setProjectSearch] = useState("");
+
+  const [sopEditorOpen, setSopEditorOpen] = useState(false);
+  const [editingSop, setEditingSop] = useState<Sop | null>(null);
+  const [sopForm, setSopForm] = useState({
+    title: "",
+    category: "SOP",
+    contentMarkdown: "",
+    keywords: "",
+    awmfLink: ""
+  });
+  const [publishOnCreate, setPublishOnCreate] = useState(false);
+  const [publishNote, setPublishNote] = useState("");
+
+  const [projectEditorOpen, setProjectEditorOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState<ProjectInitiative | null>(null);
+  const [projectForm, setProjectForm] = useState({
+    title: "",
+    category: "SOP",
+    description: "",
+    ownerId: "",
+    dueDate: ""
+  });
+
+  const [memberDialogOpen, setMemberDialogOpen] = useState(false);
+  const [memberTarget, setMemberTarget] = useState<{ type: "sop" | "project"; id: number } | null>(null);
+  const [memberSelection, setMemberSelection] = useState<Record<number, "read" | "edit">>({});
+  const [memberLoading, setMemberLoading] = useState(false);
+
+  const [reasonDialog, setReasonDialog] = useState<{ type: "sop" | "project"; id: number; action: "reject" | "changes" } | null>(null);
+  const [reasonText, setReasonText] = useState("");
+  const [publishDialog, setPublishDialog] = useState<{ id: number } | null>(null);
+  const [changeNote, setChangeNote] = useState("");
+
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailSop, setDetailSop] = useState<SopDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [suggestedRefs, setSuggestedRefs] = useState<SopReferenceSuggestion[] | null>(null);
+  const [manualRefOpen, setManualRefOpen] = useState(false);
+  const [manualRefForm, setManualRefForm] = useState({
+    type: "guideline",
+    title: "",
+    url: "",
+    publisher: "",
+    yearOrVersion: "",
+    relevanceNote: ""
+  });
+
+  const canManageSops = isAdmin || isTechnicalAdmin || capabilities.includes("perm.sop_manage") || capabilities.includes("perm.sop_publish");
+  const canPublishSops = isAdmin || isTechnicalAdmin || capabilities.includes("perm.sop_publish");
+  const canManageProjects = isAdmin || isTechnicalAdmin || capabilities.includes("perm.project_manage");
+  const canDeleteProjects = isAdmin || isTechnicalAdmin || capabilities.includes("perm.project_delete");
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [sopData, projectData, employeeData] = await Promise.all([
+        sopApi.getAll(),
+        projectApi.getAll(),
+        employeeApi.getAll()
+      ]);
+      setSops(sopData);
+      setProjects(projectData);
+      setEmployees(employeeData);
+    } catch (error) {
       toast({
         title: "Fehler",
-        description: "Projektname und Kategorie sind Pflichtfelder",
+        description: "Daten konnten nicht geladen werden",
         variant: "destructive"
       });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const employeeLookup = useMemo(() => new Map(employees.map((emp) => [emp.id, emp])), [employees]);
+
+  const filteredSops = useMemo(() => {
+    if (!sopSearch.trim()) return sops;
+    const term = sopSearch.toLowerCase();
+    return sops.filter((sop) =>
+      sop.title.toLowerCase().includes(term) ||
+      (sop.keywords || []).some((keyword) => keyword.toLowerCase().includes(term))
+    );
+  }, [sops, sopSearch]);
+
+  const filteredProjects = useMemo(() => {
+    if (!projectSearch.trim()) return projects;
+    const term = projectSearch.toLowerCase();
+    return projects.filter((project) =>
+      project.title.toLowerCase().includes(term) ||
+      (project.description || "").toLowerCase().includes(term)
+    );
+  }, [projects, projectSearch]);
+
+  const sopSections = [
+    { key: "proposed", title: "Vorgeschlagen" },
+    { key: "in_progress", title: "Laufend" },
+    { key: "review", title: "Review" },
+    { key: "published", title: "Freigegeben" }
+  ];
+
+  const projectSections = [
+    { key: "proposed", title: "Vorgeschlagen" },
+    { key: "active", title: "Laufend" },
+    { key: "done", title: "Abgeschlossen" }
+  ];
+
+  const openSopEditor = (sop?: Sop) => {
+    if (sop) {
+      setEditingSop(sop);
+      setSopForm({
+        title: sop.title,
+        category: sop.category,
+        contentMarkdown: sop.contentMarkdown || "",
+        keywords: (sop.keywords || []).join(", "),
+        awmfLink: sop.awmfLink || ""
+      });
+    } else {
+      setEditingSop(null);
+      setSopForm({ title: "", category: "SOP", contentMarkdown: "", keywords: "", awmfLink: "" });
+    }
+    setPublishOnCreate(false);
+    setPublishNote("");
+    setSopEditorOpen(true);
+  };
+
+  const openProjectEditor = (project?: ProjectInitiative) => {
+    if (project) {
+      setEditingProject(project);
+      setProjectForm({
+        title: project.title,
+        category: project.category,
+        description: project.description || "",
+        ownerId: project.ownerId ? String(project.ownerId) : "",
+        dueDate: project.dueDate || ""
+      });
+    } else {
+      setEditingProject(null);
+      setProjectForm({ title: "", category: "SOP", description: "", ownerId: "", dueDate: "" });
+    }
+    setProjectEditorOpen(true);
+  };
+
+  const handleSaveSop = async () => {
+    if (!sopForm.title.trim()) {
+      toast({ title: "Fehler", description: "Titel ist erforderlich", variant: "destructive" });
       return;
     }
-
-    const newId = Math.max(...projects.map(p => p.id)) + 1;
-    const newProjectData: MockProject = {
-      id: newId,
-      title: newProject.title,
-      description: newProject.description,
-      category: newProject.category,
-      status: 'Offen',
-      ownerId: currentUser?.id || 2,
-      ownerName: currentUser?.name || 'Dr. Hinterberger',
-      participants: newProject.participants.map(id => {
-        const emp = MOCK_EMPLOYEES.find(e => e.id === id);
-        return emp ? { id: emp.id, name: emp.name, initials: emp.initials } : { id, name: 'Unbekannt', initials: '??' };
-      }),
-      dueDate: newProject.dueDate || undefined,
-      taskCount: 0,
-      completedTaskCount: 0
-    };
-
-    setProjects(prev => [newProjectData, ...prev]);
-    setIsDialogOpen(false);
-    setNewProject({ title: '', category: '', client: '', description: '', participants: [], dueDate: '' });
-    toast({ title: "Projekt erstellt", description: `${newProject.title} wurde angelegt` });
+    try {
+      if (editingSop) {
+        await sopApi.update(editingSop.id, {
+          title: sopForm.title.trim(),
+          category: sopForm.category as Sop["category"],
+          contentMarkdown: sopForm.contentMarkdown || null,
+          keywords: sopForm.keywords
+            ? sopForm.keywords.split(",").map((word) => word.trim()).filter(Boolean)
+            : [],
+          awmfLink: sopForm.awmfLink || null
+        });
+      } else {
+        const created = await sopApi.create({
+          title: sopForm.title.trim(),
+          category: sopForm.category as Sop["category"],
+          contentMarkdown: sopForm.contentMarkdown || null,
+          keywords: sopForm.keywords
+            ? sopForm.keywords.split(",").map((word) => word.trim()).filter(Boolean)
+            : [],
+          awmfLink: sopForm.awmfLink || null,
+          status: "proposed"
+        });
+        if (publishOnCreate && canPublishSops) {
+          if (!publishNote.trim()) {
+            toast({ title: "Fehler", description: "Aenderungsnotiz erforderlich", variant: "destructive" });
+            return;
+          }
+          await sopApi.publish(created.id, publishNote.trim());
+        }
+      }
+      toast({ title: "Gespeichert" });
+      setSopEditorOpen(false);
+      await loadData();
+    } catch (error) {
+      toast({ title: "Fehler", description: "SOP konnte nicht gespeichert werden", variant: "destructive" });
+    }
   };
 
-  const handleOpenDetail = (project: MockProject) => {
-    setSelectedProject(project);
-    setDetailDialogOpen(true);
+  const handleSaveProject = async () => {
+    if (!projectForm.title.trim()) {
+      toast({ title: "Fehler", description: "Titel ist erforderlich", variant: "destructive" });
+      return;
+    }
+    try {
+      const payload = {
+        title: projectForm.title.trim(),
+        category: projectForm.category as ProjectInitiative["category"],
+        description: projectForm.description || null,
+        ownerId: projectForm.ownerId ? Number(projectForm.ownerId) : null,
+        dueDate: projectForm.dueDate || null,
+        status: "proposed"
+      };
+      if (editingProject) {
+        await projectApi.update(editingProject.id, payload);
+      } else {
+        await projectApi.create(payload);
+      }
+      toast({ title: "Gespeichert" });
+      setProjectEditorOpen(false);
+      await loadData();
+    } catch (error) {
+      toast({ title: "Fehler", description: "Projekt konnte nicht gespeichert werden", variant: "destructive" });
+    }
   };
 
-  const handleUpdateStatus = (projectId: number, newStatus: string) => {
-    setProjects(prev => prev.map(p => 
-      p.id === projectId ? { ...p, status: newStatus } : p
-    ));
-    toast({ title: "Status aktualisiert" });
+  const openMemberDialog = async (type: "sop" | "project", id: number) => {
+    setMemberLoading(true);
+    setMemberTarget({ type, id });
+    try {
+      if (type === "sop") {
+        const detail = await sopApi.getById(id);
+        const selection: Record<number, "read" | "edit"> = {};
+        detail.members?.forEach((member) => {
+          selection[member.employeeId] = member.role;
+        });
+        setMemberSelection(selection);
+      } else {
+        const detail = await projectApi.getById(id);
+        const selection: Record<number, "read" | "edit"> = {};
+        (detail.members || []).forEach((member) => {
+          selection[member.employeeId] = member.role as "read" | "edit";
+        });
+        setMemberSelection(selection);
+      }
+      setMemberDialogOpen(true);
+    } catch (error) {
+      toast({ title: "Fehler", description: "Mitglieder konnten nicht geladen werden", variant: "destructive" });
+    } finally {
+      setMemberLoading(false);
+    }
   };
 
-  const handleDeleteProject = (projectId: number) => {
-    setProjects(prev => prev.filter(p => p.id !== projectId));
-    toast({ title: "Projekt gelöscht" });
-  };
-
-  const toggleParticipant = (empId: number) => {
-    setNewProject(prev => ({
-      ...prev,
-      participants: prev.participants.includes(empId)
-        ? prev.participants.filter(id => id !== empId)
-        : [...prev.participants, empId]
+  const saveMembers = async () => {
+    if (!memberTarget) return;
+    const members = Object.entries(memberSelection).map(([id, role]) => ({
+      employeeId: Number(id),
+      role
     }));
+    try {
+      if (memberTarget.type === "sop") {
+        await sopApi.assign(memberTarget.id, members);
+      } else {
+        await projectApi.assign(memberTarget.id, members);
+      }
+      toast({ title: "Mitglieder aktualisiert" });
+      setMemberDialogOpen(false);
+      await loadData();
+    } catch (error) {
+      toast({ title: "Fehler", description: "Mitglieder konnten nicht gespeichert werden", variant: "destructive" });
+    }
   };
 
-  const filteredProjects = projects.filter(project => {
-    const matchesSearch = searchTerm === '' ||
-      project.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      project.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      project.ownerName.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = selectedCategory === 'Alle' || project.category === selectedCategory;
-    return matchesSearch && matchesCategory;
-  });
+  const openSopDetail = async (id: number) => {
+    setDetailLoading(true);
+    setDetailOpen(true);
+    setSuggestedRefs(null);
+    try {
+      const detail = await sopApi.getById(id);
+      setDetailSop(detail);
+    } catch (error) {
+      toast({ title: "Fehler", description: "SOP konnte nicht geladen werden", variant: "destructive" });
+      setDetailOpen(false);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
 
-  const getProgress = (project: MockProject) => {
-    if (project.taskCount === 0) return 0;
-    return Math.round((project.completedTaskCount / project.taskCount) * 100);
+  const handleSopAction = async (id: number, action: "accept" | "request_review" | "start_revision" | "archive") => {
+    try {
+      if (action === "accept") {
+        await sopApi.accept(id);
+      }
+      if (action === "request_review") {
+        await sopApi.requestReview(id);
+      }
+      if (action === "start_revision") {
+        await sopApi.startRevision(id);
+      }
+      if (action === "archive") {
+        await sopApi.archive(id);
+      }
+      toast({ title: "Status aktualisiert" });
+      await loadData();
+    } catch (error) {
+      toast({ title: "Fehler", description: "Aktion fehlgeschlagen", variant: "destructive" });
+    }
+  };
+
+  const handleProjectAction = async (id: number, action: "accept" | "complete") => {
+    try {
+      if (action === "accept") {
+        await projectApi.accept(id);
+      }
+      if (action === "complete") {
+        await projectApi.complete(id);
+      }
+      toast({ title: "Status aktualisiert" });
+      await loadData();
+    } catch (error) {
+      toast({ title: "Fehler", description: "Aktion fehlgeschlagen", variant: "destructive" });
+    }
+  };
+
+  const submitReason = async () => {
+    if (!reasonDialog || !reasonText.trim()) return;
+    try {
+      if (reasonDialog.type === "sop" && reasonDialog.action === "reject") {
+        await sopApi.reject(reasonDialog.id, reasonText.trim());
+      }
+      if (reasonDialog.type === "sop" && reasonDialog.action === "changes") {
+        await sopApi.requestChanges(reasonDialog.id, reasonText.trim());
+      }
+      if (reasonDialog.type === "project") {
+        await projectApi.reject(reasonDialog.id, reasonText.trim());
+      }
+      toast({ title: "Aktion gespeichert" });
+      setReasonDialog(null);
+      setReasonText("");
+      await loadData();
+    } catch (error) {
+      toast({ title: "Fehler", description: "Aktion fehlgeschlagen", variant: "destructive" });
+    }
+  };
+
+  const submitPublish = async () => {
+    if (!publishDialog || !changeNote.trim()) return;
+    try {
+      await sopApi.publish(publishDialog.id, changeNote.trim());
+      toast({ title: "SOP freigegeben" });
+      setPublishDialog(null);
+      setChangeNote("");
+      await loadData();
+    } catch (error) {
+      toast({ title: "Fehler", description: "Freigabe fehlgeschlagen", variant: "destructive" });
+    }
+  };
+
+  const handleSuggestRefs = async () => {
+    if (!detailSop) return;
+    try {
+      const suggestions = await sopApi.suggestReferences(detailSop.id);
+      setSuggestedRefs(suggestions);
+    } catch (error) {
+      toast({ title: "Fehler", description: "KI-Vorschlaege konnten nicht geladen werden", variant: "destructive" });
+    }
+  };
+
+  const acceptSuggestedRef = async (ref: SopReferenceSuggestion) => {
+    if (!detailSop) return;
+    try {
+      await sopApi.addReference(detailSop.id, {
+        type: ref.type,
+        title: ref.title,
+        url: ref.url || null,
+        publisher: ref.publisher || null,
+        yearOrVersion: ref.yearOrVersion || null,
+        relevanceNote: ref.relevanceNote || null,
+        createdByAi: true
+      } as any);
+      toast({ title: "Referenz uebernommen" });
+      await openSopDetail(detailSop.id);
+      setSuggestedRefs((prev) => prev?.filter((item) => item.title !== ref.title) || null);
+    } catch (error) {
+      toast({ title: "Fehler", description: "Referenz konnte nicht uebernommen werden", variant: "destructive" });
+    }
+  };
+
+  const rejectSuggestedRef = (ref: SopReferenceSuggestion) => {
+    setSuggestedRefs((prev) => prev?.filter((item) => item.title !== ref.title) || null);
+  };
+
+  const openManualRefDialog = () => {
+    setManualRefForm({
+      type: "guideline",
+      title: "",
+      url: "",
+      publisher: "",
+      yearOrVersion: "",
+      relevanceNote: ""
+    });
+    setManualRefOpen(true);
+  };
+
+  const saveManualReference = async () => {
+    if (!detailSop) return;
+    if (!manualRefForm.title.trim()) {
+      toast({ title: "Fehler", description: "Titel ist erforderlich", variant: "destructive" });
+      return;
+    }
+    try {
+      await sopApi.addReference(detailSop.id, {
+        type: manualRefForm.type as SopReferenceSuggestion["type"],
+        title: manualRefForm.title.trim(),
+        url: manualRefForm.url.trim() || null,
+        publisher: manualRefForm.publisher.trim() || null,
+        yearOrVersion: manualRefForm.yearOrVersion.trim() || null,
+        relevanceNote: manualRefForm.relevanceNote.trim() || null,
+        createdByAi: false
+      } as any);
+      toast({ title: "Referenz hinzugefuegt" });
+      await openSopDetail(detailSop.id);
+      setManualRefOpen(false);
+    } catch (error) {
+      toast({ title: "Fehler", description: "Referenz konnte nicht gespeichert werden", variant: "destructive" });
+    }
+  };
+
+  const deleteProject = async (id: number) => {
+    try {
+      await projectApi.delete(id);
+      toast({ title: "Projekt geloescht" });
+      await loadData();
+    } catch (error) {
+      toast({ title: "Fehler", description: "Projekt konnte nicht geloescht werden", variant: "destructive" });
+    }
+  };
+
+  const renderSopItem = (sop: Sop) => {
+    const statusKey = normalizeSopStatus(sop.status);
+    return (
+      <Card key={sop.id} className="border-none kabeg-shadow hover:shadow-md transition-shadow">
+        <CardContent className="p-4 flex flex-col gap-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-1">
+              <h4 className="font-semibold">{sop.title}</h4>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="outline" className="text-muted-foreground">{sop.category}</Badge>
+                <Badge className={STATUS_STYLES[statusKey] || "bg-slate-100 text-slate-600 border-slate-200"}>
+                  {SOP_LABELS[statusKey] || statusKey}
+                </Badge>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 justify-end">
+              <Button size="sm" variant="outline" onClick={() => openSopDetail(sop.id)}>
+                Details
+              </Button>
+              {canManageSops && (
+                <>
+                  <Button size="sm" variant="outline" onClick={() => openMemberDialog("sop", sop.id)}>
+                    <Users className="w-4 h-4 mr-1" />Mitglieder
+                  </Button>
+                  {statusKey === "proposed" && (
+                    <>
+                      <Button size="sm" onClick={() => handleSopAction(sop.id, "accept")}>
+                        Annehmen
+                      </Button>
+                      <Button size="sm" variant="destructive" onClick={() => setReasonDialog({ type: "sop", id: sop.id, action: "reject" })}>
+                        Ablehnen
+                      </Button>
+                    </>
+                  )}
+                  {statusKey === "in_progress" && (
+                    <>
+                      <Button size="sm" variant="outline" onClick={() => openSopEditor(sop)}>
+                        <Pencil className="w-4 h-4 mr-1" />Bearbeiten
+                      </Button>
+                      <Button size="sm" onClick={() => handleSopAction(sop.id, "request_review")}>
+                        Review anfordern
+                      </Button>
+                    </>
+                  )}
+                  {statusKey === "review" && (
+                    <>
+                      {canPublishSops && (
+                        <Button size="sm" onClick={() => setPublishDialog({ id: sop.id })}>
+                          Freigeben
+                        </Button>
+                      )}
+                      <Button size="sm" variant="outline" onClick={() => setReasonDialog({ type: "sop", id: sop.id, action: "changes" })}>
+                        Aenderungen
+                      </Button>
+                      <Button size="sm" variant="destructive" onClick={() => setReasonDialog({ type: "sop", id: sop.id, action: "reject" })}>
+                        Ablehnen
+                      </Button>
+                    </>
+                  )}
+                  {statusKey === "published" && (
+                    <>
+                      <Button size="sm" variant="outline" onClick={() => handleSopAction(sop.id, "start_revision")}>
+                        Revision
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => handleSopAction(sop.id, "archive")}>
+                        Archivieren
+                      </Button>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+          {sop.contentMarkdown && (
+            <p className="text-sm text-muted-foreground line-clamp-2">{sop.contentMarkdown}</p>
+          )}
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const renderProjectItem = (project: ProjectInitiative) => {
+    const statusKey = normalizeProjectStatus(project.status);
+    const owner = project.ownerId ? employeeLookup.get(project.ownerId) : null;
+    return (
+      <Card key={project.id} className="border-none kabeg-shadow hover:shadow-md transition-shadow">
+        <CardContent className="p-4 flex flex-col gap-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-1">
+              <h4 className="font-semibold">{project.title}</h4>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="outline" className="text-muted-foreground">{project.category}</Badge>
+                <Badge className={STATUS_STYLES[statusKey] || "bg-slate-100 text-slate-600 border-slate-200"}>
+                  {PROJECT_LABELS[statusKey] || statusKey}
+                </Badge>
+                {owner && (
+                  <Badge variant="secondary">{owner.lastName || owner.name}</Badge>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 justify-end">
+              {canManageProjects && (
+                <>
+                  {statusKey === "proposed" && (
+                    <>
+                      <Button size="sm" onClick={() => handleProjectAction(project.id, "accept")}>
+                        Annehmen
+                      </Button>
+                      <Button size="sm" variant="destructive" onClick={() => setReasonDialog({ type: "project", id: project.id, action: "reject" })}>
+                        Ablehnen
+                      </Button>
+                    </>
+                  )}
+                  {statusKey === "active" && (
+                    <Button size="sm" onClick={() => handleProjectAction(project.id, "complete")}>
+                      Abschliessen
+                    </Button>
+                  )}
+                  <Button size="sm" variant="outline" onClick={() => openProjectEditor(project)}>
+                    <Pencil className="w-4 h-4 mr-1" />Bearbeiten
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => openMemberDialog("project", project.id)}>
+                    <Users className="w-4 h-4 mr-1" />Mitglieder
+                  </Button>
+                  {canDeleteProjects && (
+                    <Button size="sm" variant="destructive" onClick={() => deleteProject(project.id)}>
+                      Loeschen
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+          {project.description && (
+            <p className="text-sm text-muted-foreground line-clamp-2">{project.description}</p>
+          )}
+        </CardContent>
+      </Card>
+    );
   };
 
   return (
-    <Layout title="Projekte">
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Projekte</h1>
-          <p className="text-muted-foreground">Aufgaben, SOP-Erstellungen, Studien und administrative Projekte.</p>
+    <Layout title="SOPs & Projekte verwalten">
+      <div className="max-w-6xl mx-auto space-y-6">
+        <div className="flex flex-col gap-2">
+          <h2 className="text-2xl font-semibold tracking-tight">SOPs & Projekte verwalten</h2>
+          <p className="text-muted-foreground text-sm">
+            Vorschlaege pruefen, Mitarbeitende zuordnen und Freigaben steuern.
+          </p>
         </div>
 
-        <div className="flex flex-col sm:flex-row justify-between gap-4">
-          <div className="flex gap-2 flex-1">
-            <div className="relative w-full sm:w-96">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input 
-                placeholder="Projekte suchen..." 
-                className="pl-9 bg-background"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                data-testid="input-search-projects"
+        <Tabs defaultValue="sops">
+          <TabsList>
+            <TabsTrigger value="sops">SOPs</TabsTrigger>
+            <TabsTrigger value="projects">Projekte</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="sops" className="space-y-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <Input
+                placeholder="SOP suchen..."
+                value={sopSearch}
+                onChange={(event) => setSopSearch(event.target.value)}
+                className="max-w-sm"
+              />
+              {canManageSops && (
+                <Button onClick={() => openSopEditor()}>
+                  <Plus className="w-4 h-4 mr-2" />Neue SOP
+                </Button>
+              )}
+            </div>
+
+            {loading && <p className="text-sm text-muted-foreground">Lade SOPs...</p>}
+            {!loading && sopSections.map((section) => {
+              const items = filteredSops.filter((sop) => normalizeSopStatus(sop.status) === section.key);
+              if (!items.length) return null;
+              return (
+                <div key={section.key} className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-muted-foreground" />
+                    <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                      {section.title}
+                    </h3>
+                  </div>
+                  <div className="space-y-3">
+                    {items.map(renderSopItem)}
+                  </div>
+                </div>
+              );
+            })}
+          </TabsContent>
+
+          <TabsContent value="projects" className="space-y-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <Input
+                placeholder="Projekt suchen..."
+                value={projectSearch}
+                onChange={(event) => setProjectSearch(event.target.value)}
+                className="max-w-sm"
+              />
+              {canManageProjects && (
+                <Button onClick={() => openProjectEditor()}>
+                  <Plus className="w-4 h-4 mr-2" />Neues Projekt
+                </Button>
+              )}
+            </div>
+
+            {loading && <p className="text-sm text-muted-foreground">Lade Projekte...</p>}
+            {!loading && projectSections.map((section) => {
+              const items = filteredProjects.filter((project) => normalizeProjectStatus(project.status) === section.key);
+              if (!items.length) return null;
+              return (
+                <div key={section.key} className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <BookOpen className="w-4 h-4 text-muted-foreground" />
+                    <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                      {section.title}
+                    </h3>
+                  </div>
+                  <div className="space-y-3">
+                    {items.map(renderProjectItem)}
+                  </div>
+                </div>
+              );
+            })}
+          </TabsContent>
+        </Tabs>
+      </div>
+
+      <Dialog open={sopEditorOpen} onOpenChange={setSopEditorOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{editingSop ? "SOP bearbeiten" : "Neue SOP"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Titel</label>
+              <Input value={sopForm.title} onChange={(event) => setSopForm({ ...sopForm, title: event.target.value })} />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Kategorie</label>
+              <Select value={sopForm.category} onValueChange={(value) => setSopForm({ ...sopForm, category: value })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Kategorie" />
+                </SelectTrigger>
+                <SelectContent>
+                  {SOP_CATEGORIES.map((category) => (
+                    <SelectItem key={category} value={category}>
+                      {category}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Inhalt</label>
+              <Textarea
+                value={sopForm.contentMarkdown}
+                onChange={(event) => setSopForm({ ...sopForm, contentMarkdown: event.target.value })}
+                rows={6}
               />
             </div>
-            <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Kategorie" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Alle">Alle Kategorien</SelectItem>
-                {PROJECT_CATEGORIES.map(cat => (
-                  <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div>
+              <label className="text-sm font-medium">Schlagwoerter (Komma getrennt)</label>
+              <Input
+                value={sopForm.keywords}
+                onChange={(event) => setSopForm({ ...sopForm, keywords: event.target.value })}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">AWMF-Link</label>
+              <Input
+                value={sopForm.awmfLink}
+                onChange={(event) => setSopForm({ ...sopForm, awmfLink: event.target.value })}
+              />
+            </div>
+            {!editingSop && canPublishSops && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    checked={publishOnCreate}
+                    onCheckedChange={(checked) => setPublishOnCreate(Boolean(checked))}
+                  />
+                  <span className="text-sm">Sofort freigeben</span>
+                </div>
+                {publishOnCreate && (
+                  <Input
+                    placeholder="Aenderungsnotiz"
+                    value={publishNote}
+                    onChange={(event) => setPublishNote(event.target.value)}
+                  />
+                )}
+              </div>
+            )}
           </div>
-          
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="gap-2" data-testid="button-new-project">
-                <Plus className="w-4 h-4" /> Neues Projekt
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Neues Projekt anlegen</DialogTitle>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="space-y-2">
-                  <Label htmlFor="title">Projektname *</Label>
-                  <Input 
-                    id="title"
-                    placeholder="z.B. SOP PPROM"
-                    value={newProject.title}
-                    onChange={(e) => setNewProject(prev => ({ ...prev, title: e.target.value }))}
-                    data-testid="input-project-title"
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <Label>Kategorie *</Label>
-                  <Select 
-                    value={newProject.category}
-                    onValueChange={(v) => setNewProject(prev => ({ ...prev, category: v }))}
-                  >
-                    <SelectTrigger data-testid="select-category">
-                      <SelectValue placeholder="Kategorie wählen" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PROJECT_CATEGORIES.map(cat => (
-                        <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSopEditorOpen(false)}>Abbrechen</Button>
+            <Button onClick={handleSaveSop}>Speichern</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-                <div className="space-y-2">
-                  <Label htmlFor="client">Auftraggeber</Label>
-                  <Input 
-                    id="client"
-                    placeholder="z.B. Primararzt, OA, QM"
-                    value={newProject.client}
-                    onChange={(e) => setNewProject(prev => ({ ...prev, client: e.target.value }))}
-                    data-testid="input-project-client"
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="description">Beschreibung / Auftragstext</Label>
-                  <Textarea 
-                    id="description"
-                    placeholder="Projektbeschreibung..."
-                    rows={3}
-                    value={newProject.description}
-                    onChange={(e) => setNewProject(prev => ({ ...prev, description: e.target.value }))}
-                    data-testid="input-project-description"
-                  />
-                </div>
+      <Dialog open={projectEditorOpen} onOpenChange={setProjectEditorOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{editingProject ? "Projekt bearbeiten" : "Neues Projekt"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Titel</label>
+              <Input value={projectForm.title} onChange={(event) => setProjectForm({ ...projectForm, title: event.target.value })} />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Kategorie</label>
+              <Select value={projectForm.category} onValueChange={(value) => setProjectForm({ ...projectForm, category: value })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Kategorie" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROJECT_CATEGORIES.map((category) => (
+                    <SelectItem key={category.value} value={category.value}>
+                      {category.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Beschreibung</label>
+              <Textarea
+                value={projectForm.description}
+                onChange={(event) => setProjectForm({ ...projectForm, description: event.target.value })}
+                rows={5}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Owner</label>
+              <Select value={projectForm.ownerId} onValueChange={(value) => setProjectForm({ ...projectForm, ownerId: value })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Owner waehlen" />
+                </SelectTrigger>
+                <SelectContent>
+                  {employees.map((emp) => (
+                    <SelectItem key={emp.id} value={String(emp.id)}>
+                      {emp.lastName || emp.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Faelligkeit</label>
+              <Input
+                type="date"
+                value={projectForm.dueDate}
+                onChange={(event) => setProjectForm({ ...projectForm, dueDate: event.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setProjectEditorOpen(false)}>Abbrechen</Button>
+            <Button onClick={handleSaveProject}>Speichern</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-                <div className="space-y-2">
-                  <Label>Beteiligte Mitarbeitende</Label>
-                  <div className="grid grid-cols-2 gap-2 p-3 border border-border rounded-lg bg-muted/10 max-h-40 overflow-y-auto">
-                    {MOCK_EMPLOYEES.map(emp => (
-                      <div key={emp.id} className="flex items-center space-x-2">
-                        <Checkbox 
-                          id={`emp-${emp.id}`}
-                          checked={newProject.participants.includes(emp.id)}
-                          onCheckedChange={() => toggleParticipant(emp.id)}
+      <Dialog open={memberDialogOpen} onOpenChange={setMemberDialogOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Mitglieder zuordnen</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {memberLoading && <p className="text-sm text-muted-foreground">Lade Mitglieder...</p>}
+            {!memberLoading && (
+              <div className="grid gap-2 max-h-80 overflow-auto pr-2">
+                {employees.map((emp) => {
+                  const selected = Boolean(memberSelection[emp.id]);
+                  return (
+                    <div key={emp.id} className="flex items-center justify-between gap-3 border rounded-lg px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          checked={selected}
+                          onCheckedChange={(checked) => {
+                            const next = { ...memberSelection };
+                            if (checked) {
+                              next[emp.id] = next[emp.id] || "read";
+                            } else {
+                              delete next[emp.id];
+                            }
+                            setMemberSelection(next);
+                          }}
                         />
-                        <Label htmlFor={`emp-${emp.id}`} className="text-sm font-normal cursor-pointer">
-                          {emp.name}
-                        </Label>
+                        <span className="text-sm font-medium">{emp.lastName || emp.name}</span>
+                      </div>
+                      <Select
+                        value={memberSelection[emp.id] || "read"}
+                        onValueChange={(value) => {
+                          if (!selected) return;
+                          setMemberSelection({ ...memberSelection, [emp.id]: value as "read" | "edit" });
+                        }}
+                        disabled={!selected}
+                      >
+                        <SelectTrigger className="w-28">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="read">read</SelectItem>
+                          <SelectItem value="edit">edit</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMemberDialogOpen(false)}>Abbrechen</Button>
+            <Button onClick={saveMembers}>Speichern</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(reasonDialog)} onOpenChange={(open) => !open && setReasonDialog(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {reasonDialog?.action === "changes" ? "Aenderungen anfordern" : "Ablehnen"}
+            </DialogTitle>
+          </DialogHeader>
+          <Textarea
+            placeholder="Begruendung"
+            value={reasonText}
+            onChange={(event) => setReasonText(event.target.value)}
+            rows={4}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReasonDialog(null)}>Abbrechen</Button>
+            <Button onClick={submitReason}>Senden</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(publishDialog)} onOpenChange={(open) => !open && setPublishDialog(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>SOP freigeben</DialogTitle>
+          </DialogHeader>
+          <Input
+            placeholder="Aenderungsnotiz"
+            value={changeNote}
+            onChange={(event) => setChangeNote(event.target.value)}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPublishDialog(null)}>Abbrechen</Button>
+            <Button onClick={submitPublish}>Freigeben</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>SOP Details</DialogTitle>
+          </DialogHeader>
+          {detailLoading && <p className="text-sm text-muted-foreground">Lade...</p>}
+          {!detailLoading && detailSop && (
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-lg font-semibold">{detailSop.title}</h3>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="outline">{detailSop.category}</Badge>
+                  <Badge className={STATUS_STYLES[normalizeSopStatus(detailSop.status)]}>
+                    {SOP_LABELS[normalizeSopStatus(detailSop.status)]}
+                  </Badge>
+                </div>
+              </div>
+              {detailSop.awmfLink && (
+                <a href={detailSop.awmfLink} target="_blank" rel="noreferrer" className="text-sm text-primary underline">
+                  {detailSop.awmfLink}
+                </a>
+              )}
+              <Separator />
+              <div className="whitespace-pre-wrap text-sm text-muted-foreground">
+                {detailSop.contentMarkdown || "Kein Inhalt hinterlegt."}
+              </div>
+              <Separator />
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold">Referenzen</h4>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={handleSuggestRefs}>
+                      KI-Vorschlaege
+                    </Button>
+                    {canManageSops && (
+                      <Button size="sm" variant="outline" onClick={openManualRefDialog}>
+                        Referenz hinzufuegen
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                {detailSop.references?.length ? (
+                  <div className="space-y-2">
+                    {sortReferences(detailSop.references).map((ref) => (
+                      <div key={ref.id} className="border rounded-lg p-3 text-sm">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="font-medium">{ref.title}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {ref.publisher || "Unbekannt"} {ref.yearOrVersion || ""}
+                            </p>
+                          </div>
+                          <Badge variant="outline">{ref.status}</Badge>
+                        </div>
+                        {ref.url && (
+                          <a href={ref.url} target="_blank" rel="noreferrer" className="text-xs text-primary underline">
+                            {ref.url}
+                          </a>
+                        )}
                       </div>
                     ))}
                   </div>
-                </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="dueDate">Fälligkeitsdatum</Label>
-                  <Input 
-                    id="dueDate"
-                    type="date"
-                    value={newProject.dueDate}
-                    onChange={(e) => setNewProject(prev => ({ ...prev, dueDate: e.target.value }))}
-                    data-testid="input-due-date"
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-                  Abbrechen
-                </Button>
-                <Button 
-                  onClick={handleCreateProject}
-                  disabled={!newProject.title || !newProject.category}
-                  data-testid="button-create-project"
-                >
-                  Projekt erstellen
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
-
-        {filteredProjects.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-16">
-              <Briefcase className="h-12 w-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-medium mb-2">Keine Projekte gefunden</h3>
-              <p className="text-muted-foreground text-sm mb-4">
-                {searchTerm ? 'Versuchen Sie eine andere Suche.' : 'Erstellen Sie Ihr erstes Projekt.'}
-              </p>
-              {!searchTerm && (
-                <Button onClick={() => setIsDialogOpen(true)} className="gap-2">
-                  <Plus className="w-4 h-4" /> Neues Projekt
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {filteredProjects.map(project => (
-              <Card 
-                key={project.id} 
-                className="group hover:shadow-md transition-shadow cursor-pointer"
-                onClick={() => handleOpenDetail(project)}
-                data-testid={`card-project-${project.id}`}
-              >
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Badge variant="outline" className={CATEGORY_COLORS[project.category]}>
-                          {project.category}
-                        </Badge>
-                        <Badge variant="outline" className={PROJECT_STATUS_COLORS[project.status]}>
-                          {project.status}
-                        </Badge>
-                      </div>
-                      <CardTitle className="text-base font-semibold line-clamp-1">
-                        {project.title}
-                      </CardTitle>
-                      {project.description && (
-                        <CardDescription className="line-clamp-2 mt-1">
-                          {project.description}
-                        </CardDescription>
-                      )}
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="pb-3">
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2 text-sm">
-                      <User className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-muted-foreground">Verantwortlich:</span>
-                      <span className="font-medium">{project.ownerName}</span>
-                    </div>
-                    
-                    {project.participants.length > 0 && (
-                      <div className="flex items-center gap-2">
-                        <Users className="w-4 h-4 text-muted-foreground" />
-                        <div className="flex gap-1 flex-wrap">
-                          {project.participants.slice(0, 3).map(p => (
-                            <Badge key={p.id} variant="secondary" className="text-xs">
-                              {p.initials}
-                            </Badge>
-                          ))}
-                          {project.participants.length > 3 && (
-                            <Badge variant="secondary" className="text-xs">
-                              +{project.participants.length - 3}
-                            </Badge>
-                          )}
+                ) : (
+                  <p className="text-sm text-muted-foreground">Keine Referenzen vorhanden.</p>
+                )}
+                {suggestedRefs && suggestedRefs.length > 0 && (
+                  <div className="space-y-2">
+                    <h5 className="text-xs uppercase tracking-wide text-muted-foreground">KI-Vorschlaege</h5>
+                    {suggestedRefs.map((ref) => (
+                      <div key={ref.title} className="border rounded-lg p-3 text-sm">
+                        <p className="font-medium">{ref.title}</p>
+                        <p className="text-xs text-muted-foreground">{ref.relevanceNote}</p>
+                        <div className="flex gap-2 mt-2">
+                          <Button size="sm" variant="outline" onClick={() => acceptSuggestedRef(ref)}>
+                            Uebernehmen
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => rejectSuggestedRef(ref)}>
+                            Ablehnen
+                          </Button>
                         </div>
                       </div>
-                    )}
-
-                    {project.dueDate && (
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Calendar className="w-4 h-4" />
-                        <span>Fällig: {format(new Date(project.dueDate), 'dd.MM.yyyy', { locale: de })}</span>
-                      </div>
-                    )}
-                    
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>{project.completedTaskCount}/{project.taskCount} Aufgaben</span>
-                    </div>
-                    
-                    {project.taskCount > 0 && (
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-xs text-muted-foreground">
-                          <span>Fortschritt</span>
-                          <span>{getProgress(project)}%</span>
-                        </div>
-                        <Progress value={getProgress(project)} className="h-1.5" />
-                      </div>
-                    )}
+                    ))}
                   </div>
-                </CardContent>
-                <CardFooter className="pt-0">
-                  <div className="flex items-center justify-between w-full">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button 
-                          variant="ghost" 
-                          size="sm"
-                          onClick={(e) => e.stopPropagation()}
-                          data-testid={`button-menu-project-${project.id}`}
-                        >
-                          <MoreHorizontal className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start" onClick={(e) => e.stopPropagation()}>
-                        <DropdownMenuItem onClick={() => handleOpenDetail(project)}>
-                          <Edit className="w-4 h-4 mr-2" /> Details anzeigen
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        {PROJECT_STATUS_OPTIONS.map(status => (
-                          <DropdownMenuItem 
-                            key={status}
-                            onClick={() => handleUpdateStatus(project.id, status)}
-                            className={project.status === status ? 'bg-accent' : ''}
-                          >
-                            {status}
-                          </DropdownMenuItem>
-                        ))}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem 
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => handleDeleteProject(project.id)}
-                        >
-                          <Trash2 className="w-4 h-4 mr-2" /> Löschen
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="gap-1 group-hover:text-primary"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleOpenDetail(project);
-                      }}
-                      data-testid={`button-open-project-${project.id}`}
-                    >
-                      Öffnen <ArrowRight className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </CardFooter>
-              </Card>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <ProjectDetailDialog 
-        project={selectedProject}
-        open={detailDialogOpen}
-        onOpenChange={setDetailDialogOpen}
-        onStatusChange={(status) => {
-          if (selectedProject) {
-            handleUpdateStatus(selectedProject.id, status);
-            setSelectedProject({ ...selectedProject, status });
-          }
-        }}
-      />
-    </Layout>
-  );
-}
-
-interface SubTask {
-  id: number;
-  title: string;
-  assignee: string;
-  status: 'Offen' | 'In Arbeit' | 'Erledigt';
-}
-
-function ProjectDetailDialog({ 
-  project, 
-  open, 
-  onOpenChange,
-  onStatusChange
-}: { 
-  project: MockProject | null; 
-  open: boolean; 
-  onOpenChange: (open: boolean) => void;
-  onStatusChange: (status: string) => void;
-}) {
-  const [subtasks, setSubtasks] = useState<SubTask[]>([
-    { id: 1, title: "Literaturrecherche AWMF", assignee: "Dr. Markota", status: "Erledigt" },
-    { id: 2, title: "Entwurf Ablaufdiagramm", assignee: "Dr. Hinterberger", status: "In Arbeit" },
-    { id: 3, title: "Review durch OA", assignee: "Dr. Gerhold", status: "Offen" },
-    { id: 4, title: "Primar-Freigabe einholen", assignee: "PD Dr. Lermann", status: "Offen" }
-  ]);
-  const [showAddTask, setShowAddTask] = useState(false);
-  const [newTaskTitle, setNewTaskTitle] = useState("");
-  const [newTaskAssignee, setNewTaskAssignee] = useState("");
-  const { toast } = useToast();
-
-  const handleAddSubtask = () => {
-    if (!newTaskTitle) return;
-    const newTask: SubTask = {
-      id: Date.now(),
-      title: newTaskTitle,
-      assignee: newTaskAssignee || "Nicht zugewiesen",
-      status: "Offen"
-    };
-    setSubtasks(prev => [...prev, newTask]);
-    setNewTaskTitle("");
-    setNewTaskAssignee("");
-    setShowAddTask(false);
-    toast({ title: "Unteraufgabe hinzugefügt" });
-  };
-
-  const handleToggleTaskStatus = (taskId: number) => {
-    setSubtasks(prev => prev.map(t => {
-      if (t.id === taskId) {
-        const nextStatus: Record<string, 'Offen' | 'In Arbeit' | 'Erledigt'> = {
-          'Offen': 'In Arbeit',
-          'In Arbeit': 'Erledigt',
-          'Erledigt': 'Offen'
-        };
-        return { ...t, status: nextStatus[t.status] };
-      }
-      return t;
-    }));
-  };
-
-  const getTaskStatusIcon = (status: string) => {
-    switch (status) {
-      case 'Erledigt':
-        return <CheckCircle2 className="w-4 h-4 text-emerald-600" />;
-      case 'In Arbeit':
-        return <RefreshCw className="w-4 h-4 text-blue-600" />;
-      default:
-        return <Circle className="w-4 h-4 text-gray-400" />;
-    }
-  };
-
-  if (!project) return null;
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <div className="flex items-center gap-2 mb-2">
-            <Badge variant="outline" className={CATEGORY_COLORS[project.category]}>
-              {project.category}
-            </Badge>
-            <Select value={project.status} onValueChange={onStatusChange}>
-              <SelectTrigger className="w-auto h-6 text-xs px-2">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {PROJECT_STATUS_OPTIONS.map(s => (
-                  <SelectItem key={s} value={s}>{s}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <DialogTitle className="text-xl">{project.title}</DialogTitle>
-          {project.description && (
-            <p className="text-sm text-muted-foreground mt-1">{project.description}</p>
-          )}
-        </DialogHeader>
-
-        <div className="space-y-6 py-4">
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <p className="text-muted-foreground">Verantwortlich</p>
-              <p className="font-medium">{project.ownerName}</p>
-            </div>
-            {project.dueDate && (
-              <div>
-                <p className="text-muted-foreground">Fälligkeitsdatum</p>
-                <p className="font-medium">{format(new Date(project.dueDate), 'dd.MM.yyyy', { locale: de })}</p>
-              </div>
-            )}
-          </div>
-
-          {project.participants.length > 0 && (
-            <div>
-              <p className="text-sm text-muted-foreground mb-2">Beteiligte</p>
-              <div className="flex gap-2 flex-wrap">
-                {project.participants.map(p => (
-                  <Badge key={p.id} variant="secondary">{p.name}</Badge>
-                ))}
+                )}
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
 
-          <Separator />
-
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="font-semibold">Unteraufgaben</h4>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="gap-1"
-                onClick={() => setShowAddTask(true)}
+      <Dialog open={manualRefOpen} onOpenChange={setManualRefOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Referenz hinzufuegen</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Typ</label>
+              <Select
+                value={manualRefForm.type}
+                onValueChange={(value) => setManualRefForm((prev) => ({ ...prev, type: value }))}
               >
-                <Plus className="w-4 h-4" /> Unteraufgabe hinzufügen
-              </Button>
+                <SelectTrigger>
+                  <SelectValue placeholder="Typ waehlen" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="awmf">AWMF</SelectItem>
+                  <SelectItem value="guideline">Leitlinie</SelectItem>
+                  <SelectItem value="study">Studie</SelectItem>
+                  <SelectItem value="other">Sonstiges</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-
-            {showAddTask && (
-              <div className="p-3 border border-border rounded-lg bg-muted/30 mb-3 space-y-2">
-                <Input 
-                  placeholder="Aufgabentitel"
-                  value={newTaskTitle}
-                  onChange={(e) => setNewTaskTitle(e.target.value)}
-                  data-testid="input-subtask-title"
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Titel</label>
+              <Input
+                value={manualRefForm.title}
+                onChange={(event) => setManualRefForm((prev) => ({ ...prev, title: event.target.value }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">URL</label>
+              <Input
+                value={manualRefForm.url}
+                onChange={(event) => setManualRefForm((prev) => ({ ...prev, url: event.target.value }))}
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Herausgeber</label>
+                <Input
+                  value={manualRefForm.publisher}
+                  onChange={(event) => setManualRefForm((prev) => ({ ...prev, publisher: event.target.value }))}
                 />
-                <div className="flex gap-2">
-                  <Input 
-                    placeholder="Verantwortliche:r"
-                    value={newTaskAssignee}
-                    onChange={(e) => setNewTaskAssignee(e.target.value)}
-                    className="flex-1"
-                  />
-                  <Button size="sm" onClick={handleAddSubtask} disabled={!newTaskTitle}>
-                    Hinzufügen
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setShowAddTask(false)}>
-                    Abbrechen
-                  </Button>
-                </div>
               </div>
-            )}
-
-            <div className="space-y-2">
-              {subtasks.map(task => (
-                <div 
-                  key={task.id} 
-                  className="flex items-center gap-3 p-2 border border-border rounded-lg hover:bg-muted/30 cursor-pointer"
-                  onClick={() => handleToggleTaskStatus(task.id)}
-                >
-                  {getTaskStatusIcon(task.status)}
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-medium ${task.status === 'Erledigt' ? 'line-through text-muted-foreground' : ''}`}>
-                      {task.title}
-                    </p>
-                    <p className="text-xs text-muted-foreground">{task.assignee}</p>
-                  </div>
-                  <Badge variant="outline" className={`text-xs ${
-                    task.status === 'Erledigt' ? 'bg-emerald-50 text-emerald-700' :
-                    task.status === 'In Arbeit' ? 'bg-blue-50 text-blue-700' :
-                    'bg-gray-50 text-gray-600'
-                  }`}>
-                    {task.status}
-                  </Badge>
-                </div>
-              ))}
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Jahr/Version</label>
+                <Input
+                  value={manualRefForm.yearOrVersion}
+                  onChange={(event) => setManualRefForm((prev) => ({ ...prev, yearOrVersion: event.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Relevanzhinweis</label>
+              <Textarea
+                value={manualRefForm.relevanceNote}
+                onChange={(event) => setManualRefForm((prev) => ({ ...prev, relevanceNote: event.target.value }))}
+                rows={3}
+              />
             </div>
           </div>
-
-          {project.status === 'Abgeschlossen' && project.category === 'SOP' && (
-            <>
-              <Separator />
-              <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-lg flex gap-3">
-                <Info className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-                <p className="text-sm text-emerald-700">
-                  SOP-Projekte werden nach Freigabe automatisch in den SOP-Bereich übernommen 
-                  und stehen allen Mitarbeitenden zur Verfügung.
-                </p>
-              </div>
-            </>
-          )}
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Schließen
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setManualRefOpen(false)}>Abbrechen</Button>
+            <Button onClick={saveManualReference}>Speichern</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Layout>
   );
 }

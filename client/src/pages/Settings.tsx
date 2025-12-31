@@ -284,8 +284,11 @@ export default function Settings() {
     { key: "vacation.lock", label: "Kann Urlaubsplanung bearbeiten (Sperrzeitraum)" },
     { key: "vacation.approve", label: "Kann Urlaub freigeben" },
     { key: "absence.create", label: "Kann Abwesenheiten eintragen" },
-    { key: "sop.approve", label: "Kann SOPs freigeben" },
-    { key: "project.close", label: "Kann Projekte abschliessen" },
+    { key: "perm.sop_manage", label: "Kann SOPs verwalten" },
+    { key: "perm.sop_publish", label: "Kann SOPs freigeben" },
+    { key: "perm.project_manage", label: "Kann Projekte verwalten" },
+    { key: "perm.project_delete", label: "Kann Projekte loeschen" },
+    { key: "perm.message_group_manage", label: "Kann Gruppen verwalten" },
     { key: "training.edit", label: "Kann Ausbildungsplan bearbeiten" }
   ];
   

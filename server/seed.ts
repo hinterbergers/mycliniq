@@ -1,5 +1,18 @@
 import { db } from "./db";
-import { employees, resources, clinics, departments, permissions } from "@shared/schema";
+import { eq } from "drizzle-orm";
+import {
+  employees,
+  resources,
+  clinics,
+  departments,
+  permissions,
+  sops,
+  sopVersions,
+  sopReferences,
+  projectInitiatives,
+  projectMembers,
+  notifications
+} from "@shared/schema";
 
 const TEAM_DATA = [
   { 
@@ -140,8 +153,11 @@ async function seed() {
       { key: "vacation.lock", label: "Kann Urlaubsplanung bearbeiten (Sperrzeitraum)", scope: "department" },
       { key: "vacation.approve", label: "Kann Urlaub freigeben", scope: "department" },
       { key: "absence.create", label: "Kann Abwesenheiten eintragen", scope: "department" },
-      { key: "sop.approve", label: "Kann SOPs freigeben", scope: "department" },
-      { key: "project.close", label: "Kann Projekte abschliessen", scope: "department" },
+      { key: "perm.sop_manage", label: "Kann SOPs verwalten", scope: "department" },
+      { key: "perm.sop_publish", label: "Kann SOPs freigeben", scope: "department" },
+      { key: "perm.project_manage", label: "Kann Projekte verwalten", scope: "department" },
+      { key: "perm.project_delete", label: "Kann Projekte loeschen", scope: "department" },
+      { key: "perm.message_group_manage", label: "Kann Gruppen verwalten", scope: "department" },
       { key: "training.edit", label: "Kann Ausbildungsplan bearbeiten", scope: "department" }
     ];
     
@@ -164,6 +180,171 @@ async function seed() {
       await db.insert(resources).values(res);
     }
     console.log(`✓ Seeded ${RESOURCES_DATA.length} resources`);
+
+    const [fallbackEmployee] = await db
+      .select({ id: employees.id })
+      .from(employees)
+      .limit(1);
+    const [defaultOwner] = await db
+      .select({ id: employees.id })
+      .from(employees)
+      .where(eq(employees.email, "stefan.hinterberger@kabeg.at"))
+      .limit(1);
+    const [defaultPublisher] = await db
+      .select({ id: employees.id })
+      .from(employees)
+      .where(eq(employees.email, "johannes.lermann@kabeg.at"))
+      .limit(1);
+    const ownerId = defaultOwner?.id ?? fallbackEmployee?.id;
+    const publisherId = defaultPublisher?.id ?? ownerId;
+
+    const existingSops = await db.select({ id: sops.id }).from(sops).limit(1);
+    if (!existingSops.length && ownerId && publisherId) {
+      const [proposedSop] = await db
+        .insert(sops)
+        .values({
+          title: "SOP Vorschlag: Postpartale Blutung",
+          category: "SOP",
+          status: "proposed",
+          contentMarkdown: "Bitte Standardablauf fuer die Erstversorgung definieren.",
+          createdById: ownerId
+        })
+        .returning();
+      const [inProgressSop] = await db
+        .insert(sops)
+        .values({
+          title: "SOP Entwurf: Schwangerschaftsdiabetes",
+          category: "SOP",
+          status: "in_progress",
+          contentMarkdown: "Diagnostik, Therapie und Nachsorge fuer GDM.",
+          createdById: ownerId
+        })
+        .returning();
+      const [reviewSop] = await db
+        .insert(sops)
+        .values({
+          title: "Leitlinie Review: Praenatale Diagnostik",
+          category: "Leitlinie",
+          status: "review",
+          contentMarkdown: "Update der Untersuchungsintervalle und Dokumentation.",
+          createdById: ownerId
+        })
+        .returning();
+      const [publishedSop] = await db
+        .insert(sops)
+        .values({
+          title: "SOP Freigegeben: Sectio-Ablauf",
+          category: "SOP",
+          status: "published",
+          contentMarkdown: "Standardablauf vor, waehrend und nach Sectio.",
+          createdById: ownerId,
+          approvedById: publisherId,
+          publishedAt: new Date()
+        })
+        .returning();
+
+      const [version] = await db
+        .insert(sopVersions)
+        .values({
+          sopId: publishedSop.id,
+          versionNumber: 1,
+          title: publishedSop.title,
+          contentMarkdown: publishedSop.contentMarkdown || "",
+          changeNote: "Erstveroeffentlichung",
+          releasedById: publisherId
+        })
+        .returning();
+
+      await db
+        .update(sops)
+        .set({
+          currentVersionId: version.id,
+          version: "1",
+          approvedById: publisherId,
+          publishedAt: new Date()
+        })
+        .where(eq(sops.id, publishedSop.id));
+
+      await db.insert(sopReferences).values({
+        sopId: publishedSop.id,
+        type: "awmf",
+        status: "accepted",
+        title: "AWMF Leitlinie (Beispiel)",
+        url: "https://www.awmf.org/leitlinien",
+        publisher: "AWMF",
+        yearOrVersion: "2024",
+        relevanceNote: "Bitte aktuelle Version pruefen.",
+        createdById: ownerId,
+        createdByAi: false,
+        verifiedById: publisherId,
+        verifiedAt: new Date()
+      });
+
+      console.log("✓ Seeded SOP samples");
+    }
+
+    const existingProjects = await db
+      .select({ id: projectInitiatives.id })
+      .from(projectInitiatives)
+      .limit(1);
+    if (!existingProjects.length && ownerId) {
+      const [proposedProject] = await db
+        .insert(projectInitiatives)
+        .values({
+          title: "Projektvorschlag: SOP Digitale Kurve",
+          description: "Erstellung einer SOP fuer die digitale Geburtsdokumentation.",
+          category: "SOP",
+          status: "proposed",
+          createdById: ownerId,
+          ownerId
+        })
+        .returning();
+      const [activeProject] = await db
+        .insert(projectInitiatives)
+        .values({
+          title: "Qualitaetsprojekt: CTG Audit",
+          description: "Audit der CTG Dokumentation und Rueckmeldungen.",
+          category: "Qualitätsprojekt",
+          status: "active",
+          createdById: ownerId,
+          ownerId
+        })
+        .returning();
+      const [doneProject] = await db
+        .insert(projectInitiatives)
+        .values({
+          title: "Studie abgeschlossen: Postpartale Analgesie",
+          description: "Studienabschluss inkl. Ergebniszusammenfassung.",
+          category: "Studie",
+          status: "done",
+          createdById: ownerId,
+          ownerId
+        })
+        .returning();
+
+      await db.insert(projectMembers).values([
+        { projectId: proposedProject.id, employeeId: ownerId, role: "Leitung" },
+        { projectId: activeProject.id, employeeId: ownerId, role: "Leitung" },
+        { projectId: doneProject.id, employeeId: ownerId, role: "Leitung" }
+      ]);
+
+      console.log("✓ Seeded project samples");
+    }
+
+    const existingNotifications = await db
+      .select({ id: notifications.id })
+      .from(notifications)
+      .limit(1);
+    if (!existingNotifications.length && ownerId) {
+      await db.insert(notifications).values({
+        recipientId: ownerId,
+        type: "system",
+        title: "Willkommen bei SOPs & Projekten",
+        message: "Neue SOPs und Projekte warten auf Ihre Freigabe.",
+        link: "/nachrichten"
+      });
+      console.log("✓ Seeded notifications");
+    }
     
     console.log("Seeding complete!");
     process.exit(0);

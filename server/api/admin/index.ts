@@ -18,8 +18,11 @@ const DEFAULT_PERMISSION_CATALOG = [
   { key: "vacation.lock", label: "Kann Urlaubsplanung bearbeiten (Sperrzeitraum)", scope: "department" },
   { key: "vacation.approve", label: "Kann Urlaub freigeben", scope: "department" },
   { key: "absence.create", label: "Kann Abwesenheiten eintragen", scope: "department" },
-  { key: "sop.approve", label: "Kann SOPs freigeben", scope: "department" },
-  { key: "project.close", label: "Kann Projekte abschliessen", scope: "department" },
+  { key: "perm.sop_manage", label: "Kann SOPs verwalten", scope: "department" },
+  { key: "perm.sop_publish", label: "Kann SOPs freigeben", scope: "department" },
+  { key: "perm.project_manage", label: "Kann Projekte verwalten", scope: "department" },
+  { key: "perm.project_delete", label: "Kann Projekte loeschen", scope: "department" },
+  { key: "perm.message_group_manage", label: "Kann Gruppen verwalten", scope: "department" },
   { key: "training.edit", label: "Kann Ausbildungsplan bearbeiten", scope: "department" }
 ];
 

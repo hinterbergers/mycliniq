@@ -211,8 +211,11 @@ const PERMISSION_FALLBACK = [
   { key: "vacation.lock", label: "Kann Urlaubsplanung bearbeiten (Sperrzeitraum)" },
   { key: "vacation.approve", label: "Kann Urlaub freigeben" },
   { key: "absence.create", label: "Kann Abwesenheiten eintragen" },
-  { key: "sop.approve", label: "Kann SOPs freigeben" },
-  { key: "project.close", label: "Kann Projekte abschliessen" },
+  { key: "perm.sop_manage", label: "Kann SOPs verwalten" },
+  { key: "perm.sop_publish", label: "Kann SOPs freigeben" },
+  { key: "perm.project_manage", label: "Kann Projekte verwalten" },
+  { key: "perm.project_delete", label: "Kann Projekte loeschen" },
+  { key: "perm.message_group_manage", label: "Kann Gruppen verwalten" },
   { key: "training.edit", label: "Kann Ausbildungsplan bearbeiten" }
 ];
 
@@ -682,8 +685,8 @@ export default function EmployeeManagement() {
       return;
     }
 
-    const parsedVacationEntitlement = parseVacationEntitlementInput(editFormData.vacationEntitlement);
-    if (editFormData.vacationEntitlement.trim() && parsedVacationEntitlement === null) {
+    const parsedVacationEntitlementValue = parseVacationEntitlementInput(editFormData.vacationEntitlement);
+    if (editFormData.vacationEntitlement.trim() && parsedVacationEntitlementValue === null) {
       toast({
         title: "Fehler",
         description: "Bitte einen gueltigen Urlaubsanspruch (Tage) eingeben.",
@@ -725,7 +728,7 @@ export default function EmployeeManagement() {
         canOverduty: editCanOverduty,
         inactiveFrom: parsedInactiveFrom || null,
         inactiveUntil: parsedInactiveUntil || null,
-        vacationEntitlement: parsedVacationEntitlement,
+        vacationEntitlement: parsedVacationEntitlementValue,
         shiftPreferences: nextShiftPreferences
       };
 
@@ -854,8 +857,8 @@ export default function EmployeeManagement() {
       return;
     }
 
-    const parsedVacationEntitlement = parseVacationEntitlementInput(newFormData.vacationEntitlement);
-    if (newFormData.vacationEntitlement.trim() && parsedVacationEntitlement === null) {
+    const parsedVacationEntitlementNew = parseVacationEntitlementInput(newFormData.vacationEntitlement);
+    if (newFormData.vacationEntitlement.trim() && parsedVacationEntitlementNew === null) {
       toast({
         title: "Fehler",
         description: "Bitte einen gueltigen Urlaubsanspruch (Tage) eingeben.",
@@ -891,7 +894,7 @@ export default function EmployeeManagement() {
         canOverduty: newCanOverduty,
         inactiveFrom: parsedInactiveFrom || null,
         inactiveUntil: parsedInactiveUntil || null,
-        vacationEntitlement: parsedVacationEntitlement,
+        vacationEntitlement: parsedVacationEntitlementNew,
         shiftPreferences: nextShiftPreferences
       };
       if (currentUser?.departmentId) {

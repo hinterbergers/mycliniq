@@ -20,6 +20,8 @@ import { registerVacationRuleRoutes } from "./vacation-rules";
 import { registerProjectRoutes } from "./projects";
 import { registerSopRoutes } from "./sops";
 import { registerToolRoutes } from "./tools";
+import { registerNotificationRoutes } from "./notifications";
+import { registerMessageRoutes } from "./messages";
 
 /**
  * Register all modular API routes
@@ -126,6 +128,16 @@ export function registerModularApiRoutes(app: Express): void {
   const sopsRouter = Router();
   registerSopRoutes(sopsRouter);
   app.use("/api/sops", sopsRouter);
+
+  // Notifications API
+  const notificationsRouter = Router();
+  registerNotificationRoutes(notificationsRouter);
+  app.use("/api/notifications", notificationsRouter);
+
+  // Messages API
+  const messagesRouter = Router();
+  registerMessageRoutes(messagesRouter);
+  app.use("/api/messages", messagesRouter);
 
   // Tools API
   const toolsRouter = Router();

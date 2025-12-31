@@ -863,7 +863,11 @@ export const projectStatusEnum = pgEnum('project_status', [
   'Aktiv',
   'In Prüfung',
   'Abgeschlossen',
-  'Archiviert'
+  'Archiviert',
+  'proposed',
+  'active',
+  'done',
+  'archived'
 ]);
 
 export const taskStatusEnum = pgEnum('task_status', [
@@ -910,7 +914,47 @@ export const sopCategoryEnum = pgEnum('sop_category', [
 export const sopStatusEnum = pgEnum('sop_status', [
   'Entwurf',
   'In Review',
-  'Freigegeben'
+  'Freigegeben',
+  'proposed',
+  'in_progress',
+  'review',
+  'published',
+  'archived'
+]);
+
+export const sopMemberRoleEnum = pgEnum('sop_member_role', [
+  'read',
+  'edit'
+]);
+
+export const sopReferenceTypeEnum = pgEnum('sop_reference_type', [
+  'awmf',
+  'guideline',
+  'study',
+  'other'
+]);
+
+export const sopReferenceStatusEnum = pgEnum('sop_reference_status', [
+  'suggested',
+  'accepted',
+  'rejected'
+]);
+
+export const notificationTypeEnum = pgEnum('notification_type', [
+  'system',
+  'sop',
+  'project',
+  'message'
+]);
+
+export const messageThreadTypeEnum = pgEnum('message_thread_type', [
+  'direct',
+  'group'
+]);
+
+export const messageThreadRoleEnum = pgEnum('message_thread_role', [
+  'owner',
+  'member'
 ]);
 
 // Project category enum
@@ -925,7 +969,9 @@ export const projectCategoryEnum = pgEnum('project_category', [
 export const projectMemberRoleEnum = pgEnum('project_member_role', [
   'Mitarbeit',
   'Review',
-  'Leitung'
+  'Leitung',
+  'read',
+  'edit'
 ]);
 
 // SOPs table - standalone SOPs and clinical documents
@@ -934,12 +980,16 @@ export const sops = pgTable("sops", {
   title: text("title").notNull(),
   category: sopCategoryEnum("category").notNull().default('SOP'),
   version: text("version").notNull().default('1.0'),
-  status: sopStatusEnum("status").notNull().default('Entwurf'),
+  status: sopStatusEnum("status").notNull().default('proposed'),
   contentMarkdown: text("content_markdown"),
   keywords: jsonb("keywords").$type<string[]>(),
   awmfLink: text("awmf_link"),
+  currentVersionId: integer("current_version_id"),
+  basedOnVersionId: integer("based_on_version_id"),
   createdById: integer("created_by_id").references(() => employees.id).notNull(),
   approvedById: integer("approved_by_id").references(() => employees.id),
+  publishedAt: timestamp("published_at"),
+  archivedAt: timestamp("archived_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull()
 });
@@ -953,17 +1003,85 @@ export const insertSopSchema = createInsertSchema(sops).omit({
 export type InsertSop = z.infer<typeof insertSopSchema>;
 export type Sop = typeof sops.$inferSelect;
 
+// SOP members table
+export const sopMembers = pgTable("sop_members", {
+  sopId: integer("sop_id").references(() => sops.id, { onDelete: 'cascade' }).notNull(),
+  employeeId: integer("employee_id").references(() => employees.id, { onDelete: 'cascade' }).notNull(),
+  role: sopMemberRoleEnum("role").notNull().default('read'),
+  joinedAt: timestamp("joined_at").defaultNow().notNull()
+}, (table) => [
+  primaryKey({ columns: [table.sopId, table.employeeId] })
+]);
+
+export const insertSopMemberSchema = createInsertSchema(sopMembers).omit({
+  joinedAt: true
+});
+
+export type InsertSopMember = z.infer<typeof insertSopMemberSchema>;
+export type SopMember = typeof sopMembers.$inferSelect;
+
+// SOP version history
+export const sopVersions = pgTable("sop_versions", {
+  id: serial("id").primaryKey(),
+  sopId: integer("sop_id").references(() => sops.id, { onDelete: 'cascade' }).notNull(),
+  versionNumber: integer("version_number").notNull(),
+  title: text("title").notNull(),
+  contentMarkdown: text("content_markdown").notNull(),
+  changeNote: text("change_note"),
+  releasedById: integer("released_by_id").references(() => employees.id).notNull(),
+  releasedAt: timestamp("released_at").defaultNow().notNull()
+});
+
+export const insertSopVersionSchema = createInsertSchema(sopVersions).omit({
+  id: true,
+  releasedAt: true
+});
+
+export type InsertSopVersion = z.infer<typeof insertSopVersionSchema>;
+export type SopVersion = typeof sopVersions.$inferSelect;
+
+// SOP references
+export const sopReferences = pgTable("sop_references", {
+  id: serial("id").primaryKey(),
+  sopId: integer("sop_id").references(() => sops.id, { onDelete: 'cascade' }).notNull(),
+  type: sopReferenceTypeEnum("type").notNull(),
+  status: sopReferenceStatusEnum("status").notNull().default('suggested'),
+  title: text("title").notNull(),
+  url: text("url"),
+  publisher: text("publisher"),
+  yearOrVersion: text("year_or_version"),
+  relevanceNote: text("relevance_note"),
+  createdById: integer("created_by_id").references(() => employees.id),
+  createdByAi: boolean("created_by_ai").notNull().default(false),
+  verifiedById: integer("verified_by_id").references(() => employees.id),
+  verifiedAt: timestamp("verified_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+});
+
+export const insertSopReferenceSchema = createInsertSchema(sopReferences).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  verifiedAt: true
+});
+
+export type InsertSopReference = z.infer<typeof insertSopReferenceSchema>;
+export type SopReference = typeof sopReferences.$inferSelect;
+
 // Project Initiatives table (extended with category and owner)
 export const projectInitiatives = pgTable("project_initiatives", {
   id: serial("id").primaryKey(),
   title: text("title").notNull(),
   description: text("description"),
   category: projectCategoryEnum("category").notNull().default('SOP'),
-  status: projectStatusEnum("status").notNull().default('Entwurf'),
+  status: projectStatusEnum("status").notNull().default('proposed'),
   ownerId: integer("owner_id").references(() => employees.id),
   createdById: integer("created_by_id").references(() => employees.id).notNull(),
   dueDate: date("due_date"),
   priority: integer("priority").notNull().default(0),
+  deletedAt: timestamp("deleted_at"),
+  deletedById: integer("deleted_by_id").references(() => employees.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull()
 });
@@ -981,7 +1099,7 @@ export type ProjectInitiative = typeof projectInitiatives.$inferSelect;
 export const projectMembers = pgTable("project_members", {
   projectId: integer("project_id").references(() => projectInitiatives.id, { onDelete: 'cascade' }).notNull(),
   employeeId: integer("employee_id").references(() => employees.id, { onDelete: 'cascade' }).notNull(),
-  role: projectMemberRoleEnum("role").notNull().default('Mitarbeit'),
+  role: projectMemberRoleEnum("role").notNull().default('read'),
   joinedAt: timestamp("joined_at").defaultNow().notNull()
 }, (table) => [
   primaryKey({ columns: [table.projectId, table.employeeId] })
@@ -1103,6 +1221,78 @@ export const insertTaskActivitySchema = createInsertSchema(taskActivities).omit(
 
 export type InsertTaskActivity = z.infer<typeof insertTaskActivitySchema>;
 export type TaskActivity = typeof taskActivities.$inferSelect;
+
+// System notifications
+export const notifications = pgTable("notifications", {
+  id: serial("id").primaryKey(),
+  recipientId: integer("recipient_id").references(() => employees.id).notNull(),
+  type: notificationTypeEnum("type").notNull().default('system'),
+  title: text("title").notNull(),
+  message: text("message"),
+  link: text("link"),
+  metadata: jsonb("metadata"),
+  isRead: boolean("is_read").notNull().default(false),
+  readAt: timestamp("read_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+});
+
+export const insertNotificationSchema = createInsertSchema(notifications).omit({
+  id: true,
+  createdAt: true,
+  readAt: true
+});
+
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type Notification = typeof notifications.$inferSelect;
+
+// Messaging threads
+export const messageThreads = pgTable("message_threads", {
+  id: serial("id").primaryKey(),
+  type: messageThreadTypeEnum("type").notNull().default('direct'),
+  title: text("title"),
+  createdById: integer("created_by_id").references(() => employees.id),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+});
+
+export const insertMessageThreadSchema = createInsertSchema(messageThreads).omit({
+  id: true,
+  createdAt: true
+});
+
+export type InsertMessageThread = z.infer<typeof insertMessageThreadSchema>;
+export type MessageThread = typeof messageThreads.$inferSelect;
+
+export const messageThreadMembers = pgTable("message_thread_members", {
+  threadId: integer("thread_id").references(() => messageThreads.id, { onDelete: 'cascade' }).notNull(),
+  employeeId: integer("employee_id").references(() => employees.id, { onDelete: 'cascade' }).notNull(),
+  role: messageThreadRoleEnum("role").notNull().default('member'),
+  joinedAt: timestamp("joined_at").defaultNow().notNull()
+}, (table) => [
+  primaryKey({ columns: [table.threadId, table.employeeId] })
+]);
+
+export const insertMessageThreadMemberSchema = createInsertSchema(messageThreadMembers).omit({
+  joinedAt: true
+});
+
+export type InsertMessageThreadMember = z.infer<typeof insertMessageThreadMemberSchema>;
+export type MessageThreadMember = typeof messageThreadMembers.$inferSelect;
+
+export const messageMessages = pgTable("message_messages", {
+  id: serial("id").primaryKey(),
+  threadId: integer("thread_id").references(() => messageThreads.id, { onDelete: 'cascade' }).notNull(),
+  senderId: integer("sender_id").references(() => employees.id).notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+});
+
+export const insertMessageSchema = createInsertSchema(messageMessages).omit({
+  id: true,
+  createdAt: true
+});
+
+export type InsertMessage = z.infer<typeof insertMessageSchema>;
+export type Message = typeof messageMessages.$inferSelect;
 
 // Shift Swap Requests table
 export const shiftSwapRequests = pgTable("shift_swap_requests", {

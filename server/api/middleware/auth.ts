@@ -103,6 +103,22 @@ async function getAuthUserByEmployeeId(employeeId: number): Promise<AuthUser | n
       
       capabilities = userPerms.map(p => p.key);
     }
+
+    const capabilityAliases: Record<string, string[]> = {
+      "sop.approve": ["perm.sop_manage", "perm.sop_publish"],
+      "project.close": ["perm.project_manage"],
+      "project.delete": ["perm.project_delete"]
+    };
+    if (capabilities.length) {
+      const expanded = new Set(capabilities);
+      capabilities.forEach((cap) => {
+        const aliases = capabilityAliases[cap];
+        if (aliases) {
+          aliases.forEach((alias) => expanded.add(alias));
+        }
+      });
+      capabilities = [...expanded];
+    }
     
     // Determine system role and if user is technical admin
     const systemRole = (employee.systemRole || 'employee') as 'employee' | 'department_admin' | 'clinic_admin' | 'system_admin';

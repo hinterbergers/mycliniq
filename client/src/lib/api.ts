@@ -36,7 +36,17 @@ import type {
   Diploma,
   PhysicalRoom,
   ServiceLine,
-  InsertServiceLine
+  InsertServiceLine,
+  Clinic,
+  Sop,
+  InsertSop,
+  SopVersion,
+  SopReference,
+  ProjectMember,
+  Notification,
+  MessageThread,
+  MessageThreadMember,
+  Message
 } from "@shared/schema";
 import { readAuthToken } from "./authToken";
 
@@ -47,6 +57,19 @@ type ApiEnvelope<T> = {
   data?: T;
   error?: string;
   message?: string;
+};
+
+export type MeResponse = {
+  user?: {
+    id: number;
+    employeeId: number;
+    name: string;
+    lastName: string;
+    email?: string;
+  };
+  clinic?: Pick<Clinic, "country" | "state"> | null;
+  department?: unknown;
+  capabilities?: string[];
 };
 
 function buildHeaders(
@@ -96,6 +119,13 @@ async function handleResponse<T>(response: Response): Promise<T> {
 
   return body as T;
 }
+
+export const meApi = {
+  get: async (): Promise<MeResponse> => {
+    const response = await apiFetch(`${API_BASE}/me`);
+    return handleResponse<MeResponse>(response);
+  }
+};
 
 // Employee API
 export const employeeApi = {
@@ -647,22 +677,42 @@ export const weeklyAssignmentApi = {
   }
 };
 
+export type ProjectMemberInfo = ProjectMember & {
+  name?: string | null;
+  lastName?: string | null;
+};
+
+export type ProjectDetail = ProjectInitiative & {
+  owner?: { id: number; name?: string | null; lastName?: string | null } | null;
+  members?: ProjectMemberInfo[];
+};
+
 // Project Initiative API
 export const projectApi = {
-  getAll: async (): Promise<ProjectInitiative[]> => {
-    const response = await apiFetch(`${API_BASE}/projects`);
+  getAll: async (params?: { status?: string; category?: string }): Promise<ProjectInitiative[]> => {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== "") {
+          searchParams.set(key, String(value));
+        }
+      });
+    }
+    const query = searchParams.toString() ? `?${searchParams.toString()}` : "";
+    const response = await apiFetch(`${API_BASE}/projects${query}`);
     return handleResponse<ProjectInitiative[]>(response);
   },
 
-  getById: async (id: number): Promise<ProjectInitiative> => {
+  getById: async (id: number): Promise<ProjectDetail> => {
     const response = await apiFetch(`${API_BASE}/projects/${id}`);
-    return handleResponse<ProjectInitiative>(response);
+    return handleResponse<ProjectDetail>(response);
   },
 
-  create: async (data: InsertProjectInitiative): Promise<ProjectInitiative> => {
+  create: async (data: InsertProjectInitiative & {
+    assignees?: Array<{ employeeId: number; role?: "read" | "edit" }>;
+  }): Promise<ProjectInitiative> => {
     const response = await apiFetch(`${API_BASE}/projects`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
     });
     return handleResponse<ProjectInitiative>(response);
@@ -671,9 +721,37 @@ export const projectApi = {
   update: async (id: number, data: Partial<InsertProjectInitiative>): Promise<ProjectInitiative> => {
     const response = await apiFetch(`${API_BASE}/projects/${id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
     });
+    return handleResponse<ProjectInitiative>(response);
+  },
+
+  assign: async (
+    id: number,
+    members: Array<{ employeeId: number; role?: "read" | "edit" }>
+  ): Promise<{ members: ProjectMember[] }> => {
+    const response = await apiFetch(`${API_BASE}/projects/${id}/assign`, {
+      method: "POST",
+      body: JSON.stringify({ members })
+    });
+    return handleResponse(response);
+  },
+
+  accept: async (id: number): Promise<ProjectInitiative> => {
+    const response = await apiFetch(`${API_BASE}/projects/${id}/accept`, { method: "POST" });
+    return handleResponse<ProjectInitiative>(response);
+  },
+
+  reject: async (id: number, reason: string): Promise<ProjectInitiative> => {
+    const response = await apiFetch(`${API_BASE}/projects/${id}/reject`, {
+      method: "POST",
+      body: JSON.stringify({ reason })
+    });
+    return handleResponse<ProjectInitiative>(response);
+  },
+
+  complete: async (id: number): Promise<ProjectInitiative> => {
+    const response = await apiFetch(`${API_BASE}/projects/${id}/complete`, { method: "POST" });
     return handleResponse<ProjectInitiative>(response);
   },
 
@@ -682,6 +760,159 @@ export const projectApi = {
       method: "DELETE"
     });
     return handleResponse<void>(response);
+  }
+};
+
+export type SopMemberInfo = {
+  employeeId: number;
+  role: "read" | "edit";
+  name?: string | null;
+  lastName?: string | null;
+};
+
+export type SopDetail = Sop & {
+  createdBy?: { id: number; name?: string | null; lastName?: string | null };
+  members?: SopMemberInfo[];
+  references?: SopReference[];
+  versions?: SopVersion[];
+};
+
+export type SopReferenceSuggestion = Pick<
+  SopReference,
+  "type" | "title" | "url" | "publisher" | "yearOrVersion" | "relevanceNote"
+> & {
+  status?: "suggested";
+  createdByAi?: boolean;
+};
+
+export const sopApi = {
+  getAll: async (params?: { status?: string; category?: string; search?: string }): Promise<Sop[]> => {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== "") {
+          searchParams.set(key, String(value));
+        }
+      });
+    }
+    const query = searchParams.toString() ? `?${searchParams.toString()}` : "";
+    const response = await apiFetch(`${API_BASE}/sops${query}`);
+    return handleResponse<Sop[]>(response);
+  },
+
+  getById: async (id: number): Promise<SopDetail> => {
+    const response = await apiFetch(`${API_BASE}/sops/${id}`);
+    return handleResponse<SopDetail>(response);
+  },
+
+  create: async (data: InsertSop & {
+    assignees?: Array<{ employeeId: number; role?: "read" | "edit" }>;
+    status?: "proposed" | "in_progress" | "review" | "published";
+  }): Promise<Sop> => {
+    const response = await apiFetch(`${API_BASE}/sops`, {
+      method: "POST",
+      body: JSON.stringify(data)
+    });
+    return handleResponse<Sop>(response);
+  },
+
+  update: async (id: number, data: Partial<InsertSop>): Promise<Sop> => {
+    const response = await apiFetch(`${API_BASE}/sops/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data)
+    });
+    return handleResponse<Sop>(response);
+  },
+
+  assign: async (id: number, members: Array<{ employeeId: number; role?: "read" | "edit" }>): Promise<{ members: SopMemberInfo[] }> => {
+    const response = await apiFetch(`${API_BASE}/sops/${id}/assign`, {
+      method: "POST",
+      body: JSON.stringify({ members })
+    });
+    return handleResponse(response);
+  },
+
+  accept: async (id: number): Promise<Sop> => {
+    const response = await apiFetch(`${API_BASE}/sops/${id}/accept`, { method: "POST" });
+    return handleResponse<Sop>(response);
+  },
+
+  reject: async (id: number, reason: string): Promise<Sop> => {
+    const response = await apiFetch(`${API_BASE}/sops/${id}/reject`, {
+      method: "POST",
+      body: JSON.stringify({ reason })
+    });
+    return handleResponse<Sop>(response);
+  },
+
+  requestReview: async (id: number): Promise<Sop> => {
+    const response = await apiFetch(`${API_BASE}/sops/${id}/request-review`, { method: "POST" });
+    return handleResponse<Sop>(response);
+  },
+
+  requestChanges: async (id: number, reason: string): Promise<Sop> => {
+    const response = await apiFetch(`${API_BASE}/sops/${id}/review/request-changes`, {
+      method: "POST",
+      body: JSON.stringify({ reason })
+    });
+    return handleResponse<Sop>(response);
+  },
+
+  publish: async (id: number, changeNote: string): Promise<Sop> => {
+    const response = await apiFetch(`${API_BASE}/sops/${id}/review/publish`, {
+      method: "POST",
+      body: JSON.stringify({ changeNote })
+    });
+    return handleResponse<Sop>(response);
+  },
+
+  archive: async (id: number): Promise<Sop> => {
+    const response = await apiFetch(`${API_BASE}/sops/${id}/archive`, { method: "POST" });
+    return handleResponse<Sop>(response);
+  },
+
+  startRevision: async (id: number): Promise<Sop> => {
+    const response = await apiFetch(`${API_BASE}/sops/${id}/start-revision`, { method: "POST" });
+    return handleResponse<Sop>(response);
+  },
+
+  getVersions: async (id: number): Promise<SopVersion[]> => {
+    const response = await apiFetch(`${API_BASE}/sops/${id}/versions`);
+    return handleResponse<SopVersion[]>(response);
+  },
+
+  getReferences: async (id: number): Promise<SopReference[]> => {
+    const response = await apiFetch(`${API_BASE}/sops/${id}/references`);
+    return handleResponse<SopReference[]>(response);
+  },
+
+  addReference: async (id: number, data: Omit<SopReference, "id" | "sopId" | "createdAt" | "updatedAt" | "verifiedAt">): Promise<SopReference> => {
+    const response = await apiFetch(`${API_BASE}/sops/${id}/references`, {
+      method: "POST",
+      body: JSON.stringify(data)
+    });
+    return handleResponse<SopReference>(response);
+  },
+
+  acceptReference: async (sopId: number, refId: number): Promise<SopReference> => {
+    const response = await apiFetch(`${API_BASE}/sops/${sopId}/references/${refId}/accept`, {
+      method: "POST"
+    });
+    return handleResponse<SopReference>(response);
+  },
+
+  rejectReference: async (sopId: number, refId: number): Promise<SopReference> => {
+    const response = await apiFetch(`${API_BASE}/sops/${sopId}/references/${refId}/reject`, {
+      method: "POST"
+    });
+    return handleResponse<SopReference>(response);
+  },
+
+  suggestReferences: async (sopId: number): Promise<SopReferenceSuggestion[]> => {
+    const response = await apiFetch(`${API_BASE}/sops/${sopId}/ai/suggest-references`, {
+      method: "POST"
+    });
+    return handleResponse<SopReferenceSuggestion[]>(response);
   }
 };
 
@@ -813,6 +1044,86 @@ export const knowledgeApi = {
   getPublished: async (): Promise<ProjectDocument[]> => {
     const response = await apiFetch(`${API_BASE}/knowledge/documents`);
     return handleResponse<ProjectDocument[]>(response);
+  }
+};
+
+// Notifications API
+export const notificationsApi = {
+  getAll: async (): Promise<Notification[]> => {
+    const response = await apiFetch(`${API_BASE}/notifications`);
+    return handleResponse<Notification[]>(response);
+  },
+
+  markRead: async (id: number): Promise<Notification> => {
+    const response = await apiFetch(`${API_BASE}/notifications/${id}/read`, { method: "POST" });
+    return handleResponse<Notification>(response);
+  },
+
+  delete: async (id: number): Promise<void> => {
+    const response = await apiFetch(`${API_BASE}/notifications/${id}`, { method: "DELETE" });
+    return handleResponse<void>(response);
+  }
+};
+
+export type MessageThreadListItem = MessageThread & {
+  members?: Array<MessageThreadMember & { name?: string | null; lastName?: string | null }>;
+  lastMessage?: Message | null;
+};
+
+export type MessageWithSender = Message & {
+  senderName?: string | null;
+  senderLastName?: string | null;
+};
+
+// Messaging API
+export const messagesApi = {
+  getThreads: async (): Promise<MessageThreadListItem[]> => {
+    const response = await apiFetch(`${API_BASE}/messages/threads`);
+    return handleResponse<MessageThreadListItem[]>(response);
+  },
+
+  createThread: async (data: {
+    type: "direct" | "group";
+    title?: string;
+    memberIds: number[];
+  }): Promise<MessageThread> => {
+    const response = await apiFetch(`${API_BASE}/messages/threads`, {
+      method: "POST",
+      body: JSON.stringify(data)
+    });
+    return handleResponse<MessageThread>(response);
+  },
+
+  getMessages: async (threadId: number): Promise<MessageWithSender[]> => {
+    const response = await apiFetch(`${API_BASE}/messages/threads/${threadId}/messages`);
+    return handleResponse<MessageWithSender[]>(response);
+  },
+
+  sendMessage: async (threadId: number, content: string): Promise<Message> => {
+    const response = await apiFetch(`${API_BASE}/messages/threads/${threadId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ content })
+    });
+    return handleResponse<Message>(response);
+  },
+
+  renameThread: async (threadId: number, title: string): Promise<MessageThread> => {
+    const response = await apiFetch(`${API_BASE}/messages/threads/${threadId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ title })
+    });
+    return handleResponse<MessageThread>(response);
+  },
+
+  updateMembers: async (
+    threadId: number,
+    data: { add?: number[]; remove?: number[] }
+  ): Promise<{ members: MessageThreadMember[] }> => {
+    const response = await apiFetch(`${API_BASE}/messages/threads/${threadId}/members`, {
+      method: "POST",
+      body: JSON.stringify(data)
+    });
+    return handleResponse(response);
   }
 };
 

@@ -49,10 +49,10 @@ export default function PlanningCockpit() {
       bg: "bg-emerald-50"
     },
     {
-      title: "Projektmanagement",
-      description: "SOP-Projekte, Studien und administrative Aufgaben steuern.",
+      title: "SOPs und Projekte verwalten",
+      description: "SOPs, Projekte und Freigaben zentral steuern.",
       icon: Briefcase,
-      action: () => setLocation("/projekte"),
+      action: () => setLocation("/admin/projects"),
       color: "text-amber-600",
       bg: "bg-amber-50"
     },
