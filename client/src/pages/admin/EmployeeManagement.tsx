@@ -131,9 +131,21 @@ const buildServiceLineDisplay = (
     }));
 };
 
+type VacationVisibilityGroup = "OA" | "ASS" | "TA" | "SEK";
+
+const DEFAULT_VISIBILITY_GROUPS: VacationVisibilityGroup[] = ["OA", "ASS", "TA", "SEK"];
+
+const VISIBILITY_GROUP_LABELS: Record<VacationVisibilityGroup, string> = {
+  OA: "Oberaerzte & Fachaerzte",
+  ASS: "Assistenz",
+  TA: "Turnus & Studierende",
+  SEK: "Sekretariat"
+};
+
 interface ShiftPreferences {
   deploymentRoomIds?: number[];
   serviceTypeOverrides?: ServiceType[];
+  vacationVisibilityRoleGroups?: VacationVisibilityGroup[];
 }
 
 interface CompetencyAssignment {
@@ -281,6 +293,7 @@ export default function EmployeeManagement() {
   const [editServiceTypeOverrides, setEditServiceTypeOverrides] = useState<ServiceType[]>([]);
   const [editTakesShifts, setEditTakesShifts] = useState(true);
   const [editCanOverduty, setEditCanOverduty] = useState(false);
+  const [editVacationVisibilityGroups, setEditVacationVisibilityGroups] = useState<VacationVisibilityGroup[]>(DEFAULT_VISIBILITY_GROUPS);
   const [editInactiveFrom, setEditInactiveFrom] = useState("");
   const [editInactiveUntil, setEditInactiveUntil] = useState("");
   const [resetPasswordData, setResetPasswordData] = useState({
@@ -298,6 +311,7 @@ export default function EmployeeManagement() {
   const [newServiceTypeOverrides, setNewServiceTypeOverrides] = useState<ServiceType[]>([]);
   const [newTakesShifts, setNewTakesShifts] = useState(true);
   const [newCanOverduty, setNewCanOverduty] = useState(false);
+  const [newVacationVisibilityGroups, setNewVacationVisibilityGroups] = useState<VacationVisibilityGroup[]>(DEFAULT_VISIBILITY_GROUPS);
   const [newInactiveFrom, setNewInactiveFrom] = useState("");
   const [newInactiveUntil, setNewInactiveUntil] = useState("");
   
@@ -413,6 +427,7 @@ export default function EmployeeManagement() {
     setNewServiceTypeOverrides([]);
     setNewTakesShifts(true);
     setNewCanOverduty(false);
+    setNewVacationVisibilityGroups(DEFAULT_VISIBILITY_GROUPS);
     setNewInactiveFrom("");
     setNewInactiveUntil("");
     setCompetencySearch("");
@@ -454,6 +469,10 @@ export default function EmployeeManagement() {
         ? prefs.serviceTypeOverrides.filter((value): value is ServiceType => typeof value === "string" && serviceLineKeySet.has(value))
         : []
     );
+    const visibilityGroups = Array.isArray(prefs?.vacationVisibilityRoleGroups)
+      ? prefs.vacationVisibilityRoleGroups.filter((group): group is VacationVisibilityGroup => DEFAULT_VISIBILITY_GROUPS.includes(group))
+      : [];
+    setEditVacationVisibilityGroups(visibilityGroups.length ? visibilityGroups : DEFAULT_VISIBILITY_GROUPS);
     setEditCompetencyIds([]);
     setEditDiplomaIds([]);
     setResetPasswordData({ newPassword: "", confirmPassword: "" });
@@ -710,6 +729,13 @@ export default function EmployeeManagement() {
       } else {
         delete (nextShiftPreferences as { serviceTypeOverrides?: ServiceType[] }).serviceTypeOverrides;
       }
+      const normalizedVisibilityGroups = normalizeVisibilityGroups(editVacationVisibilityGroups);
+      if (isDefaultVisibilityGroups(normalizedVisibilityGroups)) {
+        delete (nextShiftPreferences as { vacationVisibilityRoleGroups?: VacationVisibilityGroup[] })
+          .vacationVisibilityRoleGroups;
+      } else {
+        nextShiftPreferences.vacationVisibilityRoleGroups = normalizedVisibilityGroups;
+      }
 
       const payload: Partial<Omit<Employee, "id" | "createdAt">> = {
         title: editFormData.title || null,
@@ -875,6 +901,10 @@ export default function EmployeeManagement() {
       if (newServiceTypeOverrides.length) {
         nextShiftPreferences.serviceTypeOverrides = newServiceTypeOverrides;
       }
+      const normalizedVisibilityGroups = normalizeVisibilityGroups(newVacationVisibilityGroups);
+      if (!isDefaultVisibilityGroups(normalizedVisibilityGroups)) {
+        nextShiftPreferences.vacationVisibilityRoleGroups = normalizedVisibilityGroups;
+      }
 
       const payload: any = {
         title: newFormData.title || null,
@@ -967,6 +997,16 @@ export default function EmployeeManagement() {
     }
   };
 
+  const normalizeVisibilityGroups = (groups: VacationVisibilityGroup[]) => {
+    const unique = Array.from(new Set(groups));
+    const filtered = unique.filter((group) => DEFAULT_VISIBILITY_GROUPS.includes(group));
+    return filtered.length ? filtered : DEFAULT_VISIBILITY_GROUPS;
+  };
+
+  const isDefaultVisibilityGroups = (groups: VacationVisibilityGroup[]) =>
+    groups.length === DEFAULT_VISIBILITY_GROUPS.length &&
+    DEFAULT_VISIBILITY_GROUPS.every((group) => groups.includes(group));
+
   const toggleEditCompetency = (id: number) => {
     setEditCompetencyIds((prev) =>
       prev.includes(id) ? prev.filter((compId) => compId !== id) : [...prev, id]
@@ -1018,6 +1058,18 @@ export default function EmployeeManagement() {
   const toggleNewServiceType = (type: ServiceType) => {
     setNewServiceTypeOverrides((prev) =>
       prev.includes(type) ? prev.filter((value) => value !== type) : [...prev, type]
+    );
+  };
+
+  const toggleEditVacationVisibilityGroup = (group: VacationVisibilityGroup) => {
+    setEditVacationVisibilityGroups((prev) =>
+      prev.includes(group) ? prev.filter((value) => value !== group) : [...prev, group]
+    );
+  };
+
+  const toggleNewVacationVisibilityGroup = (group: VacationVisibilityGroup) => {
+    setNewVacationVisibilityGroups((prev) =>
+      prev.includes(group) ? prev.filter((value) => value !== group) : [...prev, group]
     );
   };
 
@@ -1711,6 +1763,34 @@ export default function EmployeeManagement() {
                         disabled={!canManageEmployees}
                       />
                     </div>
+
+                    {canManageEmployees && (
+                      <div className="space-y-3 rounded-lg border border-border p-4">
+                        <div>
+                          <Label>Urlaubsplan-Sichtbarkeit</Label>
+                          <p className="text-xs text-muted-foreground">
+                            Legt fest, welche Rollen im Urlaubsplan sichtbar sind.
+                          </p>
+                        </div>
+                        <div className="grid gap-2 md:grid-cols-2">
+                          {DEFAULT_VISIBILITY_GROUPS.map((group) => (
+                            <div key={group} className="flex items-center gap-2">
+                              <Checkbox
+                                id={`new-vacation-visibility-${group}`}
+                                checked={newVacationVisibilityGroups.includes(group)}
+                                onCheckedChange={() => toggleNewVacationVisibilityGroup(group)}
+                              />
+                              <Label
+                                htmlFor={`new-vacation-visibility-${group}`}
+                                className="text-sm font-normal cursor-pointer"
+                              >
+                                {VISIBILITY_GROUP_LABELS[group]}
+                              </Label>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     <div className="space-y-3 rounded-lg border border-border p-4">
                       <div>
@@ -2678,6 +2758,33 @@ export default function EmployeeManagement() {
                         disabled={!canManageEmployees}
                       />
                     </div>
+                    {canManageEmployees && (
+                      <div className="space-y-3 rounded-lg border border-border p-4">
+                        <div>
+                          <Label>Urlaubsplan-Sichtbarkeit</Label>
+                          <p className="text-xs text-muted-foreground">
+                            Legt fest, welche Rollen im Urlaubsplan sichtbar sind.
+                          </p>
+                        </div>
+                        <div className="grid gap-2 md:grid-cols-2">
+                          {DEFAULT_VISIBILITY_GROUPS.map((group) => (
+                            <div key={group} className="flex items-center gap-2">
+                              <Checkbox
+                                id={`edit-vacation-visibility-${group}`}
+                                checked={editVacationVisibilityGroups.includes(group)}
+                                onCheckedChange={() => toggleEditVacationVisibilityGroup(group)}
+                              />
+                              <Label
+                                htmlFor={`edit-vacation-visibility-${group}`}
+                                className="text-sm font-normal cursor-pointer"
+                              >
+                                {VISIBILITY_GROUP_LABELS[group]}
+                              </Label>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     {loadingPermissions ? (
                       <div className="flex items-center justify-center py-6 text-muted-foreground">
                         <Loader2 className="w-5 h-5 mr-2 animate-spin" />
