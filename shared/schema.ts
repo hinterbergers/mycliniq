@@ -282,6 +282,7 @@ export const employees = pgTable("employees", {
   isAdmin: boolean("is_admin").notNull().default(false),
   inactiveFrom: date("inactive_from"),
   inactiveUntil: date("inactive_until"),
+  inactiveReason: text("inactive_reason"),
   isActive: boolean("is_active").notNull().default(true),
   validUntil: date("valid_until"),
   passwordHash: text("password_hash"),

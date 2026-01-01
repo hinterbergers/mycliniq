@@ -8,10 +8,14 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
-import { Search, ExternalLink } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { MarkdownEditor, MarkdownViewer } from "@/components/editor/MarkdownEditor";
+import { Search, ExternalLink, Download, History, Plus } from "lucide-react";
 import type { Sop, SopReference } from "@shared/schema";
 import { sopApi, type SopDetail } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { SOP_TEMPLATE_MARKDOWN } from "@/lib/sopTemplates";
 
 const CATEGORY_ORDER = ["SOP", "Leitlinie", "Checkliste", "Formular"] as const;
 const CATEGORY_STYLES: Record<string, string> = {
@@ -58,6 +62,17 @@ function sortReferences(references: SopReference[]) {
   });
 }
 
+const toSafeFilename = (value: string) => {
+  const ascii = value.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const cleaned = ascii.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return cleaned.slice(0, 60) || "sop";
+};
+
+const formatEmployeeName = (name?: string | null, lastName?: string | null) => {
+  if (name && lastName) return `${name} ${lastName}`;
+  return name || lastName || "Unbekannt";
+};
+
 export default function Guidelines() {
   const { toast } = useToast();
   const [sops, setSops] = useState<Sop[]>([]);
@@ -68,6 +83,18 @@ export default function Guidelines() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailSop, setDetailSop] = useState<SopDetail | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [docxDownloading, setDocxDownloading] = useState(false);
+
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorSaving, setEditorSaving] = useState(false);
+  const [editorForm, setEditorForm] = useState({
+    title: "",
+    category: "SOP",
+    contentMarkdown: SOP_TEMPLATE_MARKDOWN,
+    keywords: "",
+    awmfLink: ""
+  });
 
   useEffect(() => {
     const load = async () => {
@@ -125,6 +152,62 @@ export default function Guidelines() {
     }
   };
 
+  const openEditor = () => {
+    setEditorForm({
+      title: "",
+      category: "SOP",
+      contentMarkdown: SOP_TEMPLATE_MARKDOWN,
+      keywords: "",
+      awmfLink: ""
+    });
+    setEditorOpen(true);
+  };
+
+  const handleCreate = async () => {
+    if (!editorForm.title.trim()) {
+      toast({ title: "Fehler", description: "Titel ist erforderlich", variant: "destructive" });
+      return;
+    }
+    setEditorSaving(true);
+    try {
+      await sopApi.create({
+        title: editorForm.title.trim(),
+        category: editorForm.category as Sop["category"],
+        contentMarkdown: editorForm.contentMarkdown || null,
+        keywords: editorForm.keywords
+          ? editorForm.keywords.split(",").map((word) => word.trim()).filter(Boolean)
+          : [],
+        awmfLink: editorForm.awmfLink.trim() || null,
+        status: "proposed"
+      });
+      toast({ title: "SOP vorgeschlagen" });
+      setEditorOpen(false);
+    } catch (error) {
+      toast({ title: "Fehler", description: "SOP konnte nicht vorgeschlagen werden", variant: "destructive" });
+    } finally {
+      setEditorSaving(false);
+    }
+  };
+
+  const downloadDocx = async (sop: SopDetail) => {
+    try {
+      setDocxDownloading(true);
+      const blob = await sopApi.downloadDocx(sop.id);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${toSafeFilename(sop.title)}.docx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      toast({ title: "Fehler", description: "Word-Export fehlgeschlagen", variant: "destructive" });
+    } finally {
+      setDocxDownloading(false);
+    }
+  };
+
   return (
     <Layout title="SOPs & Leitlinien">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -147,6 +230,10 @@ export default function Guidelines() {
                 data-testid="input-search-sops"
               />
             </div>
+            <Button onClick={openEditor}>
+              <Plus className="w-4 h-4 mr-2" />
+              SOP vorschlagen
+            </Button>
             <div className="flex flex-wrap gap-2">
               {categories.map((category) => (
                 <Button
@@ -232,6 +319,19 @@ export default function Guidelines() {
                   <Badge variant="outline">Version {detailSop.version}</Badge>
                 </div>
               </div>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" onClick={() => downloadDocx(detailSop)} disabled={docxDownloading}>
+                  <Download className="w-4 h-4 mr-1" />Word
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setHistoryOpen(true)}
+                  disabled={!detailSop.versions || detailSop.versions.length === 0}
+                >
+                  <History className="w-4 h-4 mr-1" />Historie
+                </Button>
+              </div>
 
               {detailSop.awmfLink && (
                 <a
@@ -247,9 +347,10 @@ export default function Guidelines() {
 
               <Separator />
 
-              <div className="whitespace-pre-wrap text-sm text-muted-foreground">
-                {detailSop.contentMarkdown || "Kein Inhalt hinterlegt."}
-              </div>
+              <MarkdownViewer
+                value={detailSop.contentMarkdown || "Kein Inhalt hinterlegt."}
+                className="rounded-md border p-3 bg-white"
+              />
 
               <Separator />
 
@@ -286,6 +387,104 @@ export default function Guidelines() {
                 )}
               </div>
             </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
+        <DialogContent className="max-w-[95vw] w-[95vw] h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Neue SOP vorschlagen</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto pr-2 space-y-4">
+            <div>
+              <label className="text-sm font-medium">Titel</label>
+              <Input
+                value={editorForm.title}
+                onChange={(event) => setEditorForm({ ...editorForm, title: event.target.value })}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Kategorie</label>
+              <Select
+                value={editorForm.category}
+                onValueChange={(value) => setEditorForm({ ...editorForm, category: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Kategorie" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CATEGORY_ORDER.map((category) => (
+                    <SelectItem key={category} value={category}>
+                      {category}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Inhalt</label>
+              <MarkdownEditor
+                value={editorForm.contentMarkdown}
+                onChange={(value) => setEditorForm({ ...editorForm, contentMarkdown: value })}
+                height={360}
+                className="border rounded-md"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Schlagwoerter (Komma getrennt)</label>
+              <Input
+                value={editorForm.keywords}
+                onChange={(event) => setEditorForm({ ...editorForm, keywords: event.target.value })}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">AWMF-Link</label>
+              <Input
+                value={editorForm.awmfLink}
+                onChange={(event) => setEditorForm({ ...editorForm, awmfLink: event.target.value })}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-4">
+            <Button variant="outline" onClick={() => setEditorOpen(false)}>Abbrechen</Button>
+            <Button onClick={handleCreate} disabled={editorSaving}>
+              {editorSaving ? "Speichere..." : "Vorschlagen"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>SOP Historie</DialogTitle>
+          </DialogHeader>
+          {detailSop?.versions && detailSop.versions.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Version</TableHead>
+                  <TableHead>Freigegeben am</TableHead>
+                  <TableHead>Besitzer</TableHead>
+                  <TableHead>Kommentar</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {detailSop.versions.map((version) => (
+                  <TableRow key={version.id}>
+                    <TableCell>{version.versionNumber}</TableCell>
+                    <TableCell>{formatDate(version.releasedAt)}</TableCell>
+                    <TableCell>
+                      {formatEmployeeName(version.releasedByName, version.releasedByLastName)}
+                    </TableCell>
+                    <TableCell>{version.changeNote || "-"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <p className="text-sm text-muted-foreground">Keine Historie vorhanden.</p>
           )}
         </DialogContent>
       </Dialog>

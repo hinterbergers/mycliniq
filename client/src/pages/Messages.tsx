@@ -42,9 +42,32 @@ function formatTimestamp(value?: string | Date | null) {
   }
 }
 
+const normalizeWhitespace = (value?: string | null) => (value ?? "").trim().replace(/\s+/g, " ");
+
+const dedupeAdjacentTokens = (value: string) => {
+  const tokens = value.split(" ").filter(Boolean);
+  const deduped: string[] = [];
+  for (const token of tokens) {
+    const prev = deduped[deduped.length - 1];
+    if (!prev || prev.toLowerCase() !== token.toLowerCase()) {
+      deduped.push(token);
+    }
+  }
+  return deduped.join(" ");
+};
+
 function displayMemberName(member: { name?: string | null; lastName?: string | null }) {
-  const parts = [member.name, member.lastName].filter(Boolean);
-  return parts.length ? parts.join(" ") : "Unbekannt";
+  const name = dedupeAdjacentTokens(normalizeWhitespace(member.name));
+  const lastName = dedupeAdjacentTokens(normalizeWhitespace(member.lastName));
+  if (name && lastName) {
+    const nameLower = name.toLowerCase();
+    const lastLower = lastName.toLowerCase();
+    if (nameLower === lastLower || nameLower.endsWith(` ${lastLower}`)) {
+      return name;
+    }
+    return `${name} ${lastName}`;
+  }
+  return name || lastName || "Unbekannt";
 }
 
 export default function Messages() {
@@ -567,7 +590,10 @@ export default function Messages() {
                                   <div className="flex items-center justify-between gap-2">
                                     <p className="text-sm font-semibold">
                                       {msg.senderName || msg.senderLastName
-                                        ? `${msg.senderName ?? ""} ${msg.senderLastName ?? ""}`.trim()
+                                        ? displayMemberName({
+                                            name: msg.senderName,
+                                            lastName: msg.senderLastName
+                                          })
                                         : "Unbekannt"}
                                     </p>
                                     <span className="text-xs text-muted-foreground">

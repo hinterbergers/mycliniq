@@ -9,6 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { MarkdownEditor, MarkdownViewer } from "@/components/editor/MarkdownEditor";
 import {
   Plus,
   CheckCircle2,
@@ -19,13 +21,16 @@ import {
   Archive,
   RefreshCw,
   Check,
-  BookOpen
+  BookOpen,
+  Download,
+  History
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { Employee, ProjectInitiative, Sop } from "@shared/schema";
 import { employeeApi, projectApi, sopApi, type SopDetail, type SopReferenceSuggestion } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
+import { SOP_TEMPLATE_MARKDOWN } from "@/lib/sopTemplates";
 
 const SOP_CATEGORIES = ["SOP", "Leitlinie", "Checkliste", "Formular"] as const;
 const PROJECT_CATEGORIES = [
@@ -109,6 +114,24 @@ function sortReferences(references: SopDetail["references"] = []) {
   });
 }
 
+const formatDate = (value?: string | Date | null) => {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("de-DE");
+};
+
+const toSafeFilename = (value: string) => {
+  const ascii = value.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const cleaned = ascii.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return cleaned.slice(0, 60) || "sop";
+};
+
+const formatEmployeeName = (name?: string | null, lastName?: string | null) => {
+  if (name && lastName) return `${name} ${lastName}`;
+  return name || lastName || "Unbekannt";
+};
+
 export default function AdminProjects() {
   const { toast } = useToast();
   const { employee, isAdmin, isTechnicalAdmin, capabilities } = useAuth();
@@ -154,6 +177,8 @@ export default function AdminProjects() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailSop, setDetailSop] = useState<SopDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [docxDownloading, setDocxDownloading] = useState(false);
   const [suggestedRefs, setSuggestedRefs] = useState<SopReferenceSuggestion[] | null>(null);
   const [manualRefOpen, setManualRefOpen] = useState(false);
   const [manualRefForm, setManualRefForm] = useState({
@@ -241,7 +266,13 @@ export default function AdminProjects() {
       });
     } else {
       setEditingSop(null);
-      setSopForm({ title: "", category: "SOP", contentMarkdown: "", keywords: "", awmfLink: "" });
+      setSopForm({
+        title: "",
+        category: "SOP",
+        contentMarkdown: SOP_TEMPLATE_MARKDOWN,
+        keywords: "",
+        awmfLink: ""
+      });
     }
     setPublishOnCreate(false);
     setPublishNote("");
@@ -394,6 +425,25 @@ export default function AdminProjects() {
       setDetailOpen(false);
     } finally {
       setDetailLoading(false);
+    }
+  };
+
+  const downloadDocx = async (sop: SopDetail) => {
+    try {
+      setDocxDownloading(true);
+      const blob = await sopApi.downloadDocx(sop.id);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${toSafeFilename(sop.title)}.docx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      toast({ title: "Fehler", description: "Word-Export fehlgeschlagen", variant: "destructive" });
+    } finally {
+      setDocxDownloading(false);
     }
   };
 
@@ -777,11 +827,11 @@ export default function AdminProjects() {
       </div>
 
       <Dialog open={sopEditorOpen} onOpenChange={setSopEditorOpen}>
-        <DialogContent className="sm:max-w-xl">
+        <DialogContent className="max-w-[95vw] w-[95vw] h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>{editingSop ? "SOP bearbeiten" : "Neue SOP"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="flex-1 overflow-y-auto pr-2 space-y-4">
             <div>
               <label className="text-sm font-medium">Titel</label>
               <Input value={sopForm.title} onChange={(event) => setSopForm({ ...sopForm, title: event.target.value })} />
@@ -803,10 +853,11 @@ export default function AdminProjects() {
             </div>
             <div>
               <label className="text-sm font-medium">Inhalt</label>
-              <Textarea
+              <MarkdownEditor
                 value={sopForm.contentMarkdown}
-                onChange={(event) => setSopForm({ ...sopForm, contentMarkdown: event.target.value })}
-                rows={6}
+                onChange={(value) => setSopForm({ ...sopForm, contentMarkdown: value })}
+                height={360}
+                className="border rounded-md"
               />
             </div>
             <div>
@@ -850,11 +901,11 @@ export default function AdminProjects() {
       </Dialog>
 
       <Dialog open={projectEditorOpen} onOpenChange={setProjectEditorOpen}>
-        <DialogContent className="sm:max-w-xl">
+        <DialogContent className="max-w-[95vw] w-[95vw] h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>{editingProject ? "Projekt bearbeiten" : "Neues Projekt"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="flex-1 overflow-y-auto pr-2 space-y-4">
             <div>
               <label className="text-sm font-medium">Titel</label>
               <Input value={projectForm.title} onChange={(event) => setProjectForm({ ...projectForm, title: event.target.value })} />
@@ -876,10 +927,11 @@ export default function AdminProjects() {
             </div>
             <div>
               <label className="text-sm font-medium">Beschreibung</label>
-              <Textarea
+              <MarkdownEditor
                 value={projectForm.description}
-                onChange={(event) => setProjectForm({ ...projectForm, description: event.target.value })}
-                rows={5}
+                onChange={(value) => setProjectForm({ ...projectForm, description: value })}
+                height={320}
+                className="border rounded-md"
               />
             </div>
             <div>
@@ -1008,7 +1060,7 @@ export default function AdminProjects() {
       </Dialog>
 
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="sm:max-w-4xl">
           <DialogHeader>
             <DialogTitle>SOP Details</DialogTitle>
           </DialogHeader>
@@ -1024,15 +1076,29 @@ export default function AdminProjects() {
                   </Badge>
                 </div>
               </div>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" onClick={() => downloadDocx(detailSop)} disabled={docxDownloading}>
+                  <Download className="w-4 h-4 mr-1" />Word
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setHistoryOpen(true)}
+                  disabled={!detailSop.versions || detailSop.versions.length === 0}
+                >
+                  <History className="w-4 h-4 mr-1" />Historie
+                </Button>
+              </div>
               {detailSop.awmfLink && (
                 <a href={detailSop.awmfLink} target="_blank" rel="noreferrer" className="text-sm text-primary underline">
                   {detailSop.awmfLink}
                 </a>
               )}
               <Separator />
-              <div className="whitespace-pre-wrap text-sm text-muted-foreground">
-                {detailSop.contentMarkdown || "Kein Inhalt hinterlegt."}
-              </div>
+              <MarkdownViewer
+                value={detailSop.contentMarkdown || "Kein Inhalt hinterlegt."}
+                className="rounded-md border p-3 bg-white"
+              />
               <Separator />
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -1163,6 +1229,40 @@ export default function AdminProjects() {
             <Button variant="outline" onClick={() => setManualRefOpen(false)}>Abbrechen</Button>
             <Button onClick={saveManualReference}>Speichern</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>SOP Historie</DialogTitle>
+          </DialogHeader>
+          {detailSop?.versions && detailSop.versions.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Version</TableHead>
+                  <TableHead>Freigegeben am</TableHead>
+                  <TableHead>Besitzer</TableHead>
+                  <TableHead>Kommentar</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {detailSop.versions.map((version) => (
+                  <TableRow key={version.id}>
+                    <TableCell>{version.versionNumber}</TableCell>
+                    <TableCell>{formatDate(version.releasedAt)}</TableCell>
+                    <TableCell>
+                      {formatEmployeeName(version.releasedByName, version.releasedByLastName)}
+                    </TableCell>
+                    <TableCell>{version.changeNote || "-"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <p className="text-sm text-muted-foreground">Keine Historie vorhanden.</p>
+          )}
         </DialogContent>
       </Dialog>
     </Layout>

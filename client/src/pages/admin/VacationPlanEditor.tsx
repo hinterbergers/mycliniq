@@ -411,13 +411,14 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
       const start = normalizeDateOnly(emp.inactiveFrom);
       const end = normalizeDateOnly(emp.inactiveUntil);
       if (!start || !end) return;
+      const reasonValue = emp.inactiveReason?.trim() || "Karenz";
       entries.push({
         id: `legacy-${emp.id}`,
         employeeId: emp.id,
         startDate: start,
         endDate: end,
-        reason: "Karenz",
-        styleKey: "Karenz",
+        reason: reasonValue,
+        styleKey: resolveReasonStyleKey(reasonValue),
         status: "Genehmigt",
         source: "legacy"
       });

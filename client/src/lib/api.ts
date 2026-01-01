@@ -770,11 +770,16 @@ export type SopMemberInfo = {
   lastName?: string | null;
 };
 
+export type SopVersionWithOwner = SopVersion & {
+  releasedByName?: string | null;
+  releasedByLastName?: string | null;
+};
+
 export type SopDetail = Sop & {
   createdBy?: { id: number; name?: string | null; lastName?: string | null };
   members?: SopMemberInfo[];
   references?: SopReference[];
-  versions?: SopVersion[];
+  versions?: SopVersionWithOwner[];
 };
 
 export type SopReferenceSuggestion = Pick<
@@ -876,9 +881,9 @@ export const sopApi = {
     return handleResponse<Sop>(response);
   },
 
-  getVersions: async (id: number): Promise<SopVersion[]> => {
+  getVersions: async (id: number): Promise<SopVersionWithOwner[]> => {
     const response = await apiFetch(`${API_BASE}/sops/${id}/versions`);
-    return handleResponse<SopVersion[]>(response);
+    return handleResponse<SopVersionWithOwner[]>(response);
   },
 
   getReferences: async (id: number): Promise<SopReference[]> => {
@@ -913,6 +918,19 @@ export const sopApi = {
       method: "POST"
     });
     return handleResponse<SopReferenceSuggestion[]>(response);
+  },
+
+  downloadDocx: async (id: number): Promise<Blob> => {
+    const response = await apiFetch(`${API_BASE}/sops/${id}/export/docx`, {
+      headers: {
+        Accept: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      }
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      throw new Error(body?.error || body?.message || "Download failed");
+    }
+    return response.blob();
   }
 };
 

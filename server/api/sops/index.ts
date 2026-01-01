@@ -1,4 +1,6 @@
 import type { Router } from "express";
+import htmlToDocx from "html-to-docx";
+import { marked } from "marked";
 import { z } from "zod";
 import {
   db,
@@ -110,6 +112,20 @@ function isPublicSop(record: typeof sops.$inferSelect): boolean {
   if (["in_progress", "review"].includes(status) && record.currentVersionId) return true;
   return false;
 }
+
+const toSafeFilename = (value: string) => {
+  const ascii = value.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const cleaned = ascii.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return cleaned.slice(0, 60) || "sop";
+};
+
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 
 async function isMember(sopId: number, employeeId: number): Promise<boolean> {
   const [member] = await db
@@ -352,6 +368,69 @@ export function registerSopRoutes(router: Router) {
   );
 
   router.get(
+    "/:id/export/docx",
+    validateParams(idParamSchema),
+    asyncHandler(async (req, res) => {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: "Nicht authentifiziert" });
+      }
+      const sopId = Number(req.params.id);
+      const [sop] = await db
+        .select({
+          id: sops.id,
+          title: sops.title,
+          status: sops.status,
+          contentMarkdown: sops.contentMarkdown,
+          currentVersionId: sops.currentVersionId,
+          createdById: sops.createdById
+        })
+        .from(sops)
+        .where(eq(sops.id, sopId));
+
+      if (!sop) {
+        return notFound(res, "SOP");
+      }
+
+      const memberRole = await getMemberRole(sopId, req.user.employeeId);
+      const owner = sop.createdById === req.user.employeeId;
+      const allowed = canManage(req) || owner || Boolean(memberRole) || isPublicSop(sop as any);
+      if (!allowed) {
+        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+      }
+
+      let exportTitle = sop.title;
+      let contentMarkdown = sop.contentMarkdown || "";
+      if (!canManage(req) && !owner && !memberRole) {
+        const normalized = normalizeSopStatus(sop.status);
+        if (["in_progress", "review"].includes(normalized) && sop.currentVersionId) {
+          const [version] = await db
+            .select({
+              title: sopVersions.title,
+              contentMarkdown: sopVersions.contentMarkdown
+            })
+            .from(sopVersions)
+            .where(eq(sopVersions.id, sop.currentVersionId));
+          if (version) {
+            exportTitle = version.title;
+            contentMarkdown = version.contentMarkdown || "";
+          }
+        }
+      }
+
+      const htmlBody = await marked.parse(contentMarkdown || "");
+      const html = `<h1>${escapeHtml(exportTitle)}</h1>${htmlBody}`;
+      const buffer = await htmlToDocx(html);
+      const filename = `${toSafeFilename(exportTitle)}.docx`;
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      );
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.status(200).send(buffer);
+    })
+  );
+
+  router.get(
     "/:id",
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
@@ -438,8 +517,22 @@ export function registerSopRoutes(router: Router) {
       }
 
       const versions = await db
-        .select()
+        .select({
+          id: sopVersions.id,
+          sopId: sopVersions.sopId,
+          versionNumber: sopVersions.versionNumber,
+          title: sopVersions.title,
+          contentMarkdown: sopVersions.contentMarkdown,
+          changeNote: sopVersions.changeNote,
+          releasedById: sopVersions.releasedById,
+          releasedAt: sopVersions.releasedAt,
+          createdAt: sopVersions.createdAt,
+          updatedAt: sopVersions.updatedAt,
+          releasedByName: employees.name,
+          releasedByLastName: employees.lastName
+        })
         .from(sopVersions)
+        .leftJoin(employees, eq(sopVersions.releasedById, employees.id))
         .where(eq(sopVersions.sopId, sopId))
         .orderBy(desc(sopVersions.versionNumber));
 
@@ -777,8 +870,22 @@ export function registerSopRoutes(router: Router) {
         return res.status(403).json({ success: false, error: "Keine Berechtigung" });
       }
       const versions = await db
-        .select()
+        .select({
+          id: sopVersions.id,
+          sopId: sopVersions.sopId,
+          versionNumber: sopVersions.versionNumber,
+          title: sopVersions.title,
+          contentMarkdown: sopVersions.contentMarkdown,
+          changeNote: sopVersions.changeNote,
+          releasedById: sopVersions.releasedById,
+          releasedAt: sopVersions.releasedAt,
+          createdAt: sopVersions.createdAt,
+          updatedAt: sopVersions.updatedAt,
+          releasedByName: employees.name,
+          releasedByLastName: employees.lastName
+        })
         .from(sopVersions)
+        .leftJoin(employees, eq(sopVersions.releasedById, employees.id))
         .where(eq(sopVersions.sopId, sopId))
         .orderBy(desc(sopVersions.versionNumber));
       return ok(res, versions);

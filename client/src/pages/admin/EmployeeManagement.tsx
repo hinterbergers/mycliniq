@@ -296,6 +296,7 @@ export default function EmployeeManagement() {
   const [editVacationVisibilityGroups, setEditVacationVisibilityGroups] = useState<VacationVisibilityGroup[]>(DEFAULT_VISIBILITY_GROUPS);
   const [editInactiveFrom, setEditInactiveFrom] = useState("");
   const [editInactiveUntil, setEditInactiveUntil] = useState("");
+  const [editInactiveReason, setEditInactiveReason] = useState("");
   const [resetPasswordData, setResetPasswordData] = useState({
     newPassword: "",
     confirmPassword: "",
@@ -314,6 +315,7 @@ export default function EmployeeManagement() {
   const [newVacationVisibilityGroups, setNewVacationVisibilityGroups] = useState<VacationVisibilityGroup[]>(DEFAULT_VISIBILITY_GROUPS);
   const [newInactiveFrom, setNewInactiveFrom] = useState("");
   const [newInactiveUntil, setNewInactiveUntil] = useState("");
+  const [newInactiveReason, setNewInactiveReason] = useState("");
   
   const canManageEmployees = isAdmin || isTechnicalAdmin;
 
@@ -430,6 +432,7 @@ export default function EmployeeManagement() {
     setNewVacationVisibilityGroups(DEFAULT_VISIBILITY_GROUPS);
     setNewInactiveFrom("");
     setNewInactiveUntil("");
+    setNewInactiveReason("");
     setCompetencySearch("");
     setDiplomaSearch("");
     setRoomSearch("");
@@ -462,6 +465,7 @@ export default function EmployeeManagement() {
     setEditCanOverduty(emp.canOverduty ?? false);
     setEditInactiveFrom(formatBirthday(emp.inactiveFrom));
     setEditInactiveUntil(formatBirthday(emp.inactiveUntil));
+    setEditInactiveReason(emp.inactiveReason?.trim() || "");
     const prefs = (emp.shiftPreferences as ShiftPreferences | null) || null;
     setEditDeploymentRoomIds(Array.isArray(prefs?.deploymentRoomIds) ? prefs.deploymentRoomIds : []);
     setEditServiceTypeOverrides(
@@ -714,6 +718,7 @@ export default function EmployeeManagement() {
       return;
     }
     
+    const inactiveReasonValue = editInactiveReason.trim();
     setSaving(true);
     try {
       const baseShiftPreferences = (editingEmployee.shiftPreferences &&
@@ -754,6 +759,7 @@ export default function EmployeeManagement() {
         canOverduty: editCanOverduty,
         inactiveFrom: parsedInactiveFrom || null,
         inactiveUntil: parsedInactiveUntil || null,
+        inactiveReason: inactiveReasonValue || null,
         vacationEntitlement: parsedVacationEntitlementValue,
         shiftPreferences: nextShiftPreferences
       };
@@ -893,6 +899,7 @@ export default function EmployeeManagement() {
       return;
     }
     
+    const inactiveReasonValue = newInactiveReason.trim();
     setCreating(true);
     try {
       const nextShiftPreferences: ShiftPreferences = {
@@ -924,6 +931,7 @@ export default function EmployeeManagement() {
         canOverduty: newCanOverduty,
         inactiveFrom: parsedInactiveFrom || null,
         inactiveUntil: parsedInactiveUntil || null,
+        inactiveReason: inactiveReasonValue || null,
         vacationEntitlement: parsedVacationEntitlementNew,
         shiftPreferences: nextShiftPreferences
       };
@@ -1862,6 +1870,23 @@ export default function EmployeeManagement() {
                           />
                         </div>
                       </div>
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Label>Begruendung</Label>
+                          {newInactiveReason.trim() && (
+                            <Badge variant="secondary" className="max-w-[280px] truncate">
+                              {newInactiveReason.trim()}
+                            </Badge>
+                          )}
+                        </div>
+                        <Textarea
+                          value={newInactiveReason}
+                          onChange={(e) => setNewInactiveReason(e.target.value)}
+                          placeholder="z.B. Papamonat, Elternkarenz"
+                          rows={2}
+                          disabled={!canManageEmployees}
+                        />
+                      </div>
                     </div>
 
                         <div className="space-y-2">
@@ -2558,6 +2583,23 @@ export default function EmployeeManagement() {
                             disabled={!canManageEmployees}
                           />
                         </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Label>Begruendung</Label>
+                          {editInactiveReason.trim() && (
+                            <Badge variant="secondary" className="max-w-[280px] truncate">
+                              {editInactiveReason.trim()}
+                            </Badge>
+                          )}
+                        </div>
+                        <Textarea
+                          value={editInactiveReason}
+                          onChange={(e) => setEditInactiveReason(e.target.value)}
+                          placeholder="z.B. Papamonat, Elternkarenz"
+                          rows={2}
+                          disabled={!canManageEmployees}
+                        />
                       </div>
                     </div>
 

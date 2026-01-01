@@ -4,9 +4,11 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
-import { Search } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { MarkdownEditor, MarkdownViewer } from "@/components/editor/MarkdownEditor";
+import { Plus, Search } from "lucide-react";
 import type { ProjectInitiative } from "@shared/schema";
 import { projectApi, type ProjectDetail } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -18,6 +20,13 @@ const CATEGORY_STYLES: Record<string, string> = {
   "Qualitätsprojekt": "bg-slate-100 text-slate-700 border-slate-200"
 };
 
+const PROJECT_CATEGORIES = [
+  "SOP",
+  "Studie",
+  "Administrativ",
+  "Qualitätsprojekt"
+] as const;
+
 export default function Projects() {
   const { toast } = useToast();
   const [projects, setProjects] = useState<ProjectInitiative[]>([]);
@@ -28,6 +37,13 @@ export default function Projects() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailProject, setDetailProject] = useState<ProjectDetail | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorSaving, setEditorSaving] = useState(false);
+  const [editorForm, setEditorForm] = useState({
+    title: "",
+    category: "Administrativ",
+    description: ""
+  });
 
   useEffect(() => {
     const load = async () => {
@@ -82,6 +98,48 @@ export default function Projects() {
     }
   };
 
+  const openEditor = () => {
+    setEditorForm({
+      title: "",
+      category: "Administrativ",
+      description: ""
+    });
+    setEditorOpen(true);
+  };
+
+  const handleCreate = async () => {
+    const title = editorForm.title.trim();
+    if (!title) {
+      toast({
+        title: "Titel fehlt",
+        description: "Bitte einen Projekttitel angeben."
+      });
+      return;
+    }
+    setEditorSaving(true);
+    try {
+      await projectApi.create({
+        title,
+        description: editorForm.description.trim() || null,
+        category: editorForm.category,
+        status: "proposed"
+      });
+      toast({
+        title: "Projekt vorgeschlagen",
+        description: "Der Vorschlag wurde zur Freigabe eingereicht."
+      });
+      setEditorOpen(false);
+    } catch (error) {
+      toast({
+        title: "Fehler",
+        description: "Projekt konnte nicht angelegt werden",
+        variant: "destructive"
+      });
+    } finally {
+      setEditorSaving(false);
+    }
+  };
+
   return (
     <Layout title="Projekte">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -114,6 +172,10 @@ export default function Projects() {
               </Button>
             ))}
           </div>
+          <Button onClick={openEditor}>
+            <Plus className="w-4 h-4 mr-2" />
+            Projekt vorschlagen
+          </Button>
         </div>
 
         {loading && <p className="text-sm text-muted-foreground">Lade Projekte...</p>}
@@ -170,9 +232,11 @@ export default function Projects() {
                 </Badge>
               </div>
               <Separator />
-              <div className="text-sm text-muted-foreground whitespace-pre-wrap">
-                {detailProject.description || "Keine Beschreibung hinterlegt."}
-              </div>
+              {detailProject.description ? (
+                <MarkdownViewer value={detailProject.description} className="text-sm" />
+              ) : (
+                <p className="text-sm text-muted-foreground">Keine Beschreibung hinterlegt.</p>
+              )}
               {detailProject.members && detailProject.members.length > 0 && (
                 <div className="space-y-2">
                   <h4 className="text-sm font-semibold">Beteiligte</h4>
@@ -187,6 +251,59 @@ export default function Projects() {
               )}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
+        <DialogContent className="max-w-[95vw] w-[95vw] h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Projekt vorschlagen</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-auto space-y-4 pr-2">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Titel</label>
+              <Input
+                value={editorForm.title}
+                onChange={(event) => setEditorForm((prev) => ({ ...prev, title: event.target.value }))}
+                placeholder="Projekt-Titel"
+              />
+            </div>
+            <div className="space-y-2 max-w-sm">
+              <label className="text-sm font-medium">Kategorie</label>
+              <Select
+                value={editorForm.category}
+                onValueChange={(value) => setEditorForm((prev) => ({ ...prev, category: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Kategorie auswählen" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROJECT_CATEGORIES.map((category) => (
+                    <SelectItem key={category} value={category}>
+                      {category}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Beschreibung</label>
+              <MarkdownEditor
+                value={editorForm.description}
+                onChange={(value) => setEditorForm((prev) => ({ ...prev, description: value }))}
+                height={420}
+                placeholder="Projektbeschreibung..."
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditorOpen(false)}>
+              Abbrechen
+            </Button>
+            <Button onClick={handleCreate} disabled={editorSaving}>
+              {editorSaving ? "Speichern..." : "Vorschlag senden"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </Layout>
