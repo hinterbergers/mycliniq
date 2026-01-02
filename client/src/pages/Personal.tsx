@@ -28,8 +28,8 @@ import { useEffect, useMemo, useState } from "react";
 import { format, addMonths, subMonths, getWeek, eachDayOfInterval, startOfMonth, endOfMonth, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
 import { useLocation } from "wouter";
-import { dutyPlansApi, employeeApi, rosterApi, rosterSettingsApi, serviceLinesApi, shiftSwapApi, type NextPlanningMonth } from "@/lib/api";
-import type { DutyPlan, Employee, RosterShift, ShiftSwapRequest, ServiceLine } from "@shared/schema";
+import { dutyPlansApi, employeeApi, rosterApi, rosterSettingsApi, serviceLinesApi, shiftSwapApi, plannedAbsencesAdminApi, longTermAbsencesApi, type NextPlanningMonth, type PlannedAbsenceAdmin } from "@/lib/api";
+import type { DutyPlan, Employee, RosterShift, ShiftSwapRequest, ServiceLine, LongTermAbsence } from "@shared/schema";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import VacationPlanEditor from "@/pages/admin/VacationPlanEditor";
@@ -105,6 +105,16 @@ const SHIFT_STATUS_BADGES: Record<string, { icon: typeof Clock; className: strin
   Ausstehend: { icon: Clock, className: "text-amber-600 border-amber-300" },
   Genehmigt: { icon: Check, className: "text-green-600 border-green-300" },
   Abgelehnt: { icon: X, className: "text-red-600 border-red-300" }
+};
+
+type RosterAbsenceEntry = {
+  employeeId: number;
+  name: string;
+  reason: string;
+  source: "planned" | "long_term" | "legacy";
+  absenceId?: number;
+  status?: "Geplant" | "Genehmigt" | "Abgelehnt";
+  notes?: string | null;
 };
 
 export default function Personal() {
@@ -294,6 +304,8 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
   const [shifts, setShifts] = useState<RosterShift[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [serviceLines, setServiceLines] = useState<ServiceLine[]>([]);
+  const [plannedAbsences, setPlannedAbsences] = useState<PlannedAbsenceAdmin[]>([]);
+  const [longTermAbsences, setLongTermAbsences] = useState<LongTermAbsence[]>([]);
 
   const planStatus = dutyPlan?.status;
   const statusLabel = planStatus ? PLAN_STATUS_LABELS[planStatus] : "Vorschau";
@@ -305,17 +317,24 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
     return new Map(serviceLineDisplay.map((line) => [line.key, line]));
   }, [serviceLineDisplay]);
   const rosterColumnCount = 3 + serviceLineDisplay.length + 1;
+  const activePlannedAbsences = useMemo(
+    () => plannedAbsences.filter((absence) => absence.status !== "Abgelehnt"),
+    [plannedAbsences]
+  );
 
   const loadRoster = async () => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth() + 1;
+    const startDate = format(startOfMonth(currentDate), "yyyy-MM-dd");
+    const endDate = format(endOfMonth(currentDate), "yyyy-MM-dd");
     setPlanLoading(true);
     setRosterLoading(true);
     try {
-      const [plan, rosterData, employeeData] = await Promise.all([
+      const [plan, rosterData, employeeData, plannedAbsenceData] = await Promise.all([
         dutyPlansApi.getByMonth(year, month),
         rosterApi.getByMonth(year, month),
-        employeeApi.getAll()
+        employeeApi.getAll(),
+        plannedAbsencesAdminApi.getRange({ from: startDate, to: endDate })
       ]);
       let serviceLineData: ServiceLine[] = [];
       try {
@@ -323,10 +342,18 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
       } catch {
         serviceLineData = [];
       }
+      let longTermAbsenceData: LongTermAbsence[] = [];
+      try {
+        longTermAbsenceData = await longTermAbsencesApi.getByStatus("Genehmigt", startDate, endDate);
+      } catch {
+        longTermAbsenceData = [];
+      }
       setDutyPlan(plan);
       setShifts(rosterData);
       setEmployees(employeeData);
       setServiceLines(serviceLineData);
+      setPlannedAbsences(plannedAbsenceData);
+      setLongTermAbsences(longTermAbsenceData);
     } catch (error: any) {
       toast({
         title: "Fehler",
@@ -343,7 +370,7 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
     loadRoster();
   }, [currentDate]);
 
-  const employeesById = new Map(employees.map((emp) => [emp.id, emp]));
+  const employeesById = useMemo(() => new Map(employees.map((emp) => [emp.id, emp])), [employees]);
   const shiftsByDate = shifts.reduce<Record<string, Record<string, RosterShift>>>(
     (acc, shift) => {
       if (!acc[shift.date]) {
@@ -359,6 +386,7 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
     start: startOfMonth(currentDate),
     end: endOfMonth(currentDate)
   });
+  const dayStrings = useMemo(() => days.map((day) => format(day, "yyyy-MM-dd")), [days]);
 
   const isPublished = planStatus === "Freigegeben";
   const getLastName = (value: string) => {
@@ -386,6 +414,72 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
     return "bg-slate-100 text-slate-500 border-slate-200";
   };
 
+  const isLegacyInactiveOnDate = (employee: Employee, dateStr: string) => {
+    if (!employee.inactiveFrom && !employee.inactiveUntil) return false;
+    const target = new Date(`${dateStr}T00:00:00`);
+    const from = employee.inactiveFrom ? new Date(`${employee.inactiveFrom}T00:00:00`) : null;
+    const until = employee.inactiveUntil ? new Date(`${employee.inactiveUntil}T00:00:00`) : null;
+    if (from && until) return target >= from && target <= until;
+    if (from) return target >= from;
+    if (until) return target <= until;
+    return false;
+  };
+
+  const resolveEmployeeLastName = (
+    employeeId: number,
+    fallbackName?: string | null,
+    fallbackLastName?: string | null
+  ) => {
+    const employee = employeesById.get(employeeId);
+    if (employee?.lastName) return employee.lastName;
+    if (employee?.name) return getLastName(employee.name);
+    if (fallbackLastName) return getLastName(fallbackLastName);
+    if (fallbackName) return getLastName(fallbackName);
+    return "Unbekannt";
+  };
+
+  const getAbsencesForDate = (date: Date): RosterAbsenceEntry[] => {
+    const dateStr = format(date, "yyyy-MM-dd");
+    const plannedEntries = activePlannedAbsences
+      .filter((absence) => absence.startDate <= dateStr && absence.endDate >= dateStr)
+      .map((absence) => ({
+        employeeId: absence.employeeId,
+        name: resolveEmployeeLastName(absence.employeeId, absence.employeeName, absence.employeeLastName),
+        reason: absence.reason,
+        source: "planned",
+        absenceId: absence.id,
+        status: absence.status,
+        notes: absence.notes ?? null
+      }));
+
+    const longTermEntries = longTermAbsences
+      .filter(
+        (absence) =>
+          absence.status === "Genehmigt" &&
+          absence.startDate <= dateStr &&
+          absence.endDate >= dateStr
+      )
+      .map((absence) => ({
+        employeeId: absence.employeeId,
+        name: resolveEmployeeLastName(absence.employeeId),
+        reason: absence.reason,
+        source: "long_term"
+      }));
+
+    const legacyEntries = employees
+      .filter((employee) => isLegacyInactiveOnDate(employee, dateStr))
+      .map((employee) => ({
+        employeeId: employee.id,
+        name: resolveEmployeeLastName(employee.id, employee.name, employee.lastName),
+        reason: "Langzeit-Deaktivierung",
+        source: "legacy"
+      }));
+
+    return [...plannedEntries, ...longTermEntries, ...legacyEntries].sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+  };
+
   const myShifts = currentUser
     ? shifts.filter((shift) => shift.employeeId === currentUser.id)
     : [];
@@ -394,6 +488,28 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
     const day = date.getDay();
     return day === 0 || day === 6;
   }).length;
+
+  const myAbsenceCount = useMemo(() => {
+    if (!currentUser) return 0;
+    const userRecord = employeesById.get(currentUser.id) ?? currentUser;
+    return dayStrings.filter((dateStr) => {
+      const planned = activePlannedAbsences.some(
+        (absence) =>
+          absence.employeeId === currentUser.id &&
+          absence.startDate <= dateStr &&
+          absence.endDate >= dateStr
+      );
+      const longTerm = longTermAbsences.some(
+        (absence) =>
+          absence.employeeId === currentUser.id &&
+          absence.status === "Genehmigt" &&
+          absence.startDate <= dateStr &&
+          absence.endDate >= dateStr
+      );
+      const legacy = userRecord ? isLegacyInactiveOnDate(userRecord, dateStr) : false;
+      return planned || longTerm || legacy;
+    }).length;
+  }, [currentUser, dayStrings, activePlannedAbsences, longTermAbsences, employeesById]);
 
   return (
     <div className="space-y-6">
@@ -519,7 +635,37 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
                           </td>
                         );
                       })}
-                      <td className="p-3 text-muted-foreground text-xs">-</td>
+                      <td className="p-3 text-muted-foreground text-xs">
+                        {(() => {
+                          const dayAbsences = getAbsencesForDate(day);
+                          if (!dayAbsences.length) {
+                            return <span className="text-muted-foreground">-</span>;
+                          }
+                          return (
+                            <div className="flex flex-wrap gap-1">
+                              {dayAbsences.map((absence) => {
+                                const titleParts = [
+                                  absence.name,
+                                  absence.reason,
+                                  absence.status ? `(${absence.status})` : null
+                                ].filter(Boolean);
+                                if (absence.notes) {
+                                  titleParts.push(absence.notes);
+                                }
+                                return (
+                                  <span
+                                    key={`${absence.source}-${absence.employeeId}-${absence.absenceId ?? absence.reason}`}
+                                    className="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600"
+                                    title={titleParts.join(" · ")}
+                                  >
+                                    {absence.name}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
+                      </td>
                     </tr>
                   );
                 })
@@ -541,7 +687,7 @@ function RosterView({ currentDate, setCurrentDate }: { currentDate: Date; setCur
             </div>
             <div className="p-4 bg-amber-50 rounded-lg border border-amber-100">
               <p className="text-sm text-muted-foreground">Abwesenheiten</p>
-              <p className="text-2xl font-bold text-amber-700">0</p>
+              <p className="text-2xl font-bold text-amber-700">{myAbsenceCount}</p>
             </div>
             <div className="p-4 bg-pink-50 rounded-lg border border-pink-100">
               <p className="text-sm text-muted-foreground">Wochenenddienste</p>

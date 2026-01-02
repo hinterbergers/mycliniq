@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -11,10 +12,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
-import { Download, ArrowLeft, ArrowRight, Info, Loader2, Sparkles, CheckCircle2, AlertTriangle, Brain, Pencil, Calendar } from "lucide-react";
+import { Download, ArrowLeft, ArrowRight, Info, Loader2, Sparkles, CheckCircle2, AlertTriangle, Brain, Pencil, Calendar, Plus, X } from "lucide-react";
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { employeeApi, rosterApi, absenceApi, longTermAbsencesApi, dutyPlansApi, rosterSettingsApi, serviceLinesApi, type NextPlanningMonth } from "@/lib/api";
-import type { Employee, RosterShift, Absence, LongTermAbsence, DutyPlan, ServiceLine } from "@shared/schema";
+import { employeeApi, rosterApi, plannedAbsencesAdminApi, longTermAbsencesApi, dutyPlansApi, rosterSettingsApi, serviceLinesApi, type NextPlanningMonth, type PlannedAbsenceAdmin } from "@/lib/api";
+import type { Employee, RosterShift, LongTermAbsence, DutyPlan, ServiceLine } from "@shared/schema";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, isWeekend } from "date-fns";
 import { de } from "date-fns/locale";
 import { useAuth } from "@/lib/auth";
@@ -117,6 +118,35 @@ const getRoleGroup = (role?: string | null) => {
   return "oa";
 };
 
+const ABSENCE_REASONS = [
+  "Urlaub",
+  "Fortbildung",
+  "Krankenstand",
+  "Zeitausgleich",
+  "Pflegeurlaub",
+  "Gebührenurlaub",
+  "Sonderurlaub",
+  "Zusatzurlaub",
+  "Quarantäne",
+  "Ruhezeit"
+] as const;
+
+type RosterAbsenceEntry = {
+  employeeId: number;
+  name: string;
+  reason: string;
+  source: "planned" | "long_term" | "legacy";
+  absenceId?: number;
+  status?: "Geplant" | "Genehmigt" | "Abgelehnt";
+  notes?: string | null;
+};
+
+const getLastNameFromText = (value?: string | null) => {
+  if (!value) return "";
+  const parts = value.trim().split(/\s+/);
+  return parts[parts.length - 1] || value;
+};
+
 export default function RosterPlan() {
   const { employee: currentUser, capabilities, isAdmin, isTechnicalAdmin, token } = useAuth();
   const { toast } = useToast();
@@ -124,7 +154,7 @@ export default function RosterPlan() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [serviceLines, setServiceLines] = useState<ServiceLine[]>([]);
   const [shifts, setShifts] = useState<RosterShift[]>([]);
-  const [absences, setAbsences] = useState<Absence[]>([]);
+  const [absences, setAbsences] = useState<PlannedAbsenceAdmin[]>([]);
   const [longTermAbsences, setLongTermAbsences] = useState<LongTermAbsence[]>([]);
   const [dutyPlan, setDutyPlan] = useState<DutyPlan | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -146,6 +176,21 @@ export default function RosterPlan() {
   const [wishMonth, setWishMonth] = useState<number>(currentDate.getMonth() + 1);
   const [wishYear, setWishYear] = useState<number>(currentDate.getFullYear());
   const [wishSaving, setWishSaving] = useState(false);
+  const [absenceDialogOpen, setAbsenceDialogOpen] = useState(false);
+  const [absenceSaving, setAbsenceSaving] = useState(false);
+  const [absenceDraft, setAbsenceDraft] = useState<{
+    employeeId: string;
+    startDate: string;
+    endDate: string;
+    reason: (typeof ABSENCE_REASONS)[number];
+    notes: string;
+  }>({
+    employeeId: "",
+    startDate: "",
+    endDate: "",
+    reason: ABSENCE_REASONS[0],
+    notes: ""
+  });
   const planStatus = dutyPlan?.status ?? "Entwurf";
   const planStatusLabel = PLAN_STATUS_LABELS[planStatus];
 
@@ -180,6 +225,17 @@ export default function RosterPlan() {
     return new Map(serviceLineDisplay.map((line) => [line.key, line]));
   }, [serviceLineDisplay]);
 
+  const absenceEmployeeOptions = useMemo(() => {
+    return [...employees].sort((a, b) => {
+      const lastNameA = (a.lastName || a.name || "").toLowerCase();
+      const lastNameB = (b.lastName || b.name || "").toLowerCase();
+      if (lastNameA !== lastNameB) return lastNameA.localeCompare(lastNameB);
+      const firstNameA = (a.firstName || "").toLowerCase();
+      const firstNameB = (b.firstName || "").toLowerCase();
+      return firstNameA.localeCompare(firstNameB);
+    });
+  }, [employees]);
+
   const canEdit = useMemo(() => {
     if (!currentUser) return false;
     if (isAdmin || isTechnicalAdmin) return true;
@@ -192,6 +248,17 @@ export default function RosterPlan() {
     return capabilities.includes("dutyplan.publish");
   }, [currentUser, isAdmin, isTechnicalAdmin, capabilities]);
 
+  const canApproveVacation = useMemo(() => {
+    if (!currentUser) return false;
+    if (isAdmin || isTechnicalAdmin) return true;
+    return capabilities.includes("vacation.approve");
+  }, [currentUser, isAdmin, isTechnicalAdmin, capabilities]);
+
+  const activePlannedAbsences = useMemo(
+    () => absences.filter((absence) => absence.status !== "Abgelehnt"),
+    [absences]
+  );
+
   const yearOptions = useMemo(() => {
     const baseYear = currentDate.getFullYear();
     return [baseYear, baseYear + 1, baseYear + 2];
@@ -202,6 +269,8 @@ export default function RosterPlan() {
     end: endOfMonth(currentDate)
   });
 
+  const dayStrings = useMemo(() => days.map((day) => format(day, "yyyy-MM-dd")), [days]);
+
   const getShiftForDay = (date: Date, type: ServiceType) => {
     const dateStr = format(date, 'yyyy-MM-dd');
     return shifts.find((s) => s.date === dateStr && s.serviceType === type);
@@ -210,6 +279,30 @@ export default function RosterPlan() {
   const getEmployeeById = (id?: number | null) => {
     if (!id) return null;
     return employees.find((e) => e.id === id) || null;
+  };
+
+  const isLegacyInactiveOnDate = (employee: Employee, dateStr: string) => {
+    if (!employee.inactiveFrom && !employee.inactiveUntil) return false;
+    const target = new Date(`${dateStr}T00:00:00`);
+    const from = employee.inactiveFrom ? new Date(`${employee.inactiveFrom}T00:00:00`) : null;
+    const until = employee.inactiveUntil ? new Date(`${employee.inactiveUntil}T00:00:00`) : null;
+    if (from && until) return target >= from && target <= until;
+    if (from) return target >= from;
+    if (until) return target <= until;
+    return false;
+  };
+
+  const resolveEmployeeLastName = (
+    employeeId: number,
+    fallbackName?: string | null,
+    fallbackLastName?: string | null
+  ) => {
+    const employee = employees.find((emp) => emp.id === employeeId);
+    if (employee?.lastName) return employee.lastName;
+    if (employee?.name) return getLastNameFromText(employee.name);
+    if (fallbackLastName) return getLastNameFromText(fallbackLastName);
+    if (fallbackName) return getLastNameFromText(fallbackName);
+    return "Unbekannt";
   };
 
   const getConflictReasons = (employee: Employee | null, dateStr: string, type: ServiceType) => {
@@ -225,7 +318,7 @@ export default function RosterPlan() {
     if (employee.isActive === false) {
       reasons.push("Mitarbeiter ist deaktiviert");
     }
-    const hasAbsence = absences.some(
+    const hasAbsence = activePlannedAbsences.some(
       (absence) =>
         absence.employeeId === employee.id &&
         absence.startDate <= dateStr &&
@@ -234,24 +327,17 @@ export default function RosterPlan() {
     if (hasAbsence) {
       reasons.push("Abwesenheit eingetragen");
     }
-    const hasLongTermAbsence = longTermAbsences.some(
-      (absence) =>
-        absence.employeeId === employee.id &&
-        absence.startDate <= dateStr &&
-        absence.endDate >= dateStr
+    const hasLongTermAbsence = longTermAbsences.some((absence) =>
+      absence.employeeId === employee.id &&
+      absence.status === "Genehmigt" &&
+      absence.startDate <= dateStr &&
+      absence.endDate >= dateStr
     );
     if (hasLongTermAbsence) {
       reasons.push("Langzeit-Abwesenheit genehmigt");
     }
-    if (employee.inactiveFrom || employee.inactiveUntil) {
-      const from = employee.inactiveFrom ? new Date(employee.inactiveFrom) : null;
-      const until = employee.inactiveUntil ? new Date(employee.inactiveUntil) : null;
-      const target = new Date(dateStr);
-      if ((from && target >= from) || (until && target <= until)) {
-        if (!from || !until || (from && until && target >= from && target <= until)) {
-          reasons.push("Langzeit-Deaktivierung (Legacy)");
-        }
-      }
+    if (isLegacyInactiveOnDate(employee, dateStr)) {
+      reasons.push("Langzeit-Deaktivierung (Legacy)");
     }
     return reasons;
   };
@@ -266,10 +352,10 @@ export default function RosterPlan() {
       const startDate = format(startOfMonth(currentDate), 'yyyy-MM-dd');
       const endDate = format(endOfMonth(currentDate), 'yyyy-MM-dd');
       
-      const [empData, shiftData, absenceData, plan] = await Promise.all([
+      const [empData, shiftData, plannedAbsenceData, plan] = await Promise.all([
         employeeApi.getAll(),
         rosterApi.getByMonth(year, month),
-        absenceApi.getByDateRange(startDate, endDate),
+        plannedAbsencesAdminApi.getRange({ from: startDate, to: endDate }),
         dutyPlansApi.getByMonth(year, month)
       ]);
       let serviceLineData: ServiceLine[] = [];
@@ -289,7 +375,7 @@ export default function RosterPlan() {
       setEmployees(empData);
       setServiceLines(serviceLineData);
       setShifts(shiftData);
-      setAbsences(absenceData);
+      setAbsences(plannedAbsenceData);
       setLongTermAbsences(longTermAbsenceData);
       setDutyPlan(plan);
     } catch (error) {
@@ -344,14 +430,46 @@ export default function RosterPlan() {
     });
   }, []);
 
-  const getAbsences = (date: Date): { empId: number; name: string; reason: string }[] => {
-    const dateStr = format(date, 'yyyy-MM-dd');
-    return absences
-      .filter(a => a.startDate <= dateStr && a.endDate >= dateStr)
-      .map(a => {
-        const emp = employees.find(e => e.id === a.employeeId);
-        return { empId: a.employeeId, name: emp?.name || 'Unbekannt', reason: a.reason };
-      });
+  const getAbsences = (date: Date): RosterAbsenceEntry[] => {
+    const dateStr = format(date, "yyyy-MM-dd");
+    const plannedEntries = activePlannedAbsences
+      .filter((absence) => absence.startDate <= dateStr && absence.endDate >= dateStr)
+      .map((absence) => ({
+        employeeId: absence.employeeId,
+        name: resolveEmployeeLastName(absence.employeeId, absence.employeeName, absence.employeeLastName),
+        reason: absence.reason,
+        source: "planned",
+        absenceId: absence.id,
+        status: absence.status,
+        notes: absence.notes ?? null
+      }));
+
+    const longTermEntries = longTermAbsences
+      .filter(
+        (absence) =>
+          absence.status === "Genehmigt" &&
+          absence.startDate <= dateStr &&
+          absence.endDate >= dateStr
+      )
+      .map((absence) => ({
+        employeeId: absence.employeeId,
+        name: resolveEmployeeLastName(absence.employeeId),
+        reason: absence.reason,
+        source: "long_term"
+      }));
+
+    const legacyEntries = employees
+      .filter((employee) => isLegacyInactiveOnDate(employee, dateStr))
+      .map((employee) => ({
+        employeeId: employee.id,
+        name: resolveEmployeeLastName(employee.id, employee.name, employee.lastName),
+        reason: "Langzeit-Deaktivierung",
+        source: "legacy"
+      }));
+
+    return [...plannedEntries, ...longTermEntries, ...legacyEntries].sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
   };
 
   const renderAssignmentCell = (
@@ -553,7 +671,24 @@ export default function RosterPlan() {
       .filter((employee) => employeeDoesShifts(employee, serviceLineMeta))
       .map((emp) => {
         const empShifts = shifts.filter((s) => s.employeeId === emp.id);
-        const empAbsences = absences.filter((a) => a.employeeId === emp.id);
+        const empAbsenceDays = dayStrings.filter((dateStr) => {
+          const planned = activePlannedAbsences.some(
+            (absence) =>
+              absence.employeeId === emp.id &&
+              absence.startDate <= dateStr &&
+              absence.endDate >= dateStr
+          );
+          if (planned) return true;
+          const longTerm = longTermAbsences.some(
+            (absence) =>
+              absence.employeeId === emp.id &&
+              absence.status === "Genehmigt" &&
+              absence.startDate <= dateStr &&
+              absence.endDate >= dateStr
+          );
+          if (longTerm) return true;
+          return isLegacyInactiveOnDate(emp, dateStr);
+        }).length;
         const byService = serviceKeys.reduce<Record<string, number>>((acc, key) => {
           acc[key] = empShifts.filter((s) => s.serviceType === key).length;
           return acc;
@@ -563,7 +698,7 @@ export default function RosterPlan() {
           stats: {
             byService,
             sum: empShifts.length,
-            abw: empAbsences.length
+            abw: empAbsenceDays
           }
         };
       });
@@ -578,7 +713,15 @@ export default function RosterPlan() {
       const firstNameB = (b.firstName || "").toLowerCase();
       return firstNameA.localeCompare(firstNameB);
     });
-  }, [employees, shifts, absences, serviceLineDisplay, serviceLineMeta]);
+  }, [
+    employees,
+    shifts,
+    activePlannedAbsences,
+    longTermAbsences,
+    dayStrings,
+    serviceLineDisplay,
+    serviceLineMeta
+  ]);
 
   const statsRows = useMemo(() => {
     const rows: Array<{ type: "separator" } | { type: "data"; emp: typeof stats[number] }> = [];
@@ -813,6 +956,83 @@ export default function RosterPlan() {
     }
   };
 
+  const handleOpenAbsenceDialog = (date: Date) => {
+    const dateStr = format(date, "yyyy-MM-dd");
+    setAbsenceDraft({
+      employeeId: "",
+      startDate: dateStr,
+      endDate: dateStr,
+      reason: ABSENCE_REASONS[0],
+      notes: ""
+    });
+    setAbsenceDialogOpen(true);
+  };
+
+  const handleSaveAbsence = async () => {
+    if (!absenceDraft.employeeId || !absenceDraft.startDate || !absenceDraft.endDate) {
+      toast({
+        title: "Unvollständig",
+        description: "Bitte Mitarbeiter und Zeitraum auswaehlen.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (absenceDraft.startDate > absenceDraft.endDate) {
+      toast({
+        title: "Zeitraum ungueltig",
+        description: "Das Enddatum muss nach dem Startdatum liegen.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setAbsenceSaving(true);
+    try {
+      const created = await plannedAbsencesAdminApi.create({
+        employeeId: Number(absenceDraft.employeeId),
+        startDate: absenceDraft.startDate,
+        endDate: absenceDraft.endDate,
+        reason: absenceDraft.reason,
+        notes: absenceDraft.notes?.trim() || null,
+        status: "Geplant"
+      });
+
+      let finalAbsence = created;
+      if (canApproveVacation) {
+        finalAbsence = await plannedAbsencesAdminApi.updateStatus(
+          created.id,
+          "Genehmigt",
+          currentUser?.id
+        );
+      }
+
+      setAbsences((prev) => [...prev, finalAbsence]);
+      setAbsenceDialogOpen(false);
+    } catch (error: any) {
+      toast({
+        title: "Speichern fehlgeschlagen",
+        description: error.message || "Bitte spaeter erneut versuchen.",
+        variant: "destructive"
+      });
+    } finally {
+      setAbsenceSaving(false);
+    }
+  };
+
+  const handleAbsenceDelete = async (absenceId: number) => {
+    try {
+      await plannedAbsencesAdminApi.delete(absenceId);
+      setAbsences((prev) => prev.filter((absence) => absence.id !== absenceId));
+    } catch (error: any) {
+      toast({
+        title: "Loeschen fehlgeschlagen",
+        description: error.message || "Bitte spaeter erneut versuchen.",
+        variant: "destructive"
+      });
+    }
+  };
+
   if (isLoading) {
     return (
       <Layout title="Dienstplan">
@@ -1022,6 +1242,103 @@ export default function RosterPlan() {
           </DialogContent>
         </Dialog>
 
+        <Dialog open={absenceDialogOpen} onOpenChange={setAbsenceDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Abwesenheit eintragen</DialogTitle>
+              <DialogDescription>
+                Tragen Sie Urlaub, Fortbildung oder andere Abwesenheiten ein.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Mitarbeiter</Label>
+                <Select
+                  value={absenceDraft.employeeId}
+                  onValueChange={(value) =>
+                    setAbsenceDraft((prev) => ({ ...prev, employeeId: value }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Mitarbeiter waehlen" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {absenceEmployeeOptions.map((employee) => (
+                      <SelectItem key={employee.id} value={employee.id.toString()}>
+                        {employee.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Von</Label>
+                  <Input
+                    type="date"
+                    value={absenceDraft.startDate}
+                    onChange={(event) =>
+                      setAbsenceDraft((prev) => ({ ...prev, startDate: event.target.value }))
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Bis</Label>
+                  <Input
+                    type="date"
+                    value={absenceDraft.endDate}
+                    onChange={(event) =>
+                      setAbsenceDraft((prev) => ({ ...prev, endDate: event.target.value }))
+                    }
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Grund</Label>
+                <Select
+                  value={absenceDraft.reason}
+                  onValueChange={(value) =>
+                    setAbsenceDraft((prev) => ({
+                      ...prev,
+                      reason: value as (typeof ABSENCE_REASONS)[number]
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ABSENCE_REASONS.map((reason) => (
+                      <SelectItem key={reason} value={reason}>
+                        {reason}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Notiz (optional)</Label>
+                <Textarea
+                  value={absenceDraft.notes}
+                  onChange={(event) =>
+                    setAbsenceDraft((prev) => ({ ...prev, notes: event.target.value }))
+                  }
+                  rows={3}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setAbsenceDialogOpen(false)} disabled={absenceSaving}>
+                Abbrechen
+              </Button>
+              <Button onClick={handleSaveAbsence} disabled={absenceSaving}>
+                {absenceSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                Speichern
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         {/* Main Roster Table */}
         <Card className="border-none kabeg-shadow overflow-hidden">
           {manualEditMode && canEdit && (
@@ -1060,8 +1377,7 @@ export default function RosterPlan() {
                   const holiday = getAustrianHoliday(day);
                   const isHoliday = Boolean(holiday);
                   
-                  // @ts-ignore
-                  const absences = getAbsences(day);
+                  const dayAbsences = getAbsences(day);
 
                   return (
                     <TableRow key={day.toISOString()} className={`
@@ -1085,20 +1401,51 @@ export default function RosterPlan() {
                       ))}
 
                       {/* Absences & Info */}
-                      <TableCell className="p-1 text-sm text-muted-foreground">
-                        <div className="flex flex-wrap gap-1">
+                      <TableCell className="p-1 text-muted-foreground">
+                        <div className="flex flex-wrap items-center gap-1">
                           {isHoliday && (
                             <Badge variant="outline" className="bg-red-50 text-red-600 border-red-200 mr-2">
                               {holiday?.name}
                             </Badge>
                           )}
-                          {/* @ts-ignore */}
-                          {absences.map((ab, idx) => (
-                            <span key={idx} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-slate-100 text-slate-600 border border-slate-200">
-                              <span className="font-bold mr-1">{ab.name.substring(0, 2).toUpperCase()}</span>
-                              <span className="opacity-70">{ab.reason}</span>
-                            </span>
-                          ))}
+                          {dayAbsences.map((absence) => {
+                            const titleParts = [
+                              absence.name,
+                              absence.reason,
+                              absence.status ? `(${absence.status})` : null
+                            ].filter(Boolean);
+                            if (absence.notes) {
+                              titleParts.push(absence.notes);
+                            }
+                            return (
+                              <span
+                                key={`${absence.source}-${absence.employeeId}-${absence.absenceId ?? absence.reason}`}
+                                className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600"
+                                title={titleParts.join(" · ")}
+                              >
+                                <span className="truncate max-w-[120px]">{absence.name}</span>
+                                {canEdit && absence.source === "planned" && absence.absenceId ? (
+                                  <button
+                                    type="button"
+                                    className="text-slate-400 hover:text-slate-700"
+                                    onClick={() => handleAbsenceDelete(absence.absenceId!)}
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                ) : null}
+                              </span>
+                            );
+                          })}
+                          {canEdit && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-slate-500"
+                              onClick={() => handleOpenAbsenceDialog(day)}
+                            >
+                              <Plus className="w-3 h-3" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
