@@ -38,7 +38,7 @@ const SOP_PUBLISH_CAP = "perm.sop_publish";
 
 const createSopSchema = z.object({
   title: z.string().min(1, "Titel erforderlich"),
-  category: z.enum(["SOP", "Checkliste", "Formular", "Leitlinie"]).default("SOP"),
+  category: z.enum(["SOP", "Dienstanweisung", "Aufklärungen", "Checkliste", "Formular", "Leitlinie"]).default("SOP"),
   contentMarkdown: z.string().nullable().optional(),
   keywords: z.array(z.string()).nullable().optional(),
   awmfLink: z.string().url().nullable().optional(),
@@ -55,7 +55,7 @@ const createSopSchema = z.object({
 
 const updateSopSchema = z.object({
   title: z.string().min(1).optional(),
-  category: z.enum(["SOP", "Checkliste", "Formular", "Leitlinie"]).optional(),
+  category: z.enum(["SOP", "Dienstanweisung", "Aufklärungen", "Checkliste", "Formular", "Leitlinie"]).optional(),
   contentMarkdown: z.string().nullable().optional(),
   keywords: z.array(z.string()).nullable().optional(),
   awmfLink: z.string().url().nullable().optional()

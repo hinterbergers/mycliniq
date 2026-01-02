@@ -131,7 +131,7 @@ export default function Dashboard() {
 
           <Card className="border-none kabeg-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-lg">SOPs & Leitlinien</CardTitle>
+              <CardTitle className="text-lg">SOPs & Dokumente</CardTitle>
               <Button 
                 variant="ghost" 
                 size="sm" 

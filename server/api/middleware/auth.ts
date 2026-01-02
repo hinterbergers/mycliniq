@@ -162,6 +162,15 @@ async function verifyToken(token: string): Promise<AuthUser | null> {
     if (session.expiresAt && new Date(session.expiresAt) < new Date()) {
       return null;
     }
+
+    const now = new Date();
+    const lastSeenAt = session.lastSeenAt ? new Date(session.lastSeenAt) : null;
+    if (!lastSeenAt || now.getTime() - lastSeenAt.getTime() > 2 * 60 * 1000) {
+      await db
+        .update(sessions)
+        .set({ lastSeenAt: now })
+        .where(eq(sessions.id, session.id));
+    }
     
     return await getAuthUserByEmployeeId(session.employeeId);
   } catch (error) {

@@ -37,12 +37,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import {
-  absenceApi,
   competencyApi,
   employeeApi,
   longTermAbsencesApi,
   meApi,
   plannedAbsencesAdminApi,
+  rosterSettingsApi,
   vacationRulesApi,
   type PlannedAbsenceAdmin,
   type VacationRuleInput
@@ -51,7 +51,7 @@ import { useAuth } from "@/lib/auth";
 import { getAustrianHoliday } from "@/lib/holidays";
 import { getSchoolHoliday, type SchoolHolidayLocation } from "@/lib/schoolHolidays";
 import { cn } from "@/lib/utils";
-import type { Competency, Employee, LongTermAbsence, VacationRule } from "@shared/schema";
+import type { Competency, Employee, LongTermAbsence, RosterSettings, VacationRule } from "@shared/schema";
 import * as XLSX from "xlsx";
 
 const STATUS_OPTIONS = [
@@ -120,6 +120,7 @@ type CalendarAbsence = {
   styleKey: keyof typeof REASON_STYLES;
   status?: PlannedAbsenceAdmin["status"] | "Genehmigt";
   notes?: string | null;
+  createdAt?: string | null;
   source: "planned" | "longTerm" | "legacy";
 };
 
@@ -176,6 +177,8 @@ type VacationRuleDraft = {
 type ConflictEntry = {
   date: string;
   message: string;
+  firstEntryBy?: string | null;
+  firstEntryAt?: string | null;
 };
 
 const toDate = (value: string) => new Date(`${value}T00:00:00`);
@@ -194,6 +197,13 @@ const normalizeDateOnly = (value: string | Date | null | undefined) => {
   }
   if (Number.isNaN(value.getTime())) return null;
   return formatDateInput(value);
+};
+
+const formatDateTime = (value?: string | null) => {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "-";
+  return format(parsed, "dd.MM.yyyy HH:mm", { locale: de });
 };
 
 const resolveReasonStyleKey = (reason: string): keyof typeof REASON_STYLES => {
@@ -229,6 +239,7 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [quarter, setQuarter] = useState(() => Math.floor(new Date().getMonth() / 3));
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_OPTIONS)[number]["value"]>("all");
+  const [showOnlySelf, setShowOnlySelf] = useState(false);
   const [loading, setLoading] = useState(true);
   const [savingAbsence, setSavingAbsence] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -238,6 +249,11 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
   const [absences, setAbsences] = useState<PlannedAbsenceAdmin[]>([]);
   const [longTermAbsences, setLongTermAbsences] = useState<LongTermAbsence[]>([]);
   const [rules, setRules] = useState<VacationRule[]>([]);
+  const [rosterSettings, setRosterSettings] = useState<RosterSettings | null>(null);
+  const [vacationLockFrom, setVacationLockFrom] = useState<string | null>(null);
+  const [vacationLockUntil, setVacationLockUntil] = useState<string | null>(null);
+  const [lockDialogOpen, setLockDialogOpen] = useState(false);
+  const [savingLock, setSavingLock] = useState(false);
   const [absenceDialogOpen, setAbsenceDialogOpen] = useState(false);
   const [holidayLocation, setHolidayLocation] = useState<SchoolHolidayLocation>({
     country: "AT",
@@ -267,6 +283,8 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
   const canEditRules = isAdmin || (currentUser?.capabilities?.includes("vacation.lock") ?? false);
   const canApprove = isAdmin || (currentUser?.capabilities?.includes("vacation.approve") ?? false);
   const canEditOthers = isAdmin || (currentUser?.capabilities?.includes("absence.create") ?? false);
+  const canViewRules = !embedded && (canEditRules || canApprove);
+  const canOverrideLock = canApprove || canEditOthers;
 
   const quarterStart = useMemo(() => new Date(year, quarter * 3, 1), [year, quarter]);
   const quarterEnd = useMemo(() => endOfMonth(addMonths(quarterStart, 2)), [quarterStart]);
@@ -303,19 +321,25 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
         .then((data) => data?.clinic ?? null)
         .catch(() => null);
 
-      const [employeeData, competencyData, absenceData, ruleData, clinicData, longTermData] = await Promise.all([
+      const [employeeData, competencyData, absenceData, ruleData, clinicData, longTermData, settingsData] = await Promise.all([
         employeeApi.getAll(),
         competencyApi.getAll(),
         plannedAbsencesAdminApi.getRange({ from: yearStart, to: yearEnd }),
-        vacationRulesApi.getAll(currentUser?.departmentId ?? undefined),
+        canViewRules
+          ? vacationRulesApi.getAll(currentUser?.departmentId ?? undefined)
+          : Promise.resolve([]),
         clinicPromise,
-        longTermAbsencesApi.getByStatus("Genehmigt", yearStart, yearEnd)
+        longTermAbsencesApi.getByStatus("Genehmigt", yearStart, yearEnd),
+        rosterSettingsApi.get()
       ]);
       setEmployees(employeeData);
       setCompetencies(competencyData);
       setAbsences(absenceData);
       setLongTermAbsences(longTermData);
       setRules(ruleData);
+      setRosterSettings(settingsData);
+      setVacationLockFrom(normalizeDateOnly(settingsData.vacationLockFrom));
+      setVacationLockUntil(normalizeDateOnly(settingsData.vacationLockUntil));
       if (clinicData) {
         setHolidayLocation({
           country: clinicData.country || "AT",
@@ -331,7 +355,7 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
     } finally {
       setLoading(false);
     }
-  }, [currentUser?.departmentId, toast, year]);
+  }, [canViewRules, currentUser?.departmentId, toast, year]);
 
   useEffect(() => {
     loadData();
@@ -388,6 +412,7 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
       styleKey: resolveReasonStyleKey(absence.reason),
       status: absence.status,
       notes: absence.notes,
+      createdAt: absence.createdAt ?? null,
       source: "planned"
     }));
 
@@ -397,15 +422,16 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
         entries.push({
           id: `longterm-${absence.id}`,
           employeeId: absence.employeeId,
-          startDate: absence.startDate,
-          endDate: absence.endDate,
-          reason: absence.reason,
-          styleKey: resolveReasonStyleKey(absence.reason),
-          status: "Genehmigt",
-          notes: absence.approvalNotes,
-          source: "longTerm"
-        });
+        startDate: absence.startDate,
+        endDate: absence.endDate,
+        reason: absence.reason,
+        styleKey: resolveReasonStyleKey(absence.reason),
+        status: "Genehmigt",
+        notes: absence.approvalNotes,
+        createdAt: (absence.approvedAt ?? absence.createdAt) || null,
+        source: "longTerm"
       });
+    });
 
     employees.forEach((emp) => {
       const start = normalizeDateOnly(emp.inactiveFrom);
@@ -420,6 +446,7 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
         reason: reasonValue,
         styleKey: resolveReasonStyleKey(reasonValue),
         status: "Genehmigt",
+        createdAt: (emp.updatedAt ?? emp.createdAt) || null,
         source: "legacy"
       });
     });
@@ -461,6 +488,12 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
       return selectedCompetencyNames.some((name) => empCompetencies.includes(name));
     });
   }, [selectedCompetencyNames, selectedRoleGroups, sortedEmployees, visibilityGroups]);
+
+  const displayEmployees = useMemo(() => {
+    if (!embedded || !showOnlySelf) return visibleEmployees;
+    if (!currentUser) return [];
+    return visibleEmployees.filter((emp) => emp.id === currentUser.id);
+  }, [currentUser, embedded, showOnlySelf, visibleEmployees]);
 
   const visibleEmployeeIds = useMemo(
     () => new Set(visibleEmployees.map((emp) => emp.id)),
@@ -517,6 +550,15 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
     );
   }, [employees]);
 
+  const employeeNameById = useMemo(() => {
+    return new Map(
+      employees.map((emp) => [
+        emp.id,
+        [emp.lastName, emp.firstName].filter(Boolean).join(" ").trim() || emp.name || "Unbekannt"
+      ])
+    );
+  }, [employees]);
+
   const conflicts = useMemo(() => {
     const conflictList: ConflictEntry[] = [];
     const activeRules = rules.filter((rule) => rule.isActive !== false);
@@ -527,6 +569,19 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
     days.forEach((date) => {
       const dateKey = formatDateInput(date);
       const dayAbsences = dayAbsenceMapAll.get(dateKey) ?? [];
+      const firstEntry = dayAbsences
+        .filter((absence) => absence.createdAt)
+        .reduce<CalendarAbsence | null>((earliest, current) => {
+          if (!current.createdAt) return earliest;
+          const currentTime = new Date(current.createdAt).getTime();
+          if (!Number.isFinite(currentTime)) return earliest;
+          if (!earliest || !earliest.createdAt) return current;
+          const earliestTime = new Date(earliest.createdAt).getTime();
+          if (!Number.isFinite(earliestTime)) return current;
+          return currentTime < earliestTime ? current : earliest;
+        }, null);
+      const firstEntryBy = firstEntry ? employeeNameById.get(firstEntry.employeeId) ?? null : null;
+      const firstEntryAt = firstEntry?.createdAt ?? null;
       const absentIds = new Set(dayAbsences.map((absence) => absence.employeeId));
       const presentEmployees = sortedEmployees.filter(
         (emp) => !absentIds.has(emp.id) && emp.takesShifts !== false
@@ -549,7 +604,9 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
           if ((rule.minCount ?? 0) > presentEmployees.length) {
             conflictList.push({
               date: dateKey,
-              message: `Gesamtbesetzung unter Mindestwert (${presentEmployees.length}/${rule.minCount})`
+              message: `Gesamtbesetzung unter Mindestwert (${presentEmployees.length}/${rule.minCount})`,
+              firstEntryBy,
+              firstEntryAt
             });
           }
           return;
@@ -560,7 +617,9 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
           if ((rule.minCount ?? 0) > count) {
             conflictList.push({
               date: dateKey,
-              message: `${rule.roleGroup} unter Mindestwert (${count}/${rule.minCount})`
+              message: `${rule.roleGroup} unter Mindestwert (${count}/${rule.minCount})`,
+              firstEntryBy,
+              firstEntryAt
             });
           }
           return;
@@ -574,7 +633,9 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
           if ((rule.minCount ?? 0) > count) {
             conflictList.push({
               date: dateKey,
-              message: `${compName} unter Mindestwert (${count}/${rule.minCount})`
+              message: `${compName} unter Mindestwert (${count}/${rule.minCount})`,
+              firstEntryBy,
+              firstEntryAt
             });
           }
         }
@@ -582,7 +643,7 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
     });
 
     return conflictList;
-  }, [competencies, dayAbsenceMapAll, days, rules, sortedEmployees]);
+  }, [competencies, dayAbsenceMapAll, days, employeeNameById, rules, sortedEmployees]);
 
   const conflictDates = useMemo(() => new Set(conflicts.map((c) => c.date)), [conflicts]);
 
@@ -601,6 +662,21 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
     if (statusFilter === "all") return quarterAbsences;
     return quarterAbsences.filter((absence) => absence.status === statusFilter);
   }, [quarterAbsences, statusFilter]);
+
+  const groupedAbsences = useMemo(() => {
+    const groups: Record<"Geplant" | "Genehmigt" | "Abgelehnt", PlannedAbsenceAdmin[]> = {
+      Geplant: [],
+      Genehmigt: [],
+      Abgelehnt: []
+    };
+    filteredAbsences.forEach((absence) => {
+      const status = absence.status as "Geplant" | "Genehmigt" | "Abgelehnt";
+      if (groups[status]) {
+        groups[status].push(absence);
+      }
+    });
+    return groups;
+  }, [filteredAbsences]);
 
   const countVacationDaysForEmployee = (employeeId: number) => {
     const yearStart = new Date(year, 0, 1);
@@ -731,6 +807,33 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
     selectedCompetencyIds.length > 0 ||
     (selectedRoleGroups.length > 0 && selectedRoleGroups.length !== visibilityGroups.length);
 
+  const hasVacationLock = Boolean(vacationLockFrom || vacationLockUntil);
+
+  const isDateWithinLock = (dateValue: string) => {
+    if (!hasVacationLock) return false;
+    const date = toDate(dateValue);
+    if (Number.isNaN(date.getTime())) return false;
+    const fromDate = vacationLockFrom ? toDate(vacationLockFrom) : null;
+    const untilDate = vacationLockUntil ? toDate(vacationLockUntil) : null;
+    if (fromDate && date < fromDate) return false;
+    if (untilDate && date > untilDate) return false;
+    return true;
+  };
+
+  const isRangeWithinLock = (start: string, end: string) => {
+    if (!hasVacationLock) return false;
+    const startDate = toDate(start);
+    const endDate = toDate(end);
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return false;
+    const rangeStart = startDate < endDate ? startDate : endDate;
+    const rangeEnd = startDate < endDate ? endDate : startDate;
+    const lockStart = vacationLockFrom ? toDate(vacationLockFrom) : null;
+    const lockEnd = vacationLockUntil ? toDate(vacationLockUntil) : null;
+    if (lockStart && rangeEnd < lockStart) return false;
+    if (lockEnd && rangeStart > lockEnd) return false;
+    return true;
+  };
+
   const openAbsenceDialog = (employeeId: number, date?: Date) => {
     if (!date) {
       setAbsenceDraft((prev) => ({
@@ -739,6 +842,14 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
       }));
     } else {
       const dateStr = formatDateInput(date);
+      if (!canOverrideLock && isDateWithinLock(dateStr)) {
+        toast({
+          title: "Eintrag gesperrt",
+          description: "Urlaube sind fuer diesen Zeitraum gesperrt.",
+          variant: "destructive"
+        });
+        return;
+      }
       setAbsenceDraft((prev) => ({
         ...prev,
         employeeId,
@@ -752,15 +863,23 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
   const handleAbsenceSave = async () => {
     if (!absenceDraft.employeeId) return;
     if (!absenceDraft.startDate || !absenceDraft.endDate) return;
+    if (!canOverrideLock && isRangeWithinLock(absenceDraft.startDate, absenceDraft.endDate)) {
+      toast({
+        title: "Eintrag gesperrt",
+        description: "Urlaube sind fuer diesen Zeitraum gesperrt.",
+        variant: "destructive"
+      });
+      return;
+    }
     setSavingAbsence(true);
     try {
-      await absenceApi.create({
+      await plannedAbsencesAdminApi.create({
         employeeId: absenceDraft.employeeId,
         startDate: absenceDraft.startDate,
         endDate: absenceDraft.endDate,
         reason: absenceDraft.reason,
         notes: absenceDraft.notes || null
-      } as any);
+      });
       toast({
         title: "Abwesenheit gespeichert",
         description: "Eintrag wurde uebernommen."
@@ -1015,13 +1134,13 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
           skipped += 1;
           continue;
         }
-        await absenceApi.create({
+        await plannedAbsencesAdminApi.create({
           employeeId: range.employeeId,
           startDate: range.startDate,
           endDate: range.endDate,
           reason: range.reason,
           notes: "Import (Excel)"
-        } as any);
+        });
       }
 
       if (!ranges.length) {
@@ -1050,7 +1169,7 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
   const handleAbsenceDelete = async (absenceId: number) => {
     setUpdatingId(absenceId);
     try {
-      await absenceApi.delete(absenceId);
+      await plannedAbsencesAdminApi.delete(absenceId);
       toast({
         title: "Abwesenheit geloescht",
         description: "Eintrag wurde entfernt."
@@ -1084,6 +1203,43 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
       });
     } finally {
       setUpdatingId(null);
+    }
+  };
+
+  const vacationLockLabel = useMemo(() => {
+    if (!hasVacationLock) return "Keine Eintragssperre aktiv";
+    const fromLabel = vacationLockFrom ? format(toDate(vacationLockFrom), "dd.MM.yyyy") : "-";
+    const untilLabel = vacationLockUntil ? format(toDate(vacationLockUntil), "dd.MM.yyyy") : "-";
+    return `Eintraege fuer Benutzer gesperrt: ${fromLabel} - ${untilLabel}`;
+  }, [hasVacationLock, vacationLockFrom, vacationLockUntil]);
+
+  const handleSaveVacationLock = async () => {
+    if (!rosterSettings) return;
+    setSavingLock(true);
+    try {
+      const updated = await rosterSettingsApi.update({
+        lastApprovedYear: rosterSettings.lastApprovedYear,
+        lastApprovedMonth: rosterSettings.lastApprovedMonth,
+        updatedById: currentUser?.id,
+        vacationLockFrom: vacationLockFrom ?? null,
+        vacationLockUntil: vacationLockUntil ?? null
+      });
+      setRosterSettings(updated);
+      setVacationLockFrom(normalizeDateOnly(updated.vacationLockFrom));
+      setVacationLockUntil(normalizeDateOnly(updated.vacationLockUntil));
+      setLockDialogOpen(false);
+      toast({
+        title: "Eintragssperre aktualisiert",
+        description: "Die Urlaubsplanung wurde aktualisiert."
+      });
+    } catch (error: any) {
+      toast({
+        title: "Eintragssperre konnte nicht gespeichert werden",
+        description: error.message || "Bitte spaeter erneut versuchen.",
+        variant: "destructive"
+      });
+    } finally {
+      setSavingLock(false);
     }
   };
 
@@ -1215,6 +1371,18 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
                       ))}
                     </SelectContent>
                   </Select>
+                )}
+                {embedded && currentUser && (
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id="vacation-only-self"
+                      checked={showOnlySelf}
+                      onCheckedChange={setShowOnlySelf}
+                    />
+                    <Label htmlFor="vacation-only-self" className="text-sm font-normal">
+                      Nur meine Zeile
+                    </Label>
+                  </div>
                 )}
                 <Popover>
                   <PopoverTrigger asChild>
@@ -1419,6 +1587,70 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
                 </Dialog>
               </div>
             </div>
+            {(hasVacationLock || canEditRules) && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-white px-3 py-2">
+                <div className="flex items-center gap-2 text-sm">
+                  {hasVacationLock ? (
+                    <AlertTriangle className="w-4 h-4 text-amber-500" />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                  )}
+                  <span>{vacationLockLabel}</span>
+                </div>
+                {canEditRules && (
+                  <Dialog open={lockDialogOpen} onOpenChange={setLockDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" size="sm">
+                        Eintragssperre verwalten
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-[420px]">
+                      <DialogHeader>
+                        <DialogTitle>Eintragssperre festlegen</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label>Von</Label>
+                          <Input
+                            type="date"
+                            value={vacationLockFrom ?? ""}
+                            onChange={(e) => setVacationLockFrom(e.target.value || null)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Bis</Label>
+                          <Input
+                            type="date"
+                            value={vacationLockUntil ?? ""}
+                            onChange={(e) => setVacationLockUntil(e.target.value || null)}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <Button
+                            variant="ghost"
+                            onClick={() => {
+                              setVacationLockFrom(null);
+                              setVacationLockUntil(null);
+                            }}
+                          >
+                            Sperre aufheben
+                          </Button>
+                          <div className="flex gap-2">
+                            <Button variant="outline" onClick={() => setLockDialogOpen(false)}>
+                              Abbrechen
+                            </Button>
+                            <Button onClick={handleSaveVacationLock} disabled={savingLock}>
+                              {savingLock && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                              Speichern
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                )}
+              </div>
+            )}
             <div className="flex flex-wrap gap-2">
               <Badge variant="outline">Gesamt: {counts.total}</Badge>
               <Badge variant="outline" className={STATUS_STYLES.Geplant}>
@@ -1447,10 +1679,20 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
             ) : (
               <div className="space-y-2">
                 {conflicts.slice(0, 6).map((conflict, idx) => (
-                  <div key={`${conflict.date}-${idx}`} className="flex items-center gap-2 text-sm">
+                  <div key={`${conflict.date}-${idx}`} className="flex items-start gap-2 text-sm">
                     <AlertTriangle className="w-4 h-4 text-amber-500" />
-                    <span className="font-medium">{format(toDate(conflict.date), "dd.MM.yyyy")}</span>
-                    <span className="text-muted-foreground">{conflict.message}</span>
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium">{format(toDate(conflict.date), "dd.MM.yyyy")}</span>
+                        <span className="text-muted-foreground">{conflict.message}</span>
+                      </div>
+                      {conflict.firstEntryBy && conflict.firstEntryAt && (
+                        <div className="text-xs text-muted-foreground">
+                          Erst eingetragen: {conflict.firstEntryBy} (
+                          {format(new Date(conflict.firstEntryAt), "dd.MM.yyyy HH:mm")})
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
                 {conflicts.length > 6 && (
@@ -1489,25 +1731,25 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
                 Daten werden geladen...
               </div>
             ) : (
-              <div className="overflow-x-auto border border-border rounded-xl">
+              <div className="max-h-[70vh] overflow-auto border border-border rounded-xl">
                 <table className="min-w-max border-collapse text-xs">
                   <thead>
                     <tr>
-                      <th className="sticky left-0 z-20 bg-white border border-border px-3 py-2 text-left min-w-[220px]">
+                      <th className="sticky left-0 top-0 z-40 bg-white border border-border px-3 py-2 text-left min-w-[220px]">
                         Mitarbeiter
                       </th>
                       {monthSegments.map((segment) => (
                         <th
                           key={segment.label}
                           colSpan={segment.days.length}
-                          className="border border-border bg-slate-50 px-2 py-1 text-center font-semibold"
+                          className="sticky top-0 z-30 border border-border bg-slate-50 px-2 py-1 text-center font-semibold"
                         >
                           {segment.label}
                         </th>
                       ))}
                     </tr>
                     <tr>
-                      <th className="sticky left-0 z-20 bg-white border border-border px-3 py-2 text-left">
+                      <th className="sticky left-0 top-[32px] z-30 bg-white border border-border px-3 py-2 text-left">
                         Tag
                       </th>
                       {days.map((date) => {
@@ -1518,7 +1760,7 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
                             key={dayKey}
                             title={dayLabel}
                             className={cn(
-                              "border border-border px-1 py-1 text-center font-normal",
+                              "sticky top-[32px] z-20 border border-border px-1 py-1 text-center font-normal bg-white",
                               getDayClass(date),
                               conflictDates.has(dayKey) ? "bg-amber-100" : ""
                             )}
@@ -1530,7 +1772,7 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
                       })}
                     </tr>
                     <tr>
-                      <th className="sticky left-0 z-20 bg-white border border-border px-3 py-2 text-left">
+                      <th className="sticky left-0 top-[64px] z-20 bg-white border border-border px-3 py-2 text-left">
                         Fehlt (gesamt)
                       </th>
                       {days.map((date) => {
@@ -1551,7 +1793,10 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
                           <th
                             key={`count-${dayKey}`}
                             title={breakdownLabel}
-                            className={cn("border border-border px-1 py-1 text-center", getDayClass(date))}
+                            className={cn(
+                              "sticky top-[64px] z-10 border border-border px-1 py-1 text-center bg-white",
+                              getDayClass(date)
+                            )}
                           >
                             {count > 0 && (
                               <div className="space-y-0.5">
@@ -1567,7 +1812,7 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
                     </tr>
                   </thead>
                   <tbody>
-                    {visibleEmployees.map((emp) => {
+                    {displayEmployees.map((emp) => {
                       const entitlement = emp.vacationEntitlement;
                       const usedDays = countVacationDaysForEmployee(emp.id);
                       const entitlementExceeded =
@@ -1609,16 +1854,18 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
                             const reasonStyle = absence ? REASON_STYLES[absence.reason] : null;
                             const cellClass = getDayClass(date);
                             const isRejected = absence?.status === "Abgelehnt";
+                            const isCellLocked = !canOverrideLock && isDateWithinLock(dayKey);
+                            const canEditCell = canEditRow && !isCellLocked;
                             return (
                               <td
                                 key={`${emp.id}-${dayKey}`}
                                 className={cn(
                                   "border border-border px-1 py-1 text-center",
                                   cellClass,
-                                  canEditRow ? "cursor-pointer" : ""
+                                  canEditCell ? "cursor-pointer" : ""
                                 )}
                                 onClick={() => {
-                                  if (!canEditRow) return;
+                                  if (!canEditCell) return;
                                   openAbsenceDialog(emp.id, date);
                                 }}
                               >
@@ -1679,97 +1926,141 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
                   Keine Eintraege fuer dieses Quartal.
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Mitarbeiter</TableHead>
-                        <TableHead>Zeitraum</TableHead>
-                        <TableHead>Grund</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Anmerkung</TableHead>
-                        <TableHead className="text-right">Aktion</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredAbsences.map((absence) => {
-                        const displayName = [absence.employeeLastName, absence.employeeName]
-                          .filter(Boolean)
-                          .join(" ");
-                        const statusClass = STATUS_STYLES[absence.status] ?? STATUS_STYLES.Geplant;
-                        const canEditRow = canApprove || absence.employeeId === currentUser?.id;
-                        return (
-                          <TableRow key={absence.id}>
-                            <TableCell className="font-medium">
-                              {displayName || "Unbekannt"}
-                              {absence.employeeRole ? (
-                                <div className="text-xs text-muted-foreground">{absence.employeeRole}</div>
-                              ) : null}
-                            </TableCell>
-                            <TableCell>
-                              {format(toDate(absence.startDate), "dd.MM.yyyy", { locale: de })} -{" "}
-                              {format(toDate(absence.endDate), "dd.MM.yyyy", { locale: de })}
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline">{absence.reason}</Badge>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className={statusClass}>
-                                {absence.status}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-muted-foreground">{absence.notes || "-"}</TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex justify-end gap-2 flex-wrap">
-                                {canApprove && (
-                                  <>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => handleStatusUpdate(absence, "Geplant")}
-                                      disabled={updatingId === absence.id || absence.status === "Geplant"}
-                                    >
-                                      <RotateCcw className="w-4 h-4 mr-1" />
-                                      Geplant
-                                    </Button>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => handleStatusUpdate(absence, "Genehmigt")}
-                                      disabled={updatingId === absence.id || absence.status === "Genehmigt"}
-                                    >
-                                      <CheckCircle2 className="w-4 h-4 mr-1" />
-                                      Genehmigen
-                                    </Button>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => handleStatusUpdate(absence, "Abgelehnt")}
-                                      disabled={updatingId === absence.id || absence.status === "Abgelehnt"}
-                                    >
-                                      <XCircle className="w-4 h-4 mr-1" />
-                                      Ablehnen
-                                    </Button>
-                                  </>
-                                )}
-                                {canEditRow && (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleAbsenceDelete(absence.id)}
-                                    disabled={updatingId === absence.id}
-                                  >
-                                    <Trash2 className="w-4 h-4 mr-1" />
-                                    Loeschen
-                                  </Button>
-                                )}
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
+                <div className="space-y-3">
+                  {(["Geplant", "Abgelehnt", "Genehmigt"] as const).map((status) => {
+                    const items = groupedAbsences[status];
+                    if (!items.length) return null;
+                    const statusClass = STATUS_STYLES[status] ?? STATUS_STYLES.Geplant;
+                    const isOpenByDefault = status !== "Genehmigt";
+                    return (
+                      <details
+                        key={status}
+                        open={isOpenByDefault}
+                        className="rounded-lg border border-border bg-white"
+                      >
+                        <summary className="flex items-center justify-between px-3 py-2 text-sm font-medium cursor-pointer list-none">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className={statusClass}>
+                              {status}
+                            </Badge>
+                            <span>
+                              {items.length} {items.length === 1 ? "Eintrag" : "Eintraege"}
+                            </span>
+                          </div>
+                        </summary>
+                        <div className="overflow-x-auto px-3 pb-3">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Mitarbeiter</TableHead>
+                                <TableHead>Zeitraum</TableHead>
+                                <TableHead>Grund</TableHead>
+                                <TableHead>Status</TableHead>
+                                <TableHead>Anmerkung</TableHead>
+                                <TableHead className="text-right">Aktion</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {items.map((absence) => {
+                                const displayName = [absence.employeeLastName, absence.employeeName]
+                                  .filter(Boolean)
+                                  .join(" ");
+                                const rowStatusClass =
+                                  STATUS_STYLES[absence.status] ?? STATUS_STYLES.Geplant;
+                                const isRowLocked =
+                                  !canOverrideLock &&
+                                  isRangeWithinLock(absence.startDate, absence.endDate);
+                                const canEditRow =
+                                  (canApprove || absence.employeeId === currentUser?.id) && !isRowLocked;
+                                return (
+                                  <TableRow key={absence.id}>
+                                    <TableCell className="font-medium">
+                                      {displayName || "Unbekannt"}
+                                      {absence.employeeRole ? (
+                                        <div className="text-xs text-muted-foreground">
+                                          {absence.employeeRole}
+                                        </div>
+                                      ) : null}
+                                    </TableCell>
+                                    <TableCell>
+                                      {format(toDate(absence.startDate), "dd.MM.yyyy", { locale: de })} -{" "}
+                                      {format(toDate(absence.endDate), "dd.MM.yyyy", { locale: de })}
+                                    </TableCell>
+                                    <TableCell>
+                                      <Badge variant="outline">{absence.reason}</Badge>
+                                    </TableCell>
+                                    <TableCell>
+                                      <Badge variant="outline" className={rowStatusClass}>
+                                        {absence.status}
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell className="text-muted-foreground">
+                                      {absence.notes || "-"}
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                      <div className="flex justify-end gap-2 flex-wrap">
+                                        {canApprove && (
+                                          <>
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              onClick={() => handleStatusUpdate(absence, "Geplant")}
+                                              disabled={
+                                                updatingId === absence.id ||
+                                                absence.status === "Geplant"
+                                              }
+                                            >
+                                              <RotateCcw className="w-4 h-4 mr-1" />
+                                              Geplant
+                                            </Button>
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              onClick={() => handleStatusUpdate(absence, "Genehmigt")}
+                                              disabled={
+                                                updatingId === absence.id ||
+                                                absence.status === "Genehmigt"
+                                              }
+                                            >
+                                              <CheckCircle2 className="w-4 h-4 mr-1" />
+                                              Genehmigen
+                                            </Button>
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              onClick={() => handleStatusUpdate(absence, "Abgelehnt")}
+                                              disabled={
+                                                updatingId === absence.id ||
+                                                absence.status === "Abgelehnt"
+                                              }
+                                            >
+                                              <XCircle className="w-4 h-4 mr-1" />
+                                              Ablehnen
+                                            </Button>
+                                          </>
+                                        )}
+                                        {canEditRow && (
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => handleAbsenceDelete(absence.id)}
+                                            disabled={updatingId === absence.id}
+                                          >
+                                            <Trash2 className="w-4 h-4 mr-1" />
+                                            Loeschen
+                                          </Button>
+                                        )}
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </details>
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
@@ -1826,7 +2117,7 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
           </Card>
         )}
 
-        {!embedded && (
+        {canViewRules && (
           <Card className="border-none kabeg-shadow">
             <CardHeader>
               <CardTitle className="text-lg">Konfliktregeln</CardTitle>

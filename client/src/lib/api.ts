@@ -1083,6 +1083,25 @@ export const notificationsApi = {
   }
 };
 
+export type OnlineUser = {
+  id: number;
+  name: string;
+  lastName: string;
+  lastSeenAt: string | null;
+};
+
+export type OnlineUsersResponse = {
+  count: number;
+  users: OnlineUser[];
+};
+
+export const onlineUsersApi = {
+  getAll: async (): Promise<OnlineUsersResponse> => {
+    const response = await apiFetch(`${API_BASE}/online-users`);
+    return handleResponse<OnlineUsersResponse>(response);
+  }
+};
+
 export type MessageThreadListItem = MessageThread & {
   members?: Array<MessageThreadMember & { name?: string | null; lastName?: string | null }>;
   lastMessage?: Message | null;
@@ -1445,6 +1464,27 @@ export const plannedAbsencesAdminApi = {
     if (typeof options.employeeId === "number") params.set("employeeId", String(options.employeeId));
     const response = await apiFetch(`${API_BASE}/absences?${params.toString()}`);
     return handleResponse<PlannedAbsenceAdmin[]>(response);
+  },
+  create: async (data: {
+    employeeId: number;
+    startDate: string;
+    endDate: string;
+    reason: string;
+    notes?: string | null;
+    status?: "Geplant" | "Genehmigt" | "Abgelehnt";
+  }): Promise<PlannedAbsenceAdmin> => {
+    const response = await apiFetch(`${API_BASE}/absences`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<PlannedAbsenceAdmin>(response);
+  },
+  delete: async (id: number): Promise<void> => {
+    const response = await apiFetch(`${API_BASE}/absences/${id}`, {
+      method: "DELETE"
+    });
+    return handleResponse<void>(response);
   },
 
   updateStatus: async (

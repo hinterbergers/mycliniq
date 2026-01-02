@@ -345,7 +345,8 @@ export const sessions = pgTable("sessions", {
   deviceName: text("device_name"),
   isRemembered: boolean("is_remembered").notNull().default(false),
   expiresAt: timestamp("expires_at").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull()
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  lastSeenAt: timestamp("last_seen_at").defaultNow().notNull()
 });
 
 export const insertSessionSchema = createInsertSchema(sessions).omit({
@@ -907,6 +908,8 @@ export const knowledgeCategoryEnum = pgEnum('knowledge_category', [
 // SOP-specific enums
 export const sopCategoryEnum = pgEnum('sop_category', [
   'SOP',
+  'Dienstanweisung',
+  'Aufklärungen',
   'Checkliste',
   'Formular',
   'Leitlinie'
@@ -1327,6 +1330,8 @@ export const rosterSettings = pgTable("roster_settings", {
   lastApprovedMonth: integer("last_approved_month").notNull(),
   wishYear: integer("wish_year"),
   wishMonth: integer("wish_month"),
+  vacationLockFrom: date("vacation_lock_from"),
+  vacationLockUntil: date("vacation_lock_until"),
   updatedById: integer("updated_by_id").references(() => employees.id),
   updatedAt: timestamp("updated_at").defaultNow().notNull()
 });

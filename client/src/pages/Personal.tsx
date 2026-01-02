@@ -7,6 +7,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
   ArrowRightLeft,
   Calendar as CalendarIcon,
@@ -25,7 +27,17 @@ import {
 import { cn } from "@/lib/utils";
 import { getAustrianHoliday } from "@/lib/holidays";
 import { useEffect, useMemo, useState } from "react";
-import { format, addMonths, subMonths, getWeek, eachDayOfInterval, startOfMonth, endOfMonth, parseISO } from "date-fns";
+import {
+  format,
+  addMonths,
+  subMonths,
+  getWeek,
+  eachDayOfInterval,
+  startOfMonth,
+  endOfMonth,
+  parseISO,
+  startOfDay
+} from "date-fns";
 import { de } from "date-fns/locale";
 import { useLocation } from "wouter";
 import { dutyPlansApi, employeeApi, rosterApi, rosterSettingsApi, serviceLinesApi, shiftSwapApi, plannedAbsencesAdminApi, longTermAbsencesApi, type NextPlanningMonth, type PlannedAbsenceAdmin } from "@/lib/api";
@@ -720,7 +732,7 @@ function ShiftSwapRosterDialog({
   const [myRequests, setMyRequests] = useState<ShiftSwapRequest[]>([]);
   const [incomingRequests, setIncomingRequests] = useState<ShiftSwapRequest[]>([]);
   const [sourceShiftId, setSourceShiftId] = useState("");
-  const [targetShiftId, setTargetShiftId] = useState("");
+  const [targetShiftIds, setTargetShiftIds] = useState<number[]>([]);
   const [reason, setReason] = useState("");
 
   useEffect(() => {
@@ -771,11 +783,22 @@ function ShiftSwapRosterDialog({
     serviceLines.forEach((line) => map.set(line.key, line.label));
     return map;
   }, [serviceLines]);
+  const now = new Date();
+  const isCurrentMonth =
+    currentDate.getFullYear() === now.getFullYear() &&
+    currentDate.getMonth() === now.getMonth();
+  const remainingMonthStart = startOfDay(now);
+  const isShiftInRemainingMonth = (shift: RosterShift) => {
+    if (!isCurrentMonth) return true;
+    return parseISO(shift.date) >= remainingMonthStart;
+  };
   const myShifts = shifts
     .filter((shift) => shift.employeeId === currentUser?.id)
+    .filter(isShiftInRemainingMonth)
     .sort((a, b) => a.date.localeCompare(b.date));
   const targetShifts = shifts
     .filter((shift) => shift.employeeId && shift.employeeId !== currentUser?.id)
+    .filter(isShiftInRemainingMonth)
     .sort((a, b) => a.date.localeCompare(b.date));
 
   const formatShiftOption = (shift: RosterShift) => {
@@ -787,31 +810,65 @@ function ShiftSwapRosterDialog({
   };
 
   const selectedSourceShift = sourceShiftId ? shiftsById.get(Number(sourceShiftId)) : null;
-  const selectedTargetShift = targetShiftId ? shiftsById.get(Number(targetShiftId)) : null;
+  const selectedTargetShifts = targetShiftIds
+    .map((shiftId) => shiftsById.get(shiftId))
+    .filter((shift): shift is RosterShift => Boolean(shift));
   const incomingPending = incomingRequests.filter((req) => req.status === "Ausstehend");
 
+  const toggleTargetShift = (shiftId: number, checked: boolean | "indeterminate") => {
+    setTargetShiftIds((prev) => {
+      if (checked) {
+        return prev.includes(shiftId) ? prev : [...prev, shiftId];
+      }
+      return prev.filter((id) => id !== shiftId);
+    });
+  };
+
   const handleSubmitSwapRequest = async () => {
-    if (!currentUser || !selectedSourceShift || !selectedTargetShift || !selectedTargetShift.employeeId) {
+    const uniqueTargetIds = [...new Set(targetShiftIds)];
+    const targetShiftsSelected = uniqueTargetIds
+      .map((shiftId) => shiftsById.get(shiftId))
+      .filter((shift): shift is RosterShift => Boolean(shift));
+    const validTargets = targetShiftsSelected.filter((shift) => shift.employeeId);
+    if (!currentUser || !selectedSourceShift || validTargets.length === 0) {
       toast({
         title: "Unvollständige Auswahl",
-        description: "Bitte zwei Dienste auswählen, die getauscht werden sollen.",
+        description: "Bitte einen eigenen Dienst und mindestens einen Ziel-Dienst auswählen.",
         variant: "destructive"
       });
       return;
     }
     setSubmitting(true);
     try {
-      await shiftSwapApi.create({
-        requesterId: currentUser.id,
-        requesterShiftId: selectedSourceShift.id,
-        targetShiftId: selectedTargetShift.id,
-        targetEmployeeId: selectedTargetShift.employeeId,
-        reason: reason || null,
-        status: "Ausstehend"
-      });
-      toast({ title: "Anfrage gesendet", description: "Die Tausch-Anfrage wurde eingereicht." });
+      const results = await Promise.allSettled(
+        validTargets.map((shift) =>
+          shiftSwapApi.create({
+            requesterId: currentUser.id,
+            requesterShiftId: selectedSourceShift.id,
+            targetShiftId: shift.id,
+            targetEmployeeId: shift.employeeId!,
+            reason: reason || null,
+            status: "Ausstehend"
+          })
+        )
+      );
+      const successCount = results.filter((result) => result.status === "fulfilled").length;
+      const errorCount = results.length - successCount;
+      if (successCount > 0) {
+        toast({
+          title: "Anfrage gesendet",
+          description: `${successCount} Anfrage(n) wurden eingereicht.`
+        });
+      }
+      if (errorCount > 0) {
+        toast({
+          title: "Teilweise fehlgeschlagen",
+          description: `${errorCount} Anfrage(n) konnten nicht gesendet werden.`,
+          variant: "destructive"
+        });
+      }
       setSourceShiftId("");
-      setTargetShiftId("");
+      setTargetShiftIds([]);
       setReason("");
       loadData();
     } catch (error: any) {
@@ -937,24 +994,28 @@ function ShiftSwapRosterDialog({
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Ziel-Dienst</Label>
-                  <Select value={targetShiftId} onValueChange={setTargetShiftId}>
-                    <SelectTrigger data-testid="select-swap-target">
-                      <SelectValue placeholder="Ziel-Dienst auswählen" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {targetShifts.length === 0 && (
-                        <SelectItem value="none" disabled>
+                  <Label>Ziel-Dienste (Mehrfachauswahl)</Label>
+                  <div className="rounded-md border border-border p-2">
+                    <ScrollArea className="h-48 pr-2">
+                      {targetShifts.length === 0 ? (
+                        <p className="text-sm text-muted-foreground px-2 py-1">
                           Keine Ziel-Dienste verfügbar
-                        </SelectItem>
+                        </p>
+                      ) : (
+                        <div className="space-y-1">
+                          {targetShifts.map((shift) => (
+                            <label key={shift.id} className="flex items-start gap-2 px-2 py-1">
+                              <Checkbox
+                                checked={targetShiftIds.includes(shift.id)}
+                                onCheckedChange={(checked) => toggleTargetShift(shift.id, checked)}
+                              />
+                              <span className="text-sm leading-5">{formatShiftOption(shift)}</span>
+                            </label>
+                          ))}
+                        </div>
                       )}
-                      {targetShifts.map((shift) => (
-                        <SelectItem key={shift.id} value={String(shift.id)}>
-                          {formatShiftOption(shift)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    </ScrollArea>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -969,7 +1030,7 @@ function ShiftSwapRosterDialog({
 
                 <Button
                   onClick={handleSubmitSwapRequest}
-                  disabled={submitting || !sourceShiftId || !targetShiftId}
+                  disabled={submitting || !sourceShiftId || targetShiftIds.length === 0}
                   className="w-full"
                   data-testid="button-submit-swap"
                 >

@@ -11,7 +11,8 @@ import {
 import { validateBody, validateParams, idParamSchema } from "../../lib/validate";
 import { 
   plannedAbsences,
-  employees
+  employees,
+  rosterSettings
 } from "@shared/schema";
 
 /**
@@ -60,11 +61,108 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 const toDate = (value: string) => new Date(`${value}T00:00:00`);
 
+type VacationVisibilityGroup = "OA" | "ASS" | "TA" | "SEK";
+
+const DEFAULT_VISIBILITY_GROUPS: VacationVisibilityGroup[] = ["OA", "ASS", "TA", "SEK"];
+
+const ROLE_GROUPS: Record<string, VacationVisibilityGroup | null> = {
+  Primararzt: "OA",
+  "1. Oberarzt": "OA",
+  Funktionsoberarzt: "OA",
+  Ausbildungsoberarzt: "OA",
+  Oberarzt: "OA",
+  Oberaerztin: "OA",
+  Facharzt: "OA",
+  Assistenzarzt: "ASS",
+  Assistenzaerztin: "ASS",
+  Turnusarzt: "TA",
+  "Student (KPJ)": "TA",
+  "Student (Famulant)": "TA",
+  Sekretariat: "SEK"
+};
+
+const normalizeRole = (role?: string | null) => {
+  if (!role) return "";
+  return role
+    .replace(/\u00e4/g, "ae")
+    .replace(/\u00f6/g, "oe")
+    .replace(/\u00fc/g, "ue")
+    .replace(/\u00c4/g, "Ae")
+    .replace(/\u00d6/g, "Oe")
+    .replace(/\u00dc/g, "Ue");
+};
+
+const resolveRoleGroup = (role?: string | null): VacationVisibilityGroup | null => {
+  const normalized = normalizeRole(role);
+  return ROLE_GROUPS[normalized] ?? null;
+};
+
+const getVisibilityGroupsForUser = async (employeeId: number) => {
+  const [employee] = await db
+    .select({ shiftPreferences: employees.shiftPreferences })
+    .from(employees)
+    .where(eq(employees.id, employeeId));
+
+  const prefs = employee?.shiftPreferences as { vacationVisibilityRoleGroups?: VacationVisibilityGroup[] } | null;
+  const groups = Array.isArray(prefs?.vacationVisibilityRoleGroups)
+    ? prefs.vacationVisibilityRoleGroups.filter((group): group is VacationVisibilityGroup => Boolean(group))
+    : [];
+
+  return groups.length ? groups : DEFAULT_VISIBILITY_GROUPS;
+};
+
+const canBypassVacationLock = (reqUser: Express.Request["user"]) => {
+  if (!reqUser) return false;
+  if (reqUser.isAdmin || reqUser.appRole === "Admin" || reqUser.appRole === "Editor") return true;
+  return (
+    (reqUser.capabilities?.includes("dutyplan.edit") ?? false) ||
+    (reqUser.capabilities?.includes("dutyplan.publish") ?? false)
+  );
+};
+
+const LOCK_EXEMPT_REASONS = new Set(["Krankenstand", "Pflegeurlaub", "Quarant\u00e4ne"]);
+
+const isLockRestrictedReason = (reason: string) => !LOCK_EXEMPT_REASONS.has(reason);
+
+const normalizeLockDate = (value: string | Date | null | undefined) => {
+  if (!value) return null;
+  const date = typeof value === "string" ? new Date(`${value}T00:00:00`) : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+};
+
+const overlapsLockRange = (
+  startDate: string,
+  endDate: string,
+  lockFrom: Date | null,
+  lockUntil: Date | null
+) => {
+  if (!lockFrom || !lockUntil) return false;
+  const start = toDate(startDate);
+  const end = toDate(endDate);
+  return start <= lockUntil && end >= lockFrom;
+};
+
 const formatDate = (date: Date) => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+};
+
+const getVacationLockRange = async () => {
+  const [settings] = await db
+    .select({
+      vacationLockFrom: rosterSettings.vacationLockFrom,
+      vacationLockUntil: rosterSettings.vacationLockUntil
+    })
+    .from(rosterSettings)
+    .limit(1);
+
+  return {
+    lockFrom: normalizeLockDate(settings?.vacationLockFrom ?? null),
+    lockUntil: normalizeLockDate(settings?.vacationLockUntil ?? null)
+  };
 };
 
 const countInclusiveDays = (start: Date, end: Date) => {
@@ -197,6 +295,10 @@ export function registerAbsenceRoutes(router: Router) {
     const employeeFilter = employee_id ?? employeeId;
     const rangeFrom = from ?? startDate;
     const rangeTo = to ?? endDate;
+
+    if (!req.user) {
+      return res.status(401).json({ success: false, error: "Anmeldung erforderlich" });
+    }
     
     // Get all absences with employee details
     const conditions = [];
@@ -248,7 +350,16 @@ export function registerAbsenceRoutes(router: Router) {
       .from(plannedAbsences)
       .leftJoin(employees, eq(plannedAbsences.employeeId, employees.id))
       .where(conditions.length ? and(...conditions) : undefined);
-    
+
+    if (!req.user.isAdmin) {
+      const allowedGroups = await getVisibilityGroupsForUser(req.user.employeeId);
+      absences = absences.filter((absence) => {
+        if (absence.employeeId === req.user?.employeeId) return true;
+        const group = resolveRoleGroup(absence.employeeRole ?? null);
+        return group ? allowedGroups.includes(group) : false;
+      });
+    }
+
     return ok(res, absences);
   }));
 
@@ -261,6 +372,10 @@ export function registerAbsenceRoutes(router: Router) {
     asyncHandler(async (req, res) => {
       const { id } = req.params;
       const absenceId = Number(id);
+
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: "Anmeldung erforderlich" });
+      }
       
       // Get absence with employee info
       const [absence] = await db
@@ -289,6 +404,14 @@ export function registerAbsenceRoutes(router: Router) {
       
       if (!absence) {
         return notFound(res, "Abwesenheit");
+      }
+
+      if (!req.user.isAdmin && absence.employeeId !== req.user.employeeId) {
+        const allowedGroups = await getVisibilityGroupsForUser(req.user.employeeId);
+        const group = resolveRoleGroup(absence.employeeRole ?? null);
+        if (!group || !allowedGroups.includes(group)) {
+          return res.status(403).json({ success: false, error: "Keine Berechtigung fuer diese Abwesenheit" });
+        }
       }
       
       // Get approver info if approved/rejected
@@ -353,6 +476,16 @@ export function registerAbsenceRoutes(router: Router) {
       // Validate date range
       if (new Date(endDate) < new Date(startDate)) {
         return validationError(res, "Enddatum muss nach Startdatum liegen");
+      }
+
+      if (!canBypassVacationLock(req.user) && isLockRestrictedReason(reason)) {
+        const { lockFrom, lockUntil } = await getVacationLockRange();
+        if (lockFrom && lockUntil && overlapsLockRange(startDate, endDate, lockFrom, lockUntil)) {
+          return res.status(403).json({
+            success: false,
+            error: `Urlaubsplanung ist von ${formatDate(lockFrom)} bis ${formatDate(lockUntil)} gesperrt.`
+          });
+        }
       }
 
       if (reason === "Urlaub") {
@@ -506,6 +639,16 @@ export function registerAbsenceRoutes(router: Router) {
       if (!isOwnerOrAdmin(req.user, existing.employeeId)) {
         return res.status(403).json({ success: false, error: "Keine Berechtigung fuer diese Aktion" });
       }
+
+      if (!canBypassVacationLock(req.user) && isLockRestrictedReason(String(existing.reason))) {
+        const { lockFrom, lockUntil } = await getVacationLockRange();
+        if (lockFrom && lockUntil && overlapsLockRange(String(existing.startDate), String(existing.endDate), lockFrom, lockUntil)) {
+          return res.status(403).json({
+            success: false,
+            error: `Urlaubsplanung ist von ${formatDate(lockFrom)} bis ${formatDate(lockUntil)} gesperrt.`
+          });
+        }
+      }
       
       // Delete the absence
       await db.delete(plannedAbsences).where(eq(plannedAbsences.id, absenceId));
@@ -528,15 +671,27 @@ export function registerAbsenceRoutes(router: Router) {
     asyncHandler(async (req, res) => {
       const { employeeId } = req.params;
       const empId = Number(employeeId);
+
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: "Anmeldung erforderlich" });
+      }
       
       // Verify employee exists
       const [employee] = await db
-        .select({ id: employees.id, name: employees.name, lastName: employees.lastName })
+        .select({ id: employees.id, name: employees.name, lastName: employees.lastName, role: employees.role })
         .from(employees)
         .where(eq(employees.id, empId));
       
       if (!employee) {
         return notFound(res, "Mitarbeiter");
+      }
+
+      if (!req.user.isAdmin && req.user.employeeId !== empId) {
+        const allowedGroups = await getVisibilityGroupsForUser(req.user.employeeId);
+        const group = resolveRoleGroup(employee.role ?? null);
+        if (!group || !allowedGroups.includes(group)) {
+          return res.status(403).json({ success: false, error: "Keine Berechtigung fuer diese Abwesenheiten" });
+        }
       }
       
       // Get all absences for this employee
@@ -575,6 +730,10 @@ export function registerAbsenceRoutes(router: Router) {
       const { year, month } = req.params;
       const y = Number(year);
       const m = Number(month);
+
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: "Anmeldung erforderlich" });
+      }
       
       // Validate
       if (isNaN(y) || isNaN(m) || m < 1 || m > 12) {
@@ -592,7 +751,8 @@ export function registerAbsenceRoutes(router: Router) {
           status: plannedAbsences.status,
           notes: plannedAbsences.notes,
           employeeName: employees.name,
-          employeeLastName: employees.lastName
+          employeeLastName: employees.lastName,
+          employeeRole: employees.role
         })
         .from(plannedAbsences)
         .leftJoin(employees, eq(plannedAbsences.employeeId, employees.id))
@@ -602,10 +762,20 @@ export function registerAbsenceRoutes(router: Router) {
             eq(plannedAbsences.month, m)
           )
         );
+
+      let visibleAbsences = absences;
+      if (!req.user.isAdmin) {
+        const allowedGroups = await getVisibilityGroupsForUser(req.user.employeeId);
+        visibleAbsences = absences.filter((absence) => {
+          if (absence.employeeId === req.user?.employeeId) return true;
+          const group = resolveRoleGroup(absence.employeeRole ?? null);
+          return group ? allowedGroups.includes(group) : false;
+        });
+      }
       
       // Group by reason
       const byReason: Record<string, typeof absences> = {};
-      absences.forEach(a => {
+      visibleAbsences.forEach(a => {
         if (!byReason[a.reason]) {
           byReason[a.reason] = [];
         }
@@ -615,13 +785,13 @@ export function registerAbsenceRoutes(router: Router) {
       return ok(res, {
         year: y,
         month: m,
-        absences,
+        absences: visibleAbsences,
         byReason,
         summary: {
-          total: absences.length,
-          geplant: absences.filter(a => a.status === 'Geplant').length,
-          genehmigt: absences.filter(a => a.status === 'Genehmigt').length,
-          abgelehnt: absences.filter(a => a.status === 'Abgelehnt').length
+          total: visibleAbsences.length,
+          geplant: visibleAbsences.filter(a => a.status === 'Geplant').length,
+          genehmigt: visibleAbsences.filter(a => a.status === 'Genehmigt').length,
+          abgelehnt: visibleAbsences.filter(a => a.status === 'Abgelehnt').length
         }
       });
     })

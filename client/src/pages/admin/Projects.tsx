@@ -30,9 +30,18 @@ import type { Employee, ProjectInitiative, Sop } from "@shared/schema";
 import { employeeApi, projectApi, sopApi, type SopDetail, type SopReferenceSuggestion } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
-import { SOP_TEMPLATE_MARKDOWN } from "@/lib/sopTemplates";
+import {
+  SOP_TEMPLATE_MARKDOWN,
+  SOP_SECTION_DEFINITIONS,
+  DEFAULT_SOP_SECTIONS,
+  EMPTY_SOP_SECTIONS,
+  buildSopMarkdown,
+  parseSopSections,
+  type SopSections
+} from "@/lib/sopTemplates";
 
-const SOP_CATEGORIES = ["SOP", "Leitlinie", "Checkliste", "Formular"] as const;
+const SOP_CATEGORIES = ["SOP", "Dienstanweisung", "Aufklärungen"] as const;
+const ALLOWED_SOP_CATEGORIES = new Set(SOP_CATEGORIES);
 const PROJECT_CATEGORIES = [
   { value: "SOP", label: "SOP" },
   { value: "Studie", label: "Studie" },
@@ -74,6 +83,29 @@ function normalizeSopStatus(status?: string | null) {
   if (["archiviert", "archived"].includes(value)) return "archived";
   return value || "proposed";
 }
+
+const normalizeSopCategory = (value?: string | null) => {
+  if (!value) return "SOP";
+  if (ALLOWED_SOP_CATEGORIES.has(value as (typeof SOP_CATEGORIES)[number])) return value;
+  return "SOP";
+};
+
+const hasSopSectionContent = (sections: SopSections) =>
+  SOP_SECTION_DEFINITIONS.some((section) => {
+    const value = (sections[section.key] || "").trim();
+    const placeholder = DEFAULT_SOP_SECTIONS[section.key].trim();
+    return value && value !== placeholder;
+  });
+
+const sanitizeSopSections = (sections: SopSections): SopSections => {
+  const cleaned = { ...EMPTY_SOP_SECTIONS };
+  SOP_SECTION_DEFINITIONS.forEach((section) => {
+    const value = (sections[section.key] || "").trim();
+    const placeholder = DEFAULT_SOP_SECTIONS[section.key].trim();
+    cleaned[section.key] = value && value !== placeholder ? value : "";
+  });
+  return cleaned;
+};
 
 function normalizeProjectStatus(status?: string | null) {
   const value = (status || "").toLowerCase();
@@ -151,6 +183,7 @@ export default function AdminProjects() {
     keywords: "",
     awmfLink: ""
   });
+  const [sopContentSections, setSopContentSections] = useState<SopSections>(DEFAULT_SOP_SECTIONS);
   const [publishOnCreate, setPublishOnCreate] = useState(false);
   const [publishNote, setPublishNote] = useState("");
 
@@ -241,7 +274,7 @@ export default function AdminProjects() {
     );
   }, [projects, projectSearch]);
 
-  const sopSections = [
+  const sopStatusSections = [
     { key: "proposed", title: "Vorgeschlagen" },
     { key: "in_progress", title: "Laufend" },
     { key: "review", title: "Review" },
@@ -256,14 +289,21 @@ export default function AdminProjects() {
 
   const openSopEditor = (sop?: Sop) => {
     if (sop) {
+      const normalizedCategory = normalizeSopCategory(sop.category);
+      const contentMarkdown = sop.contentMarkdown || "";
       setEditingSop(sop);
       setSopForm({
         title: sop.title,
-        category: sop.category,
-        contentMarkdown: sop.contentMarkdown || "",
+        category: normalizedCategory,
+        contentMarkdown,
         keywords: (sop.keywords || []).join(", "),
         awmfLink: sop.awmfLink || ""
       });
+      if (normalizedCategory === "SOP") {
+        setSopContentSections(contentMarkdown ? parseSopSections(contentMarkdown) : DEFAULT_SOP_SECTIONS);
+      } else {
+        setSopContentSections(EMPTY_SOP_SECTIONS);
+      }
     } else {
       setEditingSop(null);
       setSopForm({
@@ -273,10 +313,37 @@ export default function AdminProjects() {
         keywords: "",
         awmfLink: ""
       });
+      setSopContentSections(DEFAULT_SOP_SECTIONS);
     }
     setPublishOnCreate(false);
     setPublishNote("");
     setSopEditorOpen(true);
+  };
+
+  const handleSopCategoryChange = (value: string) => {
+    const normalizedCategory = normalizeSopCategory(value);
+    const currentCategory = normalizeSopCategory(sopForm.category);
+    if (normalizedCategory === currentCategory) return;
+
+    if (currentCategory !== "SOP" && normalizedCategory !== "SOP") {
+      setSopForm({ ...sopForm, category: normalizedCategory });
+      return;
+    }
+
+    if (normalizedCategory === "SOP") {
+      const nextSections = sopForm.contentMarkdown?.trim()
+        ? parseSopSections(sopForm.contentMarkdown)
+        : DEFAULT_SOP_SECTIONS;
+      setSopContentSections(nextSections);
+      setSopForm({ ...sopForm, category: normalizedCategory });
+      return;
+    }
+
+    const nextMarkdown = hasSopSectionContent(sopContentSections)
+      ? buildSopMarkdown(sanitizeSopSections(sopContentSections))
+      : "";
+    setSopContentSections(EMPTY_SOP_SECTIONS);
+    setSopForm({ ...sopForm, category: normalizedCategory, contentMarkdown: nextMarkdown });
   };
 
   const openProjectEditor = (project?: ProjectInitiative) => {
@@ -301,12 +368,19 @@ export default function AdminProjects() {
       toast({ title: "Fehler", description: "Titel ist erforderlich", variant: "destructive" });
       return;
     }
+    const normalizedCategory = normalizeSopCategory(sopForm.category);
+    const contentMarkdown =
+      normalizedCategory === "SOP"
+        ? (hasSopSectionContent(sopContentSections)
+          ? buildSopMarkdown(sanitizeSopSections(sopContentSections))
+          : null)
+        : (sopForm.contentMarkdown?.trim() ? sopForm.contentMarkdown : null);
     try {
       if (editingSop) {
         await sopApi.update(editingSop.id, {
           title: sopForm.title.trim(),
-          category: sopForm.category as Sop["category"],
-          contentMarkdown: sopForm.contentMarkdown || null,
+          category: normalizedCategory as Sop["category"],
+          contentMarkdown,
           keywords: sopForm.keywords
             ? sopForm.keywords.split(",").map((word) => word.trim()).filter(Boolean)
             : [],
@@ -315,8 +389,8 @@ export default function AdminProjects() {
       } else {
         const created = await sopApi.create({
           title: sopForm.title.trim(),
-          category: sopForm.category as Sop["category"],
-          contentMarkdown: sopForm.contentMarkdown || null,
+          category: normalizedCategory as Sop["category"],
+          contentMarkdown,
           keywords: sopForm.keywords
             ? sopForm.keywords.split(",").map((word) => word.trim()).filter(Boolean)
             : [],
@@ -599,6 +673,7 @@ export default function AdminProjects() {
 
   const renderSopItem = (sop: Sop) => {
     const statusKey = normalizeSopStatus(sop.status);
+    const categoryLabel = normalizeSopCategory(sop.category);
     return (
       <Card key={sop.id} className="border-none kabeg-shadow hover:shadow-md transition-shadow">
         <CardContent className="p-4 flex flex-col gap-3">
@@ -606,7 +681,7 @@ export default function AdminProjects() {
             <div className="space-y-1">
               <h4 className="font-semibold">{sop.title}</h4>
               <div className="flex flex-wrap gap-2">
-                <Badge variant="outline" className="text-muted-foreground">{sop.category}</Badge>
+                <Badge variant="outline" className="text-muted-foreground">{categoryLabel}</Badge>
                 <Badge className={STATUS_STYLES[statusKey] || "bg-slate-100 text-slate-600 border-slate-200"}>
                   {SOP_LABELS[statusKey] || statusKey}
                 </Badge>
@@ -738,6 +813,11 @@ export default function AdminProjects() {
     );
   };
 
+  const detailCategory = detailSop ? normalizeSopCategory(detailSop.category) : null;
+  const detailSections = detailCategory === "SOP"
+    ? parseSopSections(detailSop?.contentMarkdown)
+    : EMPTY_SOP_SECTIONS;
+
   return (
     <Layout title="SOPs & Projekte verwalten">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -770,7 +850,7 @@ export default function AdminProjects() {
             </div>
 
             {loading && <p className="text-sm text-muted-foreground">Lade SOPs...</p>}
-            {!loading && sopSections.map((section) => {
+            {!loading && sopStatusSections.map((section) => {
               const items = filteredSops.filter((sop) => normalizeSopStatus(sop.status) === section.key);
               if (!items.length) return null;
               return (
@@ -838,7 +918,7 @@ export default function AdminProjects() {
             </div>
             <div>
               <label className="text-sm font-medium">Kategorie</label>
-              <Select value={sopForm.category} onValueChange={(value) => setSopForm({ ...sopForm, category: value })}>
+              <Select value={sopForm.category} onValueChange={handleSopCategoryChange}>
                 <SelectTrigger>
                   <SelectValue placeholder="Kategorie" />
                 </SelectTrigger>
@@ -851,15 +931,36 @@ export default function AdminProjects() {
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <label className="text-sm font-medium">Inhalt</label>
-              <MarkdownEditor
-                value={sopForm.contentMarkdown}
-                onChange={(value) => setSopForm({ ...sopForm, contentMarkdown: value })}
-                height={360}
-                className="border rounded-md"
-              />
-            </div>
+            {normalizeSopCategory(sopForm.category) === "SOP" ? (
+              <div className="space-y-4">
+                {SOP_SECTION_DEFINITIONS.map((section) => {
+                  const height = section.key === "content" ? 320 : 200;
+                  return (
+                    <div key={section.key} className="space-y-1">
+                      <label className="text-sm font-medium">{section.title}</label>
+                      <MarkdownEditor
+                        value={sopContentSections[section.key] || ""}
+                        onChange={(value) =>
+                          setSopContentSections((prev) => ({ ...prev, [section.key]: value }))
+                        }
+                        height={height}
+                        className="border rounded-md"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div>
+                <label className="text-sm font-medium">Inhalt</label>
+                <MarkdownEditor
+                  value={sopForm.contentMarkdown}
+                  onChange={(value) => setSopForm({ ...sopForm, contentMarkdown: value })}
+                  height={360}
+                  className="border rounded-md"
+                />
+              </div>
+            )}
             <div>
               <label className="text-sm font-medium">Schlagwoerter (Komma getrennt)</label>
               <Input
@@ -1070,7 +1171,7 @@ export default function AdminProjects() {
               <div className="space-y-1">
                 <h3 className="text-lg font-semibold">{detailSop.title}</h3>
                 <div className="flex flex-wrap gap-2">
-                  <Badge variant="outline">{detailSop.category}</Badge>
+                  <Badge variant="outline">{detailCategory || detailSop.category}</Badge>
                   <Badge className={STATUS_STYLES[normalizeSopStatus(detailSop.status)]}>
                     {SOP_LABELS[normalizeSopStatus(detailSop.status)]}
                   </Badge>
@@ -1095,10 +1196,29 @@ export default function AdminProjects() {
                 </a>
               )}
               <Separator />
-              <MarkdownViewer
-                value={detailSop.contentMarkdown || "Kein Inhalt hinterlegt."}
-                className="rounded-md border p-3 bg-white"
-              />
+              {detailCategory === "SOP" ? (
+                <div className="space-y-4">
+                  {SOP_SECTION_DEFINITIONS.map((section, index) => {
+                    const value = (detailSections[section.key] || "").trim();
+                    return (
+                      <div key={section.key} className="space-y-2">
+                        <h4 className="text-sm font-semibold">
+                          {index + 1}. {section.title}
+                        </h4>
+                        <MarkdownViewer
+                          value={value || "Kein Inhalt hinterlegt."}
+                          className="rounded-md border p-3 bg-white"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <MarkdownViewer
+                  value={detailSop.contentMarkdown || "Kein Inhalt hinterlegt."}
+                  className="rounded-md border p-3 bg-white"
+                />
+              )}
               <Separator />
               <div className="space-y-2">
                 <div className="flex items-center justify-between">

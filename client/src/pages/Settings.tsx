@@ -35,7 +35,7 @@ import type { Employee, Competency, Resource, Diploma, LongTermShiftWish, LongTe
 import { useToast } from "@/hooks/use-toast";
 import { useParams, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
-import { OVERDUTY_KEY, employeeDoesShifts, getServiceTypesForRole, type LongTermWishRule } from "@shared/shiftTypes";
+import { OVERDUTY_KEY, employeeDoesShifts, getServiceTypesForEmployee, type LongTermWishRule } from "@shared/shiftTypes";
 
 function formatBirthday(value: string | Date | null | undefined): string {
   if (!value) return "";
@@ -452,9 +452,15 @@ export default function Settings() {
     id: type,
     label: serviceLineLookup.get(type)?.label || type
   }));
-  const defaultServiceTypeLabels = getServiceTypesForRole(roleValue || employee?.role, serviceLineMeta).map(
-    (type) => serviceLineLookup.get(type)?.label || type
-  );
+  const defaultServiceTypeLabels = getServiceTypesForEmployee(
+    {
+      role: roleValue || employee?.role,
+      shiftPreferences: employee?.shiftPreferences,
+      takesShifts: employee?.takesShifts,
+      canOverduty
+    },
+    serviceLineMeta
+  ).map((type) => serviceLineLookup.get(type)?.label || type);
   const filteredRooms = availableRooms.filter((room) => {
     const query = roomSearch.trim().toLowerCase();
     if (!query) return true;

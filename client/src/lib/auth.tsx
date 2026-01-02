@@ -47,6 +47,14 @@ export interface AuthContextType {
   // technische Admin-Rechte (Setup/Verwaltung)
   isTechnicalAdmin: boolean;
 
+  // reale Admin-Rechte (ohne View-As-User)
+  isAdminActual: boolean;
+  isTechnicalAdminActual: boolean;
+
+  // Admin-Ansicht als Benutzer simulieren
+  viewAsUser: boolean;
+  setViewAsUser: (value: boolean) => void;
+
   capabilities: string[];
 
   login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
@@ -57,6 +65,7 @@ export interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 const ADMIN_ROLES = ["Primararzt", "1. Oberarzt", "Sekretariat"] as const;
+const VIEW_AS_USER_KEY = "cliniq_view_as_user";
 
 // Legacy helper used by some admin pages
 export function getAuthToken() {
@@ -90,11 +99,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [viewAsUser, setViewAsUserState] = useState(false);
 
   // ✅ WICHTIG: nicht mehr employee als Gatekeeper verwenden
   const isAuthenticated = useMemo(() => !!token && !!user, [token, user]);
 
-  const isAdmin = useMemo(() => {
+  const isAdminActual = useMemo(() => {
     // primär aus user
     if (user?.isAdmin) return true;
 
@@ -107,10 +117,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return false;
   }, [user, employee]);
 
-  const isTechnicalAdmin = useMemo(() => {
+  const isTechnicalAdminActual = useMemo(() => {
     if (!user) return false;
     return user.systemRole !== "employee";
   }, [user]);
+
+  const isAdmin = useMemo(
+    () => isAdminActual && !viewAsUser,
+    [isAdminActual, viewAsUser]
+  );
+
+  const isTechnicalAdmin = useMemo(
+    () => isTechnicalAdminActual && !viewAsUser,
+    [isTechnicalAdminActual, viewAsUser]
+  );
+
+  const effectiveCapabilities = useMemo(
+    () => (viewAsUser ? [] : capabilities),
+    [capabilities, viewAsUser]
+  );
+
+  const setViewAsUser = useCallback(
+    (value: boolean) => {
+      if (!isAdminActual) return;
+      setViewAsUserState(value);
+    },
+    [isAdminActual]
+  );
 
   const resetAuthState = () => {
     clearAuthToken();
@@ -118,6 +151,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setEmployee(null);
     setUser(null);
     setCapabilities([]);
+    setViewAsUserState(false);
+    try {
+      localStorage.removeItem(VIEW_AS_USER_KEY);
+    } catch {
+      // ignore
+    }
   };
 
   const applyAuthState = (next: {
@@ -235,6 +274,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [verifyToken]);
 
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(VIEW_AS_USER_KEY);
+      setViewAsUserState(stored === "1");
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isAdminActual && viewAsUser) {
+      setViewAsUserState(false);
+    }
+  }, [isAdminActual, viewAsUser]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_AS_USER_KEY, viewAsUser ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  }, [viewAsUser]);
+
   const login = useCallback(
     async (email: string, password: string, rememberMe?: boolean) => {
       setIsLoading(true);
@@ -315,7 +377,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated,
       isAdmin,
       isTechnicalAdmin,
-      capabilities,
+      isAdminActual,
+      isTechnicalAdminActual,
+      viewAsUser,
+      setViewAsUser,
+      capabilities: effectiveCapabilities,
       login,
       logout,
       refreshAuth,
@@ -328,7 +394,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated,
       isAdmin,
       isTechnicalAdmin,
-      capabilities,
+      isAdminActual,
+      isTechnicalAdminActual,
+      viewAsUser,
+      setViewAsUser,
+      effectiveCapabilities,
       login,
       logout,
       refreshAuth,

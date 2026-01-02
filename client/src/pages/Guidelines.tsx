@@ -15,14 +15,46 @@ import { Search, ExternalLink, Download, History, Plus } from "lucide-react";
 import type { Sop, SopReference } from "@shared/schema";
 import { sopApi, type SopDetail } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { SOP_TEMPLATE_MARKDOWN } from "@/lib/sopTemplates";
+import {
+  SOP_SECTION_DEFINITIONS,
+  DEFAULT_SOP_SECTIONS,
+  EMPTY_SOP_SECTIONS,
+  SOP_TEMPLATE_MARKDOWN,
+  buildSopMarkdown,
+  parseSopSections,
+  type SopSections
+} from "@/lib/sopTemplates";
 
-const CATEGORY_ORDER = ["SOP", "Leitlinie", "Checkliste", "Formular"] as const;
+const SOP_CATEGORIES = ["SOP", "Dienstanweisung", "Aufklärungen"] as const;
+const ALLOWED_SOP_CATEGORIES = new Set(SOP_CATEGORIES);
+const CATEGORY_ORDER = [...SOP_CATEGORIES] as const;
 const CATEGORY_STYLES: Record<string, string> = {
   SOP: "bg-blue-100 text-blue-700 border-blue-200",
-  Leitlinie: "bg-emerald-100 text-emerald-700 border-emerald-200",
-  Checkliste: "bg-amber-100 text-amber-700 border-amber-200",
-  Formular: "bg-slate-100 text-slate-700 border-slate-200"
+  Dienstanweisung: "bg-amber-100 text-amber-700 border-amber-200",
+  Aufklärungen: "bg-emerald-100 text-emerald-700 border-emerald-200"
+};
+
+const normalizeSopCategory = (value?: string | null) => {
+  if (!value) return "SOP";
+  if (ALLOWED_SOP_CATEGORIES.has(value as (typeof SOP_CATEGORIES)[number])) return value;
+  return "SOP";
+};
+
+const hasSopSectionContent = (sections: SopSections) =>
+  SOP_SECTION_DEFINITIONS.some((section) => {
+    const value = (sections[section.key] || "").trim();
+    const placeholder = DEFAULT_SOP_SECTIONS[section.key].trim();
+    return value && value !== placeholder;
+  });
+
+const sanitizeSopSections = (sections: SopSections): SopSections => {
+  const cleaned = { ...EMPTY_SOP_SECTIONS };
+  SOP_SECTION_DEFINITIONS.forEach((section) => {
+    const value = (sections[section.key] || "").trim();
+    const placeholder = DEFAULT_SOP_SECTIONS[section.key].trim();
+    cleaned[section.key] = value && value !== placeholder ? value : "";
+  });
+  return cleaned;
 };
 
 const NATIONAL_GUIDELINE_KEYS = ["OGGG", "DGGG"];
@@ -95,6 +127,7 @@ export default function Guidelines() {
     keywords: "",
     awmfLink: ""
   });
+  const [editorSections, setEditorSections] = useState<SopSections>(DEFAULT_SOP_SECTIONS);
 
   useEffect(() => {
     const load = async () => {
@@ -105,7 +138,7 @@ export default function Guidelines() {
       } catch (error) {
         toast({
           title: "Fehler",
-          description: "SOPs konnten nicht geladen werden",
+          description: "Dokumente konnten nicht geladen werden",
           variant: "destructive"
         });
       } finally {
@@ -116,7 +149,7 @@ export default function Guidelines() {
   }, [toast]);
 
   const categories = useMemo(() => {
-    const set = new Set(sops.map((sop) => sop.category));
+    const set = new Set(sops.map((sop) => normalizeSopCategory(sop.category)));
     const ordered = CATEGORY_ORDER.filter((value) => set.has(value));
     const rest = Array.from(set).filter((value) => !CATEGORY_ORDER.includes(value as any));
     return ["Alle", ...ordered, ...rest];
@@ -125,7 +158,8 @@ export default function Guidelines() {
   const filteredSops = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     return sops.filter((sop) => {
-      const matchesCategory = selectedCategory === "Alle" || sop.category === selectedCategory;
+      const normalizedCategory = normalizeSopCategory(sop.category);
+      const matchesCategory = selectedCategory === "Alle" || normalizedCategory === selectedCategory;
       const matchesSearch = !term ||
         sop.title.toLowerCase().includes(term) ||
         (sop.contentMarkdown || "").toLowerCase().includes(term) ||
@@ -143,7 +177,7 @@ export default function Guidelines() {
     } catch (error) {
       toast({
         title: "Fehler",
-        description: "SOP konnte nicht geladen werden",
+        description: "Dokument konnte nicht geladen werden",
         variant: "destructive"
       });
       setDetailOpen(false);
@@ -160,7 +194,42 @@ export default function Guidelines() {
       keywords: "",
       awmfLink: ""
     });
+    setEditorSections(DEFAULT_SOP_SECTIONS);
     setEditorOpen(true);
+  };
+
+  const handleEditorCategoryChange = (value: string) => {
+    const normalizedCategory = normalizeSopCategory(value);
+    const currentCategory = normalizeSopCategory(editorForm.category);
+    if (normalizedCategory === currentCategory) return;
+
+    if (currentCategory !== "SOP" && normalizedCategory !== "SOP") {
+      setEditorForm((prev) => ({ ...prev, category: normalizedCategory }));
+      return;
+    }
+
+    if (normalizedCategory === "SOP") {
+      const parsed = editorForm.contentMarkdown?.trim()
+        ? parseSopSections(editorForm.contentMarkdown)
+        : DEFAULT_SOP_SECTIONS;
+      setEditorSections(parsed);
+      setEditorForm((prev) => ({
+        ...prev,
+        category: normalizedCategory,
+        contentMarkdown: SOP_TEMPLATE_MARKDOWN
+      }));
+      return;
+    }
+
+    const nextMarkdown = hasSopSectionContent(editorSections)
+      ? buildSopMarkdown(sanitizeSopSections(editorSections))
+      : "";
+    setEditorSections(EMPTY_SOP_SECTIONS);
+    setEditorForm((prev) => ({
+      ...prev,
+      category: normalizedCategory,
+      contentMarkdown: nextMarkdown
+    }));
   };
 
   const handleCreate = async () => {
@@ -168,22 +237,29 @@ export default function Guidelines() {
       toast({ title: "Fehler", description: "Titel ist erforderlich", variant: "destructive" });
       return;
     }
+    const normalizedCategory = normalizeSopCategory(editorForm.category);
+    const contentMarkdown =
+      normalizedCategory === "SOP"
+        ? (hasSopSectionContent(editorSections)
+          ? buildSopMarkdown(sanitizeSopSections(editorSections))
+          : null)
+        : (editorForm.contentMarkdown?.trim() ? editorForm.contentMarkdown.trim() : null);
     setEditorSaving(true);
     try {
       await sopApi.create({
         title: editorForm.title.trim(),
-        category: editorForm.category as Sop["category"],
-        contentMarkdown: editorForm.contentMarkdown || null,
+        category: normalizedCategory as Sop["category"],
+        contentMarkdown,
         keywords: editorForm.keywords
           ? editorForm.keywords.split(",").map((word) => word.trim()).filter(Boolean)
           : [],
         awmfLink: editorForm.awmfLink.trim() || null,
         status: "proposed"
       });
-      toast({ title: "SOP vorgeschlagen" });
+      toast({ title: "Dokument vorgeschlagen" });
       setEditorOpen(false);
     } catch (error) {
-      toast({ title: "Fehler", description: "SOP konnte nicht vorgeschlagen werden", variant: "destructive" });
+      toast({ title: "Fehler", description: "Dokument konnte nicht vorgeschlagen werden", variant: "destructive" });
     } finally {
       setEditorSaving(false);
     }
@@ -208,13 +284,19 @@ export default function Guidelines() {
     }
   };
 
+  const editorCategory = normalizeSopCategory(editorForm.category);
+  const detailCategory = detailSop ? normalizeSopCategory(detailSop.category) : null;
+  const detailSections = detailCategory === "SOP"
+    ? parseSopSections(detailSop?.contentMarkdown)
+    : EMPTY_SOP_SECTIONS;
+
   return (
-    <Layout title="SOPs & Leitlinien">
+    <Layout title="SOPs & Dokumente">
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex flex-col gap-3">
-          <h2 className="text-2xl font-semibold tracking-tight">SOPs & Leitlinien</h2>
+          <h2 className="text-2xl font-semibold tracking-tight">SOPs & Dokumente</h2>
           <p className="text-muted-foreground max-w-2xl">
-            Freigegebene SOPs, Leitlinien und Checklisten der Abteilung.
+            Freigegebene SOPs und Dokumente der Abteilung.
           </p>
         </div>
 
@@ -223,7 +305,7 @@ export default function Guidelines() {
             <div className="relative w-full max-w-md">
               <Search className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="SOPs durchsuchen..."
+                placeholder="Dokumente durchsuchen..."
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
                 className="pl-9"
@@ -232,7 +314,7 @@ export default function Guidelines() {
             </div>
             <Button onClick={openEditor}>
               <Plus className="w-4 h-4 mr-2" />
-              SOP vorschlagen
+              Dokument vorschlagen
             </Button>
             <div className="flex flex-wrap gap-2">
               {categories.map((category) => (
@@ -249,12 +331,12 @@ export default function Guidelines() {
             </div>
           </div>
 
-          {loading && <p className="text-sm text-muted-foreground">Lade SOPs...</p>}
+          {loading && <p className="text-sm text-muted-foreground">Lade Dokumente...</p>}
 
           {!loading && filteredSops.length === 0 && (
             <Card className="border border-dashed">
               <CardContent className="p-6 text-sm text-muted-foreground">
-                Keine freigegebenen SOPs gefunden.
+                Keine freigegebenen Dokumente gefunden.
               </CardContent>
             </Card>
           )}
@@ -275,8 +357,8 @@ export default function Guidelines() {
                           Aktualisiert: {formatDate(sop.publishedAt || sop.updatedAt) || "-"}
                         </p>
                       </div>
-                      <Badge className={CATEGORY_STYLES[sop.category] || "bg-slate-100 text-slate-700 border-slate-200"}>
-                        {sop.category}
+                      <Badge className={CATEGORY_STYLES[normalizeSopCategory(sop.category)] || "bg-slate-100 text-slate-700 border-slate-200"}>
+                        {normalizeSopCategory(sop.category)}
                       </Badge>
                     </div>
                     <p className="text-sm text-muted-foreground line-clamp-2">
@@ -305,7 +387,7 @@ export default function Guidelines() {
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>SOP Details</DialogTitle>
+            <DialogTitle>Dokument Details</DialogTitle>
           </DialogHeader>
           {detailLoading && <p className="text-sm text-muted-foreground">Lade...</p>}
           {!detailLoading && detailSop && (
@@ -313,8 +395,8 @@ export default function Guidelines() {
               <div className="space-y-1">
                 <h3 className="text-lg font-semibold">{detailSop.title}</h3>
                 <div className="flex flex-wrap gap-2">
-                  <Badge className={CATEGORY_STYLES[detailSop.category] || "bg-slate-100 text-slate-700 border-slate-200"}>
-                    {detailSop.category}
+                  <Badge className={CATEGORY_STYLES[detailCategory || "SOP"] || "bg-slate-100 text-slate-700 border-slate-200"}>
+                    {detailCategory || detailSop.category}
                   </Badge>
                   <Badge variant="outline">Version {detailSop.version}</Badge>
                 </div>
@@ -347,10 +429,29 @@ export default function Guidelines() {
 
               <Separator />
 
-              <MarkdownViewer
-                value={detailSop.contentMarkdown || "Kein Inhalt hinterlegt."}
-                className="rounded-md border p-3 bg-white"
-              />
+              {detailCategory === "SOP" ? (
+                <div className="space-y-4">
+                  {SOP_SECTION_DEFINITIONS.map((section, index) => {
+                    const value = (detailSections[section.key] || "").trim();
+                    return (
+                      <div key={section.key} className="space-y-2">
+                        <h4 className="text-sm font-semibold">
+                          {index + 1}. {section.title}
+                        </h4>
+                        <MarkdownViewer
+                          value={value || "Kein Inhalt hinterlegt."}
+                          className="rounded-md border p-3 bg-white"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <MarkdownViewer
+                  value={detailSop.contentMarkdown || "Kein Inhalt hinterlegt."}
+                  className="rounded-md border p-3 bg-white"
+                />
+              )}
 
               <Separator />
 
@@ -394,7 +495,7 @@ export default function Guidelines() {
       <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
         <DialogContent className="max-w-[95vw] w-[95vw] h-[90vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>Neue SOP vorschlagen</DialogTitle>
+            <DialogTitle>Neues Dokument vorschlagen</DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto pr-2 space-y-4">
             <div>
@@ -408,7 +509,7 @@ export default function Guidelines() {
               <label className="text-sm font-medium">Kategorie</label>
               <Select
                 value={editorForm.category}
-                onValueChange={(value) => setEditorForm({ ...editorForm, category: value })}
+                onValueChange={handleEditorCategoryChange}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Kategorie" />
@@ -422,15 +523,33 @@ export default function Guidelines() {
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <label className="text-sm font-medium">Inhalt</label>
-              <MarkdownEditor
-                value={editorForm.contentMarkdown}
-                onChange={(value) => setEditorForm({ ...editorForm, contentMarkdown: value })}
-                height={360}
-                className="border rounded-md"
-              />
-            </div>
+            {editorCategory === "SOP" ? (
+              <div className="space-y-4">
+                {SOP_SECTION_DEFINITIONS.map((section) => (
+                  <div key={section.key}>
+                    <label className="text-sm font-medium">{section.title}</label>
+                    <MarkdownEditor
+                      value={editorSections[section.key] || ""}
+                      onChange={(value) =>
+                        setEditorSections((prev) => ({ ...prev, [section.key]: value }))
+                      }
+                      height={section.key === "content" ? 320 : 200}
+                      className="border rounded-md"
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div>
+                <label className="text-sm font-medium">Inhalt</label>
+                <MarkdownEditor
+                  value={editorForm.contentMarkdown}
+                  onChange={(value) => setEditorForm({ ...editorForm, contentMarkdown: value })}
+                  height={360}
+                  className="border rounded-md"
+                />
+              </div>
+            )}
             <div>
               <label className="text-sm font-medium">Schlagwoerter (Komma getrennt)</label>
               <Input
@@ -458,7 +577,7 @@ export default function Guidelines() {
       <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
         <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
-            <DialogTitle>SOP Historie</DialogTitle>
+            <DialogTitle>Dokument Historie</DialogTitle>
           </DialogHeader>
           {detailSop?.versions && detailSop.versions.length > 0 ? (
             <Table>

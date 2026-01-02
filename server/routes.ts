@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { db, eq, asc, and, gte, lte, ne } from "./lib/db";
+import { db, eq, asc, and, gte, lte, ne, inArray } from "./lib/db";
 import { 
   insertEmployeeSchema, 
   insertRosterShiftSchema, 
@@ -17,6 +17,9 @@ import {
   insertLongTermShiftWishSchema,
   insertLongTermAbsenceSchema,
   plannedAbsences,
+  employees,
+  shiftSwapRequests,
+  sessions,
   serviceLines,
   type RosterShift
 } from "@shared/schema";
@@ -1104,6 +1107,22 @@ export async function registerRoutes(
           await storage.updateRosterShift(request.targetShiftId, { employeeId: request.requesterId });
         }
       }
+
+      await db
+        .update(shiftSwapRequests)
+        .set({
+          status: "Abgelehnt",
+          approverId: approverId ?? null,
+          approverNotes: "Automatisch abgelehnt (anderer Tausch wurde angenommen).",
+          decidedAt: new Date()
+        })
+        .where(
+          and(
+            eq(shiftSwapRequests.requesterShiftId, request.requesterShiftId),
+            eq(shiftSwapRequests.status, "Ausstehend"),
+            ne(shiftSwapRequests.id, request.id)
+          )
+        );
       
       res.json(request);
     } catch (error) {
@@ -1558,7 +1577,14 @@ export async function registerRoutes(
       const settings = await storage.getRosterSettings();
       if (!settings) {
         // Default: January 2026 as last approved month
-        return res.json({ lastApprovedYear: 2026, lastApprovedMonth: 1 });
+        return res.json({
+          lastApprovedYear: 2026,
+          lastApprovedMonth: 1,
+          wishYear: null,
+          wishMonth: null,
+          vacationLockFrom: null,
+          vacationLockUntil: null
+        });
       }
       res.json(settings);
     } catch (error) {
@@ -1568,15 +1594,78 @@ export async function registerRoutes(
 
   app.post("/api/roster-settings", async (req: Request, res: Response) => {
     try {
-      const { lastApprovedYear, lastApprovedMonth, updatedById } = req.body;
+      const { lastApprovedYear, lastApprovedMonth, updatedById, vacationLockFrom, vacationLockUntil } = req.body;
       const settings = await storage.upsertRosterSettings({
         lastApprovedYear,
         lastApprovedMonth,
-        updatedById
+        updatedById,
+        vacationLockFrom,
+        vacationLockUntil
       });
       res.json(settings);
     } catch (error) {
       res.status(500).json({ error: "Failed to update roster settings" });
+    }
+  });
+
+  app.get("/api/online-users", requireAuth, async (req: Request, res: Response) => {
+    try {
+      if (!req.user?.isAdmin) {
+        return res.status(403).json({ error: "Keine Berechtigung" });
+      }
+
+      const now = new Date();
+      const windowStart = new Date(now.getTime() - 5 * 60 * 1000);
+      const activeSessions = await db
+        .select({
+          employeeId: sessions.employeeId,
+          lastSeenAt: sessions.lastSeenAt
+        })
+        .from(sessions)
+        .where(and(gte(sessions.lastSeenAt, windowStart), gte(sessions.expiresAt, now)));
+
+      const latestByEmployee = new Map<number, Date>();
+      for (const session of activeSessions) {
+        const lastSeen = session.lastSeenAt ? new Date(session.lastSeenAt) : null;
+        if (!lastSeen) continue;
+        const current = latestByEmployee.get(session.employeeId);
+        if (!current || lastSeen > current) {
+          latestByEmployee.set(session.employeeId, lastSeen);
+        }
+      }
+
+      const employeeIds = [...latestByEmployee.keys()];
+      if (employeeIds.length === 0) {
+        return res.json({ count: 0, users: [] });
+      }
+
+      const rows = await db
+        .select({
+          id: employees.id,
+          name: employees.name,
+          lastName: employees.lastName,
+          isActive: employees.isActive
+        })
+        .from(employees)
+        .where(inArray(employees.id, employeeIds));
+
+      const users = rows
+        .filter((row) => row.isActive)
+        .map((row) => ({
+          id: row.id,
+          name: row.name,
+          lastName: row.lastName || "",
+          lastSeenAt: latestByEmployee.get(row.id)?.toISOString() ?? null
+        }))
+        .sort((a, b) => {
+          const lastNameCmp = a.lastName.localeCompare(b.lastName);
+          if (lastNameCmp !== 0) return lastNameCmp;
+          return a.name.localeCompare(b.name);
+        });
+
+      return res.json({ count: users.length, users });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch online users" });
     }
   });
 

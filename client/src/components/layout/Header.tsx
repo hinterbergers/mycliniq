@@ -1,9 +1,19 @@
-import { Bell, Search, Calendar, CheckCircle, AlertTriangle, Info, Trash2 } from "lucide-react";
+import { Bell, Search, Calendar, CheckCircle, AlertTriangle, Info, Trash2, Users } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useEffect, useMemo, useState } from "react";
-import { rosterSettingsApi, shiftSwapApi, serviceLinesApi, notificationsApi, type NextPlanningMonth } from "@/lib/api";
+import {
+  rosterSettingsApi,
+  shiftSwapApi,
+  serviceLinesApi,
+  notificationsApi,
+  onlineUsersApi,
+  type NextPlanningMonth,
+  type OnlineUser
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
@@ -17,12 +27,21 @@ const MONTH_NAMES = [
 ];
 
 export function Header({ title }: { title?: string }) {
-  const { employee, capabilities, isAdmin, isTechnicalAdmin } = useAuth();
+  const {
+    employee,
+    capabilities,
+    isAdmin,
+    isTechnicalAdmin,
+    isAdminActual,
+    viewAsUser,
+    setViewAsUser
+  } = useAuth();
   const [, setLocation] = useLocation();
   const [planningMonth, setPlanningMonth] = useState<NextPlanningMonth | null>(null);
   const [serviceLines, setServiceLines] = useState<ServiceLine[]>([]);
   const [pendingSwapCount, setPendingSwapCount] = useState(0);
   const [systemNotifications, setSystemNotifications] = useState<Notification[]>([]);
+  const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
   const [notifications, setNotifications] = useState<
     { id: string; tone: "success" | "warning" | "info"; title: string; description: string }[]
   >([]);
@@ -48,6 +67,33 @@ export function Header({ title }: { title?: string }) {
       loadSystemNotifications();
     }
   }, [employee]);
+
+  useEffect(() => {
+    if (!isAdminActual || viewAsUser) {
+      setOnlineUsers([]);
+      return;
+    }
+    let active = true;
+    const loadOnlineUsers = async () => {
+      try {
+        const data = await onlineUsersApi.getAll();
+        if (active) {
+          setOnlineUsers(data.users);
+        }
+      } catch (error) {
+        if (active) {
+          setOnlineUsers([]);
+        }
+        console.error("Failed to load online users", error);
+      }
+    };
+    loadOnlineUsers();
+    const intervalId = setInterval(loadOnlineUsers, 30000);
+    return () => {
+      active = false;
+      clearInterval(intervalId);
+    };
+  }, [isAdminActual, viewAsUser]);
   
   const loadPlanningData = async () => {
     try {
@@ -159,6 +205,7 @@ export function Header({ title }: { title?: string }) {
   const today = format(new Date(), 'd. MMM yyyy', { locale: de });
   const unreadSystemCount = systemNotifications.filter((note) => !note.isRead).length;
   const hasNotification = notifications.length > 0 || unreadSystemCount > 0;
+  const onlineCount = onlineUsers.length;
   
   return (
     <header className="h-16 kabeg-header sticky top-0 z-10 px-6 flex items-center justify-between shadow-sm">
@@ -299,6 +346,44 @@ export function Header({ title }: { title?: string }) {
             </div>
           </PopoverContent>
         </Popover>
+
+        {isAdminActual && !viewAsUser && (
+          <HoverCard>
+            <HoverCardTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="hidden md:flex gap-2 text-white/80 hover:text-white hover:bg-white/10"
+              >
+                <Users className="w-4 h-4" />
+                <span>{onlineCount}</span>
+              </Button>
+            </HoverCardTrigger>
+            <HoverCardContent align="end" className="w-56">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                Online ({onlineCount})
+              </p>
+              {onlineCount === 0 ? (
+                <p className="text-sm text-muted-foreground mt-2">Keine aktiven Benutzer</p>
+              ) : (
+                <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
+                  {onlineUsers.map((user) => (
+                    <p key={user.id} className="text-sm">
+                      {user.name} {user.lastName}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </HoverCardContent>
+          </HoverCard>
+        )}
+
+        {isAdminActual && (
+          <div className="hidden md:flex items-center gap-2 text-white/80">
+            <span className="text-xs">Als User</span>
+            <Switch checked={viewAsUser} onCheckedChange={setViewAsUser} />
+          </div>
+        )}
         
         <Button variant="ghost" size="sm" className="hidden md:flex gap-2 text-white/80 hover:text-white hover:bg-white/10">
           <Calendar className="w-4 h-4" />

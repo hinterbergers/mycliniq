@@ -223,8 +223,8 @@ async function seed() {
       const [reviewSop] = await db
         .insert(sops)
         .values({
-          title: "Leitlinie Review: Praenatale Diagnostik",
-          category: "Leitlinie",
+          title: "Dienstanweisung Review: Praenatale Diagnostik",
+          category: "Dienstanweisung",
           status: "review",
           contentMarkdown: "Update der Untersuchungsintervalle und Dokumentation.",
           createdById: ownerId

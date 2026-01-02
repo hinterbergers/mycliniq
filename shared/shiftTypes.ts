@@ -79,9 +79,12 @@ export function getServiceTypesForRole(
   if (Array.isArray(serviceLines) && serviceLines.length > 0) {
     return serviceLines
       .filter((line) => roleMatchesGroup(normalized, line.roleGroup))
-      .map((line) => line.key);
+      .map((line) => line.key)
+      .filter((type) => type !== OVERDUTY_KEY);
   }
-  return DEFAULT_SERVICE_TYPES.filter((service) => (DEFAULT_SERVICE_CAPABILITIES[service] || []).includes(normalized));
+  return DEFAULT_SERVICE_TYPES.filter((service) =>
+    (DEFAULT_SERVICE_CAPABILITIES[service] || []).includes(normalized)
+  );
 }
 
 export function getServiceTypesForEmployee(input: {
@@ -93,10 +96,8 @@ export function getServiceTypesForEmployee(input: {
   if (input.takesShifts === false) return [];
   const overrides = getServiceTypeOverrides(input.shiftPreferences);
   const baseTypes = overrides.length ? overrides : getServiceTypesForRole(input.role, serviceLines);
-  if (input.canOverduty) {
-    return Array.from(new Set([...baseTypes, OVERDUTY_KEY]));
-  }
-  return baseTypes;
+  const filtered = input.canOverduty ? baseTypes : baseTypes.filter((type) => type !== OVERDUTY_KEY);
+  return input.canOverduty ? Array.from(new Set([...filtered, OVERDUTY_KEY])) : filtered;
 }
 
 export function employeeDoesShifts(input: {
@@ -106,8 +107,5 @@ export function employeeDoesShifts(input: {
   canOverduty?: boolean | null;
 }, serviceLines?: ServiceLineMeta[]): boolean {
   if (input.takesShifts === false) return false;
-  const overrides = getServiceTypeOverrides(input.shiftPreferences);
-  if (overrides.length) return true;
-  if (input.canOverduty) return true;
-  return getServiceTypesForRole(input.role, serviceLines).length > 0;
+  return getServiceTypesForEmployee(input, serviceLines).length > 0;
 }

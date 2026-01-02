@@ -1,6 +1,6 @@
 import type { Router } from "express";
 import { z } from "zod";
-import { db, and, eq, inArray, desc } from "../lib/db";
+import { db, and, eq, inArray, desc, sql } from "../lib/db";
 import { messageThreads, messageThreadMembers, messageMessages, employees, notifications } from "@shared/schema";
 import { ok, created, notFound, asyncHandler } from "../lib/api-response";
 import { validateBody, validateParams, idParamSchema } from "../lib/validate";
@@ -152,6 +152,38 @@ export function registerMessageRoutes(router: Router) {
       const uniqueMembers = Array.from(new Set(memberIds.filter((id) => id !== req.user?.employeeId)));
       if (!uniqueMembers.length) {
         return res.status(400).json({ success: false, error: "Mindestens ein Empfaenger erforderlich" });
+      }
+
+      if (type === "direct" && uniqueMembers.length === 1) {
+        const counterpartId = uniqueMembers[0];
+        const [existingThread] = await db
+          .select({
+            id: messageThreads.id,
+            type: messageThreads.type,
+            title: messageThreads.title,
+            createdById: messageThreads.createdById,
+            createdAt: messageThreads.createdAt
+          })
+          .from(messageThreads)
+          .innerJoin(messageThreadMembers, eq(messageThreadMembers.threadId, messageThreads.id))
+          .where(eq(messageThreads.type, "direct"))
+          .groupBy(
+            messageThreads.id,
+            messageThreads.type,
+            messageThreads.title,
+            messageThreads.createdById,
+            messageThreads.createdAt
+          )
+          .having(sql`
+            count(*) = 2
+            and sum(case when ${messageThreadMembers.employeeId} = ${req.user.employeeId} then 1 else 0 end) = 1
+            and sum(case when ${messageThreadMembers.employeeId} = ${counterpartId} then 1 else 0 end) = 1
+          `)
+          .limit(1);
+
+        if (existingThread) {
+          return ok(res, existingThread);
+        }
       }
 
       const [thread] = await db
