@@ -12,6 +12,7 @@ import { validateBody, validateParams, idParamSchema } from "../../lib/validate"
 import { 
   plannedAbsences,
   employees,
+  notifications,
   rosterSettings
 } from "@shared/schema";
 
@@ -44,6 +45,10 @@ const createAbsenceSchema = z.object({
 const updateStatusSchema = z.object({
   status: z.enum(['Geplant', 'Genehmigt', 'Abgelehnt']),
   approvedById: z.number().positive().optional()
+});
+
+const respondSchema = z.object({
+  action: z.enum(["accept", "decline"])
 });
 
 /**
@@ -515,6 +520,23 @@ export function registerAbsenceRoutes(router: Router) {
           createdById: req.user?.employeeId ?? createdById ?? null
         })
         .returning();
+
+      if (reason === "Zeitausgleich" && req.user?.employeeId && req.user.employeeId !== employeeId) {
+        await db.insert(notifications).values({
+          recipientId: employeeId,
+          type: "system",
+          title: "Zeitausgleich angefragt",
+          message: `Bitte bestaetigen Sie den Zeitausgleich am ${startDate}.`,
+          link: "/nachrichten",
+          metadata: {
+            kind: "zeitausgleich_request",
+            absenceId: absence.id,
+            startDate,
+            endDate,
+            requestedById: req.user.employeeId
+          }
+        });
+      }
       
       return created(res, {
         ...absence,
@@ -609,6 +631,62 @@ export function registerAbsenceRoutes(router: Router) {
         employeeLastName: employee?.lastName,
         message: `Status geändert auf '${status}'`
       });
+    })
+  );
+
+  /**
+   * POST /api/absences/:id/respond
+   * Respond to Zeitausgleich request
+   * Body: { action: 'accept' | 'decline' }
+   */
+  router.post("/:id/respond",
+    validateParams(idParamSchema),
+    validateBody(respondSchema),
+    asyncHandler(async (req, res) => {
+      const { id } = req.params;
+      const absenceId = Number(id);
+      const { action } = req.body;
+
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: "Anmeldung erforderlich" });
+      }
+
+      const [existing] = await db
+        .select()
+        .from(plannedAbsences)
+        .where(eq(plannedAbsences.id, absenceId));
+
+      if (!existing) {
+        return notFound(res, "Abwesenheit");
+      }
+
+      if (!req.user.isAdmin && req.user.employeeId !== existing.employeeId) {
+        return res.status(403).json({ success: false, error: "Keine Berechtigung fuer diese Abwesenheit" });
+      }
+
+      if (existing.reason !== "Zeitausgleich") {
+        return validationError(res, "Nur Zeitausgleich kann direkt beantwortet werden");
+      }
+
+      if (existing.status !== "Geplant") {
+        return ok(res, existing);
+      }
+
+      const status = action === "accept" ? "Genehmigt" : "Abgelehnt";
+      const isApproved = action === "accept";
+
+      const [updated] = await db
+        .update(plannedAbsences)
+        .set({
+          status,
+          isApproved,
+          approvedById: req.user.employeeId ?? null,
+          updatedAt: new Date()
+        })
+        .where(eq(plannedAbsences.id, absenceId))
+        .returning();
+
+      return ok(res, updated);
     })
   );
 

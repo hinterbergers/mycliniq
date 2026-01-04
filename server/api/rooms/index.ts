@@ -1,6 +1,6 @@
 import type { Router } from "express";
 import { z } from "zod";
-import { db, eq, and } from "../../lib/db";
+import { db, eq, and, asc, inArray } from "../../lib/db";
 import { 
   ok, 
   created, 
@@ -37,6 +37,7 @@ const updateRoomSchema = z.object({
   ]).optional(),
   description: z.string().nullable().optional(),
   useInWeeklyPlan: z.boolean().optional(),
+  weeklyPlanSortOrder: z.number().int().optional(),
   isAvailable: z.boolean().optional(),
   blockReason: z.string().nullable().optional(),
   requiredRoleCompetencies: z.array(z.string()).optional(),
@@ -120,6 +121,96 @@ export function registerRoomRoutes(router: Router) {
     }
     
     return ok(res, result);
+  }));
+
+  /**
+   * GET /api/rooms/weekly-plan
+   * Get rooms prepared for weekly plan editor (settings, competencies, physical rooms)
+   */
+  router.get("/weekly-plan", asyncHandler(async (req, res) => {
+    const { active } = req.query;
+    const isActive = active === undefined ? true : active === "true";
+
+    let roomsQuery = db
+      .select()
+      .from(rooms)
+      .where(and(eq(rooms.useInWeeklyPlan, true), eq(rooms.isActive, isActive)))
+      .orderBy(asc(rooms.weeklyPlanSortOrder), asc(rooms.name));
+
+    const roomsList = await roomsQuery;
+    const roomIds = roomsList.map(room => room.id);
+
+    if (roomIds.length === 0) {
+      return ok(res, []);
+    }
+
+    const weekdaySettings = await db
+      .select()
+      .from(roomWeekdaySettings)
+      .where(inArray(roomWeekdaySettings.roomId, roomIds));
+
+    const requiredCompetencies = await db
+      .select({
+        id: roomRequiredCompetencies.id,
+        roomId: roomRequiredCompetencies.roomId,
+        competencyId: roomRequiredCompetencies.competencyId,
+        relationType: roomRequiredCompetencies.relationType,
+        competencyCode: competencies.code,
+        competencyName: competencies.name
+      })
+      .from(roomRequiredCompetencies)
+      .leftJoin(competencies, eq(roomRequiredCompetencies.competencyId, competencies.id))
+      .where(inArray(roomRequiredCompetencies.roomId, roomIds));
+
+    const physicalRoomLinks = await db
+      .select({
+        roomId: roomPhysicalRooms.roomId,
+        id: physicalRooms.id,
+        name: physicalRooms.name,
+        isActive: physicalRooms.isActive
+      })
+      .from(roomPhysicalRooms)
+      .leftJoin(physicalRooms, eq(roomPhysicalRooms.physicalRoomId, physicalRooms.id))
+      .where(inArray(roomPhysicalRooms.roomId, roomIds));
+
+    const settingsByRoom = new Map<number, typeof weekdaySettings>();
+    for (const setting of weekdaySettings) {
+      const existing = settingsByRoom.get(setting.roomId);
+      if (existing) {
+        existing.push(setting);
+      } else {
+        settingsByRoom.set(setting.roomId, [setting]);
+      }
+    }
+
+    const competenciesByRoom = new Map<number, typeof requiredCompetencies>();
+    for (const competency of requiredCompetencies) {
+      const existing = competenciesByRoom.get(competency.roomId);
+      if (existing) {
+        existing.push(competency);
+      } else {
+        competenciesByRoom.set(competency.roomId, [competency]);
+      }
+    }
+
+    const physicalRoomsByRoom = new Map<number, typeof physicalRoomLinks>();
+    for (const room of physicalRoomLinks) {
+      const existing = physicalRoomsByRoom.get(room.roomId);
+      if (existing) {
+        existing.push(room);
+      } else {
+        physicalRoomsByRoom.set(room.roomId, [room]);
+      }
+    }
+
+    const payload = roomsList.map(room => ({
+      ...room,
+      weekdaySettings: settingsByRoom.get(room.id) ?? [],
+      requiredCompetencies: competenciesByRoom.get(room.id) ?? [],
+      physicalRooms: physicalRoomsByRoom.get(room.id) ?? []
+    }));
+
+    return ok(res, payload);
   }));
 
   /**
@@ -211,7 +302,8 @@ export function registerRoomRoutes(router: Router) {
         name, 
         category, 
         description, 
-        useInWeeklyPlan, 
+        useInWeeklyPlan,
+        weeklyPlanSortOrder,
         isAvailable, 
         blockReason, 
         requiredRoleCompetencies, 
@@ -223,6 +315,7 @@ export function registerRoomRoutes(router: Router) {
       if (category !== undefined) updateData.category = category;
       if (description !== undefined) updateData.description = description;
       if (useInWeeklyPlan !== undefined) updateData.useInWeeklyPlan = useInWeeklyPlan;
+      if (weeklyPlanSortOrder !== undefined) updateData.weeklyPlanSortOrder = weeklyPlanSortOrder;
       if (isAvailable !== undefined) updateData.isAvailable = isAvailable;
       if (blockReason !== undefined) updateData.blockReason = blockReason;
       if (requiredRoleCompetencies !== undefined) updateData.requiredRoleCompetencies = requiredRoleCompetencies;

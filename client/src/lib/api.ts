@@ -417,6 +417,36 @@ export const roomApi = {
     const response = await apiFetch(`${API_BASE}/rooms${query ? `?${query}` : ""}`);
     return handleResponse<Resource[]>(response);
   },
+  getWeeklyPlan: async (): Promise<
+    Array<Resource & {
+      weekdaySettings?: Array<{
+        id: number;
+        roomId: number;
+        weekday: number;
+        recurrence?: "weekly" | "monthly_first_third" | "monthly_once";
+        usageLabel?: string | null;
+        timeFrom?: string | null;
+        timeTo?: string | null;
+        isClosed?: boolean;
+        closedReason?: string | null;
+      }>;
+      requiredCompetencies?: Array<{
+        id: number;
+        competencyId: number;
+        relationType: "AND" | "OR";
+        competencyCode?: string | null;
+        competencyName?: string | null;
+      }>;
+      physicalRooms?: Array<{
+        id: number;
+        name: string;
+        isActive?: boolean;
+      }>;
+    }>
+  > => {
+    const response = await apiFetch(`${API_BASE}/rooms/weekly-plan`);
+    return handleResponse(response);
+  },
   create: async (
     data: Omit<Resource, "id" | "createdAt"> & {
       requiredRoleCompetencies?: string[];
@@ -638,6 +668,106 @@ export const diplomaApi = {
   },
   delete: async (id: number): Promise<void> => {
     const response = await apiFetch(`${API_BASE}/diplomas/${id}`, {
+      method: "DELETE"
+    });
+    return handleResponse<void>(response);
+  }
+};
+
+export type WeeklyPlanAssignmentResponse = {
+  id: number;
+  weeklyPlanId: number;
+  roomId: number;
+  weekday: number;
+  employeeId: number | null;
+  roleLabel?: string | null;
+  assignmentType: "Plan" | "Zeitausgleich" | "Fortbildung";
+  note?: string | null;
+  isBlocked?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  roomName?: string | null;
+  roomCategory?: string | null;
+  employeeName?: string | null;
+  employeeLastName?: string | null;
+  employeeRole?: string | null;
+};
+
+export type WeeklyPlanResponse = {
+  id: number;
+  year: number;
+  weekNumber: number;
+  status: "Entwurf" | "Vorläufig" | "Freigegeben";
+  lockedWeekdays?: number[];
+  assignments: WeeklyPlanAssignmentResponse[];
+  assignmentsByWeekday?: Record<number, WeeklyPlanAssignmentResponse[]>;
+  summary?: Record<string, number>;
+};
+
+export type WeeklyPlanAssignmentInput = {
+  roomId: number;
+  weekday: number;
+  employeeId?: number | null;
+  roleLabel?: string | null;
+  assignmentType?: "Plan" | "Zeitausgleich" | "Fortbildung";
+  note?: string | null;
+  isBlocked?: boolean;
+};
+
+export const weeklyPlanApi = {
+  getByWeek: async (
+    year: number,
+    week: number,
+    createIfMissing = true
+  ): Promise<WeeklyPlanResponse> => {
+    const response = await apiFetch(
+      `${API_BASE}/weekly-plans/week/${year}/${week}?createIfMissing=${createIfMissing ? "true" : "false"}`
+    );
+    return handleResponse<WeeklyPlanResponse>(response);
+  },
+  updateStatus: async (
+    id: number,
+    status: WeeklyPlanResponse["status"]
+  ): Promise<WeeklyPlanResponse> => {
+    const response = await apiFetch(`${API_BASE}/weekly-plans/${id}/status`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status })
+    });
+    return handleResponse<WeeklyPlanResponse>(response);
+  },
+  updateLockedWeekdays: async (
+    id: number,
+    lockedWeekdays: number[]
+  ): Promise<WeeklyPlanResponse> => {
+    const response = await apiFetch(`${API_BASE}/weekly-plans/${id}/locked-weekdays`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lockedWeekdays })
+    });
+    return handleResponse<WeeklyPlanResponse>(response);
+  },
+  assign: async (id: number, data: WeeklyPlanAssignmentInput): Promise<WeeklyPlanAssignmentResponse> => {
+    const response = await apiFetch(`${API_BASE}/weekly-plans/${id}/assign`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<WeeklyPlanAssignmentResponse>(response);
+  },
+  updateAssignment: async (
+    assignmentId: number,
+    data: Partial<WeeklyPlanAssignmentInput>
+  ): Promise<WeeklyPlanAssignmentResponse> => {
+    const response = await apiFetch(`${API_BASE}/weekly-plans/assignments/${assignmentId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<WeeklyPlanAssignmentResponse>(response);
+  },
+  deleteAssignment: async (assignmentId: number): Promise<void> => {
+    const response = await apiFetch(`${API_BASE}/weekly-plans/assignments/${assignmentId}`, {
       method: "DELETE"
     });
     return handleResponse<void>(response);
@@ -1496,6 +1626,14 @@ export const plannedAbsencesAdminApi = {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status, approvedById })
+    });
+    return handleResponse<PlannedAbsenceAdmin>(response);
+  },
+  respond: async (id: number, action: "accept" | "decline"): Promise<PlannedAbsenceAdmin> => {
+    const response = await apiFetch(`${API_BASE}/absences/${id}/respond`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action })
     });
     return handleResponse<PlannedAbsenceAdmin>(response);
   }

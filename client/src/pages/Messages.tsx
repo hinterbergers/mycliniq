@@ -27,6 +27,7 @@ import {
   notificationsApi,
   messagesApi,
   employeeApi,
+  plannedAbsencesAdminApi,
   type MessageThreadListItem,
   type MessageWithSender
 } from "@/lib/api";
@@ -84,6 +85,7 @@ export default function Messages() {
   const [messages, setMessages] = useState<MessageWithSender[]>([]);
   const [threadSearch, setThreadSearch] = useState("");
   const [messageDraft, setMessageDraft] = useState("");
+  const [processingNotificationIds, setProcessingNotificationIds] = useState<number[]>([]);
 
   const [newThreadOpen, setNewThreadOpen] = useState(false);
   const [newThreadType, setNewThreadType] = useState<"direct" | "group">("direct");
@@ -386,6 +388,51 @@ export default function Messages() {
     }
   };
 
+  const getZeitausgleichMetadata = (note: Notification) => {
+    if (!note.metadata || typeof note.metadata !== "object") return null;
+    const meta = note.metadata as {
+      kind?: string;
+      absenceId?: number;
+      startDate?: string;
+      endDate?: string;
+    };
+    if (meta.kind !== "zeitausgleich_request" || typeof meta.absenceId !== "number") {
+      return null;
+    }
+    return meta;
+  };
+
+  const handleZeitausgleichResponse = async (
+    note: Notification,
+    action: "accept" | "decline"
+  ) => {
+    const meta = getZeitausgleichMetadata(note);
+    if (!meta) return;
+
+    setProcessingNotificationIds((prev) => [...prev, note.id]);
+    try {
+      await plannedAbsencesAdminApi.respond(meta.absenceId, action);
+      const updated = note.isRead ? note : await notificationsApi.markRead(note.id);
+      setNotifications((prev) =>
+        prev.map((item) => (item.id === note.id ? { ...item, ...updated } : item))
+      );
+      toast({
+        title: action === "accept" ? "Zeitausgleich bestaetigt" : "Zeitausgleich abgelehnt",
+        description: meta.startDate
+          ? `Antwort fuer ${meta.startDate} gespeichert.`
+          : "Antwort gespeichert."
+      });
+    } catch (error) {
+      toast({
+        title: "Fehler",
+        description: "Antwort konnte nicht gespeichert werden",
+        variant: "destructive"
+      });
+    } finally {
+      setProcessingNotificationIds((prev) => prev.filter((id) => id !== note.id));
+    }
+  };
+
   return (
     <Layout title="Nachrichten">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -430,52 +477,78 @@ export default function Messages() {
                 )}
                 {!loadingNotifications && notifications.length > 0 && (
                   <div className="space-y-3">
-                    {notifications.map((note) => (
-                      <div
-                        key={note.id}
-                        className={`rounded-lg border p-4 space-y-2 ${
-                          note.isRead ? "bg-white" : "bg-blue-50/40"
-                        }`}
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold">{note.title}</p>
-                            <p className="text-xs text-muted-foreground">{formatTimestamp(note.createdAt)}</p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {!note.isRead && (
-                              <Button size="sm" variant="secondary" onClick={() => handleMarkRead(note)}>
-                                Gelesen
+                    {notifications.map((note) => {
+                      const zeitausgleichMeta = getZeitausgleichMetadata(note);
+                      const isProcessing = processingNotificationIds.includes(note.id);
+                      return (
+                        <div
+                          key={note.id}
+                          className={`rounded-lg border p-4 space-y-2 ${
+                            note.isRead ? "bg-white" : "bg-blue-50/40"
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold">{note.title}</p>
+                              <p className="text-xs text-muted-foreground">{formatTimestamp(note.createdAt)}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {!note.isRead && (
+                                <Button size="sm" variant="secondary" onClick={() => handleMarkRead(note)}>
+                                  Gelesen
+                                </Button>
+                              )}
+                              {note.link && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    handleMarkRead(note);
+                                    setLocation(note.link || "/nachrichten");
+                                  }}
+                                >
+                                  Oeffnen
+                                </Button>
+                              )}
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => handleDeleteNotification(note.id)}
+                              >
+                                <Trash2 className="w-4 h-4" />
                               </Button>
-                            )}
-                            {note.link && (
+                            </div>
+                          </div>
+                          {note.message && (
+                            <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                              {note.message}
+                            </p>
+                          )}
+                          {zeitausgleichMeta && (
+                            <div className="flex flex-wrap items-center gap-2 pt-2">
+                              <Button
+                                size="sm"
+                                onClick={() => handleZeitausgleichResponse(note, "accept")}
+                                disabled={isProcessing}
+                              >
+                                Bestaetigen
+                              </Button>
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => {
-                                  handleMarkRead(note);
-                                  setLocation(note.link || "/nachrichten");
-                                }}
+                                onClick={() => handleZeitausgleichResponse(note, "decline")}
+                                disabled={isProcessing}
                               >
-                                Oeffnen
+                                Ablehnen
                               </Button>
-                            )}
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => handleDeleteNotification(note.id)}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
+                              {isProcessing && (
+                                <span className="text-xs text-muted-foreground">Antwort wird gespeichert...</span>
+                              )}
+                            </div>
+                          )}
                         </div>
-                        {note.message && (
-                          <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                            {note.message}
-                          </p>
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </CardContent>

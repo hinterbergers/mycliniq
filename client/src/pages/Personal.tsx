@@ -31,8 +31,13 @@ import {
   format,
   addMonths,
   subMonths,
+  addWeeks,
+  subWeeks,
   getWeek,
+  getYear,
   eachDayOfInterval,
+  startOfWeek,
+  endOfWeek,
   startOfMonth,
   endOfMonth,
   parseISO,
@@ -40,20 +45,32 @@ import {
 } from "date-fns";
 import { de } from "date-fns/locale";
 import { useLocation } from "wouter";
-import { dutyPlansApi, employeeApi, rosterApi, rosterSettingsApi, serviceLinesApi, shiftSwapApi, plannedAbsencesAdminApi, longTermAbsencesApi, type NextPlanningMonth, type PlannedAbsenceAdmin } from "@/lib/api";
+import {
+  dutyPlansApi,
+  employeeApi,
+  rosterApi,
+  rosterSettingsApi,
+  serviceLinesApi,
+  shiftSwapApi,
+  plannedAbsencesAdminApi,
+  longTermAbsencesApi,
+  roomApi,
+  weeklyPlanApi,
+  type NextPlanningMonth,
+  type PlannedAbsenceAdmin,
+  type WeeklyPlanResponse
+} from "@/lib/api";
 import type { DutyPlan, Employee, RosterShift, ShiftSwapRequest, ServiceLine, LongTermAbsence } from "@shared/schema";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import VacationPlanEditor from "@/pages/admin/VacationPlanEditor";
-
-const DUMMY_WEEK_AREAS = [
-  { area: "Kreißsaal 1", mon: "Hinterberger", tue: "Brunner", wed: "Wagner", thu: "Fischer", fri: "Hinterberger" },
-  { area: "Sectio-OP", mon: "Wagner", tue: "Fischer", wed: "Brunner", thu: "Hinterberger", fri: "Wagner" },
-  { area: "Gyn-Ambulanz 1", mon: "Müller", tue: "Gruber", wed: "Müller", thu: "Gruber", fri: "Müller" },
-  { area: "Gyn-Ambulanz 2", mon: "Krenn", tue: "Hofer", wed: "Krenn", thu: "Hofer", fri: "Krenn" },
-  { area: "Station Geb", mon: "Lang", tue: "Lang", wed: "Berger", thu: "Berger", fri: "Lang" },
-  { area: "Station Gyn", mon: "Berger", tue: "Berger", wed: "Lang", thu: "Lang", fri: "Berger" },
-];
+import {
+  WEEKDAY_LABELS,
+  WEEKDAY_FULL,
+  type WeeklyPlanRoom,
+  formatRoomTime,
+  getRoomSettingForDate
+} from "@/lib/weeklyPlanUtils";
 
 
 const PLAN_STATUS_LABELS: Record<DutyPlan["status"], string> = {
@@ -1154,6 +1171,150 @@ function ShiftSwapRosterDialog({
 }
 
 function WeeklyView() {
+  const { employee: currentUser } = useAuth();
+  const { toast } = useToast();
+  const [currentDate, setCurrentDate] = useState(() => new Date());
+  const [rooms, setRooms] = useState<WeeklyPlanRoom[]>([]);
+  const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlanResponse | null>(null);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [plannedAbsences, setPlannedAbsences] = useState<PlannedAbsenceAdmin[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const weekStart = useMemo(
+    () => startOfWeek(currentDate, { weekStartsOn: 1 }),
+    [currentDate]
+  );
+  const weekEnd = useMemo(
+    () => endOfWeek(currentDate, { weekStartsOn: 1 }),
+    [currentDate]
+  );
+  const weekNumber = useMemo(
+    () => getWeek(currentDate, { weekStartsOn: 1 }),
+    [currentDate]
+  );
+  const weekYear = useMemo(() => getYear(weekStart), [weekStart]);
+  const weekDays = useMemo(
+    () => eachDayOfInterval({ start: weekStart, end: weekEnd }),
+    [weekStart, weekEnd]
+  );
+
+  const roomsSorted = useMemo(() => {
+    return [...rooms].sort((a, b) => {
+      const order = (a.weeklyPlanSortOrder ?? 0) - (b.weeklyPlanSortOrder ?? 0);
+      if (order !== 0) return order;
+      return a.name.localeCompare(b.name);
+    });
+  }, [rooms]);
+
+  const employeesById = useMemo(() => {
+    return new Map(employees.map((employee) => [employee.id, employee]));
+  }, [employees]);
+
+  const assignmentsByRoomWeekday = useMemo(() => {
+    const map = new Map<string, WeeklyPlanResponse["assignments"]>();
+    (weeklyPlan?.assignments || []).forEach((assignment) => {
+      const key = `${assignment.roomId}-${assignment.weekday}`;
+      const current = map.get(key) ?? [];
+      current.push(assignment);
+      map.set(key, current);
+    });
+    return map;
+  }, [weeklyPlan]);
+
+  const absencesByDate = useMemo(() => {
+    const map = new Map<string, PlannedAbsenceAdmin[]>();
+    plannedAbsences
+      .filter((absence) => absence.status !== "Abgelehnt")
+      .forEach((absence) => {
+        const start = parseISO(absence.startDate);
+        const end = parseISO(absence.endDate);
+        eachDayOfInterval({ start, end }).forEach((date) => {
+          const key = format(date, "yyyy-MM-dd");
+          const current = map.get(key) ?? [];
+          current.push(absence);
+          map.set(key, current);
+        });
+      });
+    return map;
+  }, [plannedAbsences]);
+
+  useEffect(() => {
+    let active = true;
+    const loadWeeklyPlan = async () => {
+      setIsLoading(true);
+      const from = format(weekStart, "yyyy-MM-dd");
+      const to = format(weekEnd, "yyyy-MM-dd");
+      try {
+        const [roomData, employeeData, absenceData] = await Promise.all([
+          roomApi.getWeeklyPlan(),
+          employeeApi.getAll(),
+          plannedAbsencesAdminApi.getRange({ from, to })
+        ]);
+
+        let planData: WeeklyPlanResponse | null = null;
+        try {
+          planData = await weeklyPlanApi.getByWeek(weekYear, weekNumber, false);
+        } catch (error: any) {
+          const message = error?.message || "";
+          if (!message.toLowerCase().includes("wochenplan")) {
+            throw error;
+          }
+        }
+
+        if (!active) return;
+        setRooms(roomData);
+        setEmployees(employeeData);
+        setPlannedAbsences(absenceData);
+        setWeeklyPlan(planData);
+      } catch (error: any) {
+        if (!active) return;
+        toast({
+          title: "Fehler",
+          description: error.message || "Wochenplan konnte nicht geladen werden",
+          variant: "destructive"
+        });
+      } finally {
+        if (active) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadWeeklyPlan();
+    return () => {
+      active = false;
+    };
+  }, [toast, weekStart, weekEnd, weekNumber, weekYear]);
+
+  const statusLabel = weeklyPlan?.status === "Vorläufig"
+    ? "Vorschau"
+    : weeklyPlan?.status ?? "Kein Plan";
+
+  const resolveEmployeeName = (employeeId: number | null, fallback?: string | null, fallbackLast?: string | null) => {
+    if (employeeId) {
+      const employee = employeesById.get(employeeId);
+      if (employee) {
+        if (employee.firstName && employee.lastName) {
+          return `${employee.firstName} ${employee.lastName}`;
+        }
+        return employee.name || employee.lastName || "";
+      }
+    }
+    if (fallback || fallbackLast) {
+      return [fallback, fallbackLast].filter(Boolean).join(" ");
+    }
+    return "Unbekannt";
+  };
+
+  const resolveAbsenceName = (absence: PlannedAbsenceAdmin) => {
+    if (absence.employeeLastName) return absence.employeeLastName;
+    if (absence.employeeId) {
+      const employee = employeesById.get(absence.employeeId);
+      return employee?.lastName || employee?.name || "Unbekannt";
+    }
+    return absence.employeeName || "Unbekannt";
+  };
+
   return (
     <div className="space-y-6">
       <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 flex gap-3">
@@ -1166,49 +1327,172 @@ function WeeklyView() {
 
       <Card className="border-none kabeg-shadow overflow-hidden">
         <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2">
-            <CalendarIcon className="w-5 h-5" />
-            Wochenplan KW 49
-          </CardTitle>
-          <CardDescription>02.12. – 06.12.2024</CardDescription>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-1">
+              <CardTitle className="flex items-center gap-2">
+                <CalendarIcon className="w-5 h-5" />
+                Wochenplan KW {weekNumber} / {weekYear}
+                <Badge variant="outline" className="ml-2 text-xs">
+                  {statusLabel}
+                </Badge>
+              </CardTitle>
+              <CardDescription>
+                {format(weekStart, "dd.MM.yyyy", { locale: de })} – {format(weekEnd, "dd.MM.yyyy", { locale: de })}
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setCurrentDate(subWeeks(currentDate, 1))}
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setCurrentDate(addWeeks(currentDate, 1))}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[700px] text-sm">
-              <thead>
-                <tr className="bg-muted/50 border-b border-border">
-                  <th className="p-3 text-left font-medium w-40">Bereich</th>
-                  <th className="p-3 text-center font-medium">Mo</th>
-                  <th className="p-3 text-center font-medium">Di</th>
-                  <th className="p-3 text-center font-medium">Mi</th>
-                  <th className="p-3 text-center font-medium">Do</th>
-                  <th className="p-3 text-center font-medium">Fr</th>
-                </tr>
-              </thead>
-              <tbody>
-                {DUMMY_WEEK_AREAS.map((row, i) => (
-                  <tr key={i} className="border-b border-border hover:bg-muted/30 transition-colors">
-                    <td className="p-3 font-medium">{row.area}</td>
-                    <td className="p-3 text-center">
-                      <Badge variant="secondary">{row.mon}</Badge>
-                    </td>
-                    <td className="p-3 text-center">
-                      <Badge variant="secondary">{row.tue}</Badge>
-                    </td>
-                    <td className="p-3 text-center">
-                      <Badge variant="secondary">{row.wed}</Badge>
-                    </td>
-                    <td className="p-3 text-center">
-                      <Badge variant="secondary">{row.thu}</Badge>
-                    </td>
-                    <td className="p-3 text-center">
-                      <Badge variant="secondary">{row.fri}</Badge>
-                    </td>
+          {isLoading ? (
+            <div className="p-6 text-sm text-muted-foreground">Wochenplan wird geladen...</div>
+          ) : roomsSorted.length === 0 ? (
+            <div className="p-6 text-sm text-muted-foreground">Keine Arbeitsplätze für den Wochenplan gefunden.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[980px] text-sm">
+                <thead>
+                  <tr className="bg-muted/50 border-b border-border">
+                    <th className="p-3 text-left font-medium w-56">Arbeitsplatz</th>
+                    {weekDays.map((day, index) => (
+                      <th key={day.toISOString()} className="p-3 text-center font-medium min-w-[120px]">
+                        <div className="text-xs text-muted-foreground">{WEEKDAY_LABELS[index]}</div>
+                        <div className="text-sm" title={WEEKDAY_FULL[index]}>
+                          {format(day, "dd.MM", { locale: de })}
+                        </div>
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {roomsSorted.map((room) => (
+                    <tr key={room.id} className="border-b border-border align-top">
+                      <td className="p-3">
+                        <div className="font-medium">{room.name}</div>
+                        {room.physicalRooms && room.physicalRooms.length > 0 && (
+                          <div className="text-[11px] text-muted-foreground">
+                            {room.physicalRooms.map((pr) => pr.name).join(", ")}
+                          </div>
+                        )}
+                      </td>
+                      {weekDays.map((day, index) => {
+                        const weekday = index + 1;
+                        const setting = getRoomSettingForDate(room, day);
+                        if (!setting) {
+                          return (
+                            <td key={`${room.id}-${weekday}`} className="p-3 text-center text-xs text-muted-foreground">
+                              —
+                            </td>
+                          );
+                        }
+                        if (setting.isClosed) {
+                          return (
+                            <td key={`${room.id}-${weekday}`} className="p-3 text-center text-xs text-muted-foreground">
+                              {setting.closedReason ? `Gesperrt: ${setting.closedReason}` : "Gesperrt"}
+                            </td>
+                          );
+                        }
+                        const assignments = assignmentsByRoomWeekday.get(`${room.id}-${weekday}`) ?? [];
+                        const noteEntries = assignments
+                          .filter((assignment) => assignment.note || assignment.isBlocked)
+                          .map((assignment) => {
+                            if (assignment.isBlocked && assignment.note) {
+                              return `Gesperrt: ${assignment.note}`;
+                            }
+                            if (assignment.isBlocked) return "Gesperrt";
+                            return assignment.note || "";
+                          })
+                          .filter(Boolean);
+                        const timeLabel = formatRoomTime(setting.timeFrom, setting.timeTo);
+                        return (
+                          <td key={`${room.id}-${weekday}`} className="p-3 align-top">
+                            {(setting.usageLabel || timeLabel) && (
+                              <div className="text-[10px] text-muted-foreground mb-1">
+                                {[setting.usageLabel, timeLabel].filter(Boolean).join(" · ")}
+                              </div>
+                            )}
+                            {assignments.length === 0 ? (
+                              <div className="text-xs text-muted-foreground">—</div>
+                            ) : (
+                              <div className="space-y-1">
+                                {assignments.map((assignment) => {
+                                  const name = resolveEmployeeName(
+                                    assignment.employeeId,
+                                    assignment.employeeName,
+                                    assignment.employeeLastName
+                                  );
+                                  const isCurrentUser = assignment.employeeId === currentUser?.id;
+                                  return (
+                                    <div
+                                      key={assignment.id}
+                                      className={cn(
+                                        "text-xs",
+                                        isCurrentUser && "text-blue-700 font-semibold"
+                                      )}
+                                    >
+                                      {name}
+                                      {assignment.assignmentType !== "Plan" && (
+                                        <span className="text-[10px] text-muted-foreground">
+                                          {" "}
+                                          ({assignment.assignmentType})
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            {noteEntries.length > 0 && (
+                              <div className="mt-2 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-1">
+                                {noteEntries.join(" · ")}
+                              </div>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                  <tr className="bg-muted/30 align-top">
+                    <td className="p-3 text-xs font-medium">Abwesenheiten</td>
+                    {weekDays.map((day) => {
+                      const key = format(day, "yyyy-MM-dd");
+                      const items = absencesByDate.get(key) ?? [];
+                      return (
+                        <td key={`absences-${key}`} className="p-2 text-[10px] text-muted-foreground">
+                          {items.length === 0 ? (
+                            "—"
+                          ) : (
+                            <div className="space-y-1">
+                              {items.map((absence) => (
+                                <div key={absence.id}>
+                                  {resolveAbsenceName(absence)} ({absence.reason})
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

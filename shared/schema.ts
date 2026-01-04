@@ -554,6 +554,7 @@ export const rooms = pgTable("rooms", {
   category: roomCategoryEnum("category").notNull().default('Sonstiges'),
   description: text("description"),
   useInWeeklyPlan: boolean("use_in_weekly_plan").notNull().default(true),
+  weeklyPlanSortOrder: integer("weekly_plan_sort_order").notNull().default(0),
   isAvailable: boolean("is_available").notNull().default(true),
   blockReason: text("block_reason"),
   requiredRoleCompetencies: text("required_role_competencies").array().notNull().default(sql`ARRAY[]::text[]`),
@@ -762,6 +763,7 @@ export const weeklyPlans = pgTable("weekly_plans", {
   year: integer("year").notNull(),
   weekNumber: integer("week_number").notNull(),
   status: weeklyPlanStatusEnum("status").notNull().default('Entwurf'),
+  lockedWeekdays: integer("locked_weekdays").array().notNull().default(sql`ARRAY[]::int[]`),
   generatedFromDutyPlanId: integer("generated_from_duty_plan_id").references(() => dutyPlans.id),
   createdById: integer("created_by_id").references(() => employees.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -786,9 +788,11 @@ export const weeklyPlanAssignments = pgTable("weekly_plan_assignments", {
   weeklyPlanId: integer("weekly_plan_id").references(() => weeklyPlans.id).notNull(),
   roomId: integer("room_id").references(() => rooms.id).notNull(),
   weekday: integer("weekday").notNull(),
-  employeeId: integer("employee_id").references(() => employees.id).notNull(),
+  employeeId: integer("employee_id").references(() => employees.id),
   roleLabel: text("role_label"),
   assignmentType: weeklyAssignmentTypeEnum("assignment_type").notNull().default('Plan'),
+  note: text("note"),
+  isBlocked: boolean("is_blocked").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull()
 }, (table) => [
