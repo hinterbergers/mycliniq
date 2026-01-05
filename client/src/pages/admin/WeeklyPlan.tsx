@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { format, startOfWeek, endOfWeek, addWeeks, subWeeks, getWeek, getYear, eachDayOfInterval, addDays } from "date-fns";
 import { de } from "date-fns/locale";
 import {
@@ -200,7 +200,35 @@ export default function WeeklyPlan() {
   const [isSaving, setIsSaving] = useState(false);
   const [isReorderMode, setIsReorderMode] = useState(false);
   const [roomOrderIds, setRoomOrderIds] = useState<number[]>([]);
+  const [rightPaneOffset, setRightPaneOffset] = useState(96);
   const draggedRoomIdRef = useRef<number | null>(null);
+  const toolbarRef = useRef<HTMLDivElement | null>(null);
+
+  useLayoutEffect(() => {
+    const toolbar = toolbarRef.current;
+    if (!toolbar) return;
+    let frame = 0;
+    const updateOffset = () => {
+      if (frame) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const height = toolbar.getBoundingClientRect().height;
+        const nextOffset = Math.max(72, Math.round(height + 12));
+        setRightPaneOffset((prev) => (prev === nextOffset ? prev : nextOffset));
+      });
+    };
+    updateOffset();
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      observer = new ResizeObserver(updateOffset);
+      observer.observe(toolbar);
+    }
+    window.addEventListener("resize", updateOffset);
+    return () => {
+      window.removeEventListener("resize", updateOffset);
+      if (observer) observer.disconnect();
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, []);
 
   const weekStart = useMemo(() => startOfWeek(currentDate, { weekStartsOn: 1 }), [currentDate]);
   const weekEnd = useMemo(() => endOfWeek(currentDate, { weekStartsOn: 1 }), [currentDate]);
@@ -887,7 +915,7 @@ export default function WeeklyPlan() {
           </p>
         </div>
 
-        <div className="sticky top-0 z-30 -mx-6 bg-background/95 backdrop-blur pb-2">
+        <div ref={toolbarRef} className="sticky top-0 z-30 -mx-6 bg-background/95 backdrop-blur pb-2">
           <div className="px-6 pt-2 space-y-2">
             <Card className="border-none kabeg-shadow">
               <CardContent className="p-2">
@@ -1325,187 +1353,194 @@ export default function WeeklyPlan() {
             )}
           </div>
 
-          <div className="lg:col-span-1 space-y-4 lg:sticky lg:top-20 self-start">
-            <Card className="border-none kabeg-shadow">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <User className="w-4 h-4" />
-                  Verfügbares Personal
-                </CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  {WEEKDAY_FULL[selectedWeekday - 1]}, {selectedDayDate ? format(selectedDayDate, "dd.MM.yyyy", { locale: de }) : ""}
-                </p>
-              </CardHeader>
-              <CardContent className="max-h-[45vh] overflow-y-auto">
-                <div
-                  className={cn(
-                    "space-y-2 rounded-xl p-1",
-                    isPlanReleased || lockedWeekdays.includes(selectedWeekday) || isReorderMode
-                      ? ""
-                      : "border border-dashed border-transparent"
-                  )}
-                  onDragOver={(event) => {
-                    if (isPlanReleased || lockedWeekdays.includes(selectedWeekday) || isReorderMode) return;
-                    if (!event.dataTransfer.getData("dragType")) return;
-                    event.preventDefault();
-                  }}
-                  onDrop={async (event) => {
-                    if (isPlanReleased || lockedWeekdays.includes(selectedWeekday) || isReorderMode) return;
-                    event.preventDefault();
-                    const dragType = event.dataTransfer.getData("dragType");
-                    const assignmentId = Number(event.dataTransfer.getData("assignmentId"));
-                    const absenceId = Number(event.dataTransfer.getData("absenceId"));
-                    if (dragType === "assignment" && assignmentId) {
-                      await handleDeleteAssignment(assignmentId);
-                    }
-                    if (dragType === "zeitausgleich" && absenceId) {
-                      await handleDeleteAbsence(absenceId);
-                    }
-                  }}
-                >
-                  {isLoading ? (
-                    <div className="text-sm text-muted-foreground text-center py-4">Laden...</div>
-                  ) : availableEmployees.length === 0 ? (
-                    <div className="text-sm text-muted-foreground text-center py-4">Keine Verfügbarkeit</div>
-                  ) : (
-                    availableEmployees.map((employee) => (
-                      <div
-                        key={employee.id}
-                        className="flex items-center gap-2 p-2 rounded-lg border bg-card hover:bg-muted/50 cursor-grab active:cursor-grabbing transition-all hover:shadow-sm group"
-                        draggable={!isPlanReleased && !lockedWeekdays.includes(selectedWeekday) && !isReorderMode}
-                        onDragStart={(event) => {
-                          event.dataTransfer.setData("dragType", "available");
-                          event.dataTransfer.setData("employeeId", employee.id.toString());
-                        }}
-                      >
-                        <GripVertical className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium truncate">{getEmployeeDisplayName(employee)}</span>
-                            <Badge
-                              variant="outline"
-                              className={cn("text-[10px] px-1.5 py-0 h-5 shrink-0", ROLE_COLORS[employee.role] || "bg-gray-100")}
-                            >
-                              {ROLE_BADGES[employee.role] || employee.role?.substring(0, 2)}
-                            </Badge>
-                            {declinedZeitausgleichIds.has(employee.id) && (
-                              <Badge variant="outline" className="text-[10px] bg-rose-50 text-rose-700 border-rose-200">
-                                ZA abgelehnt
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="text-[10px] text-muted-foreground whitespace-normal leading-snug">
-                            {employee.competencies?.join(", ") || "Keine Kompetenzen"}
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-none kabeg-shadow">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Zeitausgleich moeglich</CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  Ziehen Sie Mitarbeitende hierher, um eine Anfrage zu senden.
-                </p>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <div
-                  className={cn(
-                    "space-y-2 border-2 border-dashed rounded-xl p-3 min-h-[96px]",
-                    isPlanReleased || lockedWeekdays.includes(selectedWeekday)
-                      ? "bg-muted/30 border-muted-foreground/20"
-                      : "border-primary/20"
-                  )}
-                  onDragOver={(event) => {
-                    if (isPlanReleased || lockedWeekdays.includes(selectedWeekday) || isReorderMode) return;
-                    event.preventDefault();
-                  }}
-                  onDrop={async (event) => {
-                    if (isPlanReleased || lockedWeekdays.includes(selectedWeekday) || isReorderMode) return;
-                    event.preventDefault();
-                    const dragType = event.dataTransfer.getData("dragType");
-                    const employeeId = Number(event.dataTransfer.getData("employeeId"));
-                    const assignmentId = Number(event.dataTransfer.getData("assignmentId"));
-                    const absenceId = Number(event.dataTransfer.getData("absenceId"));
-                    if (dragType === "assignment" && assignmentId && employeeId) {
-                      await handleMoveAssignmentToZeitausgleich(assignmentId, employeeId);
-                      return;
-                    }
-                    if (!employeeId || dragType === "zeitausgleich") return;
-                    await handleAddZeitausgleich(employeeId);
-                  }}
-                >
-                  {zeitausgleichAbsencesForSelectedDay.length === 0 && (
-                    <div className="text-xs text-muted-foreground">+ Person hinzufuegen</div>
-                  )}
-                  {zeitausgleichAbsencesForSelectedDay.map((absence) => {
-                    const employee = employeesById.get(absence.employeeId);
-                    const displayName = absence.employeeLastName || employee?.lastName || employee?.name || "Unbekannt";
-                    const statusLabel = absence.status || "Geplant";
-                    return (
-                      <div
-                        key={absence.id ?? `${absence.employeeId}-${absence.startDate}`}
-                        className="flex items-center justify-between rounded-lg border px-2 py-1"
-                        draggable={!isPlanReleased && !lockedWeekdays.includes(selectedWeekday) && !isReorderMode}
-                        onDragStart={(event) => {
-                          if (!absence.id) return;
-                          event.dataTransfer.setData("dragType", "zeitausgleich");
-                          event.dataTransfer.setData("employeeId", absence.employeeId.toString());
-                          event.dataTransfer.setData("absenceId", absence.id.toString());
-                        }}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">{displayName}</span>
-                          <Badge
-                            variant="outline"
-                            className={cn("text-[10px]", ZEITAUSGLEICH_STATUS_STYLES[statusLabel] || "bg-slate-50 text-slate-700 border-slate-200")}
+          <div className="lg:col-span-1 overflow-visible">
+            <div
+              className="lg:sticky lg:self-start lg:z-20"
+              style={{ top: rightPaneOffset, height: `calc(100vh - ${rightPaneOffset}px - 16px)` }}
+            >
+              <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden">
+                <Card className="border-none kabeg-shadow flex flex-col min-h-0 flex-[2]">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                      <User className="w-4 h-4" />
+                      Verfügbares Personal
+                    </CardTitle>
+                    <p className="text-xs text-muted-foreground">
+                      {WEEKDAY_FULL[selectedWeekday - 1]}, {selectedDayDate ? format(selectedDayDate, "dd.MM.yyyy", { locale: de }) : ""}
+                    </p>
+                  </CardHeader>
+                  <CardContent className="flex-1 min-h-0 overflow-y-auto">
+                    <div
+                      className={cn(
+                        "space-y-2 rounded-xl p-1",
+                        isPlanReleased || lockedWeekdays.includes(selectedWeekday) || isReorderMode
+                          ? ""
+                          : "border border-dashed border-transparent"
+                      )}
+                      onDragOver={(event) => {
+                        if (isPlanReleased || lockedWeekdays.includes(selectedWeekday) || isReorderMode) return;
+                        if (!event.dataTransfer.getData("dragType")) return;
+                        event.preventDefault();
+                      }}
+                      onDrop={async (event) => {
+                        if (isPlanReleased || lockedWeekdays.includes(selectedWeekday) || isReorderMode) return;
+                        event.preventDefault();
+                        const dragType = event.dataTransfer.getData("dragType");
+                        const assignmentId = Number(event.dataTransfer.getData("assignmentId"));
+                        const absenceId = Number(event.dataTransfer.getData("absenceId"));
+                        if (dragType === "assignment" && assignmentId) {
+                          await handleDeleteAssignment(assignmentId);
+                        }
+                        if (dragType === "zeitausgleich" && absenceId) {
+                          await handleDeleteAbsence(absenceId);
+                        }
+                      }}
+                    >
+                      {isLoading ? (
+                        <div className="text-sm text-muted-foreground text-center py-4">Laden...</div>
+                      ) : availableEmployees.length === 0 ? (
+                        <div className="text-sm text-muted-foreground text-center py-4">Keine Verfügbarkeit</div>
+                      ) : (
+                        availableEmployees.map((employee) => (
+                          <div
+                            key={employee.id}
+                            className="flex items-center gap-2 p-2 rounded-lg border bg-card hover:bg-muted/50 cursor-grab active:cursor-grabbing transition-all hover:shadow-sm group"
+                            draggable={!isPlanReleased && !lockedWeekdays.includes(selectedWeekday) && !isReorderMode}
+                            onDragStart={(event) => {
+                              event.dataTransfer.setData("dragType", "available");
+                              event.dataTransfer.setData("employeeId", employee.id.toString());
+                            }}
                           >
-                            {statusLabel}
-                          </Badge>
-                        </div>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-7 w-7 text-red-600"
-                          onClick={() => handleDeleteAbsence(absence.id)}
-                          disabled={isPlanReleased || lockedWeekdays.includes(selectedWeekday)}
-                        >
-                          <X className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
+                            <GripVertical className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium truncate">{getEmployeeDisplayName(employee)}</span>
+                                <Badge
+                                  variant="outline"
+                                  className={cn("text-[10px] px-1.5 py-0 h-5 shrink-0", ROLE_COLORS[employee.role] || "bg-gray-100")}
+                                >
+                                  {ROLE_BADGES[employee.role] || employee.role?.substring(0, 2)}
+                                </Badge>
+                                {declinedZeitausgleichIds.has(employee.id) && (
+                                  <Badge variant="outline" className="text-[10px] bg-rose-50 text-rose-700 border-rose-200">
+                                    ZA abgelehnt
+                                  </Badge>
+                                )}
+                              </div>
+                              <div className="text-[10px] text-muted-foreground whitespace-normal leading-snug">
+                                {employee.competencies?.join(", ") || "Keine Kompetenzen"}
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
 
-            <Card className="border-none kabeg-shadow">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Abwesenheiten des Tages</CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  {selectedDayDate ? format(selectedDayDate, "dd.MM.yyyy", { locale: de }) : ""}
-                </p>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {selectedAbsences.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">Keine Abwesenheiten</div>
-                ) : (
-                  selectedAbsences.map((absence, index) => {
-                    const employee = employeesById.get(absence.employeeId);
-                    return (
-                      <div key={`${absence.employeeId}-${index}`} className="text-xs">
-                        <span className="font-medium">{employee?.lastName || employee?.name || "Unbekannt"}</span>
-                        <span className="text-muted-foreground"> · {absence.reason}</span>
-                      </div>
-                    );
-                  })
-                )}
-              </CardContent>
-            </Card>
+                <Card className="border-none kabeg-shadow flex flex-col min-h-0 flex-1">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">Zeitausgleich moeglich</CardTitle>
+                    <p className="text-xs text-muted-foreground">
+                      Ziehen Sie Mitarbeitende hierher, um eine Anfrage zu senden.
+                    </p>
+                  </CardHeader>
+                  <CardContent className="flex-1 min-h-0 overflow-y-auto space-y-2">
+                    <div
+                      className={cn(
+                        "space-y-2 border-2 border-dashed rounded-xl p-3 min-h-[96px]",
+                        isPlanReleased || lockedWeekdays.includes(selectedWeekday)
+                          ? "bg-muted/30 border-muted-foreground/20"
+                          : "border-primary/20"
+                      )}
+                      onDragOver={(event) => {
+                        if (isPlanReleased || lockedWeekdays.includes(selectedWeekday) || isReorderMode) return;
+                        event.preventDefault();
+                      }}
+                      onDrop={async (event) => {
+                        if (isPlanReleased || lockedWeekdays.includes(selectedWeekday) || isReorderMode) return;
+                        event.preventDefault();
+                        const dragType = event.dataTransfer.getData("dragType");
+                        const employeeId = Number(event.dataTransfer.getData("employeeId"));
+                        const assignmentId = Number(event.dataTransfer.getData("assignmentId"));
+                        const absenceId = Number(event.dataTransfer.getData("absenceId"));
+                        if (dragType === "assignment" && assignmentId && employeeId) {
+                          await handleMoveAssignmentToZeitausgleich(assignmentId, employeeId);
+                          return;
+                        }
+                        if (!employeeId || dragType === "zeitausgleich") return;
+                        await handleAddZeitausgleich(employeeId);
+                      }}
+                    >
+                      {zeitausgleichAbsencesForSelectedDay.length === 0 && (
+                        <div className="text-xs text-muted-foreground">+ Person hinzufuegen</div>
+                      )}
+                      {zeitausgleichAbsencesForSelectedDay.map((absence) => {
+                        const employee = employeesById.get(absence.employeeId);
+                        const displayName = absence.employeeLastName || employee?.lastName || employee?.name || "Unbekannt";
+                        const statusLabel = absence.status || "Geplant";
+                        return (
+                          <div
+                            key={absence.id ?? `${absence.employeeId}-${absence.startDate}`}
+                            className="flex items-center justify-between rounded-lg border px-2 py-1"
+                            draggable={!isPlanReleased && !lockedWeekdays.includes(selectedWeekday) && !isReorderMode}
+                            onDragStart={(event) => {
+                              if (!absence.id) return;
+                              event.dataTransfer.setData("dragType", "zeitausgleich");
+                              event.dataTransfer.setData("employeeId", absence.employeeId.toString());
+                              event.dataTransfer.setData("absenceId", absence.id.toString());
+                            }}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium">{displayName}</span>
+                              <Badge
+                                variant="outline"
+                                className={cn("text-[10px]", ZEITAUSGLEICH_STATUS_STYLES[statusLabel] || "bg-slate-50 text-slate-700 border-slate-200")}
+                              >
+                                {statusLabel}
+                              </Badge>
+                            </div>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 text-red-600"
+                              onClick={() => handleDeleteAbsence(absence.id)}
+                              disabled={isPlanReleased || lockedWeekdays.includes(selectedWeekday)}
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-none kabeg-shadow flex flex-col min-h-0 flex-1">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">Abwesenheiten des Tages</CardTitle>
+                    <p className="text-xs text-muted-foreground">
+                      {selectedDayDate ? format(selectedDayDate, "dd.MM.yyyy", { locale: de }) : ""}
+                    </p>
+                  </CardHeader>
+                  <CardContent className="flex-1 min-h-0 overflow-y-auto space-y-2">
+                    {selectedAbsences.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">Keine Abwesenheiten</div>
+                    ) : (
+                      selectedAbsences.map((absence, index) => {
+                        const employee = employeesById.get(absence.employeeId);
+                        return (
+                          <div key={`${absence.employeeId}-${index}`} className="text-xs">
+                            <span className="font-medium">{employee?.lastName || employee?.name || "Unbekannt"}</span>
+                            <span className="text-muted-foreground"> · {absence.reason}</span>
+                          </div>
+                        );
+                      })
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
           </div>
         </div>
 
