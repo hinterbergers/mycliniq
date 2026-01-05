@@ -132,10 +132,10 @@ export default function WeeklyPlan() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
-  const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
-  const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
-  const weekNumber = getWeek(currentDate, { weekStartsOn: 1 });
-  const weekYear = getYear(weekStart);
+  const weekStart = useMemo(() => startOfWeek(currentDate, { weekStartsOn: 1 }), [currentDate]);
+  const weekEnd = useMemo(() => endOfWeek(currentDate, { weekStartsOn: 1 }), [currentDate]);
+  const weekNumber = useMemo(() => getWeek(currentDate, { weekStartsOn: 1 }), [currentDate]);
+  const weekYear = useMemo(() => getYear(weekStart), [weekStart]);
 
   const days = useMemo(
     () => eachDayOfInterval({ start: weekStart, end: addDays(weekStart, 6) }),
