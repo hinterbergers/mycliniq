@@ -131,6 +131,8 @@ export default function WeeklyPlan() {
   const [noteDialog, setNoteDialog] = useState<NoteDialogState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isReorderMode, setIsReorderMode] = useState(false);
+  const [roomOrderIds, setRoomOrderIds] = useState<number[]>([]);
 
   const weekStart = useMemo(() => startOfWeek(currentDate, { weekStartsOn: 1 }), [currentDate]);
   const weekEnd = useMemo(() => endOfWeek(currentDate, { weekStartsOn: 1 }), [currentDate]);
@@ -276,7 +278,7 @@ export default function WeeklyPlan() {
       const weekday = day.getDay() === 0 ? 7 : day.getDay();
       const dayRooms = rooms
         .map((room) => ({ room, setting: getRoomSettingForDate(room, day) }))
-        .filter((item) => Boolean(item.setting))
+        .filter((item) => Boolean(item.setting) && !item.setting?.isClosed)
         .sort((a, b) => {
           const orderDiff = (a.room.weeklyPlanSortOrder ?? 0) - (b.room.weeklyPlanSortOrder ?? 0);
           if (orderDiff !== 0) return orderDiff;
@@ -337,6 +339,11 @@ export default function WeeklyPlan() {
     }
   }, [selectedWeekday]);
 
+  useEffect(() => {
+    setIsReorderMode(false);
+    setRoomOrderIds([]);
+  }, [selectedWeekday, weekNumber, weekYear]);
+
   const handleAssignEmployee = async (roomId: number, weekday: number, employeeId: number) => {
     if (!weeklyPlan) return;
     if (isPlanReleased || lockedWeekdays.includes(weekday)) return;
@@ -388,6 +395,33 @@ export default function WeeklyPlan() {
 
   const handleDuplicateAssignment = async (roomId: number, weekday: number, employeeId: number) => {
     await handleAssignEmployee(roomId, weekday, employeeId);
+  };
+
+  const handleMoveAssignment = async (assignmentId: number, roomId: number, weekday: number) => {
+    if (!weeklyPlan) return;
+    if (isPlanReleased || lockedWeekdays.includes(weekday)) return;
+
+    setIsSaving(true);
+    try {
+      const updated = await weeklyPlanApi.updateAssignment(assignmentId, { roomId, weekday });
+      setWeeklyPlan((prev) =>
+        prev
+          ? {
+              ...prev,
+              assignments: prev.assignments.map((item) => (item.id === updated.id ? updated : item))
+            }
+          : prev
+      );
+    } catch (error) {
+      console.error("Failed to move assignment", error);
+      toast({
+        title: "Verschieben fehlgeschlagen",
+        description: "Die Zuweisung konnte nicht verschoben werden.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleOpenNoteDialog = (roomId: number, weekday: number) => {
@@ -491,6 +525,76 @@ export default function WeeklyPlan() {
       toast({
         title: "Zeitausgleich fehlgeschlagen",
         description: "Die Anfrage konnte nicht erstellt werden.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleMoveAssignmentToZeitausgleich = async (assignmentId: number, employeeId: number) => {
+    if (!selectedDateKey) return;
+    if (isPlanReleased || lockedWeekdays.includes(selectedWeekday)) return;
+
+    const alreadyRequested = zeitausgleichAbsencesForSelectedDay.some(
+      (absence) => absence.employeeId === employeeId
+    );
+
+    setIsSaving(true);
+    try {
+      await weeklyPlanApi.deleteAssignment(assignmentId);
+      setWeeklyPlan((prev) =>
+        prev ? { ...prev, assignments: prev.assignments.filter((item) => item.id !== assignmentId) } : prev
+      );
+
+      if (!alreadyRequested) {
+        const created = await plannedAbsencesAdminApi.create({
+          employeeId,
+          startDate: selectedDateKey,
+          endDate: selectedDateKey,
+          reason: "Zeitausgleich"
+        });
+        setPlannedAbsences((prev) => [...prev, created]);
+      }
+    } catch (error) {
+      console.error("Failed to move to zeitausgleich", error);
+      toast({
+        title: "Zeitausgleich fehlgeschlagen",
+        description: "Der Eintrag konnte nicht in Zeitausgleich verschoben werden.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleMoveZeitausgleichToAssignment = async (
+    absenceId: number,
+    employeeId: number,
+    roomId: number,
+    weekday: number
+  ) => {
+    if (!selectedDateKey || !weeklyPlan) return;
+    if (isPlanReleased || lockedWeekdays.includes(weekday)) return;
+
+    setIsSaving(true);
+    try {
+      await plannedAbsencesAdminApi.delete(absenceId);
+      setPlannedAbsences((prev) => prev.filter((item) => item.id !== absenceId));
+      const assignment = await weeklyPlanApi.assign(weeklyPlan.id, {
+        roomId,
+        weekday,
+        employeeId,
+        assignmentType: "Plan"
+      });
+      setWeeklyPlan((prev) =>
+        prev ? { ...prev, assignments: [...prev.assignments, assignment] } : prev
+      );
+    } catch (error) {
+      console.error("Failed to move from zeitausgleich", error);
+      toast({
+        title: "Verschieben fehlgeschlagen",
+        description: "Der Zeitausgleich konnte nicht in eine Zuweisung umgewandelt werden.",
         variant: "destructive"
       });
     } finally {
@@ -628,48 +732,79 @@ export default function WeeklyPlan() {
     }
   };
 
-  const handleRoomMove = async (roomId: number, direction: "up" | "down") => {
-    const sortedRooms = [...rooms].sort((a, b) => {
-      const diff = (a.weeklyPlanSortOrder ?? 0) - (b.weeklyPlanSortOrder ?? 0);
-      if (diff !== 0) return diff;
-      return a.name.localeCompare(b.name);
-    });
-    const index = sortedRooms.findIndex((room) => room.id === roomId);
-    if (index === -1) return;
-    const targetIndex = direction === "up" ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= sortedRooms.length) return;
-
-    const currentRoom = sortedRooms[index];
-    const targetRoom = sortedRooms[targetIndex];
-
-    const currentOrder = currentRoom.weeklyPlanSortOrder ?? index;
-    const targetOrder = targetRoom.weeklyPlanSortOrder ?? targetIndex;
-
-    try {
-      await Promise.all([
-        roomApi.update(currentRoom.id, { weeklyPlanSortOrder: targetOrder }),
-        roomApi.update(targetRoom.id, { weeklyPlanSortOrder: currentOrder })
-      ]);
-      setRooms((prev) =>
-        prev.map((room) => {
-          if (room.id === currentRoom.id) return { ...room, weeklyPlanSortOrder: targetOrder };
-          if (room.id === targetRoom.id) return { ...room, weeklyPlanSortOrder: currentOrder };
-          return room;
-        })
-      );
-    } catch (error) {
-      console.error("Failed to update room order", error);
-      toast({
-        title: "Reihenfolge speichern fehlgeschlagen",
-        description: "Die Reihenfolge konnte nicht gespeichert werden.",
-        variant: "destructive"
-      });
-    }
-  };
-
   const selectedRooms = activeRoomsByDay.get(selectedWeekday) ?? [];
   const availableEmployees = unassignedAvailableByWeekday.get(selectedWeekday) ?? [];
   const selectedAbsences = absencesByDate.get(selectedDateKey) ?? [];
+
+  const displayRooms = useMemo(() => {
+    if (!isReorderMode || roomOrderIds.length === 0) {
+      return selectedRooms;
+    }
+    const roomMap = new Map(selectedRooms.map((item) => [item.room.id, item]));
+    return roomOrderIds.map((id) => roomMap.get(id)).filter(Boolean) as typeof selectedRooms;
+  }, [isReorderMode, roomOrderIds, selectedRooms]);
+
+  const handleToggleReorderMode = async () => {
+    if (isReorderMode) {
+      const sortedRooms = [...rooms].sort((a, b) => {
+        const diff = (a.weeklyPlanSortOrder ?? 0) - (b.weeklyPlanSortOrder ?? 0);
+        if (diff !== 0) return diff;
+        return a.name.localeCompare(b.name);
+      });
+      const orderedRoomMap = new Map(rooms.map((room) => [room.id, room]));
+      const activeSet = new Set(roomOrderIds);
+      const reorderedActive = roomOrderIds
+        .map((id) => orderedRoomMap.get(id))
+        .filter(Boolean) as WeeklyPlanRoom[];
+
+      let activeIndex = 0;
+      const newOrder = sortedRooms.map((room) =>
+        activeSet.has(room.id) ? reorderedActive[activeIndex++] : room
+      );
+
+      const updates = newOrder
+        .map((room, order) => ({
+          room,
+          order
+        }))
+        .filter(({ room, order }) => (room.weeklyPlanSortOrder ?? 0) !== order);
+
+      if (updates.length === 0) {
+        setIsReorderMode(false);
+        setRoomOrderIds([]);
+        return;
+      }
+
+      setIsSaving(true);
+      try {
+        await Promise.all(
+          updates.map(({ room, order }) => roomApi.update(room.id, { weeklyPlanSortOrder: order }))
+        );
+        const updateMap = new Map(updates.map(({ room, order }) => [room.id, order]));
+        setRooms((prev) =>
+          prev.map((room) => {
+            const updatedOrder = updateMap.get(room.id);
+            if (updatedOrder === undefined) return room;
+            return { ...room, weeklyPlanSortOrder: updatedOrder };
+          })
+        );
+        setIsReorderMode(false);
+        setRoomOrderIds([]);
+      } catch (error) {
+        console.error("Failed to update room order", error);
+        toast({
+          title: "Reihenfolge speichern fehlgeschlagen",
+          description: "Die Reihenfolge konnte nicht gespeichert werden.",
+          variant: "destructive"
+        });
+      } finally {
+        setIsSaving(false);
+      }
+    } else {
+      setRoomOrderIds(selectedRooms.map(({ room }) => room.id));
+      setIsReorderMode(true);
+    }
+  };
 
   return (
     <Layout title="Wochenplan-Editor">
@@ -728,9 +863,23 @@ export default function WeeklyPlan() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" className="gap-2" onClick={handleGenerateAI} disabled={isSaving}>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={handleGenerateAI}
+                  disabled={isSaving || isReorderMode}
+                >
                   <Sparkles className="w-4 h-4" />
                   KI-Vorschlag
+                </Button>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={handleToggleReorderMode}
+                  disabled={isSaving || selectedRooms.length === 0}
+                >
+                  <GripVertical className="w-4 h-4" />
+                  {isReorderMode ? "Reihenfolge speichern" : "Reihenfolge ändern"}
                 </Button>
                 {weeklyPlan?.status === "Freigegeben" ? (
                   <Button variant="outline" className="gap-2" onClick={() => handleUpdateStatus("Entwurf")}>
@@ -787,14 +936,14 @@ export default function WeeklyPlan() {
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
           <div className="lg:col-span-3 space-y-4">
-            {selectedRooms.length === 0 && !isLoading ? (
+            {displayRooms.length === 0 && !isLoading ? (
               <Card className="border-none kabeg-shadow">
                 <CardContent className="p-6 text-sm text-muted-foreground">
                   Für diesen Tag sind keine Arbeitsplätze im Wochenplan aktiv.
                 </CardContent>
               </Card>
             ) : (
-              selectedRooms.map(({ room, setting }) => {
+              displayRooms.map(({ room, setting }) => {
                 const key = `${selectedWeekday}-${room.id}`;
                 const roomAssignments = assignmentsByDayRoom.get(key) ?? [];
                 const noteAssignment = roomAssignments.find(
@@ -827,11 +976,44 @@ export default function WeeklyPlan() {
                 const isClosed = setting?.isClosed;
                 const isBlocked = noteAssignment?.isBlocked;
                 const isLocked = lockedWeekdays.includes(selectedWeekday);
-                const disableEditing = Boolean(isClosed || isBlocked || isLocked || isPlanReleased);
+                const disableEditing = Boolean(isClosed || isBlocked || isLocked || isPlanReleased || isReorderMode);
                 const showNoAvailableWarning = !disableEditing && employeeAssignments.length === 0 && remainingEligible.length === 0;
 
                 return (
-                  <Card key={room.id} className="border-none kabeg-shadow">
+                  <Card
+                    key={room.id}
+                    className={cn(
+                      "border-none kabeg-shadow",
+                      isReorderMode && "cursor-grab active:cursor-grabbing"
+                    )}
+                    draggable={isReorderMode}
+                    onDragStart={(event) => {
+                      if (!isReorderMode) return;
+                      event.dataTransfer.setData("dragType", "room-order");
+                      event.dataTransfer.setData("roomId", room.id.toString());
+                    }}
+                    onDragOver={(event) => {
+                      if (!isReorderMode) return;
+                      if (event.dataTransfer.getData("dragType") !== "room-order") return;
+                      event.preventDefault();
+                    }}
+                    onDrop={(event) => {
+                      if (!isReorderMode) return;
+                      event.preventDefault();
+                      if (event.dataTransfer.getData("dragType") !== "room-order") return;
+                      const draggedId = Number(event.dataTransfer.getData("roomId"));
+                      if (!draggedId || draggedId === room.id) return;
+                      setRoomOrderIds((prev) => {
+                        const next = [...prev];
+                        const fromIndex = next.indexOf(draggedId);
+                        const toIndex = next.indexOf(room.id);
+                        if (fromIndex === -1 || toIndex === -1) return prev;
+                        next.splice(fromIndex, 1);
+                        next.splice(toIndex, 0, draggedId);
+                        return next;
+                      });
+                    }}
+                  >
                     <CardHeader className="pb-2">
                       <div className="flex items-start justify-between gap-4">
                         <div>
@@ -840,6 +1022,7 @@ export default function WeeklyPlan() {
                             {showNoAvailableWarning && (
                               <AlertTriangle className="w-4 h-4 text-amber-500" />
                             )}
+                            {isReorderMode && <GripVertical className="w-4 h-4 text-muted-foreground" />}
                           </CardTitle>
                           <div className="text-xs text-muted-foreground">
                             {setting?.usageLabel ? `${setting.usageLabel} · ` : ""}
@@ -862,26 +1045,6 @@ export default function WeeklyPlan() {
                               ? "Optional fehlt"
                               : "Pflicht fehlt"}
                           </Badge>
-                          <div className="flex flex-col gap-1">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => handleRoomMove(room.id, "up")}
-                              disabled={isSaving}
-                              className="h-6 w-6"
-                            >
-                              ↑
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => handleRoomMove(room.id, "down")}
-                              disabled={isSaving}
-                              className="h-6 w-6"
-                            >
-                              ↓
-                            </Button>
-                          </div>
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-2 mt-2">
@@ -931,6 +1094,23 @@ export default function WeeklyPlan() {
                           event.preventDefault();
                           const employeeId = Number(event.dataTransfer.getData("employeeId"));
                           if (!employeeId) return;
+                          const dragType = event.dataTransfer.getData("dragType");
+                          const assignmentId = Number(event.dataTransfer.getData("assignmentId"));
+                          const absenceId = Number(event.dataTransfer.getData("absenceId"));
+                          const sourceRoomId = Number(event.dataTransfer.getData("sourceRoomId"));
+                          const sourceWeekday = Number(event.dataTransfer.getData("sourceWeekday"));
+
+                          if (dragType === "assignment" && assignmentId) {
+                            if (sourceRoomId === room.id && sourceWeekday === selectedWeekday) return;
+                            await handleMoveAssignment(assignmentId, room.id, selectedWeekday);
+                            return;
+                          }
+
+                          if (dragType === "zeitausgleich" && absenceId) {
+                            await handleMoveZeitausgleichToAssignment(absenceId, employeeId, room.id, selectedWeekday);
+                            return;
+                          }
+
                           await handleAssignEmployee(room.id, selectedWeekday, employeeId);
                         }}
                       >
@@ -956,6 +1136,15 @@ export default function WeeklyPlan() {
                                 isDuplicate && "border-rose-300 bg-rose-50",
                                 assignment.assignmentType !== "Plan" && "border-blue-200 bg-blue-50"
                               )}
+                              draggable={!disableEditing}
+                              onDragStart={(event) => {
+                                if (disableEditing || !assignment.employeeId) return;
+                                event.dataTransfer.setData("dragType", "assignment");
+                                event.dataTransfer.setData("employeeId", assignment.employeeId.toString());
+                                event.dataTransfer.setData("assignmentId", assignment.id.toString());
+                                event.dataTransfer.setData("sourceRoomId", room.id.toString());
+                                event.dataTransfer.setData("sourceWeekday", selectedWeekday.toString());
+                              }}
                             >
                               <div className="flex items-center gap-2">
                                 <span className="text-sm font-medium">{displayName || "Unbekannt"}</span>
@@ -1030,7 +1219,32 @@ export default function WeeklyPlan() {
                 </p>
               </CardHeader>
               <CardContent className="max-h-[45vh] overflow-y-auto">
-                <div className="space-y-2">
+                <div
+                  className={cn(
+                    "space-y-2 rounded-xl p-1",
+                    isPlanReleased || lockedWeekdays.includes(selectedWeekday) || isReorderMode
+                      ? ""
+                      : "border border-dashed border-transparent"
+                  )}
+                  onDragOver={(event) => {
+                    if (isPlanReleased || lockedWeekdays.includes(selectedWeekday) || isReorderMode) return;
+                    if (!event.dataTransfer.getData("dragType")) return;
+                    event.preventDefault();
+                  }}
+                  onDrop={async (event) => {
+                    if (isPlanReleased || lockedWeekdays.includes(selectedWeekday) || isReorderMode) return;
+                    event.preventDefault();
+                    const dragType = event.dataTransfer.getData("dragType");
+                    const assignmentId = Number(event.dataTransfer.getData("assignmentId"));
+                    const absenceId = Number(event.dataTransfer.getData("absenceId"));
+                    if (dragType === "assignment" && assignmentId) {
+                      await handleDeleteAssignment(assignmentId);
+                    }
+                    if (dragType === "zeitausgleich" && absenceId) {
+                      await handleDeleteAbsence(absenceId);
+                    }
+                  }}
+                >
                   {isLoading ? (
                     <div className="text-sm text-muted-foreground text-center py-4">Laden...</div>
                   ) : availableEmployees.length === 0 ? (
@@ -1040,8 +1254,9 @@ export default function WeeklyPlan() {
                       <div
                         key={employee.id}
                         className="flex items-center gap-2 p-2 rounded-lg border bg-card hover:bg-muted/50 cursor-grab active:cursor-grabbing transition-all hover:shadow-sm group"
-                        draggable={!isPlanReleased && !lockedWeekdays.includes(selectedWeekday)}
+                        draggable={!isPlanReleased && !lockedWeekdays.includes(selectedWeekday) && !isReorderMode}
                         onDragStart={(event) => {
+                          event.dataTransfer.setData("dragType", "available");
                           event.dataTransfer.setData("employeeId", employee.id.toString());
                         }}
                       >
@@ -1088,14 +1303,21 @@ export default function WeeklyPlan() {
                       : "border-primary/20"
                   )}
                   onDragOver={(event) => {
-                    if (isPlanReleased || lockedWeekdays.includes(selectedWeekday)) return;
+                    if (isPlanReleased || lockedWeekdays.includes(selectedWeekday) || isReorderMode) return;
                     event.preventDefault();
                   }}
                   onDrop={async (event) => {
-                    if (isPlanReleased || lockedWeekdays.includes(selectedWeekday)) return;
+                    if (isPlanReleased || lockedWeekdays.includes(selectedWeekday) || isReorderMode) return;
                     event.preventDefault();
+                    const dragType = event.dataTransfer.getData("dragType");
                     const employeeId = Number(event.dataTransfer.getData("employeeId"));
-                    if (!employeeId) return;
+                    const assignmentId = Number(event.dataTransfer.getData("assignmentId"));
+                    const absenceId = Number(event.dataTransfer.getData("absenceId"));
+                    if (dragType === "assignment" && assignmentId && employeeId) {
+                      await handleMoveAssignmentToZeitausgleich(assignmentId, employeeId);
+                      return;
+                    }
+                    if (!employeeId || dragType === "zeitausgleich") return;
                     await handleAddZeitausgleich(employeeId);
                   }}
                 >
@@ -1107,7 +1329,17 @@ export default function WeeklyPlan() {
                     const displayName = absence.employeeLastName || employee?.lastName || employee?.name || "Unbekannt";
                     const statusLabel = absence.status || "Geplant";
                     return (
-                      <div key={absence.id ?? `${absence.employeeId}-${absence.startDate}`} className="flex items-center justify-between rounded-lg border px-2 py-1">
+                      <div
+                        key={absence.id ?? `${absence.employeeId}-${absence.startDate}`}
+                        className="flex items-center justify-between rounded-lg border px-2 py-1"
+                        draggable={!isPlanReleased && !lockedWeekdays.includes(selectedWeekday) && !isReorderMode}
+                        onDragStart={(event) => {
+                          if (!absence.id) return;
+                          event.dataTransfer.setData("dragType", "zeitausgleich");
+                          event.dataTransfer.setData("employeeId", absence.employeeId.toString());
+                          event.dataTransfer.setData("absenceId", absence.id.toString());
+                        }}
+                      >
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium">{displayName}</span>
                           <Badge
