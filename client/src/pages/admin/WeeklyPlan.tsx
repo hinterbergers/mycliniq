@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format, startOfWeek, endOfWeek, addWeeks, subWeeks, getWeek, getYear, eachDayOfInterval, addDays } from "date-fns";
 import { de } from "date-fns/locale";
 import {
@@ -88,6 +88,73 @@ const ROLE_BADGES: Record<string, string> = {
   Sekretariat: "SEK"
 };
 
+const ROLE_GROUP_ORDER: Record<string, number> = {
+  primar: 1,
+  erster_oa: 2,
+  funktions_oa: 3,
+  ausbildungs_oa: 4,
+  oberarzt: 5,
+  facharzt: 6,
+  assistenzarzt: 7,
+  turnus: 8,
+  student: 9,
+  sonstige: 90,
+  sekretariat: 99
+};
+
+const normalizeRole = (role?: string | null) => {
+  if (!role) return "";
+  return role
+    .trim()
+    .toLowerCase()
+    .replace(/ä/g, "ae")
+    .replace(/ö/g, "oe")
+    .replace(/ü/g, "ue")
+    .replace(/ß/g, "ss")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
+const getRoleGroupKey = (role?: string | null) => {
+  const normalized = normalizeRole(role);
+  if (!normalized) return "sonstige";
+  const compact = normalized.replace(/\s+/g, "");
+  if (normalized.includes("sekretariat")) return "sekretariat";
+  if (compact.includes("primar") || compact.includes("primaer")) return "primar";
+  if (
+    normalized.includes("1 oberarzt") ||
+    normalized.includes("1 oberaerzt") ||
+    normalized.includes("erster oberarzt") ||
+    normalized.includes("erster oberaerzt") ||
+    normalized.includes("erste oberarzt") ||
+    normalized.includes("erste oberaerzt")
+  )
+    return "erster_oa";
+  if (compact.includes("funktionsoberarzt") || compact.includes("funktionsoberaerzt")) return "funktions_oa";
+  if (compact.includes("ausbildungsoberarzt") || compact.includes("ausbildungsoberaerzt")) return "ausbildungs_oa";
+  if (compact.includes("oberarzt") || compact.includes("oberaerzt")) return "oberarzt";
+  if (compact.includes("facharzt") || compact.includes("fachaerzt")) return "facharzt";
+  if (compact.includes("assistenzarzt") || compact.includes("assistenzaerzt")) return "assistenzarzt";
+  if (compact.includes("turnusarzt") || compact.includes("turnusaerzt") || normalized.includes("turnus"))
+    return "turnus";
+  if (normalized.includes("student") || normalized.includes("kpj") || normalized.includes("famul")) return "student";
+  return "sonstige";
+};
+
+const compareAvailabilityEmployees = (a: Employee, b: Employee) => {
+  const groupA = ROLE_GROUP_ORDER[getRoleGroupKey(a.role)] ?? ROLE_GROUP_ORDER.sonstige;
+  const groupB = ROLE_GROUP_ORDER[getRoleGroupKey(b.role)] ?? ROLE_GROUP_ORDER.sonstige;
+  if (groupA !== groupB) return groupA - groupB;
+  const lastA = (a.lastName || a.name || "").toLocaleLowerCase("de");
+  const lastB = (b.lastName || b.name || "").toLocaleLowerCase("de");
+  if (lastA !== lastB) return lastA.localeCompare(lastB, "de");
+  const firstA = (a.firstName || "").toLocaleLowerCase("de");
+  const firstB = (b.firstName || "").toLocaleLowerCase("de");
+  if (firstA !== firstB) return firstA.localeCompare(firstB, "de");
+  return getEmployeeDisplayName(a).localeCompare(getEmployeeDisplayName(b), "de");
+};
+
 const statusBadgeStyles: Record<WeeklyPlanResponse["status"], string> = {
   Entwurf: "bg-amber-50 text-amber-700 border-amber-200",
   Vorläufig: "bg-sky-50 text-sky-700 border-sky-200",
@@ -133,6 +200,7 @@ export default function WeeklyPlan() {
   const [isSaving, setIsSaving] = useState(false);
   const [isReorderMode, setIsReorderMode] = useState(false);
   const [roomOrderIds, setRoomOrderIds] = useState<number[]>([]);
+  const draggedRoomIdRef = useRef<number | null>(null);
 
   const weekStart = useMemo(() => startOfWeek(currentDate, { weekStartsOn: 1 }), [currentDate]);
   const weekEnd = useMemo(() => endOfWeek(currentDate, { weekStartsOn: 1 }), [currentDate]);
@@ -211,7 +279,8 @@ export default function WeeklyPlan() {
         .filter((employee) => employee.isActive)
         .filter((employee) => !isEmployeeAbsentOnDate(employee, day, plannedAbsences, longTermAbsences))
         .filter((employee) => !isEmployeeOnDutyDate(employee.id, day, rosterShifts))
-        .sort((a, b) => getEmployeeDisplayName(a).localeCompare(getEmployeeDisplayName(b)));
+        .filter((employee) => getRoleGroupKey(employee.role) !== "sekretariat")
+        .sort(compareAvailabilityEmployees);
       map.set(weekday, available);
     });
     return map;
@@ -807,7 +876,7 @@ export default function WeeklyPlan() {
   };
 
   return (
-    <Layout title="Wochenplan-Editor">
+    <Layout title="Wochenplan-Editor" disableMotion>
       <div className="space-y-4">
         <div className="space-y-1">
           <h1 className="text-2xl font-bold text-foreground">Wochenplan-Editor</h1>
@@ -816,13 +885,19 @@ export default function WeeklyPlan() {
           </p>
         </div>
 
-        <Card className="border-none kabeg-shadow">
-          <CardContent className="p-4">
-            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+        <div className="sticky top-16 z-30 bg-background/95 backdrop-blur pb-2">
+          <Card className="border-none kabeg-shadow">
+            <CardContent className="p-3">
+              <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3">
               <div className="flex items-center gap-4 flex-wrap">
                 <div className="flex items-center gap-1 bg-secondary rounded-lg p-1">
-                  <Button variant="ghost" size="icon" onClick={() => setCurrentDate(subWeeks(currentDate, 1))}>
-                    <ArrowLeft className="w-4 h-4" />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setCurrentDate(subWeeks(currentDate, 1))}
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
                   </Button>
                   <Select
                     value={`${weekNumber}-${weekYear}`}
@@ -833,9 +908,9 @@ export default function WeeklyPlan() {
                       setSelectedWeekday(1);
                     }}
                   >
-                    <SelectTrigger className="w-40 border-0 bg-transparent">
+                    <SelectTrigger className="w-36 h-8 border-0 bg-transparent text-xs">
                       <SelectValue>
-                        <span className="font-bold">KW {weekNumber} / {weekYear}</span>
+                        <span className="font-semibold">KW {weekNumber} / {weekYear}</span>
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
@@ -846,12 +921,17 @@ export default function WeeklyPlan() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <Button variant="ghost" size="icon" onClick={() => setCurrentDate(addWeeks(currentDate, 1))}>
-                    <ArrowRight className="w-4 h-4" />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setCurrentDate(addWeeks(currentDate, 1))}
+                  >
+                    <ArrowRight className="w-3.5 h-3.5" />
                   </Button>
                 </div>
 
-                <div className="text-sm text-muted-foreground">
+                <div className="text-xs text-muted-foreground">
                   {formatDateRange(weekStart, weekEnd)}
                 </div>
 
@@ -865,30 +945,37 @@ export default function WeeklyPlan() {
               <div className="flex flex-wrap gap-2">
                 <Button
                   variant="outline"
+                  size="sm"
                   className="gap-2"
                   onClick={handleGenerateAI}
                   disabled={isSaving || isReorderMode}
                 >
-                  <Sparkles className="w-4 h-4" />
+                  <Sparkles className="w-3.5 h-3.5" />
                   KI-Vorschlag
                 </Button>
                 <Button
                   variant="outline"
+                  size="sm"
                   className="gap-2"
                   onClick={handleToggleReorderMode}
                   disabled={isSaving || selectedRooms.length === 0}
                 >
-                  <GripVertical className="w-4 h-4" />
+                  <GripVertical className="w-3.5 h-3.5" />
                   {isReorderMode ? "Reihenfolge speichern" : "Reihenfolge ändern"}
                 </Button>
                 {weeklyPlan?.status === "Freigegeben" ? (
-                  <Button variant="outline" className="gap-2" onClick={() => handleUpdateStatus("Entwurf")}>
-                    <Unlock className="w-4 h-4" />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => handleUpdateStatus("Entwurf")}
+                  >
+                    <Unlock className="w-3.5 h-3.5" />
                     Bearbeitung freischalten
                   </Button>
                 ) : (
-                  <Button className="gap-2" onClick={() => handleUpdateStatus("Freigegeben")}>
-                    <CheckCircle2 className="w-4 h-4" />
+                  <Button size="sm" className="gap-2" onClick={() => handleUpdateStatus("Freigegeben")}>
+                    <CheckCircle2 className="w-3.5 h-3.5" />
                     Freigeben
                   </Button>
                 )}
@@ -897,42 +984,43 @@ export default function WeeklyPlan() {
           </CardContent>
         </Card>
 
-        <Tabs value={selectedWeekday.toString()} onValueChange={(value) => setSelectedWeekday(Number(value))}>
-          <TabsList className="w-full justify-start bg-card border kabeg-shadow">
-            {days.map((day, index) => {
-              const weekday = index + 1;
-              const isLocked = lockedWeekdays.includes(weekday);
-              return (
-                <TabsTrigger
-                  key={weekday}
-                  value={weekday.toString()}
-                  className="flex-1 data-[state=active]:bg-primary data-[state=active]:text-white"
-                >
-                  <div className="flex flex-col items-center gap-1">
-                    <span className="font-medium">{WEEKDAY_LABELS[index]}</span>
-                    <span className="text-xs opacity-70">{format(day, "dd.MM.", { locale: de })}</span>
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handleToggleDayLock(weekday);
-                      }}
-                      className={cn(
-                        "text-[10px] flex items-center gap-1 px-2 py-0.5 rounded-full border",
-                        isLocked
-                          ? "border-amber-200 text-amber-700 bg-amber-50"
-                          : "border-emerald-200 text-emerald-700 bg-emerald-50"
-                      )}
-                    >
-                      {isLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
-                      {isLocked ? "Fix" : "Offen"}
-                    </button>
-                  </div>
-                </TabsTrigger>
-              );
-            })}
-          </TabsList>
-        </Tabs>
+          <Tabs value={selectedWeekday.toString()} onValueChange={(value) => setSelectedWeekday(Number(value))}>
+            <TabsList className="w-full justify-start bg-card border kabeg-shadow h-12">
+              {days.map((day, index) => {
+                const weekday = index + 1;
+                const isLocked = lockedWeekdays.includes(weekday);
+                return (
+                  <TabsTrigger
+                    key={weekday}
+                    value={weekday.toString()}
+                    className="flex-1 text-xs data-[state=active]:bg-primary data-[state=active]:text-white"
+                  >
+                    <div className="flex flex-col items-center gap-1">
+                      <span className="text-[11px] font-semibold">{WEEKDAY_LABELS[index]}</span>
+                      <span className="text-[11px] opacity-70">{format(day, "dd.MM.", { locale: de })}</span>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleToggleDayLock(weekday);
+                        }}
+                        className={cn(
+                          "text-[10px] flex items-center gap-1 px-2 py-0.5 rounded-full border",
+                          isLocked
+                            ? "border-amber-200 text-amber-700 bg-amber-50"
+                            : "border-emerald-200 text-emerald-700 bg-emerald-50"
+                        )}
+                      >
+                        {isLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+                        {isLocked ? "Fix" : "Offen"}
+                      </button>
+                    </div>
+                  </TabsTrigger>
+                );
+              })}
+            </TabsList>
+          </Tabs>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
           <div className="lg:col-span-3 space-y-4">
@@ -989,19 +1077,25 @@ export default function WeeklyPlan() {
                     draggable={isReorderMode}
                     onDragStart={(event) => {
                       if (!isReorderMode) return;
+                      draggedRoomIdRef.current = room.id;
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("text/plain", room.id.toString());
                       event.dataTransfer.setData("dragType", "room-order");
                       event.dataTransfer.setData("roomId", room.id.toString());
                     }}
+                    onDragEnd={() => {
+                      draggedRoomIdRef.current = null;
+                    }}
                     onDragOver={(event) => {
                       if (!isReorderMode) return;
-                      if (event.dataTransfer.getData("dragType") !== "room-order") return;
                       event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
                     }}
                     onDrop={(event) => {
                       if (!isReorderMode) return;
                       event.preventDefault();
-                      if (event.dataTransfer.getData("dragType") !== "room-order") return;
-                      const draggedId = Number(event.dataTransfer.getData("roomId"));
+                      const draggedId = draggedRoomIdRef.current
+                        ?? Number(event.dataTransfer.getData("text/plain") || event.dataTransfer.getData("roomId"));
                       if (!draggedId || draggedId === room.id) return;
                       setRoomOrderIds((prev) => {
                         const next = [...prev];
@@ -1019,196 +1113,216 @@ export default function WeeklyPlan() {
                         <div>
                           <CardTitle className="text-base font-semibold flex items-center gap-2">
                             {room.name}
-                            {showNoAvailableWarning && (
+                            {!isReorderMode && showNoAvailableWarning && (
                               <AlertTriangle className="w-4 h-4 text-amber-500" />
                             )}
                             {isReorderMode && <GripVertical className="w-4 h-4 text-muted-foreground" />}
                           </CardTitle>
-                          <div className="text-xs text-muted-foreground">
-                            {setting?.usageLabel ? `${setting.usageLabel} · ` : ""}
-                            {formatRoomTime(setting?.timeFrom, setting?.timeTo)}
-                          </div>
+                          {!isReorderMode && (
+                            <div className="text-xs text-muted-foreground">
+                              {setting?.usageLabel ? `${setting.usageLabel} · ` : ""}
+                              {formatRoomTime(setting?.timeFrom, setting?.timeTo)}
+                            </div>
+                          )}
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Badge
+                        {isReorderMode ? (
+                          <Button
+                            type="button"
                             variant="outline"
-                            className={cn(
-                              "text-[10px]",
-                              competencyStatus === "fulfilled" && "bg-green-50 text-green-700 border-green-200",
-                              competencyStatus === "partial" && "bg-amber-50 text-amber-700 border-amber-200",
-                              competencyStatus === "missing" && "bg-red-50 text-red-700 border-red-200"
-                            )}
+                            size="sm"
+                            className="gap-2 text-xs"
                           >
-                            {competencyStatus === "fulfilled"
-                              ? "Vollständig"
-                              : competencyStatus === "partial"
-                              ? "Optional fehlt"
-                              : "Pflicht fehlt"}
-                          </Badge>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        {room.physicalRooms?.length ? (
-                          room.physicalRooms.map((physical) => (
-                            <Badge key={physical.id} variant="secondary" className="text-[10px]">
-                              {physical.name}
-                            </Badge>
-                          ))
+                            <GripVertical className="w-3.5 h-3.5" />
+                            Verschieben
+                          </Button>
                         ) : (
-                          <Badge variant="secondary" className="text-[10px]">Kein Raum</Badge>
+                          <div className="flex items-center gap-2">
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "text-[10px]",
+                                competencyStatus === "fulfilled" && "bg-green-50 text-green-700 border-green-200",
+                                competencyStatus === "partial" && "bg-amber-50 text-amber-700 border-amber-200",
+                                competencyStatus === "missing" && "bg-red-50 text-red-700 border-red-200"
+                              )}
+                            >
+                              {competencyStatus === "fulfilled"
+                                ? "Vollständig"
+                                : competencyStatus === "partial"
+                                ? "Optional fehlt"
+                                : "Pflicht fehlt"}
+                            </Badge>
+                          </div>
                         )}
-                        {room.requiredCompetencies?.map((comp) => (
-                          <Badge key={comp.id} variant="outline" className="text-[10px]">
-                            {comp.competencyCode || comp.competencyName}
-                          </Badge>
-                        ))}
-                        {room.requiredRoleCompetencies?.length ? (
-                          <Badge variant="outline" className="text-[10px]">
-                            Rollen: {room.requiredRoleCompetencies.join(", ")}
-                          </Badge>
-                        ) : null}
                       </div>
-                      {isClosed && (
-                        <div className="text-xs text-red-600 mt-2">
-                          {setting?.closedReason || "Arbeitsplatz geschlossen"}
-                        </div>
-                      )}
-                      {noteAssignment?.note && (
-                        <div className="text-xs text-slate-600 mt-2 whitespace-pre-line">
-                          {noteAssignment.note}
-                        </div>
+                      {!isReorderMode && (
+                        <>
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {room.physicalRooms?.length ? (
+                              room.physicalRooms.map((physical) => (
+                                <Badge key={physical.id} variant="secondary" className="text-[10px]">
+                                  {physical.name}
+                                </Badge>
+                              ))
+                            ) : (
+                              <Badge variant="secondary" className="text-[10px]">Kein Raum</Badge>
+                            )}
+                            {room.requiredCompetencies?.map((comp) => (
+                              <Badge key={comp.id} variant="outline" className="text-[10px]">
+                                {comp.competencyCode || comp.competencyName}
+                              </Badge>
+                            ))}
+                            {room.requiredRoleCompetencies?.length ? (
+                              <Badge variant="outline" className="text-[10px]">
+                                Rollen: {room.requiredRoleCompetencies.join(", ")}
+                              </Badge>
+                            ) : null}
+                          </div>
+                          {isClosed && (
+                            <div className="text-xs text-red-600 mt-2">
+                              {setting?.closedReason || "Arbeitsplatz geschlossen"}
+                            </div>
+                          )}
+                          {noteAssignment?.note && (
+                            <div className="text-xs text-slate-600 mt-2 whitespace-pre-line">
+                              {noteAssignment.note}
+                            </div>
+                          )}
+                        </>
                       )}
                     </CardHeader>
-                    <CardContent className="space-y-2">
-                      <div
-                        className={cn(
-                          "space-y-2 border-2 border-dashed rounded-xl p-3",
-                          disableEditing ? "bg-muted/30 border-muted-foreground/20" : "border-primary/20"
-                        )}
-                        onDragOver={(event) => {
-                          if (disableEditing) return;
-                          event.preventDefault();
-                        }}
-                        onDrop={async (event) => {
-                          if (disableEditing) return;
-                          event.preventDefault();
-                          const employeeId = Number(event.dataTransfer.getData("employeeId"));
-                          if (!employeeId) return;
-                          const dragType = event.dataTransfer.getData("dragType");
-                          const assignmentId = Number(event.dataTransfer.getData("assignmentId"));
-                          const absenceId = Number(event.dataTransfer.getData("absenceId"));
-                          const sourceRoomId = Number(event.dataTransfer.getData("sourceRoomId"));
-                          const sourceWeekday = Number(event.dataTransfer.getData("sourceWeekday"));
+                    {!isReorderMode && (
+                      <CardContent className="space-y-2">
+                        <div
+                          className={cn(
+                            "space-y-2 border-2 border-dashed rounded-xl p-3",
+                            disableEditing ? "bg-muted/30 border-muted-foreground/20" : "border-primary/20"
+                          )}
+                          onDragOver={(event) => {
+                            if (disableEditing) return;
+                            event.preventDefault();
+                          }}
+                          onDrop={async (event) => {
+                            if (disableEditing) return;
+                            event.preventDefault();
+                            const employeeId = Number(event.dataTransfer.getData("employeeId"));
+                            if (!employeeId) return;
+                            const dragType = event.dataTransfer.getData("dragType");
+                            const assignmentId = Number(event.dataTransfer.getData("assignmentId"));
+                            const absenceId = Number(event.dataTransfer.getData("absenceId"));
+                            const sourceRoomId = Number(event.dataTransfer.getData("sourceRoomId"));
+                            const sourceWeekday = Number(event.dataTransfer.getData("sourceWeekday"));
 
-                          if (dragType === "assignment" && assignmentId) {
-                            if (sourceRoomId === room.id && sourceWeekday === selectedWeekday) return;
-                            await handleMoveAssignment(assignmentId, room.id, selectedWeekday);
-                            return;
-                          }
+                            if (dragType === "assignment" && assignmentId) {
+                              if (sourceRoomId === room.id && sourceWeekday === selectedWeekday) return;
+                              await handleMoveAssignment(assignmentId, room.id, selectedWeekday);
+                              return;
+                            }
 
-                          if (dragType === "zeitausgleich" && absenceId) {
-                            await handleMoveZeitausgleichToAssignment(absenceId, employeeId, room.id, selectedWeekday);
-                            return;
-                          }
+                            if (dragType === "zeitausgleich" && absenceId) {
+                              await handleMoveZeitausgleichToAssignment(absenceId, employeeId, room.id, selectedWeekday);
+                              return;
+                            }
 
-                          await handleAssignEmployee(room.id, selectedWeekday, employeeId);
-                        }}
-                      >
-                        {employeeAssignments.length === 0 && (
-                          <div className="text-xs text-muted-foreground">+ Zuweisung</div>
-                        )}
-                        {employeeAssignments.map((assignment) => {
-                          const employee = assignment.employeeId
-                            ? employeesById.get(assignment.employeeId)
-                            : null;
-                          const displayName = assignment.employeeLastName || employee?.lastName || assignment.employeeName;
-                          const isDuplicate = assignment.employeeId
-                            ? duplicateEmployeeIdsByWeekday
-                                .get(selectedWeekday)
-                                ?.has(assignment.employeeId)
-                            : false;
-
-                          return (
-                            <div
-                              key={assignment.id}
-                              className={cn(
-                                "flex items-center justify-between rounded-lg border px-2 py-1",
-                                isDuplicate && "border-rose-300 bg-rose-50",
-                                assignment.assignmentType !== "Plan" && "border-blue-200 bg-blue-50"
-                              )}
-                              draggable={!disableEditing}
-                              onDragStart={(event) => {
-                                if (disableEditing || !assignment.employeeId) return;
-                                event.dataTransfer.setData("dragType", "assignment");
-                                event.dataTransfer.setData("employeeId", assignment.employeeId.toString());
-                                event.dataTransfer.setData("assignmentId", assignment.id.toString());
-                                event.dataTransfer.setData("sourceRoomId", room.id.toString());
-                                event.dataTransfer.setData("sourceWeekday", selectedWeekday.toString());
-                              }}
-                            >
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium">{displayName || "Unbekannt"}</span>
-                                {assignment.assignmentType !== "Plan" && (
-                                  <Badge variant="outline" className="text-[10px]">
-                                    {assignment.assignmentType}
-                                  </Badge>
-                                )}
-                                {isDuplicate && (
-                                  <Badge variant="outline" className="text-[10px] bg-rose-100 text-rose-700 border-rose-200">
-                                    Doppelt
-                                  </Badge>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  className="h-7 w-7"
-                                  onClick={() => assignment.employeeId && handleDuplicateAssignment(room.id, selectedWeekday, assignment.employeeId)}
-                                  disabled={disableEditing}
-                                >
-                                  <Plus className="w-4 h-4" />
-                                </Button>
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  className="h-7 w-7 text-red-600"
-                                  onClick={() => handleDeleteAssignment(assignment.id)}
-                                  disabled={disableEditing}
-                                >
-                                  <X className="w-4 h-4" />
-                                </Button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="gap-2"
-                          onClick={() => handleOpenNoteDialog(room.id, selectedWeekday)}
-                          disabled={disableEditing}
+                            await handleAssignEmployee(room.id, selectedWeekday, employeeId);
+                          }}
                         >
-                          <StickyNote className="w-4 h-4" />
-                          Kommentar / Sperre
-                        </Button>
-                        {showNoAvailableWarning && (
-                          <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">
-                            Keine passenden Mitarbeiter mehr verfügbar
-                          </Badge>
-                        )}
-                      </div>
-                    </CardContent>
+                          {employeeAssignments.length === 0 && (
+                            <div className="text-xs text-muted-foreground">+ Zuweisung</div>
+                          )}
+                          {employeeAssignments.map((assignment) => {
+                            const employee = assignment.employeeId
+                              ? employeesById.get(assignment.employeeId)
+                              : null;
+                            const displayName = assignment.employeeLastName || employee?.lastName || assignment.employeeName;
+                            const isDuplicate = assignment.employeeId
+                              ? duplicateEmployeeIdsByWeekday
+                                  .get(selectedWeekday)
+                                  ?.has(assignment.employeeId)
+                              : false;
+
+                            return (
+                              <div
+                                key={assignment.id}
+                                className={cn(
+                                  "flex items-center justify-between rounded-lg border px-2 py-1",
+                                  isDuplicate && "border-rose-300 bg-rose-50",
+                                  assignment.assignmentType !== "Plan" && "border-blue-200 bg-blue-50"
+                                )}
+                                draggable={!disableEditing}
+                                onDragStart={(event) => {
+                                  if (disableEditing || !assignment.employeeId) return;
+                                  event.dataTransfer.setData("dragType", "assignment");
+                                  event.dataTransfer.setData("employeeId", assignment.employeeId.toString());
+                                  event.dataTransfer.setData("assignmentId", assignment.id.toString());
+                                  event.dataTransfer.setData("sourceRoomId", room.id.toString());
+                                  event.dataTransfer.setData("sourceWeekday", selectedWeekday.toString());
+                                }}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium">{displayName || "Unbekannt"}</span>
+                                  {assignment.assignmentType !== "Plan" && (
+                                    <Badge variant="outline" className="text-[10px]">
+                                      {assignment.assignmentType}
+                                    </Badge>
+                                  )}
+                                  {isDuplicate && (
+                                    <Badge variant="outline" className="text-[10px] bg-rose-100 text-rose-700 border-rose-200">
+                                      Doppelt
+                                    </Badge>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-7 w-7"
+                                    onClick={() => assignment.employeeId && handleDuplicateAssignment(room.id, selectedWeekday, assignment.employeeId)}
+                                    disabled={disableEditing}
+                                  >
+                                    <Plus className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-7 w-7 text-red-600"
+                                    onClick={() => handleDeleteAssignment(assignment.id)}
+                                    disabled={disableEditing}
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-2"
+                            onClick={() => handleOpenNoteDialog(room.id, selectedWeekday)}
+                            disabled={disableEditing}
+                          >
+                            <StickyNote className="w-4 h-4" />
+                            Kommentar / Sperre
+                          </Button>
+                          {showNoAvailableWarning && (
+                            <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">
+                              Keine passenden Mitarbeiter mehr verfügbar
+                            </Badge>
+                          )}
+                        </div>
+                      </CardContent>
+                    )}
                   </Card>
                 );
               })
             )}
           </div>
 
-          <div className="lg:col-span-1 space-y-4">
-            <Card className="border-none kabeg-shadow sticky top-20">
+          <div className="lg:col-span-1 space-y-4 lg:sticky lg:top-20 self-start">
+            <Card className="border-none kabeg-shadow">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium flex items-center gap-2">
                   <User className="w-4 h-4" />
