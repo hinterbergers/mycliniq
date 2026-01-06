@@ -303,10 +303,12 @@ export default function WeeklyPlan() {
     const map = new Map<number, Employee[]>();
     days.forEach((day) => {
       const weekday = day.getDay() === 0 ? 7 : day.getDay();
+      const previousDay = addDays(day, -1);
       const available = employees
         .filter((employee) => employee.isActive)
         .filter((employee) => !isEmployeeAbsentOnDate(employee, day, plannedAbsences, longTermAbsences))
         .filter((employee) => !isEmployeeOnDutyDate(employee.id, day, rosterShifts))
+        .filter((employee) => !isEmployeeOnDutyDate(employee.id, previousDay, rosterShifts))
         .filter((employee) => getRoleGroupKey(employee.role) !== "sekretariat")
         .sort(compareAvailabilityEmployees);
       map.set(weekday, available);
@@ -391,11 +393,16 @@ export default function WeeklyPlan() {
     try {
       const from = format(weekStart, "yyyy-MM-dd");
       const to = format(weekEnd, "yyyy-MM-dd");
+      const dayBeforeWeekStart = addDays(weekStart, -1);
       const monthStart = { year: weekStart.getFullYear(), month: weekStart.getMonth() + 1 };
       const monthEnd = { year: weekEnd.getFullYear(), month: weekEnd.getMonth() + 1 };
+      const monthBefore = { year: dayBeforeWeekStart.getFullYear(), month: dayBeforeWeekStart.getMonth() + 1 };
       const monthKeys = [monthStart];
       if (monthStart.year !== monthEnd.year || monthStart.month !== monthEnd.month) {
         monthKeys.push(monthEnd);
+      }
+      if (!monthKeys.some((key) => key.year === monthBefore.year && key.month === monthBefore.month)) {
+        monthKeys.push(monthBefore);
       }
 
       const [roomsData, planData, employeesData, longTermData, plannedData, rosterData] =
