@@ -34,6 +34,7 @@ import {
   addWeeks,
   subWeeks,
   getWeek,
+  getMonth,
   getYear,
   eachDayOfInterval,
   startOfWeek,
@@ -68,6 +69,7 @@ import {
   WEEKDAY_LABELS,
   WEEKDAY_FULL,
   type WeeklyPlanRoom,
+  isEmployeeOnDutyDate,
   formatRoomTime,
   getRoomSettingForDate
 } from "@/lib/weeklyPlanUtils";
@@ -1178,6 +1180,7 @@ function WeeklyView() {
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlanResponse | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [plannedAbsences, setPlannedAbsences] = useState<PlannedAbsenceAdmin[]>([]);
+  const [rosterShifts, setRosterShifts] = useState<RosterShift[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   const weekStart = useMemo(
@@ -1244,11 +1247,21 @@ function WeeklyView() {
       setIsLoading(true);
       const from = format(weekStart, "yyyy-MM-dd");
       const to = format(weekEnd, "yyyy-MM-dd");
+      const startMonth = getMonth(weekStart) + 1;
+      const endMonth = getMonth(weekEnd) + 1;
+      const startYear = getYear(weekStart);
+      const endYear = getYear(weekEnd);
       try {
-        const [roomData, employeeData, absenceData] = await Promise.all([
+        const rosterPromises =
+          startYear === endYear && startMonth === endMonth
+            ? [rosterApi.getByMonth(startYear, startMonth)]
+            : [rosterApi.getByMonth(startYear, startMonth), rosterApi.getByMonth(endYear, endMonth)];
+
+        const [roomData, employeeData, absenceData, rosterData] = await Promise.all([
           roomApi.getWeeklyPlan(),
           employeeApi.getAll(),
-          plannedAbsencesAdminApi.getRange({ from, to })
+          plannedAbsencesAdminApi.getRange({ from, to }),
+          Promise.all(rosterPromises).then((results) => results.flat())
         ]);
 
         let planData: WeeklyPlanResponse | null = null;
@@ -1265,6 +1278,9 @@ function WeeklyView() {
         setRooms(roomData);
         setEmployees(employeeData);
         setPlannedAbsences(absenceData);
+        const rosterMap = new Map<number, RosterShift>();
+        rosterData.forEach((shift) => rosterMap.set(shift.id, shift));
+        setRosterShifts([...rosterMap.values()]);
         setWeeklyPlan(planData);
       } catch (error: any) {
         if (!active) return;
@@ -1437,12 +1453,16 @@ function WeeklyView() {
                                     assignment.employeeLastName
                                   );
                                   const isCurrentUser = assignment.employeeId === currentUser?.id;
+                                  const isOnDutyToday = assignment.employeeId
+                                    ? isEmployeeOnDutyDate(assignment.employeeId, day, rosterShifts)
+                                    : false;
                                   return (
                                     <div
                                       key={assignment.id}
                                       className={cn(
                                         "text-xs",
-                                        isCurrentUser && "text-blue-700 font-semibold"
+                                        isOnDutyToday && "text-red-600 font-semibold",
+                                        !isOnDutyToday && isCurrentUser && "text-blue-700 font-semibold"
                                       )}
                                     >
                                       {name}

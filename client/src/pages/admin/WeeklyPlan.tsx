@@ -307,7 +307,6 @@ export default function WeeklyPlan() {
       const available = employees
         .filter((employee) => employee.isActive)
         .filter((employee) => !isEmployeeAbsentOnDate(employee, day, plannedAbsences, longTermAbsences))
-        .filter((employee) => !isEmployeeOnDutyDate(employee.id, day, rosterShifts))
         .filter((employee) => !isEmployeeOnDutyDate(employee.id, previousDay, rosterShifts))
         .filter((employee) => getRoleGroupKey(employee.role) !== "sekretariat")
         .sort(compareAvailabilityEmployees);
@@ -1409,6 +1408,10 @@ export default function WeeklyPlan() {
                         <div className="text-sm text-muted-foreground text-center py-4">Keine Verfügbarkeit</div>
                       ) : (
                         availableEmployees.map((employee) => (
+                          (() => {
+                            const isOnDutyToday =
+                              selectedDayDate ? isEmployeeOnDutyDate(employee.id, selectedDayDate, rosterShifts) : false;
+                            return (
                           <div
                             key={employee.id}
                             className="flex items-center gap-2 p-2 rounded-lg border bg-card hover:bg-muted/50 cursor-grab active:cursor-grabbing transition-all hover:shadow-sm group"
@@ -1421,7 +1424,9 @@ export default function WeeklyPlan() {
                             <GripVertical className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium truncate">{getEmployeeDisplayName(employee)}</span>
+                                <span className={cn("text-sm font-medium truncate", isOnDutyToday && "text-rose-600")}>
+                                  {getEmployeeDisplayName(employee)}
+                                </span>
                                 <Badge
                                   variant="outline"
                                   className={cn("text-[10px] px-1.5 py-0 h-5 shrink-0", ROLE_COLORS[employee.role] || "bg-gray-100")}
@@ -1439,6 +1444,8 @@ export default function WeeklyPlan() {
                               </div>
                             </div>
                           </div>
+                            );
+                          })()
                         ))
                       )}
                     </div>
