@@ -951,6 +951,32 @@ export async function registerRoutes(
       });
 
       const todayEntry = weekPreview[0];
+      let todayZe: { id: number; possible: true; accepted: boolean } | null = null;
+      if (user.employeeId) {
+        const [zeEntry] = await db
+          .select({
+            id: plannedAbsences.id,
+            accepted: plannedAbsences.accepted
+          })
+          .from(plannedAbsences)
+          .where(
+            and(
+              eq(plannedAbsences.employeeId, user.employeeId),
+              eq(plannedAbsences.reason, "Zeitausgleich"),
+              lte(plannedAbsences.startDate, todayVienna),
+              gte(plannedAbsences.endDate, todayVienna),
+              ne(plannedAbsences.status, "Abgelehnt")
+            )
+          )
+          .limit(1);
+        if (zeEntry) {
+          todayZe = {
+            id: zeEntry.id,
+            possible: true,
+            accepted: Boolean(zeEntry.accepted)
+          };
+        }
+      }
       const targetDate = parseIsoDateUtc(todayVienna);
       const birthdayCandidates = await db
         .select({
@@ -983,7 +1009,8 @@ export async function registerRoutes(
           date: todayEntry.date,
           statusLabel: todayEntry.statusLabel,
           workplace: todayEntry.workplace,
-          teammates: todayEntry.teammates
+          teammates: todayEntry.teammates,
+          ze: todayZe
         },
         birthday,
         weekPreview
@@ -991,6 +1018,67 @@ export async function registerRoutes(
     } catch (error) {
       console.error("[Dashboard] Error:", error);
       res.status(500).json({ error: "Fehler beim Laden des Dashboards" });
+    }
+  });
+
+  app.post("/api/zeitausgleich/:id/accept", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const zeId = Number(req.params.id);
+      if (Number.isNaN(zeId)) {
+        return res.status(400).json({ success: false, error: "Ungültige Zeitausgleich-ID" });
+      }
+
+      const [entry] = await db
+        .select()
+        .from(plannedAbsences)
+        .where(eq(plannedAbsences.id, zeId));
+
+      if (!entry) {
+        return res.status(404).json({ success: false, error: "Zeitausgleich nicht gefunden" });
+      }
+
+      if (entry.reason !== "Zeitausgleich") {
+        return res.status(400).json({
+          success: false,
+          error: "Nur Zeitausgleich-Einträge können akzeptiert werden"
+        });
+      }
+
+      const currentEmployeeId = req.user?.employeeId;
+      if (!currentEmployeeId || entry.employeeId !== currentEmployeeId) {
+        return res.status(403).json({ success: false, error: "Keine Berechtigung für diesen Zeitausgleich" });
+      }
+
+      if (entry.status === "Abgelehnt") {
+        return res.status(400).json({
+          success: false,
+          error: "Dieser Zeitausgleich wurde bereits abgelehnt"
+        });
+      }
+
+      const [updated] = await db
+        .update(plannedAbsences)
+        .set({
+          accepted: true,
+          acceptedAt: new Date(),
+          acceptedById: currentEmployeeId,
+          updatedAt: new Date()
+        })
+        .where(eq(plannedAbsences.id, zeId))
+        .returning();
+
+      return res.json({
+        success: true,
+        data: {
+          id: updated.id,
+          accepted: Boolean(updated.accepted),
+          acceptedAt: updated.acceptedAt,
+          acceptedById: updated.acceptedById
+        }
+      });
+    } catch (error) {
+      console.error("[Zeitausgleich] Accept error:", error);
+      res.status(500).json({ success: false, error: "Zeitausgleich konnte nicht akzeptiert werden" });
     }
   });
 

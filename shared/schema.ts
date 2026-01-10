@@ -1485,6 +1485,9 @@ export const plannedAbsences = pgTable("planned_absences", {
   isApproved: boolean("is_approved"),
   approvedById: integer("approved_by_id").references(() => employees.id),
   createdById: integer("created_by_id").references(() => employees.id),
+  accepted: boolean("accepted").notNull().default(false),
+  acceptedAt: timestamp("accepted_at"),
+  acceptedById: integer("accepted_by_id").references(() => employees.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull()
 });
@@ -1492,7 +1495,10 @@ export const plannedAbsences = pgTable("planned_absences", {
 export const insertPlannedAbsenceSchema = createInsertSchema(plannedAbsences).omit({
   id: true,
   createdAt: true,
-  updatedAt: true
+  updatedAt: true,
+  accepted: true,
+  acceptedAt: true,
+  acceptedById: true
 });
 
 export type InsertPlannedAbsence = z.infer<typeof insertPlannedAbsenceSchema>;
