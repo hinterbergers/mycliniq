@@ -22,9 +22,11 @@ import {
   sessions,
   serviceLines,
   rosterShifts as rosterShiftsTable,
-  weeklyAssignments,
-  type RosterShift,
-  type WeeklyAssignment
+  rooms,
+  weeklyPlans,
+  weeklyPlanAssignments,
+  dailyOverrides,
+  type RosterShift
 } from "@shared/schema";
   const rosterShifts = rosterShiftsTable;
 import { fromZodError } from "zod-validation-error";
@@ -184,28 +186,16 @@ const countInclusiveDays = (start: Date, end: Date) => {
   return diff + 1;
 };
 
-const buildWeeklyWorkplaceLabel = (assignment: {
-  area?: string | null;
-  subArea?: string | null;
-  roleSlot?: string | null;
+const buildWeeklyPlanWorkplaceLabel = (assignment: {
+  roomName?: string | null;
+  roleLabel?: string | null;
 }) => {
-  const area = assignment.area?.trim() || "";
-  const subArea = assignment.subArea?.trim() || "";
-  const roleSlot = assignment.roleSlot?.trim() || "";
-  const candidate = [area, subArea].filter(Boolean).join(" ").trim() || roleSlot;
-  if (!candidate) {
-    return null;
-  }
-  if (candidate.toLowerCase() === "diensthabende") {
-    return null;
-  }
+  const room = assignment.roomName?.trim();
+  const label = assignment.roleLabel?.trim();
+  const candidate = room || label || "";
+  if (!candidate) return null;
+  if (candidate.toLowerCase() === "diensthabende") return null;
   return candidate;
-};
-
-type WeeklyAssignmentWithEmployee = WeeklyAssignment & {
-  firstName: string | null;
-  lastName: string | null;
-  workplaceLabel: string | null;
 };
 
 const VIENNA_DATE_FORMAT = new Intl.DateTimeFormat("en-CA", {
@@ -908,16 +898,10 @@ export async function registerRoutes(
           )
         );
 
-      const shiftsByDate = new Map<string, typeof shiftRows>();
       const userShifts = new Map<string, typeof shiftRows[0]>();
       shiftRows.forEach((shift) => {
-        const dateKey = shift.date;
-        if (!shiftsByDate.has(dateKey)) {
-          shiftsByDate.set(dateKey, []);
-        }
-        shiftsByDate.get(dateKey)!.push(shift);
         if (shift.employeeId === user.employeeId) {
-          userShifts.set(dateKey, shift);
+          userShifts.set(shift.date, shift);
         }
       });
 
@@ -927,35 +911,9 @@ export async function registerRoutes(
       };
 
       const normalize = (value?: string | null) => (typeof value === "string" ? value.trim() : "");
-      const buildWorkplace = (shift: typeof shiftRows[0], label: string | null) => {
-        const manual = normalize(shift.assigneeFreeText);
-        if (manual) return manual;
-        const area = normalize(shift.primaryDeploymentArea);
-        if (area) return area;
-        return label || null;
-      };
-
-      const buildTeammates = (date: string, serviceType: string) => {
-        const dayShifts = shiftsByDate.get(date) ?? [];
-        const seen = new Set<number>();
-        const teammates: Array<{ firstName: string; lastName: string }> = [];
-        for (const entry of dayShifts) {
-          if (!entry.employeeId || entry.employeeId === user.employeeId) continue;
-          if (entry.serviceType !== serviceType) continue;
-          if (entry.isActive === false) continue;
-          if (seen.has(entry.employeeId)) continue;
-          seen.add(entry.employeeId);
-          teammates.push({
-            firstName: normalize(entry.firstName),
-            lastName: normalize(entry.lastName)
-          });
-        }
-        teammates.sort((a, b) => {
-          const lastNameCompare = a.lastName.localeCompare(b.lastName);
-          if (lastNameCompare !== 0) return lastNameCompare;
-          return a.firstName.localeCompare(b.firstName);
-        });
-        return teammates;
+      const normalizeName = (value?: string | null) => {
+        const trimmed = normalize(value);
+        return trimmed || null;
       };
 
       const weekKeyMap = new Map<string, { weekYear: number; weekNumber: number }>();
@@ -969,39 +927,101 @@ export async function registerRoutes(
         }
       });
 
-      const weeklyAssignmentsByWeek = new Map<string, WeeklyAssignmentWithEmployee[]>();
+      const weeklyPlanAssignmentsByWeek = new Map<string, Array<{
+        id: number;
+        weekYear: number;
+        weekNumber: number;
+        dayOfWeek: number;
+        roomId: number;
+        roomName: string | null;
+        roleLabel: string | null;
+        employeeId: number | null;
+      }>>();
+      const referencedEmployeeIds = new Set<number>();
+
       await Promise.all(
         Array.from(weekKeyMap.entries()).map(async ([key, { weekYear, weekNumber }]) => {
           const rows = await db
             .select({
-              id: weeklyAssignments.id,
-              weekYear: weeklyAssignments.weekYear,
-              weekNumber: weeklyAssignments.weekNumber,
-              dayOfWeek: weeklyAssignments.dayOfWeek,
-              area: weeklyAssignments.area,
-              subArea: weeklyAssignments.subArea,
-              roleSlot: weeklyAssignments.roleSlot,
-              employeeId: weeklyAssignments.employeeId,
-              firstName: employees.firstName,
-              lastName: employees.lastName
+              id: weeklyPlanAssignments.id,
+              weekYear: weeklyPlans.weekYear,
+              weekNumber: weeklyPlans.weekNumber,
+              dayOfWeek: weeklyPlanAssignments.weekday,
+              roomId: weeklyPlanAssignments.roomId,
+              roleLabel: weeklyPlanAssignments.roleLabel,
+              employeeId: weeklyPlanAssignments.employeeId,
+              roomName: rooms.name
             })
-            .from(weeklyAssignments)
-            .leftJoin(employees, eq(weeklyAssignments.employeeId, employees.id))
+            .from(weeklyPlanAssignments)
+            .innerJoin(weeklyPlans, eq(weeklyPlanAssignments.weeklyPlanId, weeklyPlans.id))
+            .leftJoin(rooms, eq(weeklyPlanAssignments.roomId, rooms.id))
             .where(
               and(
-                eq(weeklyAssignments.weekYear, weekYear),
-                eq(weeklyAssignments.weekNumber, weekNumber)
+                eq(weeklyPlans.weekYear, weekYear),
+                eq(weeklyPlans.weekNumber, weekNumber)
               )
             );
-          weeklyAssignmentsByWeek.set(
-            key,
-            rows.map((assignment) => ({
-              ...assignment,
-              workplaceLabel: buildWeeklyWorkplaceLabel(assignment)
-            }))
-          );
+          rows.forEach((assignment) => {
+            if (assignment.employeeId) {
+              referencedEmployeeIds.add(assignment.employeeId);
+            }
+          });
+          weeklyPlanAssignmentsByWeek.set(key, rows);
         })
       );
+
+      const overrides = await db
+        .select({
+          date: dailyOverrides.date,
+          roomId: dailyOverrides.roomId,
+          originalEmployeeId: dailyOverrides.originalEmployeeId,
+          newEmployeeId: dailyOverrides.newEmployeeId
+        })
+        .from(dailyOverrides)
+        .where(
+          and(
+            gte(dailyOverrides.date, startDate),
+            lte(dailyOverrides.date, endDate)
+          )
+        );
+
+      const overridesByDate = new Map<string, Array<{
+        roomId: number;
+        originalEmployeeId: number | null;
+        newEmployeeId: number | null;
+      }>>();
+      overrides.forEach((override) => {
+        const key = override.date;
+        if (!overridesByDate.has(key)) {
+          overridesByDate.set(key, []);
+        }
+        overridesByDate.get(key)!.push({
+          roomId: override.roomId,
+          originalEmployeeId: override.originalEmployeeId,
+          newEmployeeId: override.newEmployeeId
+        });
+        if (override.newEmployeeId) {
+          referencedEmployeeIds.add(override.newEmployeeId);
+        }
+      });
+
+      const employeeNameMap = new Map<number, { firstName: string | null; lastName: string | null }>();
+      if (referencedEmployeeIds.size) {
+        const employeeRows = await db
+          .select({
+            id: employees.id,
+            firstName: employees.firstName,
+            lastName: employees.lastName
+          })
+          .from(employees)
+          .where(inArray(employees.id, Array.from(referencedEmployeeIds)));
+        employeeRows.forEach((employeeRow) => {
+          employeeNameMap.set(employeeRow.id, {
+            firstName: normalizeName(employeeRow.firstName),
+            lastName: normalizeName(employeeRow.lastName)
+          });
+        });
+      }
 
       const weeklyOverrides = new Map<
         string,
@@ -1013,23 +1033,39 @@ export async function registerRoutes(
         const weekNumber = getISOWeek(isoDate);
         const key = `${weekYear}-${weekNumber}`;
         const isoDay = getISODay(isoDate);
-        const assignmentsForWeek = weeklyAssignmentsByWeek.get(key) ?? [];
+        const assignmentsForWeek = weeklyPlanAssignmentsByWeek.get(key) ?? [];
         const assignmentsForDay = assignmentsForWeek.filter((assignment) => assignment.dayOfWeek === isoDay);
+        const overridesForDay = overridesByDate.get(date) ?? [];
+        const effectiveAssignments = assignmentsForDay.map((assignment) => {
+          const matchingOverride = overridesForDay.find(
+            (override) =>
+              override.roomId === assignment.roomId &&
+              override.originalEmployeeId === assignment.employeeId
+          );
+          return {
+            ...assignment,
+            employeeId: matchingOverride
+              ? matchingOverride.newEmployeeId ?? null
+              : assignment.employeeId
+          };
+        });
+
         const userAssignment = user.employeeId
-          ? assignmentsForDay.find((assignment) => assignment.employeeId === user.employeeId)
+          ? effectiveAssignments.find((assignment) => assignment.employeeId === user.employeeId)
           : undefined;
-        const workplace = userAssignment?.workplaceLabel ?? null;
+        const workplace = userAssignment ? buildWeeklyPlanWorkplaceLabel(userAssignment) : null;
         const teammates: Array<{ firstName: string | null; lastName: string | null }> = [];
-        if (workplace) {
+        if (userAssignment && userAssignment.roomId) {
           const seen = new Set<number>();
-          for (const assignment of assignmentsForDay) {
+          for (const assignment of effectiveAssignments) {
             if (!assignment.employeeId || assignment.employeeId === user.employeeId) continue;
-            if (assignment.workplaceLabel !== workplace) continue;
+            if (assignment.roomId !== userAssignment.roomId) continue;
             if (seen.has(assignment.employeeId)) continue;
             seen.add(assignment.employeeId);
+            const employeeData = employeeNameMap.get(assignment.employeeId);
             teammates.push({
-              firstName: assignment.firstName ?? null,
-              lastName: assignment.lastName ?? null
+              firstName: employeeData?.firstName ?? null,
+              lastName: employeeData?.lastName ?? null
             });
           }
         }
@@ -1039,22 +1075,12 @@ export async function registerRoutes(
       const weekPreview = previewDates.map((date) => {
         const weeklyOverride = weeklyOverrides.get(date);
         const shift = userShifts.get(date);
-        if (!shift) {
-          return {
-            date,
-            statusLabel: null,
-            workplace: null,
-            teammates: []
-          };
-        }
-        const statusLabel = getServiceLabel(shift.serviceType);
-        const weeklyWorkplace = weeklyOverride?.workplace;
-        const finalWorkplace = weeklyWorkplace ?? buildWorkplace(shift, statusLabel);
+        const statusLabel = shift ? getServiceLabel(shift.serviceType) : null;
         return {
           date,
           statusLabel,
-          workplace: finalWorkplace,
-          teammates: weeklyWorkplace ? weeklyOverride?.teammates ?? [] : buildTeammates(date, shift.serviceType)
+          workplace: weeklyOverride?.workplace ?? null,
+          teammates: weeklyOverride?.teammates ?? []
         };
       });
 
