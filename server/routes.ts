@@ -900,7 +900,7 @@ export async function registerRoutes(
           lte(rosterShifts.date, endDate)
         )
       );
-
+     
       const userShifts = new Map<string, typeof shiftRows[0]>();
       shiftRows.forEach((shift) => {
         if (shift.employeeId === user.employeeId) {
