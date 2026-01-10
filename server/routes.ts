@@ -21,6 +21,7 @@ import {
   shiftSwapRequests,
   sessions,
   serviceLines,
+  rosterShifts,
   type RosterShift
 } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
