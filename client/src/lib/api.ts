@@ -148,6 +148,9 @@ export const meApi = {
 export const dashboardApi = {
   get: async (): Promise<DashboardResponse> => {
     const response = await apiFetch(`${API_BASE}/dashboard?days=7`);
+    if (!response.ok) {
+      throw new Error(`Fehler beim Laden (Status ${response.status})`);
+    }
     return handleResponse<DashboardResponse>(response);
   }
 };

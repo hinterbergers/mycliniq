@@ -12,6 +12,7 @@ import { useAuth } from "@/lib/auth";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
+import { getAustrianHoliday } from "@/lib/holidays";
 
 const getGreeting = () => {
   const now = new Date();
@@ -62,6 +63,8 @@ type PreviewCard = {
 };
 
 const isWeekendDate = (date: Date) => [0, 6].includes(date.getDay());
+const ABSENCE_KEYWORDS = ["urlaub", "fortbildung", "zeitausgleich", "pflegeurlaub", "krankenstand"];
+const SICK_KEYWORDS = ["krankenstand", "pflegeurlaub"];
 
 export default function Dashboard() {
   const { employee, user, isAdmin } = useAuth();
@@ -105,13 +108,45 @@ export default function Dashboard() {
   const todayTeamNames = (todayEntry?.teammates ?? [])
     .map((mate) => buildFullName(mate.firstName, mate.lastName))
     .filter(Boolean);
-  const todayStatusText = dashboardError
-    ? "Heute: Dienst nicht verfügbar"
+  const holidayToday = getAustrianHoliday(new Date());
+  const statusLabel = todayEntry?.statusLabel ?? "";
+  const normalizedStatus = statusLabel.toLowerCase();
+  const hasEntry = Boolean(statusLabel || todayEntry?.workplace);
+  const isAbsenceLabel = ABSENCE_KEYWORDS.some((keyword) => normalizedStatus.includes(keyword));
+  const isSickLabel = SICK_KEYWORDS.some((keyword) => normalizedStatus.includes(keyword));
+
+  let heroIcon = "🗓️";
+  let heroText = "Heute kein Eintrag";
+  if (!hasEntry || holidayToday) {
+    heroIcon = "🏝️";
+    heroText = holidayToday?.name ?? "Heute kein Eintrag";
+  } else if (isSickLabel) {
+    heroIcon = "🤒";
+    heroText = statusLabel || "Krankenstand";
+  } else if (isAbsenceLabel) {
+    heroIcon = "🏝️";
+    heroText = statusLabel || "Abwesenheit";
+  } else {
+    heroIcon = "🗓️";
+    heroText = statusLabel
+      ? `${statusLabel}${todayEntry?.workplace ? ` · ${todayEntry.workplace}` : ""}`
+      : todayEntry?.workplace || "Heute kein Eintrag";
+  }
+
+  const heroMessage = dashboardError
+    ? dashboardError.startsWith("Fehler")
+      ? dashboardError
+      : `Fehler: ${dashboardError}`
     : isLoadingDashboard
-      ? "Heute: Dienst wird geladen…"
-      : todayEntry?.statusLabel
-        ? `${todayEntry.statusLabel}${todayEntry.workplace ? ` · ${todayEntry.workplace}` : ""}`
-        : "Heute: kein Eintrag";
+      ? "Dienst wird geladen…"
+      : heroText;
+  const heroEmoji = dashboardError ? "⚠️" : heroIcon;
+  const showTeammates =
+    !dashboardError &&
+    !isLoadingDashboard &&
+    heroIcon === "🗓️" &&
+    todayTeamNames.length > 0;
+
   const birthdayEntry = dashboardData?.birthday;
   const birthdayName = birthdayEntry ? buildFullName(birthdayEntry.firstName, birthdayEntry.lastName) : null;
 
@@ -155,10 +190,11 @@ export default function Dashboard() {
                 KABEG Klinikum Klagenfurt
               </Badge>
             </div>
-            <p className="text-primary-foreground/80 max-w-xl text-lg">
-              {todayStatusText}
+            <p className="text-primary-foreground/80 max-w-xl text-lg flex items-center gap-2">
+              <span className="text-2xl">{heroEmoji}</span>
+              <span>{heroMessage}</span>
             </p>
-            {todayTeamNames.length > 0 && (
+            {showTeammates && (
               <p className="text-sm text-primary-foreground/70 mt-1">
                 Mit: {todayTeamNames.join(", ")}
               </p>
@@ -178,7 +214,7 @@ export default function Dashboard() {
                 onClick={() => setLocation('/dienstwuensche')}
                 data-testid="button-request-vacation"
               >
-                Urlaub beantragen
+                Dienstwünsche
               </Button>
             </div>
           </div>
@@ -191,7 +227,7 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground font-medium">Neue SOPs</p>
-                  <p className="text-2xl font-bold text-foreground">3</p>
+                  <p className="text-2xl font-bold text-foreground">–</p>
                 </div>
               </CardContent>
             </Card>
@@ -202,7 +238,7 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground font-medium">Meine Favoriten</p>
-                  <p className="text-2xl font-bold text-foreground">5</p>
+                  <p className="text-2xl font-bold text-foreground">–</p>
                 </div>
               </CardContent>
             </Card>
@@ -210,7 +246,7 @@ export default function Dashboard() {
 
           <Card className="border-none kabeg-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-lg">SOPs & Dokumente</CardTitle>
+              <CardTitle className="text-lg">Neue Dokumente</CardTitle>
               <Button 
                 variant="ghost" 
                 size="sm" 
