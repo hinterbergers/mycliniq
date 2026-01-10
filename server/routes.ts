@@ -21,7 +21,7 @@ import {
   shiftSwapRequests,
   sessions,
   serviceLines,
-  rosterShifts,
+  rosterShifts as rosterShiftsTable,
   type RosterShift
 } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
@@ -862,7 +862,7 @@ export async function registerRoutes(
       const serviceLineLabels = await loadServiceLineLabels(user.clinicId);
       const shiftRows = await db
         .select({
-          id: rosterShifts.id,
+          id: rosterShiftsTable.id,
           date: rosterShifts.date,
           serviceType: rosterShifts.serviceType,
           employeeId: rosterShifts.employeeId,
