@@ -24,6 +24,7 @@ import {
   rosterShifts as rosterShiftsTable,
   type RosterShift
 } from "@shared/schema";
+  const rosterShifts = rosterShiftsTable;
 import { fromZodError } from "zod-validation-error";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
