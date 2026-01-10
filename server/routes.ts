@@ -37,6 +37,8 @@ import { employeeDoesShifts, OVERDUTY_KEY } from "@shared/shiftTypes";
 import { requireAuth } from "./api/middleware/auth";
 import { getWeek, getWeekYear } from "date-fns";
 
+const rosterShifts = rosterShiftsTable;
+
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const isValidEmail = (value: string) =>
   EMAIL_REGEX.test(value) && !/[^\x00-\x7F]/.test(value);
@@ -204,6 +206,7 @@ const VIENNA_DATE_FORMAT = new Intl.DateTimeFormat("en-CA", {
   day: "2-digit"
 });
 
+const WEEK_OPTIONS = { weekStartsOn: 1 as const, firstWeekContainsDate: 4 as const };
 const DASHBOARD_PREVIEW_DAYS = 7;
 
 const parseIsoDateUtc = (value: string) => {
@@ -877,20 +880,18 @@ export async function registerRoutes(
 
       const serviceLineLabels = await loadServiceLineLabels(user.clinicId);
       const shiftRows = await db
-        .select({
-          id: rosterShiftsTable.id,
-          date: rosterShifts.date,
-          serviceType: rosterShifts.serviceType,
-          employeeId: rosterShifts.employeeId,
-          assigneeFreeText: rosterShifts.assigneeFreeText,
-          primaryDeploymentArea: employees.primaryDeploymentArea,
-          firstName: employees.firstName,
-          lastName: employees.lastName,
-          isActive: employees.isActive
-        })
-        .from(rosterShifts)
-        .leftJoin(employees, eq(rosterShifts.employeeId, employees.id))
-        .where(
+      .select({
+        id: rosterShifts.id,
+        date: rosterShifts.date,
+        serviceType: rosterShifts.serviceType,
+        employeeId: rosterShifts.employeeId,
+        assigneeFreeText: rosterShifts.assigneeFreeText,
+        ...
+      })
+
+      .from(rosterShifts)
+      .leftJoin(employees, eq(rosterShifts.employeeId, employees.id))
+      .where(
           and(
             gte(rosterShifts.date, startDate),
             lte(rosterShifts.date, endDate)
