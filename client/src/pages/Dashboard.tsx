@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -6,6 +7,7 @@ import {
   CalendarDays, FileText, ArrowRight, Star, Cake, 
   Users, Clock, BookOpen, TrendingUp
 } from "lucide-react";
+import { dashboardApi, type DashboardResponse } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
@@ -39,14 +41,6 @@ const DUMMY_POPULAR_SOPS = [
   { id: 6, title: "Endometriose Diagnostik", category: "Gynäkologie", views: 84 },
 ];
 
-const DUMMY_WEEK_SCHEDULE = [
-  { day: "Heute", date: "04. Dez", shift: "Kreißsaal", team: ["Hinterberger (gyn)", "Brunner (geb)", "Lang (ta)"] },
-  { day: "Morgen", date: "05. Dez", shift: "Gyn-Ambulanz", team: ["Wagner (gyn)", "Fischer (geb)"] },
-  { day: "Freitag", date: "06. Dez", shift: "Frei", team: [] },
-  { day: "Samstag", date: "07. Dez", shift: "Bereitschaft", team: ["Müller (gyn)", "Hofer (ta)"] },
-  { day: "Sonntag", date: "08. Dez", shift: "Frei", team: [] },
-];
-
 const DUMMY_PRESENT_STAFF = [
   { name: "Dr. Hinterberger", area: "Kreißsaal" },
   { name: "Dr. Wagner", area: "Gyn-Ambulanz" },
@@ -55,7 +49,19 @@ const DUMMY_PRESENT_STAFF = [
   { name: "Hofer (TA)", area: "Kreißsaal" },
 ];
 
-const DUMMY_BIRTHDAY = { name: "Dr. Martina Krenn", hasBirthday: true };
+const buildFullName = (firstName?: string | null, lastName?: string | null) =>
+  [firstName, lastName].filter(Boolean).join(" ").trim();
+
+type PreviewCard = {
+  date: string;
+  statusLabel: string | null;
+  workplace: string | null;
+  teammateNames: string[];
+  dayLabel: string;
+  dateLabel: string;
+};
+
+const isWeekendDate = (date: Date) => [0, 6].includes(date.getDay());
 
 export default function Dashboard() {
   const { employee, user, isAdmin } = useAuth();
@@ -66,6 +72,74 @@ export default function Dashboard() {
     || employee?.name?.split(' ')[0]
     || "Kolleg:in";
   const greeting = getGreeting();
+
+  const [dashboardData, setDashboardData] = useState<DashboardResponse | null>(null);
+  const [isLoadingDashboard, setIsLoadingDashboard] = useState(true);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsLoadingDashboard(true);
+    setDashboardError(null);
+
+    dashboardApi.get()
+      .then((data) => {
+        if (cancelled) return;
+        setDashboardData(data);
+      })
+      .catch((error: Error) => {
+        if (cancelled) return;
+        setDashboardError(error.message || "Fehler beim Laden des Dashboards");
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setIsLoadingDashboard(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const todayEntry = dashboardData?.today;
+  const todayTeamNames = (todayEntry?.teammates ?? [])
+    .map((mate) => buildFullName(mate.firstName, mate.lastName))
+    .filter(Boolean);
+  const todayStatusText = dashboardError
+    ? "Heute: Dienst nicht verfügbar"
+    : isLoadingDashboard
+      ? "Heute: Dienst wird geladen…"
+      : todayEntry?.statusLabel
+        ? `${todayEntry.statusLabel}${todayEntry.workplace ? ` · ${todayEntry.workplace}` : ""}`
+        : "Heute: kein Eintrag";
+  const birthdayEntry = dashboardData?.birthday;
+  const birthdayName = birthdayEntry ? buildFullName(birthdayEntry.firstName, birthdayEntry.lastName) : null;
+
+  const previewCards = useMemo<PreviewCard[]>(() => {
+    if (!dashboardData?.weekPreview) return [];
+    return dashboardData.weekPreview
+      .map((entry): PreviewCard | null => {
+        const iso = `${entry.date}T00:00:00`;
+        const dateInstance = new Date(iso);
+        if (Number.isNaN(dateInstance.getTime())) {
+          return null;
+        }
+        if (isWeekendDate(dateInstance) && !entry.statusLabel) {
+          return null;
+        }
+        return {
+          date: entry.date,
+          statusLabel: entry.statusLabel,
+          workplace: entry.workplace,
+          teammateNames: entry.teammates
+            .map((mate) => buildFullName(mate.firstName, mate.lastName))
+            .filter(Boolean),
+          dayLabel: format(dateInstance, "EEEE", { locale: de }),
+          dateLabel: format(dateInstance, "dd. MMM", { locale: de })
+        };
+      })
+      .filter((card): card is PreviewCard => card !== null);
+  }, [dashboardData?.weekPreview]);
 
   return (
     <Layout title="Dashboard">
@@ -82,8 +156,13 @@ export default function Dashboard() {
               </Badge>
             </div>
             <p className="text-primary-foreground/80 max-w-xl text-lg">
-              Dein heutiger Einsatz wird geladen, sobald Dienstplan und Wochenplan verfügbar sind.
+              {todayStatusText}
             </p>
+            {todayTeamNames.length > 0 && (
+              <p className="text-sm text-primary-foreground/70 mt-1">
+                Mit: {todayTeamNames.join(", ")}
+              </p>
+            )}
             <div className="mt-6 flex gap-3">
               <Button 
                 variant="secondary" 
@@ -232,7 +311,7 @@ export default function Dashboard() {
         </div>
 
         <div className="md:col-span-4 space-y-6">
-          {DUMMY_BIRTHDAY.hasBirthday && (
+          {birthdayName && (
             <Card className="border-none kabeg-shadow bg-gradient-to-br from-pink-50 to-orange-50">
               <CardContent className="p-4 flex items-center gap-4">
                 <div className="w-12 h-12 rounded-xl bg-pink-100 flex items-center justify-center">
@@ -240,7 +319,7 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-foreground">Heute hat Geburtstag:</p>
-                  <p className="text-base font-bold text-pink-700" data-testid="text-birthday">{DUMMY_BIRTHDAY.name}</p>
+                  <p className="text-base font-bold text-pink-700" data-testid="text-birthday">{birthdayName}</p>
                 </div>
               </CardContent>
             </Card>
@@ -256,33 +335,45 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent className="flex-1">
               <div className="space-y-4">
-                {DUMMY_WEEK_SCHEDULE.map((item, i) => (
-                  <div 
-                    key={i} 
-                    className={`p-3 rounded-lg border ${
-                      i === 0 ? 'bg-primary/5 border-primary/20' : 
-                      item.shift === 'Frei' ? 'bg-muted/30 border-muted' : 'border-border'
-                    }`}
-                    data-testid={`schedule-day-${i}`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-medium text-sm">
-                        {item.day} <span className="text-muted-foreground">– {item.date}</span>
-                      </span>
-                      <Badge 
-                        variant={item.shift === 'Frei' ? 'secondary' : 'default'}
-                        className={item.shift === 'Frei' ? 'bg-muted text-muted-foreground' : ''}
-                      >
-                        {item.shift}
-                      </Badge>
+                {isLoadingDashboard ? (
+                  <p className="text-sm text-muted-foreground">Wochenvorschau wird geladen…</p>
+                ) : dashboardError ? (
+                  <p className="text-sm text-destructive">Fehler: {dashboardError}</p>
+                ) : previewCards.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Keine Einsätze für die Vorschau verfügbar.</p>
+                ) : (
+                  previewCards.map((item, i) => (
+                    <div 
+                      key={`${item.date}-${i}`} 
+                      className={`p-3 rounded-lg border ${
+                        i === 0 ? "bg-primary/5 border-primary/20" : "border-border"
+                      }`}
+                      data-testid={`schedule-day-${i}`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-medium text-sm">
+                          {item.dayLabel} <span className="text-muted-foreground">– {item.dateLabel}</span>
+                        </span>
+                        <Badge 
+                          variant={item.statusLabel ? "default" : "secondary"}
+                          className={!item.statusLabel ? "bg-muted text-muted-foreground" : ""}
+                        >
+                          {item.statusLabel || "Kein Dienst"}
+                        </Badge>
+                      </div>
+                      {item.workplace && (
+                        <p className="text-xs text-muted-foreground mb-1">
+                          Bereich: {item.workplace}
+                        </p>
+                      )}
+                      {item.teammateNames.length > 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          Mit: {item.teammateNames.join(", ")}
+                        </p>
+                      )}
                     </div>
-                    {item.team.length > 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        Mit: {item.team.join(', ')}
-                      </p>
-                    )}
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
               
               <div className="mt-6 pt-4 border-t border-border">

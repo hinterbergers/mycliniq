@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { db, eq, asc, and, gte, lte, ne, inArray } from "./lib/db";
+import { db, eq, asc, and, gte, lte, ne, inArray, isNotNull, sql } from "./lib/db";
 import { 
   insertEmployeeSchema, 
   insertRosterShiftSchema, 
@@ -178,6 +178,62 @@ const formatDate = (date: Date) => {
 const countInclusiveDays = (start: Date, end: Date) => {
   const diff = Math.floor((end.getTime() - start.getTime()) / DAY_MS);
   return diff + 1;
+};
+
+const VIENNA_DATE_FORMAT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Europe/Vienna",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit"
+});
+
+const DASHBOARD_PREVIEW_DAYS = 7;
+
+const parseIsoDateUtc = (value: string) => {
+  const [year, month, day] = value.split("-").map((part) => Number(part));
+  return new Date(Date.UTC(year, month - 1, day));
+};
+
+const formatDateUtc = (date: Date) => {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const buildPreviewDateRange = (startIso: string, days: number) => {
+  const base = parseIsoDateUtc(startIso);
+  return Array.from({ length: days }, (_, index) => {
+    const day = new Date(base);
+    day.setUTCDate(day.getUTCDate() + index);
+    return formatDateUtc(day);
+  });
+};
+
+const DEFAULT_SERVICE_LINE_LABELS = new Map(
+  DEFAULT_SERVICE_LINES.map((line) => [line.key, line.label])
+);
+
+const loadServiceLineLabels = async (clinicId?: number): Promise<Map<string, string>> => {
+  const labelMap = new Map(DEFAULT_SERVICE_LINE_LABELS);
+  if (!clinicId) {
+    return labelMap;
+  }
+  const clinicLines = await db
+    .select({
+      key: serviceLines.key,
+      label: serviceLines.label
+    })
+    .from(serviceLines)
+    .where(eq(serviceLines.clinicId, clinicId));
+
+  clinicLines.forEach((line) => {
+    if (line.key && line.label) {
+      labelMap.set(line.key, line.label);
+    }
+  });
+
+  return labelMap;
 };
 
 const splitRangeByYear = (startDate: string, endDate: string) => {
@@ -791,6 +847,149 @@ export async function registerRoutes(
         error: "Speichern fehlgeschlagen", 
         details: error.message 
       });
+    }
+  });
+
+  app.get("/api/dashboard", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = req.user!;
+      const todayVienna = VIENNA_DATE_FORMAT.format(new Date());
+      const previewDates = buildPreviewDateRange(todayVienna, DASHBOARD_PREVIEW_DAYS);
+      const startDate = previewDates[0];
+      const endDate = previewDates[previewDates.length - 1];
+
+      const serviceLineLabels = await loadServiceLineLabels(user.clinicId);
+      const shiftRows = await db
+        .select({
+          id: rosterShifts.id,
+          date: rosterShifts.date,
+          serviceType: rosterShifts.serviceType,
+          employeeId: rosterShifts.employeeId,
+          assigneeFreeText: rosterShifts.assigneeFreeText,
+          primaryDeploymentArea: employees.primaryDeploymentArea,
+          firstName: employees.firstName,
+          lastName: employees.lastName,
+          isActive: employees.isActive
+        })
+        .from(rosterShifts)
+        .leftJoin(employees, eq(rosterShifts.employeeId, employees.id))
+        .where(
+          and(
+            gte(rosterShifts.date, startDate),
+            lte(rosterShifts.date, endDate)
+          )
+        );
+
+      const shiftsByDate = new Map<string, typeof shiftRows>();
+      const userShifts = new Map<string, typeof shiftRows[0]>();
+      shiftRows.forEach((shift) => {
+        const dateKey = shift.date;
+        if (!shiftsByDate.has(dateKey)) {
+          shiftsByDate.set(dateKey, []);
+        }
+        shiftsByDate.get(dateKey)!.push(shift);
+        if (shift.employeeId === user.employeeId) {
+          userShifts.set(dateKey, shift);
+        }
+      });
+
+      const getServiceLabel = (serviceType?: string | null) => {
+        if (!serviceType) return null;
+        return serviceLineLabels.get(serviceType) ?? serviceType;
+      };
+
+      const normalize = (value?: string | null) => (typeof value === "string" ? value.trim() : "");
+      const buildWorkplace = (shift: typeof shiftRows[0], label: string | null) => {
+        const manual = normalize(shift.assigneeFreeText);
+        if (manual) return manual;
+        const area = normalize(shift.primaryDeploymentArea);
+        if (area) return area;
+        return label || null;
+      };
+
+      const buildTeammates = (date: string, serviceType: string) => {
+        const dayShifts = shiftsByDate.get(date) ?? [];
+        const seen = new Set<number>();
+        const teammates: Array<{ firstName: string; lastName: string }> = [];
+        for (const entry of dayShifts) {
+          if (!entry.employeeId || entry.employeeId === user.employeeId) continue;
+          if (entry.serviceType !== serviceType) continue;
+          if (entry.isActive === false) continue;
+          if (seen.has(entry.employeeId)) continue;
+          seen.add(entry.employeeId);
+          teammates.push({
+            firstName: normalize(entry.firstName),
+            lastName: normalize(entry.lastName)
+          });
+        }
+        teammates.sort((a, b) => {
+          const lastNameCompare = a.lastName.localeCompare(b.lastName);
+          if (lastNameCompare !== 0) return lastNameCompare;
+          return a.firstName.localeCompare(b.firstName);
+        });
+        return teammates;
+      };
+
+      const weekPreview = previewDates.map((date) => {
+        const shift = userShifts.get(date);
+        if (!shift) {
+          return {
+            date,
+            statusLabel: null,
+            workplace: null,
+            teammates: []
+          };
+        }
+        const statusLabel = getServiceLabel(shift.serviceType);
+        return {
+          date,
+          statusLabel,
+          workplace: buildWorkplace(shift, statusLabel),
+          teammates: buildTeammates(date, shift.serviceType)
+        };
+      });
+
+      const todayEntry = weekPreview[0];
+      const targetDate = parseIsoDateUtc(todayVienna);
+      const birthdayCandidates = await db
+        .select({
+          firstName: employees.firstName,
+          lastName: employees.lastName
+        })
+        .from(employees)
+        .where(
+          and(
+            eq(employees.isActive, true),
+            ne(employees.role, "Sekretariat"),
+            isNotNull(employees.birthday),
+            sql`EXTRACT(MONTH FROM ${employees.birthday}) = ${targetDate.getUTCMonth() + 1}`,
+            sql`EXTRACT(DAY FROM ${employees.birthday}) = ${targetDate.getUTCDate()}`
+          )
+        )
+        .orderBy(asc(employees.lastName))
+        .limit(1);
+
+      const birthdayPerson = birthdayCandidates[0];
+      const birthday = birthdayPerson
+        ? {
+            firstName: normalize(birthdayPerson.firstName),
+            lastName: normalize(birthdayPerson.lastName)
+          }
+        : null;
+
+      res.json({
+        today: {
+          date: todayEntry.date,
+          statusLabel: todayEntry.statusLabel,
+          workplace: todayEntry.workplace,
+          teammates: todayEntry.teammates
+        },
+        birthday,
+        weekPreview
+      });
+    } catch (error) {
+      console.error("[Dashboard] Error:", error);
+      res.status(500).json({ error: "Fehler beim Laden des Dashboards" });
     }
   });
 

@@ -59,6 +59,24 @@ type ApiEnvelope<T> = {
   message?: string;
 };
 
+export type DashboardTeammate = {
+  firstName: string | null;
+  lastName: string | null;
+};
+
+export type DashboardDay = {
+  date: string;
+  statusLabel: string | null;
+  workplace: string | null;
+  teammates: DashboardTeammate[];
+};
+
+export type DashboardResponse = {
+  today: DashboardDay;
+  birthday: null | { firstName: string | null; lastName: string | null };
+  weekPreview: DashboardDay[];
+};
+
 export type MeResponse = {
   user?: {
     id: number;
@@ -124,6 +142,13 @@ export const meApi = {
   get: async (): Promise<MeResponse> => {
     const response = await apiFetch(`${API_BASE}/me`);
     return handleResponse<MeResponse>(response);
+  }
+};
+
+export const dashboardApi = {
+  get: async (): Promise<DashboardResponse> => {
+    const response = await apiFetch(`${API_BASE}/dashboard?days=7`);
+    return handleResponse<DashboardResponse>(response);
   }
 };
 
