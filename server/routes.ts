@@ -879,7 +879,7 @@ export async function registerRoutes(
       const endDate = previewDates[previewDates.length - 1];
 
       const serviceLineLabels = await loadServiceLineLabels(user.clinicId);
-      const shiftRows = await db
+      
       const shiftRows = await db
       .select({
         id: rosterShifts.id,
@@ -900,15 +900,6 @@ export async function registerRoutes(
           lte(rosterShifts.date, endDate)
         )
       );
-
-      .from(rosterShifts)
-      .leftJoin(employees, eq(rosterShifts.employeeId, employees.id))
-      .where(
-          and(
-            gte(rosterShifts.date, startDate),
-            lte(rosterShifts.date, endDate)
-          )
-        );
 
       const userShifts = new Map<string, typeof shiftRows[0]>();
       shiftRows.forEach((shift) => {
