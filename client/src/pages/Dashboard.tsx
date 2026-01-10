@@ -14,28 +14,27 @@ import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { getAustrianHoliday } from "@/lib/holidays";
 
-const WEEK_PREVIEW_STATUS_ABBREVIATIONS: Record<string, string> = {
+const DUTY_ABBREVIATIONS: Record<string, string> = {
   "gynaekologie (oa)": "Gyn",
   "kreiszimmer (ass.)": "Geb",
   "turnus (ass./ta)": "Ta",
   "ueberdienst": "Ü",
 };
 
-const normalizeWeekStatusLabel = (label: string) => {
-  return label
+const normalizeDutyLabel = (label: string) =>
+  label
     .trim()
     .toLowerCase()
     .replace(/ß/g, "ss")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
-};
 
-const getWeekPreviewBadgeLabel = (statusLabel: string | null) => {
-  if (!statusLabel) {
+const dutyAbbrev = (label: string | null | undefined) => {
+  if (!label) {
     return "Kein Dienst";
   }
-  const normalized = normalizeWeekStatusLabel(statusLabel);
-  return WEEK_PREVIEW_STATUS_ABBREVIATIONS[normalized] ?? statusLabel;
+  const normalized = normalizeDutyLabel(label);
+  return DUTY_ABBREVIATIONS[normalized] ?? label;
 };
 
 const getGreeting = () => {
@@ -418,7 +417,7 @@ export default function Dashboard() {
                           variant={item.statusLabel ? "default" : "secondary"}
                           className={!item.statusLabel ? "bg-muted text-muted-foreground" : ""}
                         >
-                          {getWeekPreviewBadgeLabel(item.statusLabel)}
+                          {dutyAbbrev(item.statusLabel)}
                         </Badge>
                       </div>
                       <p className="text-xs text-muted-foreground mb-1">
