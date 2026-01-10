@@ -6,12 +6,21 @@ import {
   created,
   notFound,
   validationError,
-  asyncHandler
+  asyncHandler,
 } from "../../lib/api-response";
-import { validateBody, validateParams, idParamSchema } from "../../lib/validate";
+import {
+  validateBody,
+  validateParams,
+  idParamSchema,
+} from "../../lib/validate";
 import { vacationRules, departments, competencies } from "@shared/schema";
 
-const ruleTypeEnum = z.enum(["role_min", "competency_min", "total_min", "training_priority"]);
+const ruleTypeEnum = z.enum([
+  "role_min",
+  "competency_min",
+  "total_min",
+  "training_priority",
+]);
 const roleGroupEnum = z.enum(["ASS", "OA", "TA"]);
 
 const createRuleSchema = z.object({
@@ -21,11 +30,11 @@ const createRuleSchema = z.object({
   roleGroup: roleGroupEnum.optional().nullable(),
   competencyId: z.number().positive().optional().nullable(),
   isActive: z.boolean().optional(),
-  notes: z.string().optional().nullable()
+  notes: z.string().optional().nullable(),
 });
 
 const updateRuleSchema = createRuleSchema.partial().extend({
-  ruleType: ruleTypeEnum.optional()
+  ruleType: ruleTypeEnum.optional(),
 });
 
 const canViewRules = (reqUser: Express.Request["user"]) => {
@@ -43,7 +52,10 @@ const canManageRules = (reqUser: Express.Request["user"]) => {
   return reqUser.capabilities?.includes("vacation.lock") ?? false;
 };
 
-const resolveDepartmentId = (reqUser: Express.Request["user"], requested?: number | null) => {
+const resolveDepartmentId = (
+  reqUser: Express.Request["user"],
+  requested?: number | null,
+) => {
   if (requested) return requested;
   return reqUser?.departmentId;
 };
@@ -59,37 +71,48 @@ const validateRuleDefinition = (payload: z.infer<typeof createRuleSchema>) => {
 };
 
 export function registerVacationRuleRoutes(router: Router) {
-  router.get("/", asyncHandler(async (req, res) => {
-    if (!canViewRules(req.user)) {
-      return res.status(403).json({ success: false, error: "Keine Berechtigung" });
-    }
+  router.get(
+    "/",
+    asyncHandler(async (req, res) => {
+      if (!canViewRules(req.user)) {
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
+      }
 
-    const requestedDepartmentId = req.query.departmentId
-      ? Number(req.query.departmentId)
-      : null;
-    const departmentId = resolveDepartmentId(req.user, requestedDepartmentId);
+      const requestedDepartmentId = req.query.departmentId
+        ? Number(req.query.departmentId)
+        : null;
+      const departmentId = resolveDepartmentId(req.user, requestedDepartmentId);
 
-    if (!departmentId) {
-      return validationError(res, "Abteilung fehlt");
-    }
+      if (!departmentId) {
+        return validationError(res, "Abteilung fehlt");
+      }
 
-    const rules = await db
-      .select()
-      .from(vacationRules)
-      .where(eq(vacationRules.departmentId, departmentId));
+      const rules = await db
+        .select()
+        .from(vacationRules)
+        .where(eq(vacationRules.departmentId, departmentId));
 
-    return ok(res, rules);
-  }));
+      return ok(res, rules);
+    }),
+  );
 
-  router.post("/",
+  router.post(
+    "/",
     validateBody(createRuleSchema),
     asyncHandler(async (req, res) => {
       if (!canManageRules(req.user)) {
-        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
       }
 
       const payload = req.body as z.infer<typeof createRuleSchema>;
-      const departmentId = resolveDepartmentId(req.user, payload.departmentId ?? null);
+      const departmentId = resolveDepartmentId(
+        req.user,
+        payload.departmentId ?? null,
+      );
       if (!departmentId) {
         return validationError(res, "Abteilung fehlt");
       }
@@ -128,20 +151,23 @@ export function registerVacationRuleRoutes(router: Router) {
           isActive: payload.isActive ?? true,
           notes: payload.notes ?? null,
           createdById: req.user?.employeeId ?? null,
-          updatedById: req.user?.employeeId ?? null
+          updatedById: req.user?.employeeId ?? null,
         })
         .returning();
 
       return created(res, createdRule);
-    })
+    }),
   );
 
-  router.patch("/:id",
+  router.patch(
+    "/:id",
     validateParams(idParamSchema),
     validateBody(updateRuleSchema),
     asyncHandler(async (req, res) => {
       if (!canManageRules(req.user)) {
-        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
       }
 
       const ruleId = Number(req.params.id);
@@ -156,7 +182,10 @@ export function registerVacationRuleRoutes(router: Router) {
         return notFound(res, "Regel");
       }
 
-      const departmentId = resolveDepartmentId(req.user, payload.departmentId ?? existing.departmentId);
+      const departmentId = resolveDepartmentId(
+        req.user,
+        payload.departmentId ?? existing.departmentId,
+      );
       if (!departmentId) {
         return validationError(res, "Abteilung fehlt");
       }
@@ -165,14 +194,28 @@ export function registerVacationRuleRoutes(router: Router) {
         ...payload,
         departmentId,
         ruleType: payload.ruleType ?? existing.ruleType,
-        minCount: typeof payload.minCount === "number" ? payload.minCount : existing.minCount,
+        minCount:
+          typeof payload.minCount === "number"
+            ? payload.minCount
+            : existing.minCount,
         roleGroup: payload.roleGroup ?? existing.roleGroup ?? null,
-        competencyId: typeof payload.competencyId === "number" ? payload.competencyId : existing.competencyId,
-        isActive: typeof payload.isActive === "boolean" ? payload.isActive : existing.isActive,
-        notes: typeof payload.notes === "string" || payload.notes === null ? payload.notes : existing.notes
+        competencyId:
+          typeof payload.competencyId === "number"
+            ? payload.competencyId
+            : existing.competencyId,
+        isActive:
+          typeof payload.isActive === "boolean"
+            ? payload.isActive
+            : existing.isActive,
+        notes:
+          typeof payload.notes === "string" || payload.notes === null
+            ? payload.notes
+            : existing.notes,
       };
 
-      const ruleError = validateRuleDefinition(normalizedPayload as z.infer<typeof createRuleSchema>);
+      const ruleError = validateRuleDefinition(
+        normalizedPayload as z.infer<typeof createRuleSchema>,
+      );
       if (ruleError) {
         return validationError(res, ruleError);
       }
@@ -198,9 +241,14 @@ export function registerVacationRuleRoutes(router: Router) {
           isActive: normalizedPayload.isActive,
           notes: normalizedPayload.notes ?? null,
           updatedById: req.user?.employeeId ?? null,
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
-        .where(and(eq(vacationRules.id, ruleId), eq(vacationRules.departmentId, existing.departmentId)))
+        .where(
+          and(
+            eq(vacationRules.id, ruleId),
+            eq(vacationRules.departmentId, existing.departmentId),
+          ),
+        )
         .returning();
 
       if (!updated) {
@@ -208,14 +256,17 @@ export function registerVacationRuleRoutes(router: Router) {
       }
 
       return ok(res, updated);
-    })
+    }),
   );
 
-  router.delete("/:id",
+  router.delete(
+    "/:id",
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
       if (!canManageRules(req.user)) {
-        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
       }
 
       const ruleId = Number(req.params.id);
@@ -230,7 +281,7 @@ export function registerVacationRuleRoutes(router: Router) {
 
       await db.delete(vacationRules).where(eq(vacationRules.id, ruleId));
       return ok(res, { deleted: true, id: ruleId });
-    })
+    }),
   );
 
   return router;

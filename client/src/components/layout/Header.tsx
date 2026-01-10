@@ -1,9 +1,26 @@
-import { Bell, Search, Calendar, CheckCircle, AlertTriangle, Info, Trash2, Users } from "lucide-react";
+import {
+  Bell,
+  Search,
+  Calendar,
+  CheckCircle,
+  AlertTriangle,
+  Info,
+  Trash2,
+  Users,
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { useEffect, useMemo, useState } from "react";
 import {
   rosterSettingsApi,
@@ -12,7 +29,7 @@ import {
   notificationsApi,
   onlineUsersApi,
   type NextPlanningMonth,
-  type OnlineUser
+  type OnlineUser,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { format } from "date-fns";
@@ -22,8 +39,18 @@ import type { ServiceLine, Notification } from "@shared/schema";
 import { useLocation } from "wouter";
 
 const MONTH_NAMES = [
-  "Jänner", "Februar", "März", "April", "Mai", "Juni",
-  "Juli", "August", "September", "Oktober", "November", "Dezember"
+  "Jänner",
+  "Februar",
+  "März",
+  "April",
+  "Mai",
+  "Juni",
+  "Juli",
+  "August",
+  "September",
+  "Oktober",
+  "November",
+  "Dezember",
 ];
 
 export function Header({ title }: { title?: string }) {
@@ -34,32 +61,44 @@ export function Header({ title }: { title?: string }) {
     isTechnicalAdmin,
     isAdminActual,
     viewAsUser,
-    setViewAsUser
+    setViewAsUser,
   } = useAuth();
   const [, setLocation] = useLocation();
-  const [planningMonth, setPlanningMonth] = useState<NextPlanningMonth | null>(null);
+  const [planningMonth, setPlanningMonth] = useState<NextPlanningMonth | null>(
+    null,
+  );
   const [serviceLines, setServiceLines] = useState<ServiceLine[]>([]);
   const [pendingSwapCount, setPendingSwapCount] = useState(0);
-  const [systemNotifications, setSystemNotifications] = useState<Notification[]>([]);
+  const [systemNotifications, setSystemNotifications] = useState<
+    Notification[]
+  >([]);
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
   const [notifications, setNotifications] = useState<
-    { id: string; tone: "success" | "warning" | "info"; title: string; description: string }[]
+    {
+      id: string;
+      tone: "success" | "warning" | "info";
+      title: string;
+      description: string;
+    }[]
   >([]);
-  
+
   const canEditPlan =
-    isAdmin ||
-    isTechnicalAdmin ||
-    capabilities.includes("dutyplan.edit");
+    isAdmin || isTechnicalAdmin || capabilities.includes("dutyplan.edit");
   const canPublishPlan =
-    isAdmin ||
-    isTechnicalAdmin ||
-    capabilities.includes("dutyplan.publish");
+    isAdmin || isTechnicalAdmin || capabilities.includes("dutyplan.publish");
   const serviceLineMeta = useMemo(
-    () => serviceLines.map((line) => ({ key: line.key, roleGroup: line.roleGroup, label: line.label })),
-    [serviceLines]
+    () =>
+      serviceLines.map((line) => ({
+        key: line.key,
+        roleGroup: line.roleGroup,
+        label: line.label,
+      })),
+    [serviceLines],
   );
-  const doesShifts = employee ? employeeDoesShifts(employee, serviceLineMeta) : false;
-  
+  const doesShifts = employee
+    ? employeeDoesShifts(employee, serviceLineMeta)
+    : false;
+
   useEffect(() => {
     if (employee) {
       loadPlanningData();
@@ -94,17 +133,17 @@ export function Header({ title }: { title?: string }) {
       clearInterval(intervalId);
     };
   }, [isAdminActual, viewAsUser]);
-  
+
   const loadPlanningData = async () => {
     try {
       const [data, serviceLineData] = await Promise.all([
         rosterSettingsApi.getNextPlanningMonth(),
-        serviceLinesApi.getAll().catch(() => [])
+        serviceLinesApi.getAll().catch(() => []),
       ]);
       setPlanningMonth(data);
       setServiceLines(serviceLineData);
     } catch (error) {
-      console.error('Failed to load planning data', error);
+      console.error("Failed to load planning data", error);
     }
   };
 
@@ -112,7 +151,9 @@ export function Header({ title }: { title?: string }) {
     if (!employee) return;
     try {
       const requests = await shiftSwapApi.getByTargetEmployee(employee.id);
-      const pendingCount = requests.filter((request) => request.status === "Ausstehend").length;
+      const pendingCount = requests.filter(
+        (request) => request.status === "Ausstehend",
+      ).length;
       setPendingSwapCount(pendingCount);
     } catch (error) {
       console.error("Failed to load shift swap requests", error);
@@ -133,7 +174,9 @@ export function Header({ title }: { title?: string }) {
     if (note.isRead) return;
     try {
       const updated = await notificationsApi.markRead(note.id);
-      setSystemNotifications((prev) => prev.map((item) => (item.id === note.id ? updated : item)));
+      setSystemNotifications((prev) =>
+        prev.map((item) => (item.id === note.id ? updated : item)),
+      );
     } catch (error) {
       console.error("Failed to mark notification read", error);
     }
@@ -154,7 +197,12 @@ export function Header({ title }: { title?: string }) {
       return;
     }
 
-    const nextNotifications: { id: string; tone: "success" | "warning" | "info"; title: string; description: string }[] = [];
+    const nextNotifications: {
+      id: string;
+      tone: "success" | "warning" | "info";
+      title: string;
+      description: string;
+    }[] = [];
     const monthLabel = `${MONTH_NAMES[planningMonth.month - 1]} ${planningMonth.year}`;
 
     if (planningMonth.allSubmitted && canEditPlan) {
@@ -185,7 +233,11 @@ export function Header({ title }: { title?: string }) {
     }
 
     if (doesShifts) {
-      const monthStart = new Date(planningMonth.year, planningMonth.month - 1, 1);
+      const monthStart = new Date(
+        planningMonth.year,
+        planningMonth.month - 1,
+        1,
+      );
       const warningStart = new Date(monthStart);
       warningStart.setDate(warningStart.getDate() - 56);
       const now = new Date();
@@ -200,32 +252,42 @@ export function Header({ title }: { title?: string }) {
     }
 
     setNotifications(nextNotifications);
-  }, [planningMonth, canEditPlan, canPublishPlan, doesShifts, pendingSwapCount]);
-  
-  const today = format(new Date(), 'd. MMM yyyy', { locale: de });
-  const unreadSystemCount = systemNotifications.filter((note) => !note.isRead).length;
+  }, [
+    planningMonth,
+    canEditPlan,
+    canPublishPlan,
+    doesShifts,
+    pendingSwapCount,
+  ]);
+
+  const today = format(new Date(), "d. MMM yyyy", { locale: de });
+  const unreadSystemCount = systemNotifications.filter(
+    (note) => !note.isRead,
+  ).length;
   const hasNotification = notifications.length > 0 || unreadSystemCount > 0;
   const onlineCount = onlineUsers.length;
-  
+
   return (
     <header className="h-16 kabeg-header sticky top-0 z-10 px-6 flex items-center justify-between shadow-sm">
-      <h2 className="text-xl font-semibold text-white tracking-tight">{title}</h2>
-      
+      <h2 className="text-xl font-semibold text-white tracking-tight">
+        {title}
+      </h2>
+
       <div className="flex items-center gap-4">
         <div className="relative w-64 hidden md:block">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-white/60" />
-          <Input 
-            placeholder="Suchen..." 
-            className="pl-9 bg-white/10 border-white/20 text-white placeholder:text-white/50 focus-visible:ring-white/30" 
+          <Input
+            placeholder="Suchen..."
+            className="pl-9 bg-white/10 border-white/20 text-white placeholder:text-white/50 focus-visible:ring-white/30"
             data-testid="input-search"
           />
         </div>
-        
+
         <Popover>
           <PopoverTrigger asChild>
-            <Button 
-              variant="ghost" 
-              size="icon" 
+            <Button
+              variant="ghost"
+              size="icon"
               className="rounded-full text-white/80 hover:text-white hover:bg-white/10 relative"
               data-testid="button-notifications"
             >
@@ -241,19 +303,25 @@ export function Header({ title }: { title?: string }) {
 
               {systemNotifications.length > 0 && (
                 <div className="space-y-2">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">System</p>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                    System
+                  </p>
                   {systemNotifications.slice(0, 3).map((note) => (
                     <div
                       key={note.id}
                       className={`flex items-start gap-3 p-3 rounded-lg border ${
-                        note.isRead ? "bg-white" : "bg-blue-50 border-blue-200 text-blue-900"
+                        note.isRead
+                          ? "bg-white"
+                          : "bg-blue-50 border-blue-200 text-blue-900"
                       }`}
                     >
                       <Info className="w-5 h-5 mt-0.5" />
                       <div className="flex-1">
                         <p className="text-sm font-medium">{note.title}</p>
                         {note.message && (
-                          <p className="text-xs mt-1 opacity-80">{note.message}</p>
+                          <p className="text-xs mt-1 opacity-80">
+                            {note.message}
+                          </p>
                         )}
                         {note.link && (
                           <Button
@@ -301,29 +369,36 @@ export function Header({ title }: { title?: string }) {
                   )}
                 </div>
               )}
-              
+
               {notifications.length ? (
                 <div className="space-y-2">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Dienstplan</p>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Dienstplan
+                  </p>
                   {notifications.map((note) => {
                     const toneStyles =
                       note.tone === "success"
                         ? "bg-green-50 border-green-200 text-green-800"
                         : note.tone === "warning"
-                        ? "bg-amber-50 border-amber-200 text-amber-800"
-                        : "bg-blue-50 border-blue-200 text-blue-800";
+                          ? "bg-amber-50 border-amber-200 text-amber-800"
+                          : "bg-blue-50 border-blue-200 text-blue-800";
                     const Icon =
                       note.tone === "success"
                         ? CheckCircle
                         : note.tone === "warning"
-                        ? AlertTriangle
-                        : Info;
+                          ? AlertTriangle
+                          : Info;
                     return (
-                      <div key={note.id} className={`flex items-start gap-3 p-3 rounded-lg border ${toneStyles}`}>
+                      <div
+                        key={note.id}
+                        className={`flex items-start gap-3 p-3 rounded-lg border ${toneStyles}`}
+                      >
                         <Icon className="w-5 h-5 mt-0.5" />
                         <div>
                           <p className="text-sm font-medium">{note.title}</p>
-                          <p className="text-xs mt-1 opacity-80">{note.description}</p>
+                          <p className="text-xs mt-1 opacity-80">
+                            {note.description}
+                          </p>
                         </div>
                       </div>
                     );
@@ -337,9 +412,13 @@ export function Header({ title }: { title?: string }) {
 
               {planningMonth && canEditPlan && !planningMonth.allSubmitted && (
                 <div className="text-xs text-muted-foreground">
-                  <p>Dienstwünsche für {MONTH_NAMES[planningMonth.month - 1]} {planningMonth.year}:</p>
+                  <p>
+                    Dienstwünsche für {MONTH_NAMES[planningMonth.month - 1]}{" "}
+                    {planningMonth.year}:
+                  </p>
                   <p className="font-medium">
-                    {planningMonth.submittedCount} von {planningMonth.totalEmployees} eingereicht
+                    {planningMonth.submittedCount} von{" "}
+                    {planningMonth.totalEmployees} eingereicht
                   </p>
                 </div>
               )}
@@ -364,7 +443,9 @@ export function Header({ title }: { title?: string }) {
                 Online ({onlineCount})
               </p>
               {onlineCount === 0 ? (
-                <p className="text-sm text-muted-foreground mt-2">Keine aktiven Benutzer</p>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Keine aktiven Benutzer
+                </p>
               ) : (
                 <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
                   {onlineUsers.map((user) => (
@@ -384,8 +465,12 @@ export function Header({ title }: { title?: string }) {
             <Switch checked={viewAsUser} onCheckedChange={setViewAsUser} />
           </div>
         )}
-        
-        <Button variant="ghost" size="sm" className="hidden md:flex gap-2 text-white/80 hover:text-white hover:bg-white/10">
+
+        <Button
+          variant="ghost"
+          size="sm"
+          className="hidden md:flex gap-2 text-white/80 hover:text-white hover:bg-white/10"
+        >
           <Calendar className="w-4 h-4" />
           <span>{today}</span>
         </Button>

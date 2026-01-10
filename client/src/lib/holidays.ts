@@ -11,14 +11,14 @@ const FIXED_HOLIDAYS: Record<string, string> = {
   "11-01": "Allerheiligen",
   "12-08": "Mariae Empfaengnis",
   "12-25": "Weihnachtstag",
-  "12-26": "Stefanitag"
+  "12-26": "Stefanitag",
 };
 
 const MOVABLE_HOLIDAYS: Array<{ offset: number; name: string }> = [
   { offset: 1, name: "Ostermontag" },
   { offset: 39, name: "Christi Himmelfahrt" },
   { offset: 50, name: "Pfingstmontag" },
-  { offset: 60, name: "Fronleichnam" }
+  { offset: 60, name: "Fronleichnam" },
 ];
 
 const formatMonthDay = (date: Date) => {

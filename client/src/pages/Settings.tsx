@@ -1,5 +1,11 @@
 import { Layout } from "@/components/layout/Layout";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,16 +15,34 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Calendar as DatePickerCalendar } from "@/components/ui/calendar";
-import { 
-  User, 
-  Mail, 
-  Phone, 
-  Lock, 
-  Shield, 
+import {
+  User,
+  Mail,
+  Phone,
+  Lock,
+  Shield,
   Save,
   Loader2,
   AlertCircle,
@@ -26,16 +50,37 @@ import {
   Briefcase,
   Calendar as CalendarIcon,
   Tag,
-  X
+  X,
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
-import { employeeApi, competencyApi, roomApi, diplomaApi, longTermWishesApi, longTermAbsencesApi, serviceLinesApi } from "@/lib/api";
+import {
+  employeeApi,
+  competencyApi,
+  roomApi,
+  diplomaApi,
+  longTermWishesApi,
+  longTermAbsencesApi,
+  serviceLinesApi,
+} from "@/lib/api";
 import { apiRequest } from "@/lib/queryClient";
-import type { Employee, Competency, Resource, Diploma, LongTermShiftWish, LongTermAbsence, ServiceLine } from "@shared/schema";
+import type {
+  Employee,
+  Competency,
+  Resource,
+  Diploma,
+  LongTermShiftWish,
+  LongTermAbsence,
+  ServiceLine,
+} from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useParams, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
-import { OVERDUTY_KEY, employeeDoesShifts, getServiceTypesForEmployee, type LongTermWishRule } from "@shared/shiftTypes";
+import {
+  OVERDUTY_KEY,
+  employeeDoesShifts,
+  getServiceTypesForEmployee,
+  type LongTermWishRule,
+} from "@shared/shiftTypes";
 
 function formatBirthday(value: string | Date | null | undefined): string {
   if (!value) return "";
@@ -56,7 +101,9 @@ function formatBirthday(value: string | Date | null | undefined): string {
   return toInput(value);
 }
 
-function formatBirthdayDisplay(value: string | Date | null | undefined): string {
+function formatBirthdayDisplay(
+  value: string | Date | null | undefined,
+): string {
   const iso = formatBirthday(value);
   if (!iso) return "";
   const [year, month, day] = iso.split("-");
@@ -100,19 +147,19 @@ const isValidEmail = (value: string) =>
   EMAIL_REGEX.test(value) && !/[^\x00-\x7F]/.test(value);
 
 const ROLE_LABELS: Record<string, string> = {
-  "Primararzt": "Primararzt:in",
+  Primararzt: "Primararzt:in",
   "1. Oberarzt": "1. Oberarzt:in",
-  "Funktionsoberarzt": "Funktionsoberarzt:in",
-  "Ausbildungsoberarzt": "Ausbildungsoberarzt:in",
-  "Oberarzt": "Oberarzt:in",
-  "Oberärztin": "Oberarzt:in",
-  "Facharzt": "Facharzt:in",
-  "Assistenzarzt": "Assistenzarzt:in",
-  "Assistenzärztin": "Assistenzarzt:in",
-  "Turnusarzt": "Turnusarzt:in",
+  Funktionsoberarzt: "Funktionsoberarzt:in",
+  Ausbildungsoberarzt: "Ausbildungsoberarzt:in",
+  Oberarzt: "Oberarzt:in",
+  Oberärztin: "Oberarzt:in",
+  Facharzt: "Facharzt:in",
+  Assistenzarzt: "Assistenzarzt:in",
+  Assistenzärztin: "Assistenzarzt:in",
+  Turnusarzt: "Turnusarzt:in",
   "Student (KPJ)": "Student:in (KPJ)",
   "Student (Famulant)": "Student:in (Famulant)",
-  "Sekretariat": "Sekretariat"
+  Sekretariat: "Sekretariat",
 };
 
 const ROLE_OPTIONS: Array<{ value: Employee["role"]; label: string }> = [
@@ -130,19 +177,19 @@ const ROLE_OPTIONS: Array<{ value: Employee["role"]; label: string }> = [
 ];
 
 const ROLE_SORT_ORDER: Record<string, number> = {
-  "Primararzt": 1,
+  Primararzt: 1,
   "1. Oberarzt": 2,
-  "Funktionsoberarzt": 3,
-  "Ausbildungsoberarzt": 4,
-  "Oberarzt": 5,
-  "Oberärztin": 5,
-  "Facharzt": 6,
-  "Assistenzarzt": 7,
-  "Assistenzärztin": 7,
-  "Turnusarzt": 8,
+  Funktionsoberarzt: 3,
+  Ausbildungsoberarzt: 4,
+  Oberarzt: 5,
+  Oberärztin: 5,
+  Facharzt: 6,
+  Assistenzarzt: 7,
+  Assistenzärztin: 7,
+  Turnusarzt: 8,
   "Student (KPJ)": 9,
   "Student (Famulant)": 9,
-  "Sekretariat": 10
+  Sekretariat: 10,
 };
 
 const normalizeRoleValue = (role?: string | null): Employee["role"] | "" => {
@@ -164,16 +211,42 @@ const getRoleSortRank = (role?: string | null) => {
 
 type ServiceType = string;
 
-const FALLBACK_SERVICE_LINES: Array<Pick<ServiceLine, "key" | "label" | "roleGroup" | "sortOrder" | "isActive">> = [
-  { key: "kreiszimmer", label: "Kreißzimmer", roleGroup: "ASS", sortOrder: 1, isActive: true },
-  { key: "gyn", label: "Gyn-Dienst", roleGroup: "OA", sortOrder: 2, isActive: true },
-  { key: "turnus", label: "Turnus", roleGroup: "TURNUS", sortOrder: 3, isActive: true },
-  { key: "overduty", label: "Überdienst", roleGroup: "OA", sortOrder: 4, isActive: true }
+const FALLBACK_SERVICE_LINES: Array<
+  Pick<ServiceLine, "key" | "label" | "roleGroup" | "sortOrder" | "isActive">
+> = [
+  {
+    key: "kreiszimmer",
+    label: "Kreißzimmer",
+    roleGroup: "ASS",
+    sortOrder: 1,
+    isActive: true,
+  },
+  {
+    key: "gyn",
+    label: "Gyn-Dienst",
+    roleGroup: "OA",
+    sortOrder: 2,
+    isActive: true,
+  },
+  {
+    key: "turnus",
+    label: "Turnus",
+    roleGroup: "TURNUS",
+    sortOrder: 3,
+    isActive: true,
+  },
+  {
+    key: "overduty",
+    label: "Überdienst",
+    roleGroup: "OA",
+    sortOrder: 4,
+    isActive: true,
+  },
 ];
 
 const buildServiceLineDisplay = (
   lines: ServiceLine[],
-  includeKeys: Set<string>
+  includeKeys: Set<string>,
 ) => {
   const source = lines.length ? lines : FALLBACK_SERVICE_LINES;
   const knownKeys = new Set(source.map((line) => line.key));
@@ -184,7 +257,7 @@ const buildServiceLineDisplay = (
       label: key,
       roleGroup: "ALL",
       sortOrder: 999,
-      isActive: true
+      isActive: true,
     }));
   const allLines = [...source, ...extras];
   return allLines
@@ -198,19 +271,19 @@ const buildServiceLineDisplay = (
       key: line.key,
       label: line.label,
       roleGroup: line.roleGroup || "ALL",
-      isActive: line.isActive !== false
+      isActive: line.isActive !== false,
     }));
 };
 
 const LONG_TERM_RULE_KINDS = [
   { value: "ALWAYS_OFF", label: "Immer frei" },
   { value: "PREFER_ON", label: "Bevorzugt" },
-  { value: "AVOID_ON", label: "Vermeiden" }
+  { value: "AVOID_ON", label: "Vermeiden" },
 ];
 
 const LONG_TERM_RULE_STRENGTHS = [
   { value: "SOFT", label: "Weich" },
-  { value: "HARD", label: "Hart" }
+  { value: "HARD", label: "Hart" },
 ];
 
 const LONG_TERM_WEEKDAYS = [
@@ -220,7 +293,7 @@ const LONG_TERM_WEEKDAYS = [
   { value: "Thu", label: "Do" },
   { value: "Fri", label: "Fr" },
   { value: "Sat", label: "Sa" },
-  { value: "Sun", label: "So" }
+  { value: "Sun", label: "So" },
 ];
 
 const LONG_TERM_BASE_OPTION = { value: "any", label: "Alle Dienstschienen" };
@@ -229,7 +302,7 @@ const LONG_TERM_STATUS_LABELS: Record<string, string> = {
   Entwurf: "Entwurf",
   Eingereicht: "Eingereicht",
   Genehmigt: "Genehmigt",
-  Abgelehnt: "Abgelehnt"
+  Abgelehnt: "Abgelehnt",
 };
 
 interface ShiftPreferences {
@@ -256,7 +329,9 @@ function parseInactiveDate(value: string): string | null {
   return parseBirthdayInput(value);
 }
 
-const buildLongTermAbsenceDraft = (absence: LongTermAbsence): LongTermAbsenceDraft => ({
+const buildLongTermAbsenceDraft = (
+  absence: LongTermAbsence,
+): LongTermAbsenceDraft => ({
   localId: String(absence.id),
   id: absence.id,
   employeeId: absence.employeeId,
@@ -267,13 +342,19 @@ const buildLongTermAbsenceDraft = (absence: LongTermAbsence): LongTermAbsenceDra
   submittedAt: absence.submittedAt ? String(absence.submittedAt) : null,
   approvedAt: absence.approvedAt ? String(absence.approvedAt) : null,
   approvedById: absence.approvedById ?? null,
-  approvalNotes: absence.approvalNotes || null
+  approvalNotes: absence.approvalNotes || null,
 });
 
 export default function Settings() {
   const params = useParams();
   const [, setLocation] = useLocation();
-  const { employee: currentUser, user, isAdmin, isTechnicalAdmin, capabilities } = useAuth();
+  const {
+    employee: currentUser,
+    user,
+    isAdmin,
+    isTechnicalAdmin,
+    capabilities,
+  } = useAuth();
 
   const APP_ROLE_OPTIONS: Employee["appRole"][] = ["Admin", "Editor", "User"];
 
@@ -281,7 +362,10 @@ export default function Settings() {
     { key: "users.manage", label: "Kann Benutzer anlegen / verwalten" },
     { key: "dutyplan.edit", label: "Kann Dienstplan bearbeiten" },
     { key: "dutyplan.publish", label: "Kann Dienstplan freigeben" },
-    { key: "vacation.lock", label: "Kann Urlaubsplanung bearbeiten (Sperrzeitraum)" },
+    {
+      key: "vacation.lock",
+      label: "Kann Urlaubsplanung bearbeiten (Sperrzeitraum)",
+    },
     { key: "vacation.approve", label: "Kann Urlaub freigeben" },
     { key: "absence.create", label: "Kann Abwesenheiten eintragen" },
     { key: "perm.sop_manage", label: "Kann SOPs verwalten" },
@@ -289,18 +373,18 @@ export default function Settings() {
     { key: "perm.project_manage", label: "Kann Projekte verwalten" },
     { key: "perm.project_delete", label: "Kann Projekte loeschen" },
     { key: "perm.message_group_manage", label: "Kann Gruppen verwalten" },
-    { key: "training.edit", label: "Kann Ausbildungsplan bearbeiten" }
+    { key: "training.edit", label: "Kann Ausbildungsplan bearbeiten" },
   ];
-  
+
   const viewingUserId = params.userId
     ? parseInt(params.userId)
     : user?.employeeId || currentUser?.id || 0;
-  
+
   const isViewingOwnProfile = currentUser
     ? viewingUserId === currentUser.id
     : user
-    ? viewingUserId === user.employeeId
-    : false;
+      ? viewingUserId === user.employeeId
+      : false;
   const canEditBasicInfo = isViewingOwnProfile || isAdmin;
   const canEditPrivateInfo = isAdmin;
   const canEditRoleAndCompetencies = isAdmin;
@@ -312,34 +396,40 @@ export default function Settings() {
     currentUser?.appRole === "Admin" ||
     currentUser?.role === "Primararzt" ||
     currentUser?.role === "1. Oberarzt";
-  
+
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
   const [isBadgeDialogOpen, setIsBadgeDialogOpen] = useState(false);
-  
+
   const [formData, setFormData] = useState({
-    title: '',
-    firstName: '',
-    lastName: '',
-    birthday: '',
-    email: '',
-    emailPrivate: '',
-    phoneWork: '',
-    phonePrivate: '',
+    title: "",
+    firstName: "",
+    lastName: "",
+    birthday: "",
+    email: "",
+    emailPrivate: "",
+    phoneWork: "",
+    phonePrivate: "",
     showPrivateContact: false,
-    badge: '',
-    vacationEntitlement: ''
+    badge: "",
+    vacationEntitlement: "",
   });
   const [birthdayInput, setBirthdayInput] = useState("");
   const [roleValue, setRoleValue] = useState<Employee["role"] | "">("");
-  const [appRoleValue, setAppRoleValue] = useState<Employee["appRole"] | "">("");
+  const [appRoleValue, setAppRoleValue] = useState<Employee["appRole"] | "">(
+    "",
+  );
   const [takesShifts, setTakesShifts] = useState(true);
   const [canOverduty, setCanOverduty] = useState(false);
-  const [availableCompetencies, setAvailableCompetencies] = useState<Competency[]>([]);
-  const [selectedCompetencyIds, setSelectedCompetencyIds] = useState<number[]>([]);
+  const [availableCompetencies, setAvailableCompetencies] = useState<
+    Competency[]
+  >([]);
+  const [selectedCompetencyIds, setSelectedCompetencyIds] = useState<number[]>(
+    [],
+  );
   const [competencySearch, setCompetencySearch] = useState("");
   const [availableDiplomas, setAvailableDiplomas] = useState<Diploma[]>([]);
   const [selectedDiplomaIds, setSelectedDiplomaIds] = useState<number[]>([]);
@@ -347,28 +437,39 @@ export default function Settings() {
   const [availableRooms, setAvailableRooms] = useState<Resource[]>([]);
   const [serviceLines, setServiceLines] = useState<ServiceLine[]>([]);
   const [deploymentRoomIds, setDeploymentRoomIds] = useState<number[]>([]);
-  const [serviceTypeOverrides, setServiceTypeOverrides] = useState<ServiceType[]>([]);
+  const [serviceTypeOverrides, setServiceTypeOverrides] = useState<
+    ServiceType[]
+  >([]);
   const [roomSearch, setRoomSearch] = useState("");
-  
+
   const [passwordData, setPasswordData] = useState({
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: ''
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
   });
 
-  const [newBadge, setNewBadge] = useState('');
-  const [availablePermissions, setAvailablePermissions] = useState<Array<{ key: string; label: string; scope?: string }>>([]);
+  const [newBadge, setNewBadge] = useState("");
+  const [availablePermissions, setAvailablePermissions] = useState<
+    Array<{ key: string; label: string; scope?: string }>
+  >([]);
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
   const [loadingPermissions, setLoadingPermissions] = useState(false);
   const [savingPermissions, setSavingPermissions] = useState(false);
-  const [longTermWish, setLongTermWish] = useState<LongTermShiftWish | null>(null);
+  const [longTermWish, setLongTermWish] = useState<LongTermShiftWish | null>(
+    null,
+  );
   const [longTermRules, setLongTermRules] = useState<LongTermWishRule[]>([]);
   const [longTermNotes, setLongTermNotes] = useState("");
   const [longTermSaving, setLongTermSaving] = useState(false);
   const [longTermDecisionNotes, setLongTermDecisionNotes] = useState("");
-  const [longTermAbsences, setLongTermAbsences] = useState<LongTermAbsenceDraft[]>([]);
-  const [longTermAbsenceDecisionNotes, setLongTermAbsenceDecisionNotes] = useState<Record<string, string>>({});
-  const [longTermAbsenceSavingIds, setLongTermAbsenceSavingIds] = useState<string[]>([]);
+  const [longTermAbsences, setLongTermAbsences] = useState<
+    LongTermAbsenceDraft[]
+  >([]);
+  const [longTermAbsenceDecisionNotes, setLongTermAbsenceDecisionNotes] =
+    useState<Record<string, string>>({});
+  const [longTermAbsenceSavingIds, setLongTermAbsenceSavingIds] = useState<
+    string[]
+  >([]);
 
   const { toast } = useToast();
 
@@ -398,28 +499,36 @@ export default function Settings() {
 
   const serviceLineDisplay = useMemo(
     () => buildServiceLineDisplay(serviceLines, serviceLineIncludeKeys),
-    [serviceLines, serviceLineIncludeKeys]
+    [serviceLines, serviceLineIncludeKeys],
   );
   const serviceLineLookup = useMemo(
     () => new Map(serviceLineDisplay.map((line) => [line.key, line])),
-    [serviceLineDisplay]
+    [serviceLineDisplay],
   );
   const serviceLineKeySet = useMemo(
     () => new Set(serviceLineDisplay.map((line) => line.key)),
-    [serviceLineDisplay]
+    [serviceLineDisplay],
   );
   const selectableServiceLines = useMemo(
     () => serviceLineDisplay.filter((line) => line.key !== OVERDUTY_KEY),
-    [serviceLineDisplay]
+    [serviceLineDisplay],
   );
   const serviceLineMeta = useMemo(
-    () => serviceLineDisplay.map((line) => ({ key: line.key, roleGroup: line.roleGroup, label: line.label })),
-    [serviceLineDisplay]
+    () =>
+      serviceLineDisplay.map((line) => ({
+        key: line.key,
+        roleGroup: line.roleGroup,
+        label: line.label,
+      })),
+    [serviceLineDisplay],
   );
   const longTermServiceOptions = useMemo(() => {
     return [
       LONG_TERM_BASE_OPTION,
-      ...selectableServiceLines.map((line) => ({ value: line.key, label: line.label }))
+      ...selectableServiceLines.map((line) => ({
+        value: line.key,
+        label: line.label,
+      })),
     ];
   }, [selectableServiceLines]);
 
@@ -450,16 +559,16 @@ export default function Settings() {
   });
   const selectedServiceTypeLabels = serviceTypeOverrides.map((type) => ({
     id: type,
-    label: serviceLineLookup.get(type)?.label || type
+    label: serviceLineLookup.get(type)?.label || type,
   }));
   const defaultServiceTypeLabels = getServiceTypesForEmployee(
     {
       role: roleValue || employee?.role,
       shiftPreferences: employee?.shiftPreferences,
       takesShifts: employee?.takesShifts,
-      canOverduty
+      canOverduty,
     },
-    serviceLineMeta
+    serviceLineMeta,
   ).map((type) => serviceLineLookup.get(type)?.label || type);
   const filteredRooms = availableRooms.filter((room) => {
     const query = roomSearch.trim().toLowerCase();
@@ -471,7 +580,9 @@ export default function Settings() {
   });
   const permissionOptions = availablePermissions.length
     ? PERMISSION_FALLBACK.map(
-        (fallback) => availablePermissions.find((perm) => perm.key === fallback.key) || fallback
+        (fallback) =>
+          availablePermissions.find((perm) => perm.key === fallback.key) ||
+          fallback,
       )
     : PERMISSION_FALLBACK;
 
@@ -493,58 +604,87 @@ export default function Settings() {
 
   const applyEmployeeState = (emp: Employee) => {
     setEmployee(emp);
-    const nameParts = emp.name.split(' ');
-    const hasTitle = nameParts[0]?.includes('Dr.') || nameParts[0]?.includes('PD') || nameParts[0]?.includes('Prof.');
-    const titleValue = emp.title?.trim() || (hasTitle ? nameParts.slice(0, nameParts.length > 2 ? 2 : 1).join(' ') : '');
+    const nameParts = emp.name.split(" ");
+    const hasTitle =
+      nameParts[0]?.includes("Dr.") ||
+      nameParts[0]?.includes("PD") ||
+      nameParts[0]?.includes("Prof.");
+    const titleValue =
+      emp.title?.trim() ||
+      (hasTitle
+        ? nameParts.slice(0, nameParts.length > 2 ? 2 : 1).join(" ")
+        : "");
     const birthdayIso = formatBirthday(emp.birthday);
 
     setFormData({
       title: titleValue,
-      firstName: emp.firstName || '',
-      lastName: emp.lastName || (hasTitle ? nameParts.slice(-1)[0] : nameParts.slice(-1)[0]) || '',
+      firstName: emp.firstName || "",
+      lastName:
+        emp.lastName ||
+        (hasTitle ? nameParts.slice(-1)[0] : nameParts.slice(-1)[0]) ||
+        "",
       birthday: birthdayIso,
-      email: emp.email || '',
-      emailPrivate: emp.emailPrivate || '',
-      phoneWork: emp.phoneWork || '',
-      phonePrivate: emp.phonePrivate || '',
+      email: emp.email || "",
+      emailPrivate: emp.emailPrivate || "",
+      phoneWork: emp.phoneWork || "",
+      phonePrivate: emp.phonePrivate || "",
       showPrivateContact: emp.showPrivateContact || false,
-      badge: emp.lastName?.substring(0, 2).toUpperCase() || emp.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || '',
-      vacationEntitlement: emp.vacationEntitlement !== null && emp.vacationEntitlement !== undefined
-        ? String(emp.vacationEntitlement)
-        : ""
+      badge:
+        emp.lastName?.substring(0, 2).toUpperCase() ||
+        emp.name
+          .split(" ")
+          .map((n) => n[0])
+          .join("")
+          .substring(0, 2)
+          .toUpperCase() ||
+        "",
+      vacationEntitlement:
+        emp.vacationEntitlement !== null &&
+        emp.vacationEntitlement !== undefined
+          ? String(emp.vacationEntitlement)
+          : "",
     });
     setBirthdayInput(formatBirthdayDisplay(birthdayIso || emp.birthday));
-    setNewBadge(emp.lastName?.substring(0, 2).toUpperCase() || '');
+    setNewBadge(emp.lastName?.substring(0, 2).toUpperCase() || "");
     setRoleValue(normalizeRoleValue(emp.role));
     setAppRoleValue(emp.appRole || "");
     setTakesShifts(emp.takesShifts ?? true);
     setCanOverduty(emp.canOverduty ?? false);
     setSelectedCompetencyIds([]);
     const prefs = (emp.shiftPreferences as ShiftPreferences | null) || null;
-    setDeploymentRoomIds(Array.isArray(prefs?.deploymentRoomIds) ? prefs.deploymentRoomIds : []);
+    setDeploymentRoomIds(
+      Array.isArray(prefs?.deploymentRoomIds) ? prefs.deploymentRoomIds : [],
+    );
     setServiceTypeOverrides(
       Array.isArray(prefs?.serviceTypeOverrides)
-        ? prefs.serviceTypeOverrides.filter((value): value is ServiceType => typeof value === "string")
-        : []
+        ? prefs.serviceTypeOverrides.filter(
+            (value): value is ServiceType => typeof value === "string",
+          )
+        : [],
     );
   };
 
   const loadData = async () => {
     try {
-      const [employees, competencies, rooms, diplomas, serviceLineData] = await Promise.all([
-        employeeApi.getAll(),
-        competencyApi.getAll(),
-        roomApi.getAll(),
-        diplomaApi.getAll(),
-        serviceLinesApi.getAll().catch(() => [])
-      ]);
+      const [employees, competencies, rooms, diplomas, serviceLineData] =
+        await Promise.all([
+          employeeApi.getAll(),
+          competencyApi.getAll(),
+          roomApi.getAll(),
+          diplomaApi.getAll(),
+          serviceLinesApi.getAll().catch(() => []),
+        ]);
       setAllEmployees(employees);
-      setAvailableCompetencies(competencies.filter((comp) => comp.isActive !== false));
-      setAvailableDiplomas(diplomas.filter((diploma) => diploma.isActive !== false));
+      setAvailableCompetencies(
+        competencies.filter((comp) => comp.isActive !== false),
+      );
+      setAvailableDiplomas(
+        diplomas.filter((diploma) => diploma.isActive !== false),
+      );
       setAvailableRooms(rooms);
       setServiceLines(serviceLineData);
-      
-      const emp = employees.find(e => e.id === viewingUserId);
+
+      const emp = employees.find((e) => e.id === viewingUserId);
       if (emp) {
         applyEmployeeState(emp);
         try {
@@ -556,14 +696,18 @@ export default function Settings() {
             setSelectedCompetencyIds(ids);
           } else if (Array.isArray(emp.competencies) && competencies.length) {
             const fallbackIds = emp.competencies
-              .map((name) => competencies.find((comp) => comp.name === name)?.id)
+              .map(
+                (name) => competencies.find((comp) => comp.name === name)?.id,
+              )
               .filter((id): id is number => typeof id === "number");
             setSelectedCompetencyIds(fallbackIds);
           }
         } catch {
           if (Array.isArray(emp.competencies) && competencies.length) {
             const fallbackIds = emp.competencies
-              .map((name) => competencies.find((comp) => comp.name === name)?.id)
+              .map(
+                (name) => competencies.find((comp) => comp.name === name)?.id,
+              )
               .filter((id): id is number => typeof id === "number");
             setSelectedCompetencyIds(fallbackIds);
           }
@@ -578,14 +722,18 @@ export default function Settings() {
             setSelectedDiplomaIds(ids);
           } else if (Array.isArray(emp.diplomas) && diplomas.length) {
             const fallbackIds = emp.diplomas
-              .map((name) => diplomas.find((diploma) => diploma.name === name)?.id)
+              .map(
+                (name) => diplomas.find((diploma) => diploma.name === name)?.id,
+              )
               .filter((id): id is number => typeof id === "number");
             setSelectedDiplomaIds(fallbackIds);
           }
         } catch {
           if (Array.isArray(emp.diplomas) && diplomas.length) {
             const fallbackIds = emp.diplomas
-              .map((name) => diplomas.find((diploma) => diploma.name === name)?.id)
+              .map(
+                (name) => diplomas.find((diploma) => diploma.name === name)?.id,
+              )
               .filter((id): id is number => typeof id === "number");
             setSelectedDiplomaIds(fallbackIds);
           }
@@ -606,7 +754,9 @@ export default function Settings() {
 
         try {
           const absences = await longTermAbsencesApi.getByEmployee(emp.id);
-          const sorted = [...absences].sort((a, b) => a.startDate.localeCompare(b.startDate));
+          const sorted = [...absences].sort((a, b) =>
+            a.startDate.localeCompare(b.startDate),
+          );
           setLongTermAbsences(sorted.map(buildLongTermAbsenceDraft));
           setLongTermAbsenceDecisionNotes({});
         } catch {
@@ -618,7 +768,7 @@ export default function Settings() {
       toast({
         title: "Fehler",
         description: "Daten konnten nicht geladen werden",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setLoading(false);
@@ -628,10 +778,15 @@ export default function Settings() {
   const loadPermissions = async () => {
     setLoadingPermissions(true);
     try {
-      const response = await apiRequest("GET", `/api/admin/users/${viewingUserId}/permissions`);
+      const response = await apiRequest(
+        "GET",
+        `/api/admin/users/${viewingUserId}/permissions`,
+      );
       const result = await response.json();
       if (result.success && result.data) {
-        setAvailablePermissions(result.data.availablePermissions || PERMISSION_FALLBACK);
+        setAvailablePermissions(
+          result.data.availablePermissions || PERMISSION_FALLBACK,
+        );
         setSelectedPermissions(result.data.permissions || []);
       } else {
         setAvailablePermissions(PERMISSION_FALLBACK);
@@ -643,7 +798,7 @@ export default function Settings() {
       toast({
         title: "Fehler",
         description: "Berechtigungen konnten nicht geladen werden",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setLoadingPermissions(false);
@@ -656,7 +811,7 @@ export default function Settings() {
       toast({
         title: "Fehler",
         description: "Keine Abteilung zugeordnet",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
@@ -666,17 +821,18 @@ export default function Settings() {
       const departmentId = employee?.departmentId || currentUser?.departmentId;
       await apiRequest("PUT", `/api/admin/users/${viewingUserId}/permissions`, {
         departmentId,
-        permissionKeys: selectedPermissions
+        permissionKeys: selectedPermissions,
       });
       toast({
         title: "Gespeichert",
-        description: "Berechtigungen wurden aktualisiert"
+        description: "Berechtigungen wurden aktualisiert",
       });
     } catch (error: any) {
       toast({
         title: "Fehler",
-        description: error.message || "Berechtigungen konnten nicht gespeichert werden",
-        variant: "destructive"
+        description:
+          error.message || "Berechtigungen konnten nicht gespeichert werden",
+        variant: "destructive",
       });
     } finally {
       setSavingPermissions(false);
@@ -694,7 +850,7 @@ export default function Settings() {
 
   const handleSave = async () => {
     if (!employee || (!canEditBasicInfo && !canEditRoleAndCompetencies)) return;
-    
+
     setSaving(true);
     try {
       const payload: Partial<Omit<Employee, "id" | "createdAt">> = {};
@@ -702,8 +858,9 @@ export default function Settings() {
       if (parsedBirthday === null) {
         toast({
           title: "Fehler",
-          description: "Bitte ein gueltiges Geburtsdatum eingeben (TT.MM.JJJJ oder JJJJ-MM-TT).",
-          variant: "destructive"
+          description:
+            "Bitte ein gueltiges Geburtsdatum eingeben (TT.MM.JJJJ oder JJJJ-MM-TT).",
+          variant: "destructive",
         });
         setSaving(false);
         return;
@@ -713,8 +870,9 @@ export default function Settings() {
       if (!emailValue || !isValidEmail(emailValue)) {
         toast({
           title: "Fehler",
-          description: "Bitte eine gueltige E-Mail-Adresse ohne Umlaute eingeben.",
-          variant: "destructive"
+          description:
+            "Bitte eine gueltige E-Mail-Adresse ohne Umlaute eingeben.",
+          variant: "destructive",
         });
         setSaving(false);
         return;
@@ -724,19 +882,25 @@ export default function Settings() {
       if (emailPrivateValue && !isValidEmail(emailPrivateValue)) {
         toast({
           title: "Fehler",
-          description: "Bitte eine gueltige private E-Mail-Adresse ohne Umlaute eingeben.",
-          variant: "destructive"
+          description:
+            "Bitte eine gueltige private E-Mail-Adresse ohne Umlaute eingeben.",
+          variant: "destructive",
         });
         setSaving(false);
         return;
       }
 
-      const parsedVacationEntitlement = parseVacationEntitlementInput(formData.vacationEntitlement);
-      if (formData.vacationEntitlement.trim() && parsedVacationEntitlement === null) {
+      const parsedVacationEntitlement = parseVacationEntitlementInput(
+        formData.vacationEntitlement,
+      );
+      if (
+        formData.vacationEntitlement.trim() &&
+        parsedVacationEntitlement === null
+      ) {
         toast({
           title: "Fehler",
           description: "Bitte einen gueltigen Urlaubsanspruch (Tage) eingeben.",
-          variant: "destructive"
+          variant: "destructive",
         });
         setSaving(false);
         return;
@@ -759,17 +923,21 @@ export default function Settings() {
       }
 
       if (canEditRoleAndCompetencies) {
-        const baseShiftPreferences = (employee.shiftPreferences && typeof employee.shiftPreferences === "object")
-          ? (employee.shiftPreferences as ShiftPreferences)
-          : {};
+        const baseShiftPreferences =
+          employee.shiftPreferences &&
+          typeof employee.shiftPreferences === "object"
+            ? (employee.shiftPreferences as ShiftPreferences)
+            : {};
         const nextShiftPreferences: ShiftPreferences = {
           ...baseShiftPreferences,
-          deploymentRoomIds: deploymentRoomIds
+          deploymentRoomIds: deploymentRoomIds,
         };
         if (serviceTypeOverrides.length) {
           nextShiftPreferences.serviceTypeOverrides = serviceTypeOverrides;
         } else {
-          delete (nextShiftPreferences as { serviceTypeOverrides?: ServiceType[] }).serviceTypeOverrides;
+          delete (
+            nextShiftPreferences as { serviceTypeOverrides?: ServiceType[] }
+          ).serviceTypeOverrides;
         }
 
         Object.assign(payload, {
@@ -777,13 +945,13 @@ export default function Settings() {
           appRole: (appRoleValue || employee.appRole) as Employee["appRole"],
           takesShifts,
           canOverduty,
-          shiftPreferences: nextShiftPreferences
+          shiftPreferences: nextShiftPreferences,
         });
       }
 
       if (canEditVacationEntitlement) {
         Object.assign(payload, {
-          vacationEntitlement: parsedVacationEntitlement
+          vacationEntitlement: parsedVacationEntitlement,
         });
       }
 
@@ -797,25 +965,30 @@ export default function Settings() {
         : null;
 
       if (canEditRoleAndCompetencies) {
-        await employeeApi.updateCompetencies(employee.id, selectedCompetencyIds);
+        await employeeApi.updateCompetencies(
+          employee.id,
+          selectedCompetencyIds,
+        );
       }
       if (canEditDiplomas) {
         await employeeApi.updateDiplomas(employee.id, selectedDiplomaIds);
       }
       toast({
         title: "Gespeichert",
-        description: "Ihre Einstellungen wurden aktualisiert"
+        description: "Ihre Einstellungen wurden aktualisiert",
       });
       if (updated) {
         applyEmployeeState(updated);
-        setAllEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
+        setAllEmployees((prev) =>
+          prev.map((e) => (e.id === updated.id ? updated : e)),
+        );
       }
       loadData();
     } catch (error) {
       toast({
         title: "Fehler",
         description: "Änderungen konnten nicht gespeichert werden",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setSaving(false);
@@ -825,13 +998,21 @@ export default function Settings() {
   const handleAddLongTermRule = () => {
     setLongTermRules((prev) => [
       ...prev,
-      { kind: "ALWAYS_OFF", weekday: "Mon", strength: "SOFT", serviceType: "any" }
+      {
+        kind: "ALWAYS_OFF",
+        weekday: "Mon",
+        strength: "SOFT",
+        serviceType: "any",
+      },
     ]);
   };
 
-  const handleUpdateLongTermRule = (index: number, patch: Partial<LongTermWishRule>) => {
+  const handleUpdateLongTermRule = (
+    index: number,
+    patch: Partial<LongTermWishRule>,
+  ) => {
     setLongTermRules((prev) =>
-      prev.map((rule, idx) => (idx === index ? { ...rule, ...patch } : rule))
+      prev.map((rule, idx) => (idx === index ? { ...rule, ...patch } : rule)),
     );
   };
 
@@ -843,23 +1024,26 @@ export default function Settings() {
     if (!employee || !isViewingOwnProfile) return;
     setLongTermSaving(true);
     try {
-      const status = longTermWish?.status === "Abgelehnt" ? "Entwurf" : longTermWish?.status || "Entwurf";
+      const status =
+        longTermWish?.status === "Abgelehnt"
+          ? "Entwurf"
+          : longTermWish?.status || "Entwurf";
       const wish = await longTermWishesApi.save({
         employeeId: employee.id,
         rules: longTermRules,
         notes: longTermNotes || null,
-        status
+        status,
       });
       setLongTermWish(wish);
       toast({
         title: "Gespeichert",
-        description: "Langfristige Dienstwünsche wurden aktualisiert"
+        description: "Langfristige Dienstwünsche wurden aktualisiert",
       });
     } catch (error: any) {
       toast({
         title: "Fehler",
         description: error.message || "Speichern fehlgeschlagen",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setLongTermSaving(false);
@@ -876,7 +1060,7 @@ export default function Settings() {
           employeeId: employee.id,
           rules: longTermRules,
           notes: longTermNotes || null,
-          status: "Entwurf"
+          status: "Entwurf",
         });
       }
       if (!wish) return;
@@ -884,13 +1068,13 @@ export default function Settings() {
       setLongTermWish(submitted);
       toast({
         title: "Eingereicht",
-        description: "Langfristige Wünsche wurden zur Freigabe eingereicht"
+        description: "Langfristige Wünsche wurden zur Freigabe eingereicht",
       });
     } catch (error: any) {
       toast({
         title: "Fehler",
         description: error.message || "Einreichen fehlgeschlagen",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setLongTermSaving(false);
@@ -901,17 +1085,20 @@ export default function Settings() {
     if (!longTermWish) return;
     setLongTermSaving(true);
     try {
-      const updated = await longTermWishesApi.approve(longTermWish.id, longTermDecisionNotes || undefined);
+      const updated = await longTermWishesApi.approve(
+        longTermWish.id,
+        longTermDecisionNotes || undefined,
+      );
       setLongTermWish(updated);
       toast({
         title: "Genehmigt",
-        description: "Langfristige Wünsche wurden freigegeben"
+        description: "Langfristige Wünsche wurden freigegeben",
       });
     } catch (error: any) {
       toast({
         title: "Fehler",
         description: error.message || "Freigabe fehlgeschlagen",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setLongTermSaving(false);
@@ -922,17 +1109,20 @@ export default function Settings() {
     if (!longTermWish) return;
     setLongTermSaving(true);
     try {
-      const updated = await longTermWishesApi.reject(longTermWish.id, longTermDecisionNotes || undefined);
+      const updated = await longTermWishesApi.reject(
+        longTermWish.id,
+        longTermDecisionNotes || undefined,
+      );
       setLongTermWish(updated);
       toast({
         title: "Abgelehnt",
-        description: "Langfristige Wünsche wurden abgelehnt"
+        description: "Langfristige Wünsche wurden abgelehnt",
       });
     } catch (error: any) {
       toast({
         title: "Fehler",
         description: error.message || "Ablehnung fehlgeschlagen",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setLongTermSaving(false);
@@ -950,14 +1140,19 @@ export default function Settings() {
         startDate: "",
         endDate: "",
         reason: "",
-        status: "Entwurf"
-      }
+        status: "Entwurf",
+      },
     ]);
   };
 
-  const updateLongTermAbsenceDraft = (localId: string, patch: Partial<LongTermAbsenceDraft>) => {
+  const updateLongTermAbsenceDraft = (
+    localId: string,
+    patch: Partial<LongTermAbsenceDraft>,
+  ) => {
     setLongTermAbsences((prev) =>
-      prev.map((draft) => (draft.localId === localId ? { ...draft, ...patch } : draft))
+      prev.map((draft) =>
+        draft.localId === localId ? { ...draft, ...patch } : draft,
+      ),
     );
   };
 
@@ -976,8 +1171,9 @@ export default function Settings() {
     if (parsedStart === null || !parsedStart) {
       toast({
         title: "Fehler",
-        description: "Bitte ein gueltiges Startdatum eingeben (TT.MM.JJJJ oder JJJJ-MM-TT).",
-        variant: "destructive"
+        description:
+          "Bitte ein gueltiges Startdatum eingeben (TT.MM.JJJJ oder JJJJ-MM-TT).",
+        variant: "destructive",
       });
       return null;
     }
@@ -985,8 +1181,9 @@ export default function Settings() {
     if (parsedEnd === null || !parsedEnd) {
       toast({
         title: "Fehler",
-        description: "Bitte ein gueltiges Enddatum eingeben (TT.MM.JJJJ oder JJJJ-MM-TT).",
-        variant: "destructive"
+        description:
+          "Bitte ein gueltiges Enddatum eingeben (TT.MM.JJJJ oder JJJJ-MM-TT).",
+        variant: "destructive",
       });
       return null;
     }
@@ -994,7 +1191,7 @@ export default function Settings() {
       toast({
         title: "Fehler",
         description: "Das Enddatum muss nach dem Startdatum liegen.",
-        variant: "destructive"
+        variant: "destructive",
       });
       return null;
     }
@@ -1002,11 +1199,15 @@ export default function Settings() {
       toast({
         title: "Fehler",
         description: "Bitte eine Beschreibung der Abwesenheit angeben.",
-        variant: "destructive"
+        variant: "destructive",
       });
       return null;
     }
-    return { startDate: parsedStart, endDate: parsedEnd, reason: draft.reason.trim() };
+    return {
+      startDate: parsedStart,
+      endDate: parsedEnd,
+      reason: draft.reason.trim(),
+    };
   };
 
   const handleSaveLongTermAbsence = async (draft: LongTermAbsenceDraft) => {
@@ -1020,21 +1221,21 @@ export default function Settings() {
         : await longTermAbsencesApi.create({
             employeeId: employee.id,
             ...payload,
-            status: "Entwurf"
+            status: "Entwurf",
           });
       updateLongTermAbsenceDraft(draft.localId, {
         ...buildLongTermAbsenceDraft(saved),
-        localId: draft.localId
+        localId: draft.localId,
       });
       toast({
         title: "Gespeichert",
-        description: "Langzeit-Abwesenheit wurde gespeichert"
+        description: "Langzeit-Abwesenheit wurde gespeichert",
       });
     } catch (error: any) {
       toast({
         title: "Fehler",
         description: error.message || "Speichern fehlgeschlagen",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setLongTermAbsenceSaving(draft.localId, false);
@@ -1048,29 +1249,39 @@ export default function Settings() {
     setLongTermAbsenceSaving(draft.localId, true);
     try {
       let target = draft;
-      if (!draft.id || draft.status === "Abgelehnt" || draft.status === "Entwurf") {
+      if (
+        !draft.id ||
+        draft.status === "Abgelehnt" ||
+        draft.status === "Entwurf"
+      ) {
         const saved = draft.id
           ? await longTermAbsencesApi.update(draft.id, payload)
           : await longTermAbsencesApi.create({
               employeeId: employee.id,
               ...payload,
-              status: "Entwurf"
+              status: "Entwurf",
             });
-        target = { ...buildLongTermAbsenceDraft(saved), localId: draft.localId };
+        target = {
+          ...buildLongTermAbsenceDraft(saved),
+          localId: draft.localId,
+        };
         updateLongTermAbsenceDraft(draft.localId, target);
       }
       if (!target.id) return;
       const submitted = await longTermAbsencesApi.submit(target.id);
-      updateLongTermAbsenceDraft(draft.localId, { ...buildLongTermAbsenceDraft(submitted), localId: draft.localId });
+      updateLongTermAbsenceDraft(draft.localId, {
+        ...buildLongTermAbsenceDraft(submitted),
+        localId: draft.localId,
+      });
       toast({
         title: "Eingereicht",
-        description: "Langzeit-Abwesenheit wurde zur Freigabe eingereicht"
+        description: "Langzeit-Abwesenheit wurde zur Freigabe eingereicht",
       });
     } catch (error: any) {
       toast({
         title: "Fehler",
         description: error.message || "Einreichen fehlgeschlagen",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setLongTermAbsenceSaving(draft.localId, false);
@@ -1082,17 +1293,23 @@ export default function Settings() {
     setLongTermAbsenceSaving(draft.localId, true);
     try {
       const notes = longTermAbsenceDecisionNotes[draft.localId];
-      const updated = await longTermAbsencesApi.approve(draft.id, notes || undefined);
-      updateLongTermAbsenceDraft(draft.localId, { ...buildLongTermAbsenceDraft(updated), localId: draft.localId });
+      const updated = await longTermAbsencesApi.approve(
+        draft.id,
+        notes || undefined,
+      );
+      updateLongTermAbsenceDraft(draft.localId, {
+        ...buildLongTermAbsenceDraft(updated),
+        localId: draft.localId,
+      });
       toast({
         title: "Genehmigt",
-        description: "Langzeit-Abwesenheit wurde freigegeben"
+        description: "Langzeit-Abwesenheit wurde freigegeben",
       });
     } catch (error: any) {
       toast({
         title: "Fehler",
         description: error.message || "Freigabe fehlgeschlagen",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setLongTermAbsenceSaving(draft.localId, false);
@@ -1104,17 +1321,23 @@ export default function Settings() {
     setLongTermAbsenceSaving(draft.localId, true);
     try {
       const notes = longTermAbsenceDecisionNotes[draft.localId];
-      const updated = await longTermAbsencesApi.reject(draft.id, notes || undefined);
-      updateLongTermAbsenceDraft(draft.localId, { ...buildLongTermAbsenceDraft(updated), localId: draft.localId });
+      const updated = await longTermAbsencesApi.reject(
+        draft.id,
+        notes || undefined,
+      );
+      updateLongTermAbsenceDraft(draft.localId, {
+        ...buildLongTermAbsenceDraft(updated),
+        localId: draft.localId,
+      });
       toast({
         title: "Abgelehnt",
-        description: "Langzeit-Abwesenheit wurde abgelehnt"
+        description: "Langzeit-Abwesenheit wurde abgelehnt",
       });
     } catch (error: any) {
       toast({
         title: "Fehler",
         description: error.message || "Ablehnung fehlgeschlagen",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setLongTermAbsenceSaving(draft.localId, false);
@@ -1126,7 +1349,7 @@ export default function Settings() {
       toast({
         title: "Nicht erlaubt",
         description: "Passwort kann nur vom Benutzer selbst geändert werden.",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
@@ -1135,7 +1358,7 @@ export default function Settings() {
       toast({
         title: "Fehler",
         description: "Aktuelles Passwort ist erforderlich",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
@@ -1144,7 +1367,7 @@ export default function Settings() {
       toast({
         title: "Fehler",
         description: "Passwörter stimmen nicht überein",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
@@ -1153,62 +1376,74 @@ export default function Settings() {
       toast({
         title: "Fehler",
         description: "Passwort muss mindestens 6 Zeichen haben",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
-    
+
     try {
       await apiRequest("POST", "/api/auth/set-password", {
         currentPassword: passwordData.currentPassword,
-        newPassword: passwordData.newPassword
+        newPassword: passwordData.newPassword,
       });
 
       toast({
         title: "Passwort geändert",
-        description: "Ihr Passwort wurde erfolgreich aktualisiert"
+        description: "Ihr Passwort wurde erfolgreich aktualisiert",
       });
       setIsPasswordDialogOpen(false);
-      setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setPasswordData({
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: "",
+      });
     } catch (error: any) {
       toast({
         title: "Fehler",
         description: error.message || "Passwort konnte nicht geändert werden",
-        variant: "destructive"
+        variant: "destructive",
       });
     }
   };
 
   const handleBadgeChange = () => {
-    setFormData(prev => ({ ...prev, badge: newBadge.toUpperCase() }));
+    setFormData((prev) => ({ ...prev, badge: newBadge.toUpperCase() }));
     toast({
       title: "Kürzel geändert",
-      description: `Ihr neues Kürzel ist "${newBadge.toUpperCase()}"`
+      description: `Ihr neues Kürzel ist "${newBadge.toUpperCase()}"`,
     });
     setIsBadgeDialogOpen(false);
   };
 
   const toggleCompetency = (id: number) => {
     setSelectedCompetencyIds((prev) =>
-      prev.includes(id) ? prev.filter((compId) => compId !== id) : [...prev, id]
+      prev.includes(id)
+        ? prev.filter((compId) => compId !== id)
+        : [...prev, id],
     );
   };
 
   const toggleDiploma = (id: number) => {
     setSelectedDiplomaIds((prev) =>
-      prev.includes(id) ? prev.filter((diplomaId) => diplomaId !== id) : [...prev, id]
+      prev.includes(id)
+        ? prev.filter((diplomaId) => diplomaId !== id)
+        : [...prev, id],
     );
   };
 
   const toggleDeploymentRoom = (id: number) => {
     setDeploymentRoomIds((prev) =>
-      prev.includes(id) ? prev.filter((roomId) => roomId !== id) : [...prev, id]
+      prev.includes(id)
+        ? prev.filter((roomId) => roomId !== id)
+        : [...prev, id],
     );
   };
 
   const toggleServiceTypeOverride = (type: ServiceType) => {
     setServiceTypeOverrides((prev) =>
-      prev.includes(type) ? prev.filter((value) => value !== type) : [...prev, type]
+      prev.includes(type)
+        ? prev.filter((value) => value !== type)
+        : [...prev, type],
     );
   };
 
@@ -1228,24 +1463,33 @@ export default function Settings() {
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-16">
             <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">Benutzer nicht gefunden</h3>
+            <h3 className="text-lg font-medium mb-2">
+              Benutzer nicht gefunden
+            </h3>
           </CardContent>
         </Card>
       </Layout>
     );
   }
 
-  const viewingEmployeeDoesShifts = employeeDoesShifts(employee, serviceLineMeta);
+  const viewingEmployeeDoesShifts = employeeDoesShifts(
+    employee,
+    serviceLineMeta,
+  );
   const longTermStatus = longTermWish?.status || "Entwurf";
   const canEditLongTerm =
-    isViewingOwnProfile && (longTermStatus === "Entwurf" || longTermStatus === "Abgelehnt");
+    isViewingOwnProfile &&
+    (longTermStatus === "Entwurf" || longTermStatus === "Abgelehnt");
   const showApproveActions =
-    !isViewingOwnProfile && canApproveLongTerm && longTermStatus === "Eingereicht";
+    !isViewingOwnProfile &&
+    canApproveLongTerm &&
+    longTermStatus === "Eingereicht";
 
   return (
-    <Layout title={isViewingOwnProfile ? "Einstellungen" : `Profil: ${employee.name}`}>
+    <Layout
+      title={isViewingOwnProfile ? "Einstellungen" : `Profil: ${employee.name}`}
+    >
       <div className="max-w-4xl mx-auto space-y-6">
-        
         {isAdmin && (
           <Card className="border-amber-200 bg-amber-50/50">
             <CardContent className="py-4">
@@ -1254,18 +1498,20 @@ export default function Settings() {
                   <Shield className="w-5 h-5 text-amber-600" />
                   <div>
                     <p className="font-medium text-amber-900">Admin-Ansicht</p>
-                    <p className="text-sm text-amber-700">Sie können alle Benutzerprofile bearbeiten</p>
+                    <p className="text-sm text-amber-700">
+                      Sie können alle Benutzerprofile bearbeiten
+                    </p>
                   </div>
                 </div>
-                <Select 
-                  value={viewingUserId.toString()} 
+                <Select
+                  value={viewingUserId.toString()}
                   onValueChange={(v) => setLocation(`/einstellungen/${v}`)}
                 >
                   <SelectTrigger className="w-64" data-testid="select-user">
                     <SelectValue placeholder="Benutzer wählen" />
                   </SelectTrigger>
                   <SelectContent>
-                    {sortedEmployees.map(emp => (
+                    {sortedEmployees.map((emp) => (
                       <SelectItem key={emp.id} value={emp.id.toString()}>
                         {emp.name} - {getRoleLabel(emp.role)}
                       </SelectItem>
@@ -1279,7 +1525,12 @@ export default function Settings() {
 
         <div className="flex items-center gap-4 mb-6">
           <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center text-primary text-2xl font-bold">
-            {formData.badge || employee.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+            {formData.badge ||
+              employee.name
+                .split(" ")
+                .map((n) => n[0])
+                .join("")
+                .slice(0, 2)}
           </div>
           <div>
             <h2 className="text-2xl font-bold">{employee.name}</h2>
@@ -1295,10 +1546,14 @@ export default function Settings() {
             <TabsTrigger value="security">Sicherheit</TabsTrigger>
             <TabsTrigger value="roles">Rollen & Kompetenzen</TabsTrigger>
             {viewingEmployeeDoesShifts && (
-              <TabsTrigger value="longterm">Langfristige Dienstwünsche</TabsTrigger>
+              <TabsTrigger value="longterm">
+                Langfristige Dienstwünsche
+              </TabsTrigger>
             )}
             {viewingEmployeeDoesShifts && (
-              <TabsTrigger value="longterm-absence">Langzeit-Abwesenheit</TabsTrigger>
+              <TabsTrigger value="longterm-absence">
+                Langzeit-Abwesenheit
+              </TabsTrigger>
             )}
             <TabsTrigger value="permissions">Berechtigungen</TabsTrigger>
           </TabsList>
@@ -1307,31 +1562,48 @@ export default function Settings() {
             <Card>
               <CardHeader>
                 <CardTitle>Basisdaten</CardTitle>
-                <CardDescription>Verwalten Sie Ihre persönlichen Informationen</CardDescription>
+                <CardDescription>
+                  Verwalten Sie Ihre persönlichen Informationen
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Titel</Label>
-                    <Input 
-                      value={formData.title} 
-                      onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))} 
+                    <Input
+                      value={formData.title}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          title: e.target.value,
+                        }))
+                      }
                       disabled={!canEditBasicInfo}
                     />
                   </div>
                   <div className="space-y-2">
                     <Label>Vorname</Label>
-                    <Input 
-                      value={formData.firstName} 
-                      onChange={(e) => setFormData(prev => ({ ...prev, firstName: e.target.value }))} 
+                    <Input
+                      value={formData.firstName}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          firstName: e.target.value,
+                        }))
+                      }
                       disabled={!canEditBasicInfo}
                     />
                   </div>
                   <div className="space-y-2">
                     <Label>Nachname</Label>
-                    <Input 
-                      value={formData.lastName} 
-                      onChange={(e) => setFormData(prev => ({ ...prev, lastName: e.target.value }))} 
+                    <Input
+                      value={formData.lastName}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          lastName: e.target.value,
+                        }))
+                      }
                       disabled={!canEditBasicInfo}
                     />
                   </div>
@@ -1354,11 +1626,18 @@ export default function Settings() {
                           <DatePickerCalendar
                             mode="single"
                             captionLayout="dropdown"
-                            selected={formData.birthday ? new Date(`${formData.birthday}T00:00:00`) : undefined}
+                            selected={
+                              formData.birthday
+                                ? new Date(`${formData.birthday}T00:00:00`)
+                                : undefined
+                            }
                             onSelect={(date) => {
                               if (!date) return;
                               const iso = formatBirthday(date);
-                              setFormData(prev => ({ ...prev, birthday: iso }));
+                              setFormData((prev) => ({
+                                ...prev,
+                                birthday: iso,
+                              }));
                               setBirthdayInput(formatBirthdayDisplay(iso));
                             }}
                             fromYear={1900}
@@ -1366,7 +1645,7 @@ export default function Settings() {
                           />
                         </PopoverContent>
                       </Popover>
-                      <Input 
+                      <Input
                         value={birthdayInput}
                         onChange={(e) => setBirthdayInput(e.target.value)}
                         placeholder="TT.MM.JJJJ"
@@ -1383,10 +1662,15 @@ export default function Settings() {
                     <Label>E-Mail (Dienst)</Label>
                     <div className="relative">
                       <Mail className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
-                      <Input 
+                      <Input
                         className="pl-10"
-                        value={formData.email} 
-                        onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))} 
+                        value={formData.email}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            email: e.target.value,
+                          }))
+                        }
                         disabled={!canEditBasicInfo}
                       />
                     </div>
@@ -1395,10 +1679,15 @@ export default function Settings() {
                     <Label>E-Mail (privat)</Label>
                     <div className="relative">
                       <Mail className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
-                      <Input 
+                      <Input
                         className="pl-10"
-                        value={formData.emailPrivate} 
-                        onChange={(e) => setFormData(prev => ({ ...prev, emailPrivate: e.target.value }))} 
+                        value={formData.emailPrivate}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            emailPrivate: e.target.value,
+                          }))
+                        }
                         disabled={!canEditPrivateInfo}
                       />
                     </div>
@@ -1410,10 +1699,15 @@ export default function Settings() {
                     <Label>Telefon (Dienst)</Label>
                     <div className="relative">
                       <Phone className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
-                      <Input 
+                      <Input
                         className="pl-10"
-                        value={formData.phoneWork} 
-                        onChange={(e) => setFormData(prev => ({ ...prev, phoneWork: e.target.value }))} 
+                        value={formData.phoneWork}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            phoneWork: e.target.value,
+                          }))
+                        }
                         disabled={!canEditBasicInfo}
                       />
                     </div>
@@ -1422,10 +1716,15 @@ export default function Settings() {
                     <Label>Telefon (privat)</Label>
                     <div className="relative">
                       <Phone className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
-                      <Input 
+                      <Input
                         className="pl-10"
-                        value={formData.phonePrivate} 
-                        onChange={(e) => setFormData(prev => ({ ...prev, phonePrivate: e.target.value }))} 
+                        value={formData.phonePrivate}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            phonePrivate: e.target.value,
+                          }))
+                        }
                         disabled={!canEditPrivateInfo}
                       />
                     </div>
@@ -1437,7 +1736,12 @@ export default function Settings() {
                       min={0}
                       step={1}
                       value={formData.vacationEntitlement}
-                      onChange={(e) => setFormData(prev => ({ ...prev, vacationEntitlement: e.target.value }))}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          vacationEntitlement: e.target.value,
+                        }))
+                      }
                       disabled={!canEditVacationEntitlement}
                       placeholder="z.B. 25"
                     />
@@ -1448,19 +1752,31 @@ export default function Settings() {
                   <div className="flex items-center gap-3">
                     <Lock className="w-4 h-4 text-muted-foreground" />
                     <div>
-                      <p className="font-medium">Private Kontaktdaten sichtbar</p>
-                      <p className="text-sm text-muted-foreground">Erlaubt das Anzeigen privater Telefonnummer/E-Mail</p>
+                      <p className="font-medium">
+                        Private Kontaktdaten sichtbar
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Erlaubt das Anzeigen privater Telefonnummer/E-Mail
+                      </p>
                     </div>
                   </div>
-                  <Switch 
+                  <Switch
                     checked={formData.showPrivateContact}
-                    onCheckedChange={(checked) => setFormData(prev => ({ ...prev, showPrivateContact: checked }))}
+                    onCheckedChange={(checked) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        showPrivateContact: checked,
+                      }))
+                    }
                     disabled={!canEditPrivateInfo}
                   />
                 </div>
 
                 <div className="flex justify-end">
-                  <Button onClick={handleSave} disabled={!canEditBasicInfo || saving}>
+                  <Button
+                    onClick={handleSave}
+                    disabled={!canEditBasicInfo || saving}
+                  >
                     <Save className="w-4 h-4 mr-2" />
                     Speichern
                   </Button>
@@ -1478,41 +1794,59 @@ export default function Settings() {
               <CardContent className="space-y-4">
                 {!canChangePassword && (
                   <div className="text-sm text-muted-foreground">
-                    Passwortänderungen sind nur für den eigenen Account möglich. Admins nutzen die Benutzerverwaltung
-                    zum Zurücksetzen.
+                    Passwortänderungen sind nur für den eigenen Account möglich.
+                    Admins nutzen die Benutzerverwaltung zum Zurücksetzen.
                   </div>
                 )}
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Aktuelles Passwort</Label>
-                    <Input 
+                    <Input
                       type="password"
                       value={passwordData.currentPassword}
-                      onChange={(e) => setPasswordData(prev => ({ ...prev, currentPassword: e.target.value }))}
+                      onChange={(e) =>
+                        setPasswordData((prev) => ({
+                          ...prev,
+                          currentPassword: e.target.value,
+                        }))
+                      }
                       disabled={!canChangePassword}
                     />
                   </div>
                   <div className="space-y-2">
                     <Label>Neues Passwort</Label>
-                    <Input 
+                    <Input
                       type="password"
                       value={passwordData.newPassword}
-                      onChange={(e) => setPasswordData(prev => ({ ...prev, newPassword: e.target.value }))}
+                      onChange={(e) =>
+                        setPasswordData((prev) => ({
+                          ...prev,
+                          newPassword: e.target.value,
+                        }))
+                      }
                       disabled={!canChangePassword}
                     />
                   </div>
                   <div className="space-y-2">
                     <Label>Neues Passwort bestätigen</Label>
-                    <Input 
+                    <Input
                       type="password"
                       value={passwordData.confirmPassword}
-                      onChange={(e) => setPasswordData(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                      onChange={(e) =>
+                        setPasswordData((prev) => ({
+                          ...prev,
+                          confirmPassword: e.target.value,
+                        }))
+                      }
                       disabled={!canChangePassword}
                     />
                   </div>
                 </div>
 
-                <Button onClick={handlePasswordChange} disabled={!canChangePassword}>
+                <Button
+                  onClick={handlePasswordChange}
+                  disabled={!canChangePassword}
+                >
                   <Lock className="w-4 h-4 mr-2" />
                   Passwort ändern
                 </Button>
@@ -1524,7 +1858,9 @@ export default function Settings() {
             <Card>
               <CardHeader>
                 <CardTitle>Rollen & Kompetenzen</CardTitle>
-                <CardDescription>Verwalten Sie Ihre fachlichen Einstellungen</CardDescription>
+                <CardDescription>
+                  Verwalten Sie Ihre fachlichen Einstellungen
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid md:grid-cols-2 gap-4">
@@ -1535,7 +1871,9 @@ export default function Settings() {
                       {canEditRoleAndCompetencies ? (
                         <Select
                           value={roleValue}
-                          onValueChange={(value) => setRoleValue(value as Employee["role"])}
+                          onValueChange={(value) =>
+                            setRoleValue(value as Employee["role"])
+                          }
                         >
                           <SelectTrigger className="pl-10">
                             <SelectValue placeholder="Rolle auswählen" />
@@ -1560,7 +1898,9 @@ export default function Settings() {
                       {canEditRoleAndCompetencies ? (
                         <Select
                           value={appRoleValue}
-                          onValueChange={(value) => setAppRoleValue(value as Employee["appRole"])}
+                          onValueChange={(value) =>
+                            setAppRoleValue(value as Employee["appRole"])
+                          }
                         >
                           <SelectTrigger className="pl-10">
                             <SelectValue placeholder="App-Rolle auswählen" />
@@ -1584,18 +1924,22 @@ export default function Settings() {
                   <div>
                     <Label>Dienstplan berücksichtigen</Label>
                     <p className="text-xs text-muted-foreground">
-                      Wenn deaktiviert, wird die Person im Dienstplan nicht eingeplant.
+                      Wenn deaktiviert, wird die Person im Dienstplan nicht
+                      eingeplant.
                     </p>
                   </div>
                   <Switch
                     checked={takesShifts}
-                    onCheckedChange={(checked) => setTakesShifts(Boolean(checked))}
+                    onCheckedChange={(checked) =>
+                      setTakesShifts(Boolean(checked))
+                    }
                     disabled={!canEditRoleAndCompetencies}
                   />
                 </div>
 
                 <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-                  Langzeit-Abwesenheiten werden im Reiter "Langzeit-Abwesenheit" eingereicht und freigegeben.
+                  Langzeit-Abwesenheiten werden im Reiter "Langzeit-Abwesenheit"
+                  eingereicht und freigegeben.
                 </div>
 
                 <div className="space-y-2">
@@ -1603,7 +1947,11 @@ export default function Settings() {
                   <div className="flex flex-wrap gap-2">
                     {selectedCompetencyLabels.length ? (
                       selectedCompetencyLabels.map((comp) => (
-                        <Badge key={comp.id} variant="secondary" className="flex items-center gap-1">
+                        <Badge
+                          key={comp.id}
+                          variant="secondary"
+                          className="flex items-center gap-1"
+                        >
                           <GraduationCap className="w-3 h-3" />
                           <span>{comp.label}</span>
                           {canEditRoleAndCompetencies && (
@@ -1619,7 +1967,9 @@ export default function Settings() {
                         </Badge>
                       ))
                     ) : (
-                      <p className="text-sm text-muted-foreground">Keine Kompetenzen hinterlegt</p>
+                      <p className="text-sm text-muted-foreground">
+                        Keine Kompetenzen hinterlegt
+                      </p>
                     )}
                   </div>
                   {canEditRoleAndCompetencies && (
@@ -1633,27 +1983,43 @@ export default function Settings() {
                         <div className="space-y-2">
                           <Input
                             value={competencySearch}
-                            onChange={(e) => setCompetencySearch(e.target.value)}
+                            onChange={(e) =>
+                              setCompetencySearch(e.target.value)
+                            }
                             placeholder="Kompetenz suchen..."
                           />
                           <div className="max-h-56 overflow-y-auto space-y-2">
                             {filteredCompetencies.map((comp) => {
-                              const checked = selectedCompetencyIds.includes(comp.id);
+                              const checked = selectedCompetencyIds.includes(
+                                comp.id,
+                              );
                               return (
-                                <div key={comp.id} className="flex items-center gap-2">
+                                <div
+                                  key={comp.id}
+                                  className="flex items-center gap-2"
+                                >
                                   <Checkbox
                                     id={`competency-${comp.id}`}
                                     checked={checked}
-                                    onCheckedChange={() => toggleCompetency(comp.id)}
+                                    onCheckedChange={() =>
+                                      toggleCompetency(comp.id)
+                                    }
                                   />
-                                  <Label htmlFor={`competency-${comp.id}`} className="text-sm font-normal cursor-pointer">
-                                    {comp.code ? `${comp.code} - ${comp.name}` : comp.name}
+                                  <Label
+                                    htmlFor={`competency-${comp.id}`}
+                                    className="text-sm font-normal cursor-pointer"
+                                  >
+                                    {comp.code
+                                      ? `${comp.code} - ${comp.name}`
+                                      : comp.name}
                                   </Label>
                                 </div>
                               );
                             })}
                             {!filteredCompetencies.length && (
-                              <p className="text-sm text-muted-foreground">Keine Kompetenzen gefunden</p>
+                              <p className="text-sm text-muted-foreground">
+                                Keine Kompetenzen gefunden
+                              </p>
                             )}
                           </div>
                         </div>
@@ -1667,7 +2033,11 @@ export default function Settings() {
                   <div className="flex flex-wrap gap-2">
                     {selectedDiplomaLabels.length ? (
                       selectedDiplomaLabels.map((diploma) => (
-                        <Badge key={diploma.id} variant="secondary" className="flex items-center gap-1">
+                        <Badge
+                          key={diploma.id}
+                          variant="secondary"
+                          className="flex items-center gap-1"
+                        >
                           <GraduationCap className="w-3 h-3" />
                           <span>{diploma.label}</span>
                           {canEditDiplomas && (
@@ -1683,7 +2053,9 @@ export default function Settings() {
                         </Badge>
                       ))
                     ) : (
-                      <p className="text-sm text-muted-foreground">Keine Diplome hinterlegt</p>
+                      <p className="text-sm text-muted-foreground">
+                        Keine Diplome hinterlegt
+                      </p>
                     )}
                   </div>
                   {canEditDiplomas && (
@@ -1702,22 +2074,34 @@ export default function Settings() {
                           />
                           <div className="max-h-56 overflow-y-auto space-y-2">
                             {filteredDiplomas.map((diploma) => {
-                              const checked = selectedDiplomaIds.includes(diploma.id);
+                              const checked = selectedDiplomaIds.includes(
+                                diploma.id,
+                              );
                               return (
-                                <div key={diploma.id} className="flex items-center gap-2">
+                                <div
+                                  key={diploma.id}
+                                  className="flex items-center gap-2"
+                                >
                                   <Checkbox
                                     id={`diploma-${diploma.id}`}
                                     checked={checked}
-                                    onCheckedChange={() => toggleDiploma(diploma.id)}
+                                    onCheckedChange={() =>
+                                      toggleDiploma(diploma.id)
+                                    }
                                   />
-                                  <Label htmlFor={`diploma-${diploma.id}`} className="text-sm font-normal cursor-pointer">
+                                  <Label
+                                    htmlFor={`diploma-${diploma.id}`}
+                                    className="text-sm font-normal cursor-pointer"
+                                  >
                                     {diploma.name}
                                   </Label>
                                 </div>
                               );
                             })}
                             {!filteredDiplomas.length && (
-                              <p className="text-sm text-muted-foreground">Keine Diplome gefunden</p>
+                              <p className="text-sm text-muted-foreground">
+                                Keine Diplome gefunden
+                              </p>
                             )}
                           </div>
                         </div>
@@ -1731,7 +2115,11 @@ export default function Settings() {
                   <div className="flex flex-wrap gap-2">
                     {selectedRoomLabels.length ? (
                       selectedRoomLabels.map((room) => (
-                        <Badge key={room.id} variant="secondary" className="flex items-center gap-1">
+                        <Badge
+                          key={room.id}
+                          variant="secondary"
+                          className="flex items-center gap-1"
+                        >
                           <Tag className="w-3 h-3" />
                           <span>{room.label}</span>
                           {canEditRoleAndCompetencies && (
@@ -1747,7 +2135,9 @@ export default function Settings() {
                         </Badge>
                       ))
                     ) : (
-                      <p className="text-sm text-muted-foreground">Keine Einsatzbereiche hinterlegt</p>
+                      <p className="text-sm text-muted-foreground">
+                        Keine Einsatzbereiche hinterlegt
+                      </p>
                     )}
                   </div>
                   {canEditRoleAndCompetencies && (
@@ -1766,22 +2156,36 @@ export default function Settings() {
                           />
                           <div className="max-h-56 overflow-y-auto space-y-2">
                             {filteredRooms.map((room) => {
-                              const checked = deploymentRoomIds.includes(room.id);
+                              const checked = deploymentRoomIds.includes(
+                                room.id,
+                              );
                               return (
-                                <div key={room.id} className="flex items-center gap-2">
+                                <div
+                                  key={room.id}
+                                  className="flex items-center gap-2"
+                                >
                                   <Checkbox
                                     id={`room-${room.id}`}
                                     checked={checked}
-                                    onCheckedChange={() => toggleDeploymentRoom(room.id)}
+                                    onCheckedChange={() =>
+                                      toggleDeploymentRoom(room.id)
+                                    }
                                   />
-                                  <Label htmlFor={`room-${room.id}`} className="text-sm font-normal cursor-pointer">
-                                    {room.category ? `${room.name} (${room.category})` : room.name}
+                                  <Label
+                                    htmlFor={`room-${room.id}`}
+                                    className="text-sm font-normal cursor-pointer"
+                                  >
+                                    {room.category
+                                      ? `${room.name} (${room.category})`
+                                      : room.name}
                                   </Label>
                                 </div>
                               );
                             })}
                             {!filteredRooms.length && (
-                              <p className="text-sm text-muted-foreground">Keine Arbeitsplätze gefunden</p>
+                              <p className="text-sm text-muted-foreground">
+                                Keine Arbeitsplätze gefunden
+                              </p>
                             )}
                           </div>
                         </div>
@@ -1793,18 +2197,27 @@ export default function Settings() {
                 <div className="space-y-2">
                   <Label>Einsetzbar für (Abweichung)</Label>
                   <p className="text-xs text-muted-foreground">
-                    Nur bei Abweichungen setzen. Standard nach Rolle: {defaultServiceTypeLabels.length ? defaultServiceTypeLabels.join(", ") : "—"}
+                    Nur bei Abweichungen setzen. Standard nach Rolle:{" "}
+                    {defaultServiceTypeLabels.length
+                      ? defaultServiceTypeLabels.join(", ")
+                      : "—"}
                   </p>
                   <div className="flex flex-wrap gap-2">
                     {selectedServiceTypeLabels.length ? (
                       selectedServiceTypeLabels.map((service) => (
-                        <Badge key={service.id} variant="secondary" className="flex items-center gap-1">
+                        <Badge
+                          key={service.id}
+                          variant="secondary"
+                          className="flex items-center gap-1"
+                        >
                           <Shield className="w-3 h-3" />
                           <span>{service.label}</span>
                           {canEditRoleAndCompetencies && (
                             <button
                               type="button"
-                              onClick={() => toggleServiceTypeOverride(service.id)}
+                              onClick={() =>
+                                toggleServiceTypeOverride(service.id)
+                              }
                               className="ml-1 text-muted-foreground hover:text-foreground"
                               aria-label={`Einsetzbarkeit entfernen: ${service.label}`}
                             >
@@ -1814,7 +2227,9 @@ export default function Settings() {
                         </Badge>
                       ))
                     ) : (
-                      <p className="text-sm text-muted-foreground">Keine Abweichung gesetzt</p>
+                      <p className="text-sm text-muted-foreground">
+                        Keine Abweichung gesetzt
+                      </p>
                     )}
                   </div>
                   {canEditRoleAndCompetencies && (
@@ -1827,13 +2242,23 @@ export default function Settings() {
                       <PopoverContent align="start" className="w-72">
                         <div className="space-y-2">
                           {selectableServiceLines.map((line) => (
-                            <div key={line.key} className="flex items-center gap-2">
+                            <div
+                              key={line.key}
+                              className="flex items-center gap-2"
+                            >
                               <Checkbox
                                 id={`service-${line.key}`}
-                                checked={serviceTypeOverrides.includes(line.key)}
-                                onCheckedChange={() => toggleServiceTypeOverride(line.key)}
+                                checked={serviceTypeOverrides.includes(
+                                  line.key,
+                                )}
+                                onCheckedChange={() =>
+                                  toggleServiceTypeOverride(line.key)
+                                }
                               />
-                              <Label htmlFor={`service-${line.key}`} className="text-sm font-normal cursor-pointer">
+                              <Label
+                                htmlFor={`service-${line.key}`}
+                                className="text-sm font-normal cursor-pointer"
+                              >
                                 {line.label}
                               </Label>
                             </div>
@@ -1845,7 +2270,10 @@ export default function Settings() {
                 </div>
 
                 <div className="flex justify-end">
-                  <Button onClick={handleSave} disabled={!canEditRoleAndCompetencies || saving}>
+                  <Button
+                    onClick={handleSave}
+                    disabled={!canEditRoleAndCompetencies || saving}
+                  >
                     <Save className="w-4 h-4 mr-2" />
                     Speichern
                   </Button>
@@ -1860,7 +2288,8 @@ export default function Settings() {
                 <CardHeader>
                   <CardTitle>Langfristige Dienstwünsche</CardTitle>
                   <CardDescription>
-                    Wiederkehrende Präferenzen für die Dienstplanung. Diese müssen freigegeben werden.
+                    Wiederkehrende Präferenzen für die Dienstplanung. Diese
+                    müssen freigegeben werden.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -1871,16 +2300,22 @@ export default function Settings() {
                         longTermStatus === "Genehmigt"
                           ? "bg-green-50 text-green-700 border-green-200"
                           : longTermStatus === "Eingereicht"
-                          ? "bg-blue-50 text-blue-700 border-blue-200"
-                          : longTermStatus === "Abgelehnt"
-                          ? "bg-red-50 text-red-700 border-red-200"
-                          : "bg-muted text-muted-foreground"
+                            ? "bg-blue-50 text-blue-700 border-blue-200"
+                            : longTermStatus === "Abgelehnt"
+                              ? "bg-red-50 text-red-700 border-red-200"
+                              : "bg-muted text-muted-foreground"
                       }
                     >
-                      Status: {LONG_TERM_STATUS_LABELS[longTermStatus] || longTermStatus}
+                      Status:{" "}
+                      {LONG_TERM_STATUS_LABELS[longTermStatus] ||
+                        longTermStatus}
                     </Badge>
                     {isViewingOwnProfile && canEditLongTerm && (
-                      <Button type="button" variant="outline" onClick={handleAddLongTermRule}>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleAddLongTermRule}
+                      >
                         Regel hinzufügen
                       </Button>
                     )}
@@ -1891,19 +2326,29 @@ export default function Settings() {
                       {longTermRules.map((rule, index) => {
                         const serviceValue = rule.serviceType || "any";
                         return (
-                          <div key={`${rule.kind}-${index}`} className="grid md:grid-cols-5 gap-3 items-end">
+                          <div
+                            key={`${rule.kind}-${index}`}
+                            className="grid md:grid-cols-5 gap-3 items-end"
+                          >
                             <div className="space-y-1">
                               <Label>Regel</Label>
                               <Select
                                 value={rule.kind}
-                                onValueChange={(value) => handleUpdateLongTermRule(index, { kind: value as LongTermWishRule["kind"] })}
+                                onValueChange={(value) =>
+                                  handleUpdateLongTermRule(index, {
+                                    kind: value as LongTermWishRule["kind"],
+                                  })
+                                }
                               >
                                 <SelectTrigger disabled={!canEditLongTerm}>
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
                                   {LONG_TERM_RULE_KINDS.map((option) => (
-                                    <SelectItem key={option.value} value={option.value}>
+                                    <SelectItem
+                                      key={option.value}
+                                      value={option.value}
+                                    >
                                       {option.label}
                                     </SelectItem>
                                   ))}
@@ -1914,14 +2359,22 @@ export default function Settings() {
                               <Label>Wochentag</Label>
                               <Select
                                 value={rule.weekday}
-                                onValueChange={(value) => handleUpdateLongTermRule(index, { weekday: value as LongTermWishRule["weekday"] })}
+                                onValueChange={(value) =>
+                                  handleUpdateLongTermRule(index, {
+                                    weekday:
+                                      value as LongTermWishRule["weekday"],
+                                  })
+                                }
                               >
                                 <SelectTrigger disabled={!canEditLongTerm}>
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
                                   {LONG_TERM_WEEKDAYS.map((day) => (
-                                    <SelectItem key={day.value} value={day.value}>
+                                    <SelectItem
+                                      key={day.value}
+                                      value={day.value}
+                                    >
                                       {day.label}
                                     </SelectItem>
                                   ))}
@@ -1934,7 +2387,10 @@ export default function Settings() {
                                 value={serviceValue}
                                 onValueChange={(value) =>
                                   handleUpdateLongTermRule(index, {
-                                    serviceType: value === "any" ? "any" : (value as LongTermWishRule["serviceType"])
+                                    serviceType:
+                                      value === "any"
+                                        ? "any"
+                                        : (value as LongTermWishRule["serviceType"]),
                                   })
                                 }
                               >
@@ -1943,7 +2399,10 @@ export default function Settings() {
                                 </SelectTrigger>
                                 <SelectContent>
                                   {longTermServiceOptions.map((option) => (
-                                    <SelectItem key={option.value} value={option.value}>
+                                    <SelectItem
+                                      key={option.value}
+                                      value={option.value}
+                                    >
                                       {option.label}
                                     </SelectItem>
                                   ))}
@@ -1955,7 +2414,10 @@ export default function Settings() {
                               <Select
                                 value={rule.strength}
                                 onValueChange={(value) =>
-                                  handleUpdateLongTermRule(index, { strength: value as LongTermWishRule["strength"] })
+                                  handleUpdateLongTermRule(index, {
+                                    strength:
+                                      value as LongTermWishRule["strength"],
+                                  })
                                 }
                               >
                                 <SelectTrigger disabled={!canEditLongTerm}>
@@ -1963,7 +2425,10 @@ export default function Settings() {
                                 </SelectTrigger>
                                 <SelectContent>
                                   {LONG_TERM_RULE_STRENGTHS.map((option) => (
-                                    <SelectItem key={option.value} value={option.value}>
+                                    <SelectItem
+                                      key={option.value}
+                                      value={option.value}
+                                    >
                                       {option.label}
                                     </SelectItem>
                                   ))}
@@ -1976,7 +2441,9 @@ export default function Settings() {
                                   type="button"
                                   variant="ghost"
                                   size="icon"
-                                  onClick={() => handleRemoveLongTermRule(index)}
+                                  onClick={() =>
+                                    handleRemoveLongTermRule(index)
+                                  }
                                   aria-label="Regel entfernen"
                                 >
                                   <X className="w-4 h-4" />
@@ -1988,7 +2455,9 @@ export default function Settings() {
                       })}
                     </div>
                   ) : (
-                    <p className="text-sm text-muted-foreground">Keine Regeln hinterlegt.</p>
+                    <p className="text-sm text-muted-foreground">
+                      Keine Regeln hinterlegt.
+                    </p>
                   )}
 
                   <div className="space-y-2">
@@ -2006,7 +2475,9 @@ export default function Settings() {
                       <Label>Hinweise zur Entscheidung</Label>
                       <Textarea
                         value={longTermDecisionNotes}
-                        onChange={(event) => setLongTermDecisionNotes(event.target.value)}
+                        onChange={(event) =>
+                          setLongTermDecisionNotes(event.target.value)
+                        }
                         placeholder="Optional..."
                       />
                     </div>
@@ -2020,7 +2491,9 @@ export default function Settings() {
                           onClick={handleSaveLongTermWish}
                           disabled={!canEditLongTerm || longTermSaving}
                         >
-                          {longTermSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                          {longTermSaving && (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          )}
                           Speichern
                         </Button>
                         <Button
@@ -2032,7 +2505,9 @@ export default function Settings() {
                             longTermStatus === "Genehmigt"
                           }
                         >
-                          {longTermSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                          {longTermSaving && (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          )}
                           Einreichen
                         </Button>
                       </>
@@ -2044,14 +2519,18 @@ export default function Settings() {
                           onClick={handleRejectLongTermWish}
                           disabled={longTermSaving}
                         >
-                          {longTermSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                          {longTermSaving && (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          )}
                           Ablehnen
                         </Button>
                         <Button
                           onClick={handleApproveLongTermWish}
                           disabled={longTermSaving}
                         >
-                          {longTermSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                          {longTermSaving && (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          )}
                           Genehmigen
                         </Button>
                       </>
@@ -2068,16 +2547,22 @@ export default function Settings() {
                 <CardHeader>
                   <CardTitle>Langzeit-Abwesenheiten</CardTitle>
                   <CardDescription>
-                    Langfristige Abwesenheiten mit Freigabeprozess (z. B. Papamonat, Elternkarenz).
+                    Langfristige Abwesenheiten mit Freigabeprozess (z. B.
+                    Papamonat, Elternkarenz).
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <p className="text-xs text-muted-foreground">
-                      Eintraege werden nach Einreichung freigegeben und im Dienstplan beruecksichtigt.
+                      Eintraege werden nach Einreichung freigegeben und im
+                      Dienstplan beruecksichtigt.
                     </p>
                     {isViewingOwnProfile && (
-                      <Button type="button" variant="outline" onClick={handleAddLongTermAbsence}>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleAddLongTermAbsence}
+                      >
                         Neu hinzufügen
                       </Button>
                     )}
@@ -2086,14 +2571,24 @@ export default function Settings() {
                   {longTermAbsences.length ? (
                     <div className="space-y-4">
                       {longTermAbsences.map((draft) => {
-                        const statusLabel = LONG_TERM_STATUS_LABELS[draft.status] || draft.status;
+                        const statusLabel =
+                          LONG_TERM_STATUS_LABELS[draft.status] || draft.status;
                         const canEditDraft =
-                          isViewingOwnProfile && (draft.status === "Entwurf" || draft.status === "Abgelehnt");
+                          isViewingOwnProfile &&
+                          (draft.status === "Entwurf" ||
+                            draft.status === "Abgelehnt");
                         const canApproveDraft =
-                          !isViewingOwnProfile && canApproveLongTerm && draft.status === "Eingereicht";
-                        const isSaving = longTermAbsenceSavingIds.includes(draft.localId);
+                          !isViewingOwnProfile &&
+                          canApproveLongTerm &&
+                          draft.status === "Eingereicht";
+                        const isSaving = longTermAbsenceSavingIds.includes(
+                          draft.localId,
+                        );
                         return (
-                          <div key={draft.localId} className="rounded-lg border border-border p-4 space-y-3">
+                          <div
+                            key={draft.localId}
+                            className="rounded-lg border border-border p-4 space-y-3"
+                          >
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <Badge
                                 variant="outline"
@@ -2101,17 +2596,18 @@ export default function Settings() {
                                   draft.status === "Genehmigt"
                                     ? "bg-green-50 text-green-700 border-green-200"
                                     : draft.status === "Eingereicht"
-                                    ? "bg-blue-50 text-blue-700 border-blue-200"
-                                    : draft.status === "Abgelehnt"
-                                    ? "bg-red-50 text-red-700 border-red-200"
-                                    : "bg-muted text-muted-foreground"
+                                      ? "bg-blue-50 text-blue-700 border-blue-200"
+                                      : draft.status === "Abgelehnt"
+                                        ? "bg-red-50 text-red-700 border-red-200"
+                                        : "bg-muted text-muted-foreground"
                                 }
                               >
                                 Status: {statusLabel}
                               </Badge>
                               {draft.startDate && draft.endDate && (
                                 <span className="text-xs text-muted-foreground">
-                                  {formatBirthdayDisplay(draft.startDate)} – {formatBirthdayDisplay(draft.endDate)}
+                                  {formatBirthdayDisplay(draft.startDate)} –{" "}
+                                  {formatBirthdayDisplay(draft.endDate)}
                                 </span>
                               )}
                             </div>
@@ -2122,7 +2618,9 @@ export default function Settings() {
                                 <Input
                                   value={draft.startDate}
                                   onChange={(event) =>
-                                    updateLongTermAbsenceDraft(draft.localId, { startDate: event.target.value })
+                                    updateLongTermAbsenceDraft(draft.localId, {
+                                      startDate: event.target.value,
+                                    })
                                   }
                                   placeholder="TT.MM.JJJJ"
                                   disabled={!canEditDraft}
@@ -2133,7 +2631,9 @@ export default function Settings() {
                                 <Input
                                   value={draft.endDate}
                                   onChange={(event) =>
-                                    updateLongTermAbsenceDraft(draft.localId, { endDate: event.target.value })
+                                    updateLongTermAbsenceDraft(draft.localId, {
+                                      endDate: event.target.value,
+                                    })
                                   }
                                   placeholder="TT.MM.JJJJ"
                                   disabled={!canEditDraft}
@@ -2146,7 +2646,9 @@ export default function Settings() {
                               <Textarea
                                 value={draft.reason}
                                 onChange={(event) =>
-                                  updateLongTermAbsenceDraft(draft.localId, { reason: event.target.value })
+                                  updateLongTermAbsenceDraft(draft.localId, {
+                                    reason: event.target.value,
+                                  })
                                 }
                                 placeholder="z. B. Papamonat 01.01.2026 bis 31.01.2026"
                                 disabled={!canEditDraft}
@@ -2157,11 +2659,15 @@ export default function Settings() {
                               <div className="space-y-2">
                                 <Label>Hinweis zur Entscheidung</Label>
                                 <Textarea
-                                  value={longTermAbsenceDecisionNotes[draft.localId] || ""}
+                                  value={
+                                    longTermAbsenceDecisionNotes[
+                                      draft.localId
+                                    ] || ""
+                                  }
                                   onChange={(event) =>
                                     setLongTermAbsenceDecisionNotes((prev) => ({
                                       ...prev,
-                                      [draft.localId]: event.target.value
+                                      [draft.localId]: event.target.value,
                                     }))
                                   }
                                   placeholder="Optional..."
@@ -2174,17 +2680,25 @@ export default function Settings() {
                                 <>
                                   <Button
                                     variant="outline"
-                                    onClick={() => handleSaveLongTermAbsence(draft)}
+                                    onClick={() =>
+                                      handleSaveLongTermAbsence(draft)
+                                    }
                                     disabled={isSaving}
                                   >
-                                    {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                                    {isSaving && (
+                                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                    )}
                                     Speichern
                                   </Button>
                                   <Button
-                                    onClick={() => handleSubmitLongTermAbsence(draft)}
+                                    onClick={() =>
+                                      handleSubmitLongTermAbsence(draft)
+                                    }
                                     disabled={isSaving}
                                   >
-                                    {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                                    {isSaving && (
+                                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                    )}
                                     Einreichen
                                   </Button>
                                 </>
@@ -2193,17 +2707,25 @@ export default function Settings() {
                                 <>
                                   <Button
                                     variant="destructive"
-                                    onClick={() => handleRejectLongTermAbsence(draft)}
+                                    onClick={() =>
+                                      handleRejectLongTermAbsence(draft)
+                                    }
                                     disabled={isSaving}
                                   >
-                                    {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                                    {isSaving && (
+                                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                    )}
                                     Ablehnen
                                   </Button>
                                   <Button
-                                    onClick={() => handleApproveLongTermAbsence(draft)}
+                                    onClick={() =>
+                                      handleApproveLongTermAbsence(draft)
+                                    }
                                     disabled={isSaving}
                                   >
-                                    {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                                    {isSaving && (
+                                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                    )}
                                     Genehmigen
                                   </Button>
                                 </>
@@ -2214,7 +2736,9 @@ export default function Settings() {
                       })}
                     </div>
                   ) : (
-                    <p className="text-sm text-muted-foreground">Keine Langzeit-Abwesenheiten hinterlegt.</p>
+                    <p className="text-sm text-muted-foreground">
+                      Keine Langzeit-Abwesenheiten hinterlegt.
+                    </p>
                   )}
                 </CardContent>
               </Card>
@@ -2236,12 +2760,15 @@ export default function Settings() {
                   <div>
                     <Label>Kann Überdienst machen</Label>
                     <p className="text-xs text-muted-foreground">
-                      Nur Mitarbeiter mit dieser Freigabe können im Überdienst eingetragen werden.
+                      Nur Mitarbeiter mit dieser Freigabe können im Überdienst
+                      eingetragen werden.
                     </p>
                   </div>
                   <Switch
                     checked={canOverduty}
-                    onCheckedChange={(checked) => setCanOverduty(Boolean(checked))}
+                    onCheckedChange={(checked) =>
+                      setCanOverduty(Boolean(checked))
+                    }
                     disabled={!canEditRoleAndCompetencies}
                   />
                 </div>
@@ -2253,14 +2780,22 @@ export default function Settings() {
                 ) : (
                   <div className="space-y-3">
                     {permissionOptions.map((perm) => (
-                      <div key={perm.key} className="flex items-center justify-between rounded-lg border border-border p-3">
-                        <Label htmlFor={`perm-${perm.key}`} className="text-sm font-normal flex-1">
+                      <div
+                        key={perm.key}
+                        className="flex items-center justify-between rounded-lg border border-border p-3"
+                      >
+                        <Label
+                          htmlFor={`perm-${perm.key}`}
+                          className="text-sm font-normal flex-1"
+                        >
                           {perm.label}
                         </Label>
                         <Switch
                           id={`perm-${perm.key}`}
                           checked={selectedPermissions.includes(perm.key)}
-                          onCheckedChange={(checked) => updatePermission(perm.key, Boolean(checked))}
+                          onCheckedChange={(checked) =>
+                            updatePermission(perm.key, Boolean(checked))
+                          }
                           disabled={!isTechnicalAdmin}
                         />
                       </div>
@@ -2269,8 +2804,13 @@ export default function Settings() {
                 )}
                 {isTechnicalAdmin && (
                   <div className="pt-2">
-                    <Button onClick={handleSavePermissions} disabled={savingPermissions}>
-                      {savingPermissions && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                    <Button
+                      onClick={handleSavePermissions}
+                      disabled={savingPermissions}
+                    >
+                      {savingPermissions && (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      )}
                       Speichern
                     </Button>
                   </div>
@@ -2278,7 +2818,9 @@ export default function Settings() {
                 {canEditRoleAndCompetencies && (
                   <div className="pt-2">
                     <Button onClick={handleSave} disabled={saving}>
-                      {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                      {saving && (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      )}
                       Überdienst speichern
                     </Button>
                   </div>

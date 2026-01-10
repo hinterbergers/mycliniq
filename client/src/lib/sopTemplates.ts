@@ -4,10 +4,10 @@ export const SOP_SECTION_DEFINITIONS = [
   { key: "content", title: "Inhaltliche / Sachliche Festlegungen" },
   { key: "publication", title: "Publikation und Inkrafttreten" },
   { key: "review", title: "Regelungsprüfung und Entwicklung" },
-  { key: "history", title: "Historie" }
+  { key: "history", title: "Historie" },
 ] as const;
 
-export type SopSectionKey = typeof SOP_SECTION_DEFINITIONS[number]["key"];
+export type SopSectionKey = (typeof SOP_SECTION_DEFINITIONS)[number]["key"];
 export type SopSections = Record<SopSectionKey, string>;
 
 export const EMPTY_SOP_SECTIONS: SopSections = {
@@ -16,7 +16,7 @@ export const EMPTY_SOP_SECTIONS: SopSections = {
   content: "",
   publication: "",
   review: "",
-  history: ""
+  history: "",
 };
 
 export const DEFAULT_SOP_SECTIONS: SopSections = {
@@ -25,7 +25,7 @@ export const DEFAULT_SOP_SECTIONS: SopSections = {
   content: "_Haupttext der SOP._",
   publication: "_Wie/wo wird die SOP publiziert und ab wann gilt sie?_",
   review: "_Wie oft wird überprüft, wer verantwortet die Pflege?_",
-  history: "_Optional: kurze Hinweise zur Historie._"
+  history: "_Optional: kurze Hinweise zur Historie._",
 };
 
 const normalizeHeading = (value: string) =>
@@ -37,7 +37,10 @@ const normalizeHeading = (value: string) =>
     .trim();
 
 const SOP_SECTION_LOOKUP = new Map(
-  SOP_SECTION_DEFINITIONS.map((section) => [normalizeHeading(section.title), section.key])
+  SOP_SECTION_DEFINITIONS.map((section) => [
+    normalizeHeading(section.title),
+    section.key,
+  ]),
 );
 
 const findSectionKey = (heading: string) => {

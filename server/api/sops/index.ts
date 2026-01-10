@@ -11,16 +11,20 @@ import {
   desc,
   isNotNull,
   isNull,
-  sql
+  sql,
 } from "../../lib/db";
 import {
   ok,
   created,
   notFound,
   validationError,
-  asyncHandler
+  asyncHandler,
 } from "../../lib/api-response";
-import { validateBody, validateParams, idParamSchema } from "../../lib/validate";
+import {
+  validateBody,
+  validateParams,
+  idParamSchema,
+} from "../../lib/validate";
 import {
   sops,
   sopMembers,
@@ -29,7 +33,7 @@ import {
   employees,
   permissions,
   userPermissions,
-  notifications
+  notifications,
 } from "@shared/schema";
 import { requireAuth, hasCapability } from "../middleware/auth";
 
@@ -38,7 +42,16 @@ const SOP_PUBLISH_CAP = "perm.sop_publish";
 
 const createSopSchema = z.object({
   title: z.string().min(1, "Titel erforderlich"),
-  category: z.enum(["SOP", "Dienstanweisung", "Aufklärungen", "Checkliste", "Formular", "Leitlinie"]).default("SOP"),
+  category: z
+    .enum([
+      "SOP",
+      "Dienstanweisung",
+      "Aufklärungen",
+      "Checkliste",
+      "Formular",
+      "Leitlinie",
+    ])
+    .default("SOP"),
   contentMarkdown: z.string().nullable().optional(),
   keywords: z.array(z.string()).nullable().optional(),
   awmfLink: z.string().url().nullable().optional(),
@@ -47,35 +60,44 @@ const createSopSchema = z.object({
     .array(
       z.object({
         employeeId: z.number().positive(),
-        role: z.enum(["read", "edit"]).default("read")
-      })
+        role: z.enum(["read", "edit"]).default("read"),
+      }),
     )
-    .optional()
+    .optional(),
 });
 
 const updateSopSchema = z.object({
   title: z.string().min(1).optional(),
-  category: z.enum(["SOP", "Dienstanweisung", "Aufklärungen", "Checkliste", "Formular", "Leitlinie"]).optional(),
+  category: z
+    .enum([
+      "SOP",
+      "Dienstanweisung",
+      "Aufklärungen",
+      "Checkliste",
+      "Formular",
+      "Leitlinie",
+    ])
+    .optional(),
   contentMarkdown: z.string().nullable().optional(),
   keywords: z.array(z.string()).nullable().optional(),
-  awmfLink: z.string().url().nullable().optional()
+  awmfLink: z.string().url().nullable().optional(),
 });
 
 const assignMembersSchema = z.object({
   members: z.array(
     z.object({
       employeeId: z.number().positive(),
-      role: z.enum(["read", "edit"]).default("read")
-    })
-  )
+      role: z.enum(["read", "edit"]).default("read"),
+    }),
+  ),
 });
 
 const statusReasonSchema = z.object({
-  reason: z.string().min(1, "Begruendung erforderlich")
+  reason: z.string().min(1, "Begruendung erforderlich"),
 });
 
 const publishSchema = z.object({
-  changeNote: z.string().min(1, "Aenderungsnotiz erforderlich")
+  changeNote: z.string().min(1, "Aenderungsnotiz erforderlich"),
 });
 
 const referenceSchema = z.object({
@@ -85,11 +107,13 @@ const referenceSchema = z.object({
   publisher: z.string().optional().nullable(),
   yearOrVersion: z.string().optional().nullable(),
   relevanceNote: z.string().optional().nullable(),
-  createdByAi: z.boolean().optional()
+  createdByAi: z.boolean().optional(),
 });
 
 function canManage(req: Parameters<typeof hasCapability>[0]): boolean {
-  return hasCapability(req, SOP_MANAGE_CAP) || hasCapability(req, SOP_PUBLISH_CAP);
+  return (
+    hasCapability(req, SOP_MANAGE_CAP) || hasCapability(req, SOP_PUBLISH_CAP)
+  );
 }
 
 function canPublish(req: Parameters<typeof hasCapability>[0]): boolean {
@@ -109,7 +133,8 @@ function normalizeSopStatus(status: string | null | undefined): string {
 function isPublicSop(record: typeof sops.$inferSelect): boolean {
   const status = normalizeSopStatus(record.status);
   if (status === "published") return true;
-  if (["in_progress", "review"].includes(status) && record.currentVersionId) return true;
+  if (["in_progress", "review"].includes(status) && record.currentVersionId)
+    return true;
   return false;
 }
 
@@ -131,26 +156,36 @@ async function isMember(sopId: number, employeeId: number): Promise<boolean> {
   const [member] = await db
     .select({ sopId: sopMembers.sopId })
     .from(sopMembers)
-    .where(and(eq(sopMembers.sopId, sopId), eq(sopMembers.employeeId, employeeId)))
+    .where(
+      and(eq(sopMembers.sopId, sopId), eq(sopMembers.employeeId, employeeId)),
+    )
     .limit(1);
   return Boolean(member);
 }
 
 async function getMemberRole(
   sopId: number,
-  employeeId: number
+  employeeId: number,
 ): Promise<"read" | "edit" | null> {
   const [member] = await db
     .select({ role: sopMembers.role })
     .from(sopMembers)
-    .where(and(eq(sopMembers.sopId, sopId), eq(sopMembers.employeeId, employeeId)))
+    .where(
+      and(eq(sopMembers.sopId, sopId), eq(sopMembers.employeeId, employeeId)),
+    )
     .limit(1);
   return member?.role ?? null;
 }
 
 async function createNotification(
   employeeIds: number[],
-  payload: { type?: "system" | "sop" | "project" | "message"; title: string; message: string; link?: string; metadata?: Record<string, unknown> }
+  payload: {
+    type?: "system" | "sop" | "project" | "message";
+    title: string;
+    message: string;
+    link?: string;
+    metadata?: Record<string, unknown>;
+  },
 ): Promise<void> {
   if (!employeeIds.length) return;
   const rows = employeeIds.map((recipientId) => ({
@@ -159,7 +194,7 @@ async function createNotification(
     title: payload.title,
     message: payload.message,
     link: payload.link || null,
-    metadata: payload.metadata || null
+    metadata: payload.metadata || null,
   }));
   await db.insert(notifications).values(rows);
 }
@@ -167,26 +202,44 @@ async function createNotification(
 async function notifyPermissionGroup(
   departmentId: number | undefined,
   permissionKey: string,
-  payload: { title: string; message: string; link?: string; metadata?: Record<string, unknown> }
+  payload: {
+    title: string;
+    message: string;
+    link?: string;
+    metadata?: Record<string, unknown>;
+  },
 ): Promise<void> {
   if (!departmentId) return;
   const recipients = await db
     .select({ userId: userPermissions.userId })
     .from(userPermissions)
     .innerJoin(permissions, eq(userPermissions.permissionId, permissions.id))
-    .where(and(eq(userPermissions.departmentId, departmentId), eq(permissions.key, permissionKey)));
-  await createNotification(recipients.map((row) => row.userId), {
-    type: "sop",
-    title: payload.title,
-    message: payload.message,
-    link: payload.link,
-    metadata: payload.metadata
-  });
+    .where(
+      and(
+        eq(userPermissions.departmentId, departmentId),
+        eq(permissions.key, permissionKey),
+      ),
+    );
+  await createNotification(
+    recipients.map((row) => row.userId),
+    {
+      type: "sop",
+      title: payload.title,
+      message: payload.message,
+      link: payload.link,
+      metadata: payload.metadata,
+    },
+  );
 }
 
 async function notifySopOwners(
   sopId: number,
-  payload: { title: string; message: string; link?: string; metadata?: Record<string, unknown> }
+  payload: {
+    title: string;
+    message: string;
+    link?: string;
+    metadata?: Record<string, unknown>;
+  },
 ): Promise<void> {
   const owner = await db
     .select({ ownerId: sops.createdById })
@@ -205,15 +258,21 @@ async function notifySopOwners(
     title: payload.title,
     message: payload.message,
     link: payload.link,
-    metadata: payload.metadata
+    metadata: payload.metadata,
   });
 }
 
-async function createVersion(sopId: number, releasedById: number, changeNote: string) {
+async function createVersion(
+  sopId: number,
+  releasedById: number,
+  changeNote: string,
+) {
   const [sop] = await db.select().from(sops).where(eq(sops.id, sopId));
   if (!sop) throw new Error("SOP nicht gefunden");
   const [{ maxVersion } = { maxVersion: 0 }] = await db
-    .select({ maxVersion: sql<number>`coalesce(max(${sopVersions.versionNumber}), 0)` })
+    .select({
+      maxVersion: sql<number>`coalesce(max(${sopVersions.versionNumber}), 0)`,
+    })
     .from(sopVersions)
     .where(eq(sopVersions.sopId, sopId));
   const nextVersion = (maxVersion || 0) + 1;
@@ -225,7 +284,7 @@ async function createVersion(sopId: number, releasedById: number, changeNote: st
       title: sop.title,
       contentMarkdown: sop.contentMarkdown || "",
       changeNote,
-      releasedById
+      releasedById,
     })
     .returning();
   await db
@@ -234,7 +293,7 @@ async function createVersion(sopId: number, releasedById: number, changeNote: st
       currentVersionId: version.id,
       version: String(nextVersion),
       publishedAt: new Date(),
-      approvedById: releasedById
+      approvedById: releasedById,
     })
     .where(eq(sops.id, sopId));
   return version;
@@ -247,7 +306,9 @@ export function registerSopRoutes(router: Router) {
     "/",
     asyncHandler(async (req, res) => {
       if (!req.user) {
-        return res.status(401).json({ success: false, error: "Nicht authentifiziert" });
+        return res
+          .status(401)
+          .json({ success: false, error: "Nicht authentifiziert" });
       }
       const { category, status, search } = req.query;
       const baseQuery = db
@@ -269,12 +330,12 @@ export function registerSopRoutes(router: Router) {
           createdAt: sops.createdAt,
           updatedAt: sops.updatedAt,
           creatorName: employees.name,
-          creatorLastName: employees.lastName
+          creatorLastName: employees.lastName,
         })
         .from(sops)
         .leftJoin(employees, eq(sops.createdById, employees.id));
 
-      let sopsResult: typeof sops.$inferSelect[] = [] as any;
+      let sopsResult: (typeof sops.$inferSelect)[] = [] as any;
       let memberSopIds = new Set<number>();
 
       if (canManage(req)) {
@@ -286,9 +347,12 @@ export function registerSopRoutes(router: Router) {
               isNull(sops.archivedAt),
               or(
                 eq(sops.status, "published"),
-                and(isNotNull(sops.currentVersionId), inArray(sops.status, ["in_progress", "review"]))
-              )
-            )
+                and(
+                  isNotNull(sops.currentVersionId),
+                  inArray(sops.status, ["in_progress", "review"]),
+                ),
+              ),
+            ),
           )
           .then((rows) => rows as any);
         const memberSops = await baseQuery
@@ -296,8 +360,8 @@ export function registerSopRoutes(router: Router) {
           .where(
             or(
               eq(sops.createdById, req.user.employeeId),
-              eq(sopMembers.employeeId, req.user.employeeId)
-            )
+              eq(sopMembers.employeeId, req.user.employeeId),
+            ),
           )
           .then((rows) => rows as any);
 
@@ -315,9 +379,13 @@ export function registerSopRoutes(router: Router) {
       if (status) {
         const statusValue = normalizeSopStatus(String(status));
         if (statusValue === "published") {
-          filtered = filtered.filter((sop) => isPublicSop(sop as typeof sops.$inferSelect));
+          filtered = filtered.filter((sop) =>
+            isPublicSop(sop as typeof sops.$inferSelect),
+          );
         } else {
-          filtered = filtered.filter((sop) => normalizeSopStatus(sop.status) === statusValue);
+          filtered = filtered.filter(
+            (sop) => normalizeSopStatus(sop.status) === statusValue,
+          );
         }
       }
       if (search) {
@@ -325,7 +393,8 @@ export function registerSopRoutes(router: Router) {
         filtered = filtered.filter(
           (sop) =>
             sop.title.toLowerCase().includes(term) ||
-            (sop.keywords && sop.keywords.some((k: string) => k.toLowerCase().includes(term)))
+            (sop.keywords &&
+              sop.keywords.some((k: string) => k.toLowerCase().includes(term))),
         );
       }
 
@@ -345,7 +414,9 @@ export function registerSopRoutes(router: Router) {
             .select()
             .from(sopVersions)
             .where(inArray(sopVersions.id, versionIds));
-          const versionById = new Map(versions.map((version) => [version.id, version]));
+          const versionById = new Map(
+            versions.map((version) => [version.id, version]),
+          );
           filtered = filtered.map((sop) => {
             if (!sop.currentVersionId || memberSopIds.has(sop.id)) return sop;
             const normalized = normalizeSopStatus(sop.status);
@@ -357,14 +428,14 @@ export function registerSopRoutes(router: Router) {
               title: version.title,
               version: String(version.versionNumber),
               contentMarkdown: version.contentMarkdown,
-              publishedAt: version.releasedAt
+              publishedAt: version.releasedAt,
             };
           });
         }
       }
 
       return ok(res, filtered);
-    })
+    }),
   );
 
   router.get(
@@ -372,7 +443,9 @@ export function registerSopRoutes(router: Router) {
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
       if (!req.user) {
-        return res.status(401).json({ success: false, error: "Nicht authentifiziert" });
+        return res
+          .status(401)
+          .json({ success: false, error: "Nicht authentifiziert" });
       }
       const sopId = Number(req.params.id);
       const [sop] = await db
@@ -382,7 +455,7 @@ export function registerSopRoutes(router: Router) {
           status: sops.status,
           contentMarkdown: sops.contentMarkdown,
           currentVersionId: sops.currentVersionId,
-          createdById: sops.createdById
+          createdById: sops.createdById,
         })
         .from(sops)
         .where(eq(sops.id, sopId));
@@ -393,20 +466,29 @@ export function registerSopRoutes(router: Router) {
 
       const memberRole = await getMemberRole(sopId, req.user.employeeId);
       const owner = sop.createdById === req.user.employeeId;
-      const allowed = canManage(req) || owner || Boolean(memberRole) || isPublicSop(sop as any);
+      const allowed =
+        canManage(req) ||
+        owner ||
+        Boolean(memberRole) ||
+        isPublicSop(sop as any);
       if (!allowed) {
-        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
       }
 
       let exportTitle = sop.title;
       let contentMarkdown = sop.contentMarkdown || "";
       if (!canManage(req) && !owner && !memberRole) {
         const normalized = normalizeSopStatus(sop.status);
-        if (["in_progress", "review"].includes(normalized) && sop.currentVersionId) {
+        if (
+          ["in_progress", "review"].includes(normalized) &&
+          sop.currentVersionId
+        ) {
           const [version] = await db
             .select({
               title: sopVersions.title,
-              contentMarkdown: sopVersions.contentMarkdown
+              contentMarkdown: sopVersions.contentMarkdown,
             })
             .from(sopVersions)
             .where(eq(sopVersions.id, sop.currentVersionId));
@@ -423,11 +505,14 @@ export function registerSopRoutes(router: Router) {
       const filename = `${toSafeFilename(exportTitle)}.docx`;
       res.setHeader(
         "Content-Type",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       );
-      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${filename}"`,
+      );
       res.status(200).send(buffer);
-    })
+    }),
   );
 
   router.get(
@@ -435,7 +520,9 @@ export function registerSopRoutes(router: Router) {
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
       if (!req.user) {
-        return res.status(401).json({ success: false, error: "Nicht authentifiziert" });
+        return res
+          .status(401)
+          .json({ success: false, error: "Nicht authentifiziert" });
       }
       const sopId = Number(req.params.id);
       const [sop] = await db
@@ -457,7 +544,7 @@ export function registerSopRoutes(router: Router) {
           createdAt: sops.createdAt,
           updatedAt: sops.updatedAt,
           creatorName: employees.name,
-          creatorLastName: employees.lastName
+          creatorLastName: employees.lastName,
         })
         .from(sops)
         .leftJoin(employees, eq(sops.createdById, employees.id))
@@ -470,15 +557,21 @@ export function registerSopRoutes(router: Router) {
       const memberRole = await getMemberRole(sopId, req.user.employeeId);
       const member = Boolean(memberRole);
       const owner = sop.createdById === req.user.employeeId;
-      const allowed = canManage(req) || owner || member || isPublicSop(sop as any);
+      const allowed =
+        canManage(req) || owner || member || isPublicSop(sop as any);
       if (!allowed) {
-        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
       }
 
       let resolvedSop = sop;
       if (!canManage(req) && !owner && !member) {
         const normalized = normalizeSopStatus(sop.status);
-        if (["in_progress", "review"].includes(normalized) && sop.currentVersionId) {
+        if (
+          ["in_progress", "review"].includes(normalized) &&
+          sop.currentVersionId
+        ) {
           const [version] = await db
             .select()
             .from(sopVersions)
@@ -489,7 +582,7 @@ export function registerSopRoutes(router: Router) {
               title: version.title,
               version: String(version.versionNumber),
               contentMarkdown: version.contentMarkdown,
-              publishedAt: version.releasedAt
+              publishedAt: version.releasedAt,
             };
           }
         }
@@ -500,7 +593,7 @@ export function registerSopRoutes(router: Router) {
           employeeId: sopMembers.employeeId,
           role: sopMembers.role,
           name: employees.name,
-          lastName: employees.lastName
+          lastName: employees.lastName,
         })
         .from(sopMembers)
         .leftJoin(employees, eq(sopMembers.employeeId, employees.id))
@@ -529,7 +622,7 @@ export function registerSopRoutes(router: Router) {
           createdAt: sopVersions.createdAt,
           updatedAt: sopVersions.updatedAt,
           releasedByName: employees.name,
-          releasedByLastName: employees.lastName
+          releasedByLastName: employees.lastName,
         })
         .from(sopVersions)
         .leftJoin(employees, eq(sopVersions.releasedById, employees.id))
@@ -541,13 +634,13 @@ export function registerSopRoutes(router: Router) {
         createdBy: {
           id: sop.createdById,
           name: sop.creatorName,
-          lastName: sop.creatorLastName
+          lastName: sop.creatorLastName,
         },
         members,
         references,
-        versions
+        versions,
       });
-    })
+    }),
   );
 
   router.post(
@@ -555,9 +648,19 @@ export function registerSopRoutes(router: Router) {
     validateBody(createSopSchema),
     asyncHandler(async (req, res) => {
       if (!req.user) {
-        return res.status(401).json({ success: false, error: "Nicht authentifiziert" });
+        return res
+          .status(401)
+          .json({ success: false, error: "Nicht authentifiziert" });
       }
-      const { title, category, contentMarkdown, keywords, awmfLink, status, assignees } = req.body;
+      const {
+        title,
+        category,
+        contentMarkdown,
+        keywords,
+        awmfLink,
+        status,
+        assignees,
+      } = req.body;
       const requestedStatus = status || "proposed";
       const allowManage = canManage(req);
       const allowPublish = canPublish(req);
@@ -577,16 +680,18 @@ export function registerSopRoutes(router: Router) {
           keywords: keywords || null,
           awmfLink: awmfLink || null,
           status: finalStatus,
-          createdById: req.user.employeeId
+          createdById: req.user.employeeId,
         })
         .returning();
 
       if (assignees?.length) {
-        const rows = assignees.map((member: { employeeId: number; role: "read" | "edit" }) => ({
-          sopId: sop.id,
-          employeeId: member.employeeId,
-          role: member.role
-        }));
+        const rows = assignees.map(
+          (member: { employeeId: number; role: "read" | "edit" }) => ({
+            sopId: sop.id,
+            employeeId: member.employeeId,
+            role: member.role,
+          }),
+        );
         await db.insert(sopMembers).values(rows).onConflictDoNothing();
       }
 
@@ -599,18 +704,18 @@ export function registerSopRoutes(router: Router) {
           title: "Neue SOP vorgeschlagen",
           message: `${req.user.name} ${req.user.lastName} hat "${title}" vorgeschlagen.`,
           link: `/admin/projects?sop=${sop.id}`,
-          metadata: { sopId: sop.id }
+          metadata: { sopId: sop.id },
         });
         await notifyPermissionGroup(req.user.departmentId, SOP_PUBLISH_CAP, {
           title: "Neue SOP vorgeschlagen",
           message: `${req.user.name} ${req.user.lastName} hat "${title}" vorgeschlagen.`,
           link: `/admin/projects?sop=${sop.id}`,
-          metadata: { sopId: sop.id }
+          metadata: { sopId: sop.id },
         });
       }
 
       return created(res, sop);
-    })
+    }),
   );
 
   router.patch(
@@ -619,7 +724,9 @@ export function registerSopRoutes(router: Router) {
     validateBody(updateSopSchema),
     asyncHandler(async (req, res) => {
       if (!req.user) {
-        return res.status(401).json({ success: false, error: "Nicht authentifiziert" });
+        return res
+          .status(401)
+          .json({ success: false, error: "Nicht authentifiziert" });
       }
       const sopId = Number(req.params.id);
       const [existing] = await db.select().from(sops).where(eq(sops.id, sopId));
@@ -629,20 +736,22 @@ export function registerSopRoutes(router: Router) {
       const memberRole = await getMemberRole(sopId, req.user.employeeId);
       const owner = existing.createdById === req.user.employeeId;
       if (!canManage(req) && !owner && memberRole !== "edit") {
-        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
       }
 
       const [updated] = await db
         .update(sops)
         .set({
           ...req.body,
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .where(eq(sops.id, sopId))
         .returning();
 
       return ok(res, updated);
-    })
+    }),
   );
 
   router.post(
@@ -651,10 +760,14 @@ export function registerSopRoutes(router: Router) {
     validateBody(assignMembersSchema),
     asyncHandler(async (req, res) => {
       if (!req.user) {
-        return res.status(401).json({ success: false, error: "Nicht authentifiziert" });
+        return res
+          .status(401)
+          .json({ success: false, error: "Nicht authentifiziert" });
       }
       if (!canManage(req)) {
-        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
       }
       const sopId = Number(req.params.id);
       const [existing] = await db.select().from(sops).where(eq(sops.id, sopId));
@@ -667,12 +780,12 @@ export function registerSopRoutes(router: Router) {
           req.body.members.map((member) => ({
             sopId,
             employeeId: member.employeeId,
-            role: member.role
-          }))
+            role: member.role,
+          })),
         );
       }
       return ok(res, { success: true });
-    })
+    }),
   );
 
   router.post(
@@ -680,7 +793,9 @@ export function registerSopRoutes(router: Router) {
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
       if (!canManage(req)) {
-        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
       }
       const sopId = Number(req.params.id);
       const [existing] = await db.select().from(sops).where(eq(sops.id, sopId));
@@ -693,10 +808,10 @@ export function registerSopRoutes(router: Router) {
       await notifySopOwners(sopId, {
         title: "SOP angenommen",
         message: `"${existing.title}" wurde zur Bearbeitung angenommen.`,
-        link: `/admin/projects?sop=${sopId}`
+        link: `/admin/projects?sop=${sopId}`,
       });
       return ok(res, updated);
-    })
+    }),
   );
 
   router.post(
@@ -705,23 +820,29 @@ export function registerSopRoutes(router: Router) {
     validateBody(statusReasonSchema),
     asyncHandler(async (req, res) => {
       if (!canManage(req)) {
-        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
       }
       const sopId = Number(req.params.id);
       const [existing] = await db.select().from(sops).where(eq(sops.id, sopId));
       if (!existing) return notFound(res, "SOP");
       const [updated] = await db
         .update(sops)
-        .set({ status: "archived", archivedAt: new Date(), updatedAt: new Date() })
+        .set({
+          status: "archived",
+          archivedAt: new Date(),
+          updatedAt: new Date(),
+        })
         .where(eq(sops.id, sopId))
         .returning();
       await notifySopOwners(sopId, {
         title: "SOP abgelehnt",
         message: `"${existing.title}" wurde abgelehnt: ${req.body.reason}`,
-        link: `/admin/projects?sop=${sopId}`
+        link: `/admin/projects?sop=${sopId}`,
       });
       return ok(res, updated);
-    })
+    }),
   );
 
   router.post(
@@ -729,7 +850,9 @@ export function registerSopRoutes(router: Router) {
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
       if (!canManage(req)) {
-        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
       }
       const sopId = Number(req.params.id);
       const [existing] = await db.select().from(sops).where(eq(sops.id, sopId));
@@ -742,15 +865,15 @@ export function registerSopRoutes(router: Router) {
       await notifyPermissionGroup(req.user?.departmentId, SOP_MANAGE_CAP, {
         title: "SOP in Review",
         message: `"${existing.title}" ist bereit fuer die Freigabe.`,
-        link: `/admin/projects?sop=${sopId}`
+        link: `/admin/projects?sop=${sopId}`,
       });
       await notifyPermissionGroup(req.user?.departmentId, SOP_PUBLISH_CAP, {
         title: "SOP in Review",
         message: `"${existing.title}" ist bereit fuer die Freigabe.`,
-        link: `/admin/projects?sop=${sopId}`
+        link: `/admin/projects?sop=${sopId}`,
       });
       return ok(res, updated);
-    })
+    }),
   );
 
   router.post(
@@ -759,7 +882,9 @@ export function registerSopRoutes(router: Router) {
     validateBody(statusReasonSchema),
     asyncHandler(async (req, res) => {
       if (!canManage(req)) {
-        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
       }
       const sopId = Number(req.params.id);
       const [existing] = await db.select().from(sops).where(eq(sops.id, sopId));
@@ -772,10 +897,10 @@ export function registerSopRoutes(router: Router) {
       await notifySopOwners(sopId, {
         title: "SOP Ueberarbeitung",
         message: `"${existing.title}" braucht Anpassungen: ${req.body.reason}`,
-        link: `/admin/projects?sop=${sopId}`
+        link: `/admin/projects?sop=${sopId}`,
       });
       return ok(res, updated);
-    })
+    }),
   );
 
   router.post(
@@ -784,10 +909,14 @@ export function registerSopRoutes(router: Router) {
     validateBody(publishSchema),
     asyncHandler(async (req, res) => {
       if (!canPublish(req)) {
-        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
       }
       if (!req.user) {
-        return res.status(401).json({ success: false, error: "Nicht authentifiziert" });
+        return res
+          .status(401)
+          .json({ success: false, error: "Nicht authentifiziert" });
       }
       const sopId = Number(req.params.id);
       const [existing] = await db.select().from(sops).where(eq(sops.id, sopId));
@@ -803,11 +932,11 @@ export function registerSopRoutes(router: Router) {
       await notifySopOwners(sopId, {
         title: "SOP freigegeben",
         message: `"${existing.title}" wurde freigegeben.`,
-        link: `/wissen`
+        link: `/wissen`,
       });
 
       return ok(res, updated);
-    })
+    }),
   );
 
   router.post(
@@ -815,18 +944,24 @@ export function registerSopRoutes(router: Router) {
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
       if (!canManage(req)) {
-        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
       }
       const sopId = Number(req.params.id);
       const [existing] = await db.select().from(sops).where(eq(sops.id, sopId));
       if (!existing) return notFound(res, "SOP");
       const [updated] = await db
         .update(sops)
-        .set({ status: "archived", archivedAt: new Date(), updatedAt: new Date() })
+        .set({
+          status: "archived",
+          archivedAt: new Date(),
+          updatedAt: new Date(),
+        })
         .where(eq(sops.id, sopId))
         .returning();
       return ok(res, updated);
-    })
+    }),
   );
 
   router.post(
@@ -834,7 +969,9 @@ export function registerSopRoutes(router: Router) {
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
       if (!canManage(req)) {
-        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
       }
       const sopId = Number(req.params.id);
       const [existing] = await db.select().from(sops).where(eq(sops.id, sopId));
@@ -845,12 +982,12 @@ export function registerSopRoutes(router: Router) {
         .set({
           status: "in_progress",
           basedOnVersionId: existing.currentVersionId || null,
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .where(eq(sops.id, sopId))
         .returning();
       return ok(res, updated);
-    })
+    }),
   );
 
   router.get(
@@ -858,16 +995,24 @@ export function registerSopRoutes(router: Router) {
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
       if (!req.user) {
-        return res.status(401).json({ success: false, error: "Nicht authentifiziert" });
+        return res
+          .status(401)
+          .json({ success: false, error: "Nicht authentifiziert" });
       }
       const sopId = Number(req.params.id);
       const [sop] = await db.select().from(sops).where(eq(sops.id, sopId));
       if (!sop) return notFound(res, "SOP");
       const memberRole = await getMemberRole(sopId, req.user.employeeId);
       const owner = sop.createdById === req.user.employeeId;
-      const allowed = canManage(req) || owner || Boolean(memberRole) || isPublicSop(sop as any);
+      const allowed =
+        canManage(req) ||
+        owner ||
+        Boolean(memberRole) ||
+        isPublicSop(sop as any);
       if (!allowed) {
-        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
       }
       const versions = await db
         .select({
@@ -882,14 +1027,14 @@ export function registerSopRoutes(router: Router) {
           createdAt: sopVersions.createdAt,
           updatedAt: sopVersions.updatedAt,
           releasedByName: employees.name,
-          releasedByLastName: employees.lastName
+          releasedByLastName: employees.lastName,
         })
         .from(sopVersions)
         .leftJoin(employees, eq(sopVersions.releasedById, employees.id))
         .where(eq(sopVersions.sopId, sopId))
         .orderBy(desc(sopVersions.versionNumber));
       return ok(res, versions);
-    })
+    }),
   );
 
   router.get(
@@ -897,16 +1042,24 @@ export function registerSopRoutes(router: Router) {
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
       if (!req.user) {
-        return res.status(401).json({ success: false, error: "Nicht authentifiziert" });
+        return res
+          .status(401)
+          .json({ success: false, error: "Nicht authentifiziert" });
       }
       const sopId = Number(req.params.id);
       const [sop] = await db.select().from(sops).where(eq(sops.id, sopId));
       if (!sop) return notFound(res, "SOP");
       const memberRole = await getMemberRole(sopId, req.user.employeeId);
       const owner = sop.createdById === req.user.employeeId;
-      const allowed = canManage(req) || owner || Boolean(memberRole) || isPublicSop(sop as any);
+      const allowed =
+        canManage(req) ||
+        owner ||
+        Boolean(memberRole) ||
+        isPublicSop(sop as any);
       if (!allowed) {
-        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
       }
 
       let refs = await db
@@ -918,7 +1071,7 @@ export function registerSopRoutes(router: Router) {
         refs = refs.filter((ref) => ref.status === "accepted");
       }
       return ok(res, refs);
-    })
+    }),
   );
 
   router.post(
@@ -927,7 +1080,9 @@ export function registerSopRoutes(router: Router) {
     validateBody(referenceSchema),
     asyncHandler(async (req, res) => {
       if (!req.user) {
-        return res.status(401).json({ success: false, error: "Nicht authentifiziert" });
+        return res
+          .status(401)
+          .json({ success: false, error: "Nicht authentifiziert" });
       }
       const sopId = Number(req.params.id);
       const [existing] = await db.select().from(sops).where(eq(sops.id, sopId));
@@ -935,7 +1090,9 @@ export function registerSopRoutes(router: Router) {
       const memberRole = await getMemberRole(sopId, req.user.employeeId);
       const owner = existing.createdById === req.user.employeeId;
       if (!canManage(req) && !owner && memberRole !== "edit") {
-        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
       }
 
       const [ref] = await db
@@ -952,11 +1109,11 @@ export function registerSopRoutes(router: Router) {
           createdById: req.user.employeeId,
           createdByAi: Boolean(req.body.createdByAi),
           verifiedById: req.user.employeeId,
-          verifiedAt: new Date()
+          verifiedAt: new Date(),
         })
         .returning();
       return created(res, ref);
-    })
+    }),
   );
 
   router.post(
@@ -964,7 +1121,9 @@ export function registerSopRoutes(router: Router) {
     validateParams(z.object({ id: z.string(), refId: z.string() })),
     asyncHandler(async (req, res) => {
       if (!req.user) {
-        return res.status(401).json({ success: false, error: "Nicht authentifiziert" });
+        return res
+          .status(401)
+          .json({ success: false, error: "Nicht authentifiziert" });
       }
       const sopId = Number(req.params.id);
       const [existing] = await db.select().from(sops).where(eq(sops.id, sopId));
@@ -972,16 +1131,22 @@ export function registerSopRoutes(router: Router) {
       const memberRole = await getMemberRole(sopId, req.user.employeeId);
       const owner = existing.createdById === req.user.employeeId;
       if (!canManage(req) && !owner && memberRole !== "edit") {
-        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
       }
       const refId = Number(req.params.refId);
       const [updated] = await db
         .update(sopReferences)
-        .set({ status: "accepted", verifiedById: req.user.employeeId, verifiedAt: new Date() })
+        .set({
+          status: "accepted",
+          verifiedById: req.user.employeeId,
+          verifiedAt: new Date(),
+        })
         .where(eq(sopReferences.id, refId))
         .returning();
       return ok(res, updated);
-    })
+    }),
   );
 
   router.post(
@@ -989,7 +1154,9 @@ export function registerSopRoutes(router: Router) {
     validateParams(z.object({ id: z.string(), refId: z.string() })),
     asyncHandler(async (req, res) => {
       if (!req.user) {
-        return res.status(401).json({ success: false, error: "Nicht authentifiziert" });
+        return res
+          .status(401)
+          .json({ success: false, error: "Nicht authentifiziert" });
       }
       const sopId = Number(req.params.id);
       const [existing] = await db.select().from(sops).where(eq(sops.id, sopId));
@@ -997,7 +1164,9 @@ export function registerSopRoutes(router: Router) {
       const memberRole = await getMemberRole(sopId, req.user.employeeId);
       const owner = existing.createdById === req.user.employeeId;
       if (!canManage(req) && !owner && memberRole !== "edit") {
-        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
       }
       const refId = Number(req.params.refId);
       const [updated] = await db
@@ -1006,7 +1175,7 @@ export function registerSopRoutes(router: Router) {
         .where(eq(sopReferences.id, refId))
         .returning();
       return ok(res, updated);
-    })
+    }),
   );
 
   router.post(
@@ -1014,7 +1183,9 @@ export function registerSopRoutes(router: Router) {
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
       if (!req.user) {
-        return res.status(401).json({ success: false, error: "Nicht authentifiziert" });
+        return res
+          .status(401)
+          .json({ success: false, error: "Nicht authentifiziert" });
       }
       const sopId = Number(req.params.id);
       const [existing] = await db.select().from(sops).where(eq(sops.id, sopId));
@@ -1022,7 +1193,9 @@ export function registerSopRoutes(router: Router) {
       const memberRole = await getMemberRole(sopId, req.user.employeeId);
       const owner = existing.createdById === req.user.employeeId;
       if (!canManage(req) && !owner && memberRole !== "edit") {
-        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
       }
 
       const suggestions = [
@@ -1034,7 +1207,7 @@ export function registerSopRoutes(router: Router) {
           yearOrVersion: null,
           relevanceNote: "Quelle bitte manuell recherchieren und verifizieren.",
           createdByAi: true,
-          status: "suggested" as const
+          status: "suggested" as const,
         },
         {
           type: "guideline" as const,
@@ -1044,7 +1217,7 @@ export function registerSopRoutes(router: Router) {
           yearOrVersion: null,
           relevanceNote: "Bitte OeGGG/DGGG/ESGE/RCOG/NICE pruefen.",
           createdByAi: true,
-          status: "suggested" as const
+          status: "suggested" as const,
         },
         {
           type: "study" as const,
@@ -1054,11 +1227,11 @@ export function registerSopRoutes(router: Router) {
           yearOrVersion: null,
           relevanceNote: "Bitte PubMed oder Leitlinien-Referenzen pruefen.",
           createdByAi: true,
-          status: "suggested" as const
-        }
+          status: "suggested" as const,
+        },
       ];
 
       return ok(res, suggestions);
-    })
+    }),
   );
 }

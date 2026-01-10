@@ -25,9 +25,13 @@ import Messages from "@/pages/Messages";
 import NotFound from "@/pages/not-found";
 import { Loader2 } from "lucide-react";
 
-function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
+function ProtectedRoute({
+  component: Component,
+}: {
+  component: React.ComponentType;
+}) {
   const { isAuthenticated, isLoading } = useAuth();
-  
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -38,11 +42,11 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
       </div>
     );
   }
-  
+
   if (!isAuthenticated) {
     return <Redirect to="/login" />;
   }
-  
+
   return <Component />;
 }
 
@@ -50,11 +54,9 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={Login} />
-      
-      <Route path="/">
-        {() => <ProtectedRoute component={Dashboard} />}
-      </Route>
-      
+
+      <Route path="/">{() => <ProtectedRoute component={Dashboard} />}</Route>
+
       {/* Main Navigation */}
       <Route path="/dienstplaene">
         {() => <ProtectedRoute component={Personal} />}
@@ -65,9 +67,7 @@ function Router() {
       <Route path="/projekte">
         {() => <ProtectedRoute component={Projects} />}
       </Route>
-      <Route path="/tools">
-        {() => <ProtectedRoute component={Tools} />}
-      </Route>
+      <Route path="/tools">{() => <ProtectedRoute component={Tools} />}</Route>
       <Route path="/nachrichten">
         {() => <ProtectedRoute component={Messages} />}
       </Route>
@@ -80,17 +80,17 @@ function Router() {
       <Route path="/einstellungen/:userId">
         {() => <ProtectedRoute component={Settings} />}
       </Route>
-      
+
       {/* Shift Wishes */}
       <Route path="/dienstwuensche">
         {() => <ProtectedRoute component={ShiftWishes} />}
       </Route>
-      
+
       {/* Legacy routes redirect */}
       <Route path="/personal">
         {() => <ProtectedRoute component={Personal} />}
       </Route>
-      
+
       {/* Admin / Verwaltung Routes */}
       <Route path="/admin">
         {() => <ProtectedRoute component={PlanningCockpit} />}
@@ -119,7 +119,7 @@ function Router() {
       <Route path="/admin/clinic">
         {() => <ProtectedRoute component={ClinicSettings} />}
       </Route>
-      
+
       <Route component={NotFound} />
     </Switch>
   );

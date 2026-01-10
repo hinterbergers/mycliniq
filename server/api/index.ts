@@ -25,15 +25,15 @@ import { registerMessageRoutes } from "./messages";
 
 /**
  * Register all modular API routes
- * 
+ *
  * This function mounts all API route modules under their respective paths.
  * Each module handles its own CRUD operations and sub-routes.
- * 
+ *
  * Authentication:
  *   - All routes go through `authenticate` middleware
  *   - In DEV mode, unauthenticated access is allowed with warnings
  *   - In PROD mode, valid token is required (TODO: enable strict mode)
- * 
+ *
  * Authorization Levels:
  *   - requireAdmin: Employee CRUD, Room CRUD, Plan releases
  *   - requireEditor: Duty plan edit, Weekly plan edit, Daily overrides
@@ -43,10 +43,10 @@ export function registerModularApiRoutes(app: Express): void {
   // Apply authentication middleware to all /api routes
   // TODO: In production, enable strict authentication
   app.use("/api", authenticate);
-  
+
   // Register admin routes (includes /api/me)
   registerAdminRoutes(app);
-  
+
   // Employees API
   // TODO: Add requireAdmin for POST, PUT, DELETE
   const employeesRouter = Router();
@@ -149,14 +149,14 @@ export function registerModularApiRoutes(app: Express): void {
 
 /**
  * API Route Overview:
- * 
+ *
  * /api/employees
  *   GET    /                 - List all employees
  *   GET    /:id              - Get employee by ID
  *   POST   /                 - Create employee
  *   PUT    /:id              - Update employee
  *   DELETE /:id              - Delete employee
- * 
+ *
  * /api/competencies
  *   GET    /                 - List all competencies
  *   GET    /:id              - Get competency by ID
@@ -164,7 +164,7 @@ export function registerModularApiRoutes(app: Express): void {
  *   POST   /                 - Create competency
  *   PUT    /:id              - Update competency
  *   DELETE /:id              - Delete competency
- * 
+ *
  * /api/rooms
  *   GET    /                 - List all rooms
  *   GET    /:id              - Get room by ID
@@ -172,7 +172,7 @@ export function registerModularApiRoutes(app: Express): void {
  *   PUT    /:id              - Update room
  *   PUT    /:id/block        - Block room for period
  *   DELETE /:id              - Delete room
- * 
+ *
  * /api/duty-plans
  *   GET    /                 - List duty plans
  *   GET    /:id              - Get duty plan with details
@@ -182,7 +182,7 @@ export function registerModularApiRoutes(app: Express): void {
  *   DELETE /:id              - Delete duty plan
  *   POST   /:id/generate     - AI-generate assignments
  *   POST   /:id/release      - Release/approve plan
- * 
+ *
  * /api/weekly-plans
  *   GET    /                 - List weekly plans
  *   GET    /:id              - Get weekly plan with assignments
@@ -193,14 +193,14 @@ export function registerModularApiRoutes(app: Express): void {
  *   POST   /:id/assign       - Add assignment
  *   GET    /:id/assignments  - Get assignments
  *   DELETE /assignments/:id  - Remove assignment
- * 
+ *
  * /api/daily-overrides
  *   GET    /                 - List overrides (filter by date/from/to/roomId)
  *   GET    /:id              - Get override by ID
  *   GET    /date/:date       - Get overrides for specific date
  *   POST   /                 - Create override
  *   DELETE /:id              - Delete override
- * 
+ *
  * /api/absences
  *   GET    /                 - List absences (filter by date/employee)
  *   GET    /:id              - Get absence by ID
@@ -210,7 +210,7 @@ export function registerModularApiRoutes(app: Express): void {
  *   POST   /planned          - Create planned absence
  *   PUT    /planned/:id/approve - Approve planned absence
  *   PUT    /planned/:id/reject  - Reject planned absence
- * 
+ *
  * /api/projects
  *   GET    /                 - List all projects
  *   GET    /:id              - Get project with details
@@ -226,7 +226,7 @@ export function registerModularApiRoutes(app: Express): void {
  *   DELETE /:id/tasks/:tid   - Delete task
  *   GET    /:id/documents    - Get project documents
  *   POST   /:id/documents    - Create document
- * 
+ *
  * /api/sops
  *   GET    /                 - List SOPs (filter by category/status)
  *   GET    /:id              - Get SOP by ID

@@ -6,24 +6,34 @@ import { validateBody } from "../../lib/validate";
 import { toolVisibility } from "@shared/schema";
 import { requireAdmin, requireAuth } from "../middleware/auth";
 
-const TOOL_KEYS = ["pregnancy_weeks", "pul_calculator", "body_surface_area"] as const;
+const TOOL_KEYS = [
+  "pregnancy_weeks",
+  "pul_calculator",
+  "body_surface_area",
+] as const;
 const toolKeySchema = z.enum(TOOL_KEYS);
 
 const updateToolVisibilitySchema = z.object({
-  tools: z.array(z.object({
-    toolKey: toolKeySchema,
-    isEnabled: z.boolean()
-  })).min(1)
+  tools: z
+    .array(
+      z.object({
+        toolKey: toolKeySchema,
+        isEnabled: z.boolean(),
+      }),
+    )
+    .min(1),
 });
 
 type ToolKey = (typeof TOOL_KEYS)[number];
 type ToolSetting = { toolKey: ToolKey; isEnabled: boolean };
 
-function buildToolSettings(rows: Array<{ toolKey: string; isEnabled: boolean }>): ToolSetting[] {
+function buildToolSettings(
+  rows: Array<{ toolKey: string; isEnabled: boolean }>,
+): ToolSetting[] {
   const map = new Map(rows.map((row) => [row.toolKey, row.isEnabled]));
   return TOOL_KEYS.map((toolKey) => ({
     toolKey,
-    isEnabled: map.get(toolKey) ?? true
+    isEnabled: map.get(toolKey) ?? true,
   }));
 }
 
@@ -36,7 +46,8 @@ export function registerToolRoutes(router: Router) {
    * GET /api/tools
    * Get tool visibility for current user's department
    */
-  router.get("/",
+  router.get(
+    "/",
     requireAuth,
     asyncHandler(async (req, res) => {
       const departmentId = req.user?.departmentId;
@@ -45,19 +56,23 @@ export function registerToolRoutes(router: Router) {
       }
 
       const rows = await db
-        .select({ toolKey: toolVisibility.toolKey, isEnabled: toolVisibility.isEnabled })
+        .select({
+          toolKey: toolVisibility.toolKey,
+          isEnabled: toolVisibility.isEnabled,
+        })
         .from(toolVisibility)
         .where(eq(toolVisibility.departmentId, departmentId));
 
       return ok(res, buildToolSettings(rows));
-    })
+    }),
   );
 
   /**
    * PUT /api/tools/visibility
    * Update tool visibility for current user's department (admin only)
    */
-  router.put("/visibility",
+  router.put(
+    "/visibility",
     requireAuth,
     requireAdmin,
     validateBody(updateToolVisibilitySchema),
@@ -80,26 +95,29 @@ export function registerToolRoutes(router: Router) {
               isEnabled: tool.isEnabled,
               updatedById: req.user?.employeeId,
               createdAt: now,
-              updatedAt: now
+              updatedAt: now,
             })
             .onConflictDoUpdate({
               target: [toolVisibility.departmentId, toolVisibility.toolKey],
               set: {
                 isEnabled: tool.isEnabled,
                 updatedById: req.user?.employeeId,
-                updatedAt: now
-              }
+                updatedAt: now,
+              },
             });
         }
       });
 
       const rows = await db
-        .select({ toolKey: toolVisibility.toolKey, isEnabled: toolVisibility.isEnabled })
+        .select({
+          toolKey: toolVisibility.toolKey,
+          isEnabled: toolVisibility.isEnabled,
+        })
         .from(toolVisibility)
         .where(eq(toolVisibility.departmentId, departmentId));
 
       return ok(res, buildToolSettings(rows));
-    })
+    }),
   );
 
   return router;

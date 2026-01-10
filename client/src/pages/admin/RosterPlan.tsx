@@ -1,26 +1,102 @@
 import { Layout } from "@/components/layout/Layout";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
-import { Download, ArrowLeft, ArrowRight, Info, Loader2, Sparkles, CheckCircle2, AlertTriangle, Brain, Pencil, Calendar, Plus, X } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+} from "@/components/ui/popover";
+import {
+  Download,
+  ArrowLeft,
+  ArrowRight,
+  Info,
+  Loader2,
+  Sparkles,
+  CheckCircle2,
+  AlertTriangle,
+  Brain,
+  Pencil,
+  Calendar,
+  Plus,
+  X,
+} from "lucide-react";
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { employeeApi, rosterApi, plannedAbsencesAdminApi, longTermAbsencesApi, dutyPlansApi, rosterSettingsApi, serviceLinesApi, type NextPlanningMonth, type PlannedAbsenceAdmin } from "@/lib/api";
-import type { Employee, RosterShift, LongTermAbsence, DutyPlan, ServiceLine } from "@shared/schema";
-import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, isWeekend } from "date-fns";
+import {
+  employeeApi,
+  rosterApi,
+  plannedAbsencesAdminApi,
+  longTermAbsencesApi,
+  dutyPlansApi,
+  rosterSettingsApi,
+  serviceLinesApi,
+  type NextPlanningMonth,
+  type PlannedAbsenceAdmin,
+} from "@/lib/api";
+import type {
+  Employee,
+  RosterShift,
+  LongTermAbsence,
+  DutyPlan,
+  ServiceLine,
+} from "@shared/schema";
+import {
+  format,
+  addMonths,
+  subMonths,
+  startOfMonth,
+  endOfMonth,
+  eachDayOfInterval,
+  isWeekend,
+} from "date-fns";
 import { de } from "date-fns/locale";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
-import { getServiceTypesForEmployee, employeeDoesShifts, type ServiceType } from "@shared/shiftTypes";
+import {
+  getServiceTypesForEmployee,
+  employeeDoesShifts,
+  type ServiceType,
+} from "@shared/shiftTypes";
 import { getAustrianHoliday } from "@/lib/holidays";
 
 interface GeneratedShift {
@@ -34,66 +110,100 @@ const SERVICE_LINE_PALETTE = [
   {
     header: "bg-pink-50/50 border-pink-100 text-pink-900",
     cell: "bg-pink-100 text-pink-800 border-pink-200",
-    stat: "bg-pink-50/20 text-pink-900"
+    stat: "bg-pink-50/20 text-pink-900",
   },
   {
     header: "bg-blue-50/50 border-blue-100 text-blue-900",
     cell: "bg-blue-100 text-blue-800 border-blue-200",
-    stat: "bg-blue-50/20 text-blue-900"
+    stat: "bg-blue-50/20 text-blue-900",
   },
   {
     header: "bg-emerald-50/50 border-emerald-100 text-emerald-900",
     cell: "bg-emerald-100 text-emerald-800 border-emerald-200",
-    stat: "bg-emerald-50/20 text-emerald-900"
+    stat: "bg-emerald-50/20 text-emerald-900",
   },
   {
     header: "bg-violet-50/50 border-violet-100 text-violet-900",
     cell: "bg-violet-100 text-violet-800 border-violet-200",
-    stat: "bg-violet-50/20 text-violet-900"
+    stat: "bg-violet-50/20 text-violet-900",
   },
   {
     header: "bg-amber-50/50 border-amber-100 text-amber-900",
     cell: "bg-amber-100 text-amber-800 border-amber-200",
-    stat: "bg-amber-50/20 text-amber-900"
+    stat: "bg-amber-50/20 text-amber-900",
   },
   {
     header: "bg-sky-50/50 border-sky-100 text-sky-900",
     cell: "bg-sky-100 text-sky-800 border-sky-200",
-    stat: "bg-sky-50/20 text-sky-900"
-  }
+    stat: "bg-sky-50/20 text-sky-900",
+  },
 ];
 
 const FALLBACK_SERVICE_LINES = [
-  { key: "kreiszimmer", label: "Kreißzimmer (Ass.)", roleGroup: "ASS", sortOrder: 1, isActive: true },
-  { key: "gyn", label: "Gynäkologie (OA)", roleGroup: "OA", sortOrder: 2, isActive: true },
-  { key: "turnus", label: "Turnus (Ass./TA)", roleGroup: "TURNUS", sortOrder: 3, isActive: true },
-  { key: "overduty", label: "Überdienst (Ruf)", roleGroup: "OA", sortOrder: 4, isActive: true }
+  {
+    key: "kreiszimmer",
+    label: "Kreißzimmer (Ass.)",
+    roleGroup: "ASS",
+    sortOrder: 1,
+    isActive: true,
+  },
+  {
+    key: "gyn",
+    label: "Gynäkologie (OA)",
+    roleGroup: "OA",
+    sortOrder: 2,
+    isActive: true,
+  },
+  {
+    key: "turnus",
+    label: "Turnus (Ass./TA)",
+    roleGroup: "TURNUS",
+    sortOrder: 3,
+    isActive: true,
+  },
+  {
+    key: "overduty",
+    label: "Überdienst (Ruf)",
+    roleGroup: "OA",
+    sortOrder: 4,
+    isActive: true,
+  },
 ];
 
 const PLAN_STATUS_LABELS: Record<DutyPlan["status"], string> = {
   Entwurf: "Bearbeitung",
   Vorläufig: "Vorschau",
-  Freigegeben: "Freigabe"
+  Freigegeben: "Freigabe",
 };
 
 const MONTH_NAMES = [
-  "Jänner", "Februar", "März", "April", "Mai", "Juni",
-  "Juli", "August", "September", "Oktober", "November", "Dezember"
+  "Jänner",
+  "Februar",
+  "März",
+  "April",
+  "Mai",
+  "Juni",
+  "Juli",
+  "August",
+  "September",
+  "Oktober",
+  "November",
+  "Dezember",
 ];
 
 const ROLE_SORT_ORDER: Record<string, number> = {
-  "Primararzt": 1,
+  Primararzt: 1,
   "1. Oberarzt": 2,
-  "Funktionsoberarzt": 3,
-  "Ausbildungsoberarzt": 4,
-  "Oberarzt": 5,
-  "Oberärztin": 5,
-  "Facharzt": 6,
-  "Assistenzarzt": 7,
-  "Assistenzärztin": 7,
-  "Turnusarzt": 8,
+  Funktionsoberarzt: 3,
+  Ausbildungsoberarzt: 4,
+  Oberarzt: 5,
+  Oberärztin: 5,
+  Facharzt: 6,
+  Assistenzarzt: 7,
+  Assistenzärztin: 7,
+  Turnusarzt: 8,
   "Student (KPJ)": 9,
-  "Student (Famulant)": 9
+  "Student (Famulant)": 9,
 };
 
 const normalizeRoleValue = (role?: string | null) => {
@@ -103,7 +213,8 @@ const normalizeRoleValue = (role?: string | null) => {
   return role;
 };
 
-const getRoleSortRank = (role?: string | null) => ROLE_SORT_ORDER[normalizeRoleValue(role)] ?? 999;
+const getRoleSortRank = (role?: string | null) =>
+  ROLE_SORT_ORDER[normalizeRoleValue(role)] ?? 999;
 
 const getRoleGroup = (role?: string | null) => {
   const normalized = normalizeRoleValue(role);
@@ -128,7 +239,7 @@ const ABSENCE_REASONS = [
   "Sonderurlaub",
   "Zusatzurlaub",
   "Quarantäne",
-  "Ruhezeit"
+  "Ruhezeit",
 ] as const;
 
 type RosterAbsenceEntry = {
@@ -148,20 +259,28 @@ const getLastNameFromText = (value?: string | null) => {
 };
 
 export default function RosterPlan() {
-  const { employee: currentUser, capabilities, isAdmin, isTechnicalAdmin, token } = useAuth();
+  const {
+    employee: currentUser,
+    capabilities,
+    isAdmin,
+    isTechnicalAdmin,
+    token,
+  } = useAuth();
   const { toast } = useToast();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [serviceLines, setServiceLines] = useState<ServiceLine[]>([]);
   const [shifts, setShifts] = useState<RosterShift[]>([]);
   const [absences, setAbsences] = useState<PlannedAbsenceAdmin[]>([]);
-  const [longTermAbsences, setLongTermAbsences] = useState<LongTermAbsence[]>([]);
+  const [longTermAbsences, setLongTermAbsences] = useState<LongTermAbsence[]>(
+    [],
+  );
   const [dutyPlan, setDutyPlan] = useState<DutyPlan | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isStatusUpdating, setIsStatusUpdating] = useState(false);
   const [exporting, setExporting] = useState(false);
-  
+
   const [generationDialogOpen, setGenerationDialogOpen] = useState(false);
   const [generatedShifts, setGeneratedShifts] = useState<GeneratedShift[]>([]);
   const [generationReasoning, setGenerationReasoning] = useState("");
@@ -171,9 +290,13 @@ export default function RosterPlan() {
   const [savingCellKey, setSavingCellKey] = useState<string | null>(null);
   const [manualDrafts, setManualDrafts] = useState<Record<string, string>>({});
   const [activeCellKey, setActiveCellKey] = useState<string | null>(null);
-  const [planningMonth, setPlanningMonth] = useState<NextPlanningMonth | null>(null);
+  const [planningMonth, setPlanningMonth] = useState<NextPlanningMonth | null>(
+    null,
+  );
   const [wishDialogOpen, setWishDialogOpen] = useState(false);
-  const [wishMonth, setWishMonth] = useState<number>(currentDate.getMonth() + 1);
+  const [wishMonth, setWishMonth] = useState<number>(
+    currentDate.getMonth() + 1,
+  );
   const [wishYear, setWishYear] = useState<number>(currentDate.getFullYear());
   const [wishSaving, setWishSaving] = useState(false);
   const [absenceDialogOpen, setAbsenceDialogOpen] = useState(false);
@@ -189,7 +312,7 @@ export default function RosterPlan() {
     startDate: "",
     endDate: "",
     reason: ABSENCE_REASONS[0],
-    notes: ""
+    notes: "",
   });
   const planStatus = dutyPlan?.status ?? "Entwurf";
   const planStatusLabel = PLAN_STATUS_LABELS[planStatus];
@@ -212,13 +335,17 @@ export default function RosterPlan() {
         key: line.key as ServiceType,
         label: line.label,
         roleGroup: line.roleGroup,
-        style: SERVICE_LINE_PALETTE[index % SERVICE_LINE_PALETTE.length]
+        style: SERVICE_LINE_PALETTE[index % SERVICE_LINE_PALETTE.length],
       }));
   }, [serviceLines, shifts]);
 
   const serviceLineMeta = useMemo(
-    () => serviceLineDisplay.map((line) => ({ key: line.key, roleGroup: line.roleGroup })),
-    [serviceLineDisplay]
+    () =>
+      serviceLineDisplay.map((line) => ({
+        key: line.key,
+        roleGroup: line.roleGroup,
+      })),
+    [serviceLineDisplay],
   );
 
   const serviceLineLookup = useMemo(() => {
@@ -256,7 +383,7 @@ export default function RosterPlan() {
 
   const activePlannedAbsences = useMemo(
     () => absences.filter((absence) => absence.status !== "Abgelehnt"),
-    [absences]
+    [absences],
   );
 
   const yearOptions = useMemo(() => {
@@ -266,13 +393,16 @@ export default function RosterPlan() {
 
   const days = eachDayOfInterval({
     start: startOfMonth(currentDate),
-    end: endOfMonth(currentDate)
+    end: endOfMonth(currentDate),
   });
 
-  const dayStrings = useMemo(() => days.map((day) => format(day, "yyyy-MM-dd")), [days]);
+  const dayStrings = useMemo(
+    () => days.map((day) => format(day, "yyyy-MM-dd")),
+    [days],
+  );
 
   const getShiftForDay = (date: Date, type: ServiceType) => {
-    const dateStr = format(date, 'yyyy-MM-dd');
+    const dateStr = format(date, "yyyy-MM-dd");
     return shifts.find((s) => s.date === dateStr && s.serviceType === type);
   };
 
@@ -284,8 +414,12 @@ export default function RosterPlan() {
   const isLegacyInactiveOnDate = (employee: Employee, dateStr: string) => {
     if (!employee.inactiveFrom && !employee.inactiveUntil) return false;
     const target = new Date(`${dateStr}T00:00:00`);
-    const from = employee.inactiveFrom ? new Date(`${employee.inactiveFrom}T00:00:00`) : null;
-    const until = employee.inactiveUntil ? new Date(`${employee.inactiveUntil}T00:00:00`) : null;
+    const from = employee.inactiveFrom
+      ? new Date(`${employee.inactiveFrom}T00:00:00`)
+      : null;
+    const until = employee.inactiveUntil
+      ? new Date(`${employee.inactiveUntil}T00:00:00`)
+      : null;
     if (from && until) return target >= from && target <= until;
     if (from) return target >= from;
     if (until) return target <= until;
@@ -295,7 +429,7 @@ export default function RosterPlan() {
   const resolveEmployeeLastName = (
     employeeId: number,
     fallbackName?: string | null,
-    fallbackLastName?: string | null
+    fallbackLastName?: string | null,
   ) => {
     const employee = employees.find((emp) => emp.id === employeeId);
     if (employee?.lastName) return employee.lastName;
@@ -305,7 +439,11 @@ export default function RosterPlan() {
     return "Unbekannt";
   };
 
-  const getConflictReasons = (employee: Employee | null, dateStr: string, type: ServiceType) => {
+  const getConflictReasons = (
+    employee: Employee | null,
+    dateStr: string,
+    type: ServiceType,
+  ) => {
     if (!employee) return [];
     const reasons: string[] = [];
     const allowedTypes = getServiceTypesForEmployee(employee, serviceLineMeta);
@@ -322,16 +460,17 @@ export default function RosterPlan() {
       (absence) =>
         absence.employeeId === employee.id &&
         absence.startDate <= dateStr &&
-        absence.endDate >= dateStr
+        absence.endDate >= dateStr,
     );
     if (hasAbsence) {
       reasons.push("Abwesenheit eingetragen");
     }
-    const hasLongTermAbsence = longTermAbsences.some((absence) =>
-      absence.employeeId === employee.id &&
-      absence.status === "Genehmigt" &&
-      absence.startDate <= dateStr &&
-      absence.endDate >= dateStr
+    const hasLongTermAbsence = longTermAbsences.some(
+      (absence) =>
+        absence.employeeId === employee.id &&
+        absence.status === "Genehmigt" &&
+        absence.startDate <= dateStr &&
+        absence.endDate >= dateStr,
     );
     if (hasLongTermAbsence) {
       reasons.push("Langzeit-Abwesenheit genehmigt");
@@ -349,14 +488,14 @@ export default function RosterPlan() {
     try {
       const year = currentDate.getFullYear();
       const month = currentDate.getMonth() + 1;
-      const startDate = format(startOfMonth(currentDate), 'yyyy-MM-dd');
-      const endDate = format(endOfMonth(currentDate), 'yyyy-MM-dd');
-      
+      const startDate = format(startOfMonth(currentDate), "yyyy-MM-dd");
+      const endDate = format(endOfMonth(currentDate), "yyyy-MM-dd");
+
       const [empData, shiftData, plannedAbsenceData, plan] = await Promise.all([
         employeeApi.getAll(),
         rosterApi.getByMonth(year, month),
         plannedAbsencesAdminApi.getRange({ from: startDate, to: endDate }),
-        dutyPlansApi.getByMonth(year, month)
+        dutyPlansApi.getByMonth(year, month),
       ]);
       let serviceLineData: ServiceLine[] = [];
       try {
@@ -367,11 +506,15 @@ export default function RosterPlan() {
 
       let longTermAbsenceData: LongTermAbsence[] = [];
       try {
-        longTermAbsenceData = await longTermAbsencesApi.getByStatus("Genehmigt", startDate, endDate);
+        longTermAbsenceData = await longTermAbsencesApi.getByStatus(
+          "Genehmigt",
+          startDate,
+          endDate,
+        );
       } catch {
         longTermAbsenceData = [];
       }
-      
+
       setEmployees(empData);
       setServiceLines(serviceLineData);
       setShifts(shiftData);
@@ -380,7 +523,11 @@ export default function RosterPlan() {
       setDutyPlan(plan);
     } catch (error) {
       console.error("Failed to load data:", error);
-      toast({ title: "Fehler beim Laden", description: "Daten konnten nicht geladen werden", variant: "destructive" });
+      toast({
+        title: "Fehler beim Laden",
+        description: "Daten konnten nicht geladen werden",
+        variant: "destructive",
+      });
     } finally {
       setIsLoading(false);
     }
@@ -433,15 +580,21 @@ export default function RosterPlan() {
   const getAbsences = (date: Date): RosterAbsenceEntry[] => {
     const dateStr = format(date, "yyyy-MM-dd");
     const plannedEntries = activePlannedAbsences
-      .filter((absence) => absence.startDate <= dateStr && absence.endDate >= dateStr)
+      .filter(
+        (absence) => absence.startDate <= dateStr && absence.endDate >= dateStr,
+      )
       .map((absence) => ({
         employeeId: absence.employeeId,
-        name: resolveEmployeeLastName(absence.employeeId, absence.employeeName, absence.employeeLastName),
+        name: resolveEmployeeLastName(
+          absence.employeeId,
+          absence.employeeName,
+          absence.employeeLastName,
+        ),
         reason: absence.reason,
         source: "planned",
         absenceId: absence.id,
         status: absence.status,
-        notes: absence.notes ?? null
+        notes: absence.notes ?? null,
       }));
 
     const longTermEntries = longTermAbsences
@@ -449,26 +602,30 @@ export default function RosterPlan() {
         (absence) =>
           absence.status === "Genehmigt" &&
           absence.startDate <= dateStr &&
-          absence.endDate >= dateStr
+          absence.endDate >= dateStr,
       )
       .map((absence) => ({
         employeeId: absence.employeeId,
         name: resolveEmployeeLastName(absence.employeeId),
         reason: absence.reason,
-        source: "long_term"
+        source: "long_term",
       }));
 
     const legacyEntries = employees
       .filter((employee) => isLegacyInactiveOnDate(employee, dateStr))
       .map((employee) => ({
         employeeId: employee.id,
-        name: resolveEmployeeLastName(employee.id, employee.name, employee.lastName),
+        name: resolveEmployeeLastName(
+          employee.id,
+          employee.name,
+          employee.lastName,
+        ),
         reason: "Langzeit-Deaktivierung",
-        source: "legacy"
+        source: "legacy",
       }));
 
-    return [...plannedEntries, ...longTermEntries, ...legacyEntries].sort((a, b) =>
-      a.name.localeCompare(b.name)
+    return [...plannedEntries, ...longTermEntries, ...legacyEntries].sort(
+      (a, b) => a.name.localeCompare(b.name),
     );
   };
 
@@ -478,14 +635,16 @@ export default function RosterPlan() {
       key: ServiceType;
       label: string;
       style: { cell: string };
-    }
+    },
   ) => {
     const type = line.key;
     const shift = getShiftForDay(date, type);
     const employee = shift ? getEmployeeById(shift.employeeId) : null;
     const freeText = shift?.assigneeFreeText?.trim() || "";
     const dateStr = format(date, "yyyy-MM-dd");
-    const conflictReasons = employee ? getConflictReasons(employee, dateStr, type) : [];
+    const conflictReasons = employee
+      ? getConflictReasons(employee, dateStr, type)
+      : [];
     const hasConflict = conflictReasons.length > 0;
     const cellKey = `${dateStr}-${type}`;
     const isSaving = savingCellKey === cellKey;
@@ -498,10 +657,14 @@ export default function RosterPlan() {
             : employee.name
           : freeText;
         return (
-          <div className={`relative ${hasConflict ? "border border-red-300 bg-red-50/60" : ""} rounded`}>
+          <div
+            className={`relative ${hasConflict ? "border border-red-300 bg-red-50/60" : ""} rounded`}
+          >
             <div
               className={`text-sm px-2 py-1.5 rounded font-medium text-center border shadow-sm ${
-                employee ? line.style.cell : "bg-slate-100 text-slate-700 border-slate-200 italic"
+                employee
+                  ? line.style.cell
+                  : "bg-slate-100 text-slate-700 border-slate-200 italic"
               }`}
               title={employee ? employee.name : freeText}
             >
@@ -537,8 +700,12 @@ export default function RosterPlan() {
     const allowedEmployees = employees
       .filter((emp) => emp.isActive !== false)
       .filter((emp) => emp.takesShifts !== false)
-      .filter((emp) => getServiceTypesForEmployee(emp, serviceLineMeta).includes(type))
-      .sort((a, b) => (a.lastName || a.name).localeCompare(b.lastName || b.name));
+      .filter((emp) =>
+        getServiceTypesForEmployee(emp, serviceLineMeta).includes(type),
+      )
+      .sort((a, b) =>
+        (a.lastName || a.name).localeCompare(b.lastName || b.name),
+      );
     const draftValue = manualDrafts[cellKey];
     const currentLabel = draftValue ?? employee?.name ?? freeText ?? "";
     const isActive = activeCellKey === cellKey;
@@ -547,7 +714,9 @@ export default function RosterPlan() {
       ? allowedEmployees.filter((emp) => {
           const last = (emp.lastName || "").toLowerCase();
           const full = emp.name.toLowerCase();
-          return last.includes(normalizedInput) || full.includes(normalizedInput);
+          return (
+            last.includes(normalizedInput) || full.includes(normalizedInput)
+          );
         })
       : allowedEmployees;
 
@@ -581,20 +750,23 @@ export default function RosterPlan() {
                 const blockedMatch = employees.find(
                   (emp) =>
                     emp.takesShifts === false &&
-                    (emp.name.toLowerCase() === normalized || emp.lastName?.toLowerCase() === normalized)
+                    (emp.name.toLowerCase() === normalized ||
+                      emp.lastName?.toLowerCase() === normalized),
                 );
                 if (blockedMatch) {
                   toast({
                     title: "Nicht einsetzbar",
                     description: `${blockedMatch.name} ist im Dienstplan deaktiviert.`,
-                    variant: "destructive"
+                    variant: "destructive",
                   });
                   clearManualDraft(cellKey);
                   setActiveCellKey(null);
                   return;
                 }
                 const exactMatch = allowedEmployees.find(
-                  (emp) => emp.name.toLowerCase() === normalized || emp.lastName?.toLowerCase() === normalized
+                  (emp) =>
+                    emp.name.toLowerCase() === normalized ||
+                    emp.lastName?.toLowerCase() === normalized,
                 );
                 if (exactMatch) {
                   handleManualAssign(date, type, exactMatch.id, null);
@@ -605,7 +777,9 @@ export default function RosterPlan() {
                 const matches = allowedEmployees.filter((emp) => {
                   const last = (emp.lastName || "").toLowerCase();
                   const full = emp.name.toLowerCase();
-                  return last.startsWith(normalized) || full.startsWith(normalized);
+                  return (
+                    last.startsWith(normalized) || full.startsWith(normalized)
+                  );
                 });
 
                 if (matches.length === 1) {
@@ -648,7 +822,9 @@ export default function RosterPlan() {
                 }}
               >
                 <span className="truncate">{emp.name}</span>
-                <span className="ml-2 text-[10px] text-muted-foreground">{emp.role}</span>
+                <span className="ml-2 text-[10px] text-muted-foreground">
+                  {emp.role}
+                </span>
               </button>
             ))}
           </PopoverContent>
@@ -661,7 +837,7 @@ export default function RosterPlan() {
       </div>
     );
   };
-  
+
   const stats = useMemo(() => {
     const serviceKeys = serviceLineDisplay.length
       ? serviceLineDisplay.map((line) => line.key)
@@ -676,7 +852,7 @@ export default function RosterPlan() {
             (absence) =>
               absence.employeeId === emp.id &&
               absence.startDate <= dateStr &&
-              absence.endDate >= dateStr
+              absence.endDate >= dateStr,
           );
           if (planned) return true;
           const longTerm = longTermAbsences.some(
@@ -684,22 +860,25 @@ export default function RosterPlan() {
               absence.employeeId === emp.id &&
               absence.status === "Genehmigt" &&
               absence.startDate <= dateStr &&
-              absence.endDate >= dateStr
+              absence.endDate >= dateStr,
           );
           if (longTerm) return true;
           return isLegacyInactiveOnDate(emp, dateStr);
         }).length;
-        const byService = serviceKeys.reduce<Record<string, number>>((acc, key) => {
-          acc[key] = empShifts.filter((s) => s.serviceType === key).length;
-          return acc;
-        }, {});
+        const byService = serviceKeys.reduce<Record<string, number>>(
+          (acc, key) => {
+            acc[key] = empShifts.filter((s) => s.serviceType === key).length;
+            return acc;
+          },
+          {},
+        );
         return {
           ...emp,
           stats: {
             byService,
             sum: empShifts.length,
-            abw: empAbsenceDays
-          }
+            abw: empAbsenceDays,
+          },
         };
       });
 
@@ -720,11 +899,13 @@ export default function RosterPlan() {
     longTermAbsences,
     dayStrings,
     serviceLineDisplay,
-    serviceLineMeta
+    serviceLineMeta,
   ]);
 
   const statsRows = useMemo(() => {
-    const rows: Array<{ type: "separator" } | { type: "data"; emp: typeof stats[number] }> = [];
+    const rows: Array<
+      { type: "separator" } | { type: "data"; emp: (typeof stats)[number] }
+    > = [];
     let lastGroup: string | null = null;
     stats.forEach((emp) => {
       const group = getRoleGroup(emp.role);
@@ -743,8 +924,9 @@ export default function RosterPlan() {
     if (!token) {
       toast({
         title: "Nicht angemeldet",
-        description: "Bitte melden Sie sich erneut an, um den Dienstplan zu exportieren.",
-        variant: "destructive"
+        description:
+          "Bitte melden Sie sich erneut an, um den Dienstplan zu exportieren.",
+        variant: "destructive",
       });
       return;
     }
@@ -752,11 +934,14 @@ export default function RosterPlan() {
     const month = currentDate.getMonth() + 1;
     setExporting(true);
     try {
-      const response = await fetch(`/api/roster/export?year=${year}&month=${month}`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
+      const response = await fetch(
+        `/api/roster/export?year=${year}&month=${month}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
       if (!response.ok) {
         throw new Error("Export fehlgeschlagen");
       }
@@ -773,7 +958,7 @@ export default function RosterPlan() {
       toast({
         title: "Export fehlgeschlagen",
         description: error.message || "Bitte versuchen Sie es erneut.",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setExporting(false);
@@ -782,30 +967,33 @@ export default function RosterPlan() {
 
   const handleAutoGenerate = async () => {
     setIsGenerating(true);
-    toast({ title: "KI-Generierung", description: "Dienstplan wird automatisch erstellt..." });
-    
+    toast({
+      title: "KI-Generierung",
+      description: "Dienstplan wird automatisch erstellt...",
+    });
+
     try {
       const year = currentDate.getFullYear();
       const month = currentDate.getMonth() + 1;
-      
+
       const result = await rosterApi.generate(year, month);
-      
+
       if (result.success) {
         setGeneratedShifts(result.shifts);
         setGenerationReasoning(result.reasoning);
         setGenerationWarnings(result.warnings);
         setGenerationDialogOpen(true);
-        toast({ 
-          title: "Generierung erfolgreich", 
-          description: `${result.generatedShifts} Dienste wurden erstellt` 
+        toast({
+          title: "Generierung erfolgreich",
+          description: `${result.generatedShifts} Dienste wurden erstellt`,
         });
       }
     } catch (error: any) {
       console.error("Generation failed:", error);
-      toast({ 
-        title: "Generierung fehlgeschlagen", 
+      toast({
+        title: "Generierung fehlgeschlagen",
         description: error.message || "Bitte später erneut versuchen",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setIsGenerating(false);
@@ -814,26 +1002,31 @@ export default function RosterPlan() {
 
   const handleApplyGenerated = async () => {
     setIsApplying(true);
-    
+
     try {
       const year = currentDate.getFullYear();
       const month = currentDate.getMonth() + 1;
-      
-      const result = await rosterApi.applyGenerated(year, month, generatedShifts, true);
-      
+
+      const result = await rosterApi.applyGenerated(
+        year,
+        month,
+        generatedShifts,
+        true,
+      );
+
       if (result.success) {
-        toast({ 
-          title: "Dienstplan übernommen", 
-          description: result.message 
+        toast({
+          title: "Dienstplan übernommen",
+          description: result.message,
         });
         setGenerationDialogOpen(false);
         loadData();
       }
     } catch (error: any) {
-      toast({ 
-        title: "Übernahme fehlgeschlagen", 
+      toast({
+        title: "Übernahme fehlgeschlagen",
         description: error.message || "Bitte später erneut versuchen",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setIsApplying(false);
@@ -844,7 +1037,7 @@ export default function RosterPlan() {
     date: Date,
     type: ServiceType,
     nextEmployeeId?: number | null,
-    assigneeFreeText?: string | null
+    assigneeFreeText?: string | null,
   ) => {
     const dateStr = format(date, "yyyy-MM-dd");
     const shift = getShiftForDay(date, type);
@@ -863,16 +1056,18 @@ export default function RosterPlan() {
         if (shift) {
           const updated = await rosterApi.update(shift.id, {
             employeeId,
-            assigneeFreeText: employeeId ? null : trimmedFreeText
+            assigneeFreeText: employeeId ? null : trimmedFreeText,
           });
-          setShifts((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+          setShifts((prev) =>
+            prev.map((item) => (item.id === updated.id ? updated : item)),
+          );
           clearManualDraft(cellKey);
         } else {
           const created = await rosterApi.create({
             employeeId,
             assigneeFreeText: employeeId ? null : trimmedFreeText,
             date: dateStr,
-            serviceType: type
+            serviceType: type,
           });
           setShifts((prev) => [...prev, created]);
           clearManualDraft(cellKey);
@@ -882,7 +1077,7 @@ export default function RosterPlan() {
       toast({
         title: "Speichern fehlgeschlagen",
         description: error.message || "Bitte später erneut versuchen",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setSavingCellKey(null);
@@ -904,7 +1099,7 @@ export default function RosterPlan() {
           existing = await dutyPlansApi.create({
             year,
             month,
-            generatedById: currentUser.id
+            generatedById: currentUser.id,
           });
         } catch (error: any) {
           existing = await dutyPlansApi.getByMonth(year, month);
@@ -916,18 +1111,18 @@ export default function RosterPlan() {
       const updated = await dutyPlansApi.updateStatus(
         existing.id,
         nextStatus,
-        nextStatus === "Freigegeben" ? currentUser.id : null
+        nextStatus === "Freigegeben" ? currentUser.id : null,
       );
       setDutyPlan(updated);
       toast({
         title: "Status aktualisiert",
-        description: `Dienstplan ist jetzt ${PLAN_STATUS_LABELS[updated.status]}.`
+        description: `Dienstplan ist jetzt ${PLAN_STATUS_LABELS[updated.status]}.`,
       });
     } catch (error: any) {
       toast({
         title: "Status-Update fehlgeschlagen",
         description: error.message || "Bitte später erneut versuchen",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setIsStatusUpdating(false);
@@ -942,14 +1137,14 @@ export default function RosterPlan() {
       setPlanningMonth(updated);
       toast({
         title: "Dienstwünsche freigeschaltet",
-        description: `Dienstwünsche sind jetzt für ${MONTH_NAMES[wishMonth - 1]} ${wishYear} geöffnet.`
+        description: `Dienstwünsche sind jetzt für ${MONTH_NAMES[wishMonth - 1]} ${wishYear} geöffnet.`,
       });
       setWishDialogOpen(false);
     } catch (error: any) {
       toast({
         title: "Freischaltung fehlgeschlagen",
         description: error.message || "Bitte später erneut versuchen",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setWishSaving(false);
@@ -963,17 +1158,21 @@ export default function RosterPlan() {
       startDate: dateStr,
       endDate: dateStr,
       reason: ABSENCE_REASONS[0],
-      notes: ""
+      notes: "",
     });
     setAbsenceDialogOpen(true);
   };
 
   const handleSaveAbsence = async () => {
-    if (!absenceDraft.employeeId || !absenceDraft.startDate || !absenceDraft.endDate) {
+    if (
+      !absenceDraft.employeeId ||
+      !absenceDraft.startDate ||
+      !absenceDraft.endDate
+    ) {
       toast({
         title: "Unvollständig",
         description: "Bitte Mitarbeiter und Zeitraum auswaehlen.",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
@@ -982,7 +1181,7 @@ export default function RosterPlan() {
       toast({
         title: "Zeitraum ungueltig",
         description: "Das Enddatum muss nach dem Startdatum liegen.",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
@@ -995,7 +1194,7 @@ export default function RosterPlan() {
         endDate: absenceDraft.endDate,
         reason: absenceDraft.reason,
         notes: absenceDraft.notes?.trim() || null,
-        status: "Geplant"
+        status: "Geplant",
       });
 
       let finalAbsence = created;
@@ -1003,7 +1202,7 @@ export default function RosterPlan() {
         finalAbsence = await plannedAbsencesAdminApi.updateStatus(
           created.id,
           "Genehmigt",
-          currentUser?.id
+          currentUser?.id,
         );
       }
 
@@ -1013,7 +1212,7 @@ export default function RosterPlan() {
       toast({
         title: "Speichern fehlgeschlagen",
         description: error.message || "Bitte spaeter erneut versuchen.",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setAbsenceSaving(false);
@@ -1028,7 +1227,7 @@ export default function RosterPlan() {
       toast({
         title: "Loeschen fehlgeschlagen",
         description: error.message || "Bitte spaeter erneut versuchen.",
-        variant: "destructive"
+        variant: "destructive",
       });
     }
   };
@@ -1046,17 +1245,26 @@ export default function RosterPlan() {
   return (
     <Layout title="Dienstplan">
       <div className="space-y-6">
-        
         {/* Controls Header */}
         <div className="bg-card p-4 rounded-xl kabeg-shadow space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1 bg-secondary rounded-lg p-1">
-                <Button variant="ghost" size="icon" onClick={() => setCurrentDate(subMonths(currentDate, 1))}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setCurrentDate(subMonths(currentDate, 1))}
+                >
                   <ArrowLeft className="w-4 h-4" />
                 </Button>
-                <span className="font-bold w-40 text-center text-lg">{format(currentDate, 'MMMM yyyy', { locale: de })}</span>
-                <Button variant="ghost" size="icon" onClick={() => setCurrentDate(addMonths(currentDate, 1))}>
+                <span className="font-bold w-40 text-center text-lg">
+                  {format(currentDate, "MMMM yyyy", { locale: de })}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setCurrentDate(addMonths(currentDate, 1))}
+                >
                   <ArrowRight className="w-4 h-4" />
                 </Button>
               </div>
@@ -1066,8 +1274,8 @@ export default function RosterPlan() {
                   planStatus === "Freigegeben"
                     ? "bg-green-50 text-green-700 border-green-200"
                     : planStatus === "Vorläufig"
-                    ? "bg-blue-50 text-blue-700 border-blue-200"
-                    : "bg-amber-50 text-amber-700 border-amber-200"
+                      ? "bg-blue-50 text-blue-700 border-blue-200"
+                      : "bg-amber-50 text-amber-700 border-amber-200"
                 }`}
               >
                 <Info className="w-3 h-3" />
@@ -1095,7 +1303,9 @@ export default function RosterPlan() {
                 data-testid="button-manual-edit"
               >
                 <Pencil className="w-4 h-4" />
-                {manualEditMode ? "Manuelle Eingabe aktiv" : "Manuell bearbeiten"}
+                {manualEditMode
+                  ? "Manuelle Eingabe aktiv"
+                  : "Manuell bearbeiten"}
               </Button>
             )}
             {canEdit && (
@@ -1121,7 +1331,11 @@ export default function RosterPlan() {
                 disabled={isStatusUpdating}
                 data-testid="button-preview-roster"
               >
-                {isStatusUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Info className="w-4 h-4" />}
+                {isStatusUpdating ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Info className="w-4 h-4" />
+                )}
                 Vorschau
               </Button>
             )}
@@ -1133,7 +1347,11 @@ export default function RosterPlan() {
                 disabled={isStatusUpdating}
                 data-testid="button-back-to-draft"
               >
-                {isStatusUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pencil className="w-4 h-4" />}
+                {isStatusUpdating ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Pencil className="w-4 h-4" />
+                )}
                 Bearbeitung
               </Button>
             )}
@@ -1145,7 +1363,11 @@ export default function RosterPlan() {
                 disabled={isStatusUpdating}
                 data-testid="button-reopen-roster"
               >
-                {isStatusUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pencil className="w-4 h-4" />}
+                {isStatusUpdating ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Pencil className="w-4 h-4" />
+                )}
                 Bearbeitung
               </Button>
             )}
@@ -1154,10 +1376,16 @@ export default function RosterPlan() {
                 variant={isPublished ? "outline" : "default"}
                 className="gap-2"
                 onClick={() => handleUpdatePlanStatus("Freigegeben")}
-                disabled={isPublished || planStatus !== "Vorläufig" || isStatusUpdating}
+                disabled={
+                  isPublished || planStatus !== "Vorläufig" || isStatusUpdating
+                }
                 data-testid="button-publish-roster"
               >
-                {isStatusUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                {isStatusUpdating ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4" />
+                )}
                 {isPublished ? "Freigegeben" : "Freigeben"}
               </Button>
             )}
@@ -1180,13 +1408,15 @@ export default function RosterPlan() {
             <DialogHeader>
               <DialogTitle>Dienstwünsche freigeben</DialogTitle>
               <DialogDescription>
-                Legt den Monat fest, für den Dienstwünsche eingegeben werden können.
+                Legt den Monat fest, für den Dienstwünsche eingegeben werden
+                können.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               {planningMonth && (
                 <div className="text-sm text-muted-foreground">
-                  Aktuell freigeschaltet: {MONTH_NAMES[planningMonth.month - 1]} {planningMonth.year}
+                  Aktuell freigeschaltet: {MONTH_NAMES[planningMonth.month - 1]}{" "}
+                  {planningMonth.year}
                 </div>
               )}
               <div className="grid grid-cols-2 gap-4">
@@ -1231,11 +1461,17 @@ export default function RosterPlan() {
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setWishDialogOpen(false)} disabled={wishSaving}>
+              <Button
+                variant="outline"
+                onClick={() => setWishDialogOpen(false)}
+                disabled={wishSaving}
+              >
                 Abbrechen
               </Button>
               <Button onClick={handleSetWishMonth} disabled={wishSaving}>
-                {wishSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                {wishSaving ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : null}
                 Freigeben
               </Button>
             </DialogFooter>
@@ -1264,7 +1500,10 @@ export default function RosterPlan() {
                   </SelectTrigger>
                   <SelectContent>
                     {absenceEmployeeOptions.map((employee) => (
-                      <SelectItem key={employee.id} value={employee.id.toString()}>
+                      <SelectItem
+                        key={employee.id}
+                        value={employee.id.toString()}
+                      >
                         {employee.name}
                       </SelectItem>
                     ))}
@@ -1278,7 +1517,10 @@ export default function RosterPlan() {
                     type="date"
                     value={absenceDraft.startDate}
                     onChange={(event) =>
-                      setAbsenceDraft((prev) => ({ ...prev, startDate: event.target.value }))
+                      setAbsenceDraft((prev) => ({
+                        ...prev,
+                        startDate: event.target.value,
+                      }))
                     }
                   />
                 </div>
@@ -1288,7 +1530,10 @@ export default function RosterPlan() {
                     type="date"
                     value={absenceDraft.endDate}
                     onChange={(event) =>
-                      setAbsenceDraft((prev) => ({ ...prev, endDate: event.target.value }))
+                      setAbsenceDraft((prev) => ({
+                        ...prev,
+                        endDate: event.target.value,
+                      }))
                     }
                   />
                 </div>
@@ -1300,7 +1545,7 @@ export default function RosterPlan() {
                   onValueChange={(value) =>
                     setAbsenceDraft((prev) => ({
                       ...prev,
-                      reason: value as (typeof ABSENCE_REASONS)[number]
+                      reason: value as (typeof ABSENCE_REASONS)[number],
                     }))
                   }
                 >
@@ -1321,18 +1566,27 @@ export default function RosterPlan() {
                 <Textarea
                   value={absenceDraft.notes}
                   onChange={(event) =>
-                    setAbsenceDraft((prev) => ({ ...prev, notes: event.target.value }))
+                    setAbsenceDraft((prev) => ({
+                      ...prev,
+                      notes: event.target.value,
+                    }))
                   }
                   rows={3}
                 />
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setAbsenceDialogOpen(false)} disabled={absenceSaving}>
+              <Button
+                variant="outline"
+                onClick={() => setAbsenceDialogOpen(false)}
+                disabled={absenceSaving}
+              >
                 Abbrechen
               </Button>
               <Button onClick={handleSaveAbsence} disabled={absenceSaving}>
-                {absenceSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                {absenceSaving ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : null}
                 Speichern
               </Button>
             </DialogFooter>
@@ -1344,17 +1598,24 @@ export default function RosterPlan() {
           {manualEditMode && canEdit && (
             <div className="px-4 py-3 bg-amber-50 border-b border-amber-200 text-sm text-amber-800 flex items-center gap-2">
               <AlertTriangle className="w-4 h-4" />
-              Manuelle Eingabe aktiv. Konflikte werden markiert, Speicherung bleibt erlaubt.
+              Manuelle Eingabe aktiv. Konflikte werden markiert, Speicherung
+              bleibt erlaubt.
             </div>
           )}
           <div className="overflow-x-auto overflow-y-visible">
             <Table className="border-collapse w-full min-w-[1400px]">
               <TableHeader>
                 <TableRow className="bg-muted/50 hover:bg-muted/50">
-                  <TableHead className="w-12 text-center border-r border-border font-bold">KW</TableHead>
-                  <TableHead className="w-12 text-center border-r border-border font-bold">Tag</TableHead>
-                  <TableHead className="w-24 border-r border-border font-bold">Datum</TableHead>
-                  
+                  <TableHead className="w-12 text-center border-r border-border font-bold">
+                    KW
+                  </TableHead>
+                  <TableHead className="w-12 text-center border-r border-border font-bold">
+                    Tag
+                  </TableHead>
+                  <TableHead className="w-24 border-r border-border font-bold">
+                    Datum
+                  </TableHead>
+
                   {/* Service Columns */}
                   {serviceLineDisplay.map((line) => (
                     <TableHead
@@ -1364,7 +1625,7 @@ export default function RosterPlan() {
                       {line.label}
                     </TableHead>
                   ))}
-                  
+
                   {/* Absence Column */}
                   <TableHead className="min-w-[300px] bg-slate-50/50 text-slate-700 font-bold text-center">
                     Abwesenheiten / Info
@@ -1376,26 +1637,36 @@ export default function RosterPlan() {
                   const isWeekendDay = isWeekend(day);
                   const holiday = getAustrianHoliday(day);
                   const isHoliday = Boolean(holiday);
-                  
+
                   const dayAbsences = getAbsences(day);
 
                   return (
-                    <TableRow key={day.toISOString()} className={`
-                      ${isWeekendDay || isHoliday ? 'bg-amber-50/60' : 'bg-white'} 
+                    <TableRow
+                      key={day.toISOString()}
+                      className={`
+                      ${isWeekendDay || isHoliday ? "bg-amber-50/60" : "bg-white"} 
                       hover:bg-slate-100/80 transition-colors border-b border-border/60
-                    `}>
+                    `}
+                    >
                       <TableCell className="text-center text-xs text-muted-foreground border-r border-border">
-                        {format(day, 'w')}
+                        {format(day, "w")}
                       </TableCell>
-                      <TableCell className={`text-center font-medium border-r border-border ${isWeekendDay || isHoliday ? 'text-rose-600' : ''}`}>
-                        {format(day, 'EEE', { locale: de })}.
+                      <TableCell
+                        className={`text-center font-medium border-r border-border ${isWeekendDay || isHoliday ? "text-rose-600" : ""}`}
+                      >
+                        {format(day, "EEE", { locale: de })}.
                       </TableCell>
-                      <TableCell className={`border-r border-border ${isWeekendDay || isHoliday ? 'text-rose-600 font-bold' : ''}`}>
-                        {format(day, 'dd.MM.')}
+                      <TableCell
+                        className={`border-r border-border ${isWeekendDay || isHoliday ? "text-rose-600 font-bold" : ""}`}
+                      >
+                        {format(day, "dd.MM.")}
                       </TableCell>
 
                       {serviceLineDisplay.map((line) => (
-                        <TableCell key={line.key} className="border-r border-border p-1">
+                        <TableCell
+                          key={line.key}
+                          className="border-r border-border p-1"
+                        >
                           {renderAssignmentCell(day, line)}
                         </TableCell>
                       ))}
@@ -1404,7 +1675,10 @@ export default function RosterPlan() {
                       <TableCell className="p-1 text-muted-foreground">
                         <div className="flex flex-wrap items-center gap-1">
                           {isHoliday && (
-                            <Badge variant="outline" className="bg-red-50 text-red-600 border-red-200 mr-2">
+                            <Badge
+                              variant="outline"
+                              className="bg-red-50 text-red-600 border-red-200 mr-2"
+                            >
                               {holiday?.name}
                             </Badge>
                           )}
@@ -1412,7 +1686,7 @@ export default function RosterPlan() {
                             const titleParts = [
                               absence.name,
                               absence.reason,
-                              absence.status ? `(${absence.status})` : null
+                              absence.status ? `(${absence.status})` : null,
                             ].filter(Boolean);
                             if (absence.notes) {
                               titleParts.push(absence.notes);
@@ -1423,12 +1697,18 @@ export default function RosterPlan() {
                                 className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600"
                                 title={titleParts.join(" · ")}
                               >
-                                <span className="truncate max-w-[120px]">{absence.name}</span>
-                                {canEdit && absence.source === "planned" && absence.absenceId ? (
+                                <span className="truncate max-w-[120px]">
+                                  {absence.name}
+                                </span>
+                                {canEdit &&
+                                absence.source === "planned" &&
+                                absence.absenceId ? (
                                   <button
                                     type="button"
                                     className="text-slate-400 hover:text-slate-700"
-                                    onClick={() => handleAbsenceDelete(absence.absenceId!)}
+                                    onClick={() =>
+                                      handleAbsenceDelete(absence.absenceId!)
+                                    }
                                   >
                                     <X className="w-3 h-3" />
                                   </button>
@@ -1459,8 +1739,12 @@ export default function RosterPlan() {
         {/* Statistics Summary */}
         <Card className="border-none shadow-sm">
           <CardHeader>
-            <CardTitle className="text-lg">Dienststatistik Jänner 2026</CardTitle>
-            <CardDescription>Übersicht der Dienste und Abwesenheiten pro Mitarbeiter</CardDescription>
+            <CardTitle className="text-lg">
+              Dienststatistik Jänner 2026
+            </CardTitle>
+            <CardDescription>
+              Übersicht der Dienste und Abwesenheiten pro Mitarbeiter
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
@@ -1477,15 +1761,22 @@ export default function RosterPlan() {
                         {line.label}
                       </TableHead>
                     ))}
-                    <TableHead className="text-center font-bold">Summe</TableHead>
-                    <TableHead className="text-center text-slate-500 bg-slate-50/50">Abwesend</TableHead>
+                    <TableHead className="text-center font-bold">
+                      Summe
+                    </TableHead>
+                    <TableHead className="text-center text-slate-500 bg-slate-50/50">
+                      Abwesend
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {statsRows.map((row, index) => {
                     if (row.type === "separator") {
                       return (
-                        <TableRow key={`sep-${index}`} className="bg-transparent">
+                        <TableRow
+                          key={`sep-${index}`}
+                          className="bg-transparent"
+                        >
                           <TableCell colSpan={statsColumnCount} className="p-0">
                             <div className="border-t border-slate-200" />
                           </TableCell>
@@ -1496,17 +1787,30 @@ export default function RosterPlan() {
                     const emp = row.emp;
                     return (
                       <TableRow key={emp.id} className="hover:bg-muted/20">
-                        <TableCell className="font-medium">{emp.name}</TableCell>
+                        <TableCell className="font-medium">
+                          {emp.name}
+                        </TableCell>
                         <TableCell className="font-mono text-xs text-muted-foreground">
-                          {emp.name.split(' ').pop()?.substring(0, 2).toUpperCase()}
+                          {emp.name
+                            .split(" ")
+                            .pop()
+                            ?.substring(0, 2)
+                            .toUpperCase()}
                         </TableCell>
                         {serviceLineDisplay.map((line) => (
-                          <TableCell key={line.key} className={`text-center ${line.style.stat}`}>
+                          <TableCell
+                            key={line.key}
+                            className={`text-center ${line.style.stat}`}
+                          >
                             {emp.stats.byService[line.key] ?? 0}
                           </TableCell>
                         ))}
-                        <TableCell className="text-center font-bold">{emp.stats.sum}</TableCell>
-                        <TableCell className="text-center text-slate-500 bg-slate-50/20">{emp.stats.abw}</TableCell>
+                        <TableCell className="text-center font-bold">
+                          {emp.stats.sum}
+                        </TableCell>
+                        <TableCell className="text-center text-slate-500 bg-slate-50/20">
+                          {emp.stats.abw}
+                        </TableCell>
                       </TableRow>
                     );
                   })}
@@ -1517,15 +1821,20 @@ export default function RosterPlan() {
         </Card>
 
         {/* AI Generation Results Dialog */}
-        <Dialog open={generationDialogOpen} onOpenChange={setGenerationDialogOpen}>
+        <Dialog
+          open={generationDialogOpen}
+          onOpenChange={setGenerationDialogOpen}
+        >
           <DialogContent className="max-w-4xl max-h-[85vh]">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Brain className="w-5 h-5 text-primary" />
-                KI-generierter Dienstplan - {format(currentDate, 'MMMM yyyy', { locale: de })}
+                KI-generierter Dienstplan -{" "}
+                {format(currentDate, "MMMM yyyy", { locale: de })}
               </DialogTitle>
               <DialogDescription>
-                Überprüfen Sie den generierten Plan und übernehmen Sie ihn in den Dienstplan
+                Überprüfen Sie den generierten Plan und übernehmen Sie ihn in
+                den Dienstplan
               </DialogDescription>
             </DialogHeader>
 
@@ -1556,7 +1865,9 @@ export default function RosterPlan() {
               <div className="border rounded-lg">
                 <div className="p-3 bg-muted/30 border-b flex justify-between items-center">
                   <span className="font-medium">Generierte Dienste</span>
-                  <Badge variant="secondary">{generatedShifts.length} Dienste</Badge>
+                  <Badge variant="secondary">
+                    {generatedShifts.length} Dienste
+                  </Badge>
                 </div>
                 <ScrollArea className="h-[300px]">
                   <Table>
@@ -1571,7 +1882,9 @@ export default function RosterPlan() {
                       {generatedShifts.map((shift, i) => {
                         const line = serviceLineLookup.get(shift.serviceType);
                         const label = line?.label || shift.serviceType;
-                        const badgeClass = line?.style.cell || "bg-slate-100 text-slate-700 border-slate-200";
+                        const badgeClass =
+                          line?.style.cell ||
+                          "bg-slate-100 text-slate-700 border-slate-200";
                         return (
                           <TableRow key={i}>
                             <TableCell className="font-mono text-sm">
@@ -1593,11 +1906,14 @@ export default function RosterPlan() {
             </div>
 
             <DialogFooter className="gap-2">
-              <Button variant="outline" onClick={() => setGenerationDialogOpen(false)}>
+              <Button
+                variant="outline"
+                onClick={() => setGenerationDialogOpen(false)}
+              >
                 Abbrechen
               </Button>
-              <Button 
-                onClick={handleApplyGenerated} 
+              <Button
+                onClick={handleApplyGenerated}
                 disabled={isApplying || generatedShifts.length === 0}
                 className="gap-2"
                 data-testid="button-apply-generated"

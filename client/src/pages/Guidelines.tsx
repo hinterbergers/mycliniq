@@ -6,11 +6,32 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { MarkdownEditor, MarkdownViewer } from "@/components/editor/MarkdownEditor";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  MarkdownEditor,
+  MarkdownViewer,
+} from "@/components/editor/MarkdownEditor";
 import { Search, ExternalLink, Download, History, Plus } from "lucide-react";
 import type { Sop, SopReference } from "@shared/schema";
 import { sopApi, type SopDetail } from "@/lib/api";
@@ -22,7 +43,7 @@ import {
   SOP_TEMPLATE_MARKDOWN,
   buildSopMarkdown,
   parseSopSections,
-  type SopSections
+  type SopSections,
 } from "@/lib/sopTemplates";
 
 const SOP_CATEGORIES = ["SOP", "Dienstanweisung", "Aufklärungen"] as const;
@@ -31,12 +52,13 @@ const CATEGORY_ORDER = [...SOP_CATEGORIES] as const;
 const CATEGORY_STYLES: Record<string, string> = {
   SOP: "bg-blue-100 text-blue-700 border-blue-200",
   Dienstanweisung: "bg-amber-100 text-amber-700 border-amber-200",
-  Aufklärungen: "bg-emerald-100 text-emerald-700 border-emerald-200"
+  Aufklärungen: "bg-emerald-100 text-emerald-700 border-emerald-200",
 };
 
 const normalizeSopCategory = (value?: string | null) => {
   if (!value) return "SOP";
-  if (ALLOWED_SOP_CATEGORIES.has(value as (typeof SOP_CATEGORIES)[number])) return value;
+  if (ALLOWED_SOP_CATEGORIES.has(value as (typeof SOP_CATEGORIES)[number]))
+    return value;
   return "SOP";
 };
 
@@ -67,11 +89,13 @@ const normalizeReferenceText = (value?: string | null) =>
     .toUpperCase();
 
 const getReferenceRank = (ref: SopReference) => {
-  const text = `${normalizeReferenceText(ref.publisher)} ${normalizeReferenceText(ref.title)}`.trim();
+  const text =
+    `${normalizeReferenceText(ref.publisher)} ${normalizeReferenceText(ref.title)}`.trim();
   if (ref.type === "awmf" || text.includes("AWMF")) return 0;
   if (ref.type === "guideline") {
     if (NATIONAL_GUIDELINE_KEYS.some((key) => text.includes(key))) return 1;
-    if (INTERNATIONAL_GUIDELINE_KEYS.some((key) => text.includes(key))) return 2;
+    if (INTERNATIONAL_GUIDELINE_KEYS.some((key) => text.includes(key)))
+      return 2;
     return 3;
   }
   if (ref.type === "study") return 4;
@@ -125,9 +149,10 @@ export default function Guidelines() {
     category: "SOP",
     contentMarkdown: SOP_TEMPLATE_MARKDOWN,
     keywords: "",
-    awmfLink: ""
+    awmfLink: "",
   });
-  const [editorSections, setEditorSections] = useState<SopSections>(DEFAULT_SOP_SECTIONS);
+  const [editorSections, setEditorSections] =
+    useState<SopSections>(DEFAULT_SOP_SECTIONS);
 
   useEffect(() => {
     const load = async () => {
@@ -139,7 +164,7 @@ export default function Guidelines() {
         toast({
           title: "Fehler",
           description: "Dokumente konnten nicht geladen werden",
-          variant: "destructive"
+          variant: "destructive",
         });
       } finally {
         setLoading(false);
@@ -151,7 +176,9 @@ export default function Guidelines() {
   const categories = useMemo(() => {
     const set = new Set(sops.map((sop) => normalizeSopCategory(sop.category)));
     const ordered = CATEGORY_ORDER.filter((value) => set.has(value));
-    const rest = Array.from(set).filter((value) => !CATEGORY_ORDER.includes(value as any));
+    const rest = Array.from(set).filter(
+      (value) => !CATEGORY_ORDER.includes(value as any),
+    );
     return ["Alle", ...ordered, ...rest];
   }, [sops]);
 
@@ -159,11 +186,15 @@ export default function Guidelines() {
     const term = searchTerm.trim().toLowerCase();
     return sops.filter((sop) => {
       const normalizedCategory = normalizeSopCategory(sop.category);
-      const matchesCategory = selectedCategory === "Alle" || normalizedCategory === selectedCategory;
-      const matchesSearch = !term ||
+      const matchesCategory =
+        selectedCategory === "Alle" || normalizedCategory === selectedCategory;
+      const matchesSearch =
+        !term ||
         sop.title.toLowerCase().includes(term) ||
         (sop.contentMarkdown || "").toLowerCase().includes(term) ||
-        (sop.keywords || []).some((keyword) => keyword.toLowerCase().includes(term));
+        (sop.keywords || []).some((keyword) =>
+          keyword.toLowerCase().includes(term),
+        );
       return matchesCategory && matchesSearch;
     });
   }, [sops, searchTerm, selectedCategory]);
@@ -178,7 +209,7 @@ export default function Guidelines() {
       toast({
         title: "Fehler",
         description: "Dokument konnte nicht geladen werden",
-        variant: "destructive"
+        variant: "destructive",
       });
       setDetailOpen(false);
     } finally {
@@ -192,7 +223,7 @@ export default function Guidelines() {
       category: "SOP",
       contentMarkdown: SOP_TEMPLATE_MARKDOWN,
       keywords: "",
-      awmfLink: ""
+      awmfLink: "",
     });
     setEditorSections(DEFAULT_SOP_SECTIONS);
     setEditorOpen(true);
@@ -216,7 +247,7 @@ export default function Guidelines() {
       setEditorForm((prev) => ({
         ...prev,
         category: normalizedCategory,
-        contentMarkdown: SOP_TEMPLATE_MARKDOWN
+        contentMarkdown: SOP_TEMPLATE_MARKDOWN,
       }));
       return;
     }
@@ -228,22 +259,28 @@ export default function Guidelines() {
     setEditorForm((prev) => ({
       ...prev,
       category: normalizedCategory,
-      contentMarkdown: nextMarkdown
+      contentMarkdown: nextMarkdown,
     }));
   };
 
   const handleCreate = async () => {
     if (!editorForm.title.trim()) {
-      toast({ title: "Fehler", description: "Titel ist erforderlich", variant: "destructive" });
+      toast({
+        title: "Fehler",
+        description: "Titel ist erforderlich",
+        variant: "destructive",
+      });
       return;
     }
     const normalizedCategory = normalizeSopCategory(editorForm.category);
     const contentMarkdown =
       normalizedCategory === "SOP"
-        ? (hasSopSectionContent(editorSections)
+        ? hasSopSectionContent(editorSections)
           ? buildSopMarkdown(sanitizeSopSections(editorSections))
-          : null)
-        : (editorForm.contentMarkdown?.trim() ? editorForm.contentMarkdown.trim() : null);
+          : null
+        : editorForm.contentMarkdown?.trim()
+          ? editorForm.contentMarkdown.trim()
+          : null;
     setEditorSaving(true);
     try {
       await sopApi.create({
@@ -251,15 +288,22 @@ export default function Guidelines() {
         category: normalizedCategory as Sop["category"],
         contentMarkdown,
         keywords: editorForm.keywords
-          ? editorForm.keywords.split(",").map((word) => word.trim()).filter(Boolean)
+          ? editorForm.keywords
+              .split(",")
+              .map((word) => word.trim())
+              .filter(Boolean)
           : [],
         awmfLink: editorForm.awmfLink.trim() || null,
-        status: "proposed"
+        status: "proposed",
       });
       toast({ title: "Dokument vorgeschlagen" });
       setEditorOpen(false);
     } catch (error) {
-      toast({ title: "Fehler", description: "Dokument konnte nicht vorgeschlagen werden", variant: "destructive" });
+      toast({
+        title: "Fehler",
+        description: "Dokument konnte nicht vorgeschlagen werden",
+        variant: "destructive",
+      });
     } finally {
       setEditorSaving(false);
     }
@@ -278,23 +322,32 @@ export default function Guidelines() {
       link.remove();
       URL.revokeObjectURL(url);
     } catch (error) {
-      toast({ title: "Fehler", description: "Word-Export fehlgeschlagen", variant: "destructive" });
+      toast({
+        title: "Fehler",
+        description: "Word-Export fehlgeschlagen",
+        variant: "destructive",
+      });
     } finally {
       setDocxDownloading(false);
     }
   };
 
   const editorCategory = normalizeSopCategory(editorForm.category);
-  const detailCategory = detailSop ? normalizeSopCategory(detailSop.category) : null;
-  const detailSections = detailCategory === "SOP"
-    ? parseSopSections(detailSop?.contentMarkdown)
-    : EMPTY_SOP_SECTIONS;
+  const detailCategory = detailSop
+    ? normalizeSopCategory(detailSop.category)
+    : null;
+  const detailSections =
+    detailCategory === "SOP"
+      ? parseSopSections(detailSop?.contentMarkdown)
+      : EMPTY_SOP_SECTIONS;
 
   return (
     <Layout title="SOPs & Dokumente">
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex flex-col gap-3">
-          <h2 className="text-2xl font-semibold tracking-tight">SOPs & Dokumente</h2>
+          <h2 className="text-2xl font-semibold tracking-tight">
+            SOPs & Dokumente
+          </h2>
           <p className="text-muted-foreground max-w-2xl">
             Freigegebene SOPs und Dokumente der Abteilung.
           </p>
@@ -321,7 +374,9 @@ export default function Guidelines() {
                 <Button
                   key={category}
                   size="sm"
-                  variant={selectedCategory === category ? "default" : "outline"}
+                  variant={
+                    selectedCategory === category ? "default" : "outline"
+                  }
                   onClick={() => setSelectedCategory(category)}
                   data-testid={`button-category-${category.toLowerCase()}`}
                 >
@@ -331,7 +386,9 @@ export default function Guidelines() {
             </div>
           </div>
 
-          {loading && <p className="text-sm text-muted-foreground">Lade Dokumente...</p>}
+          {loading && (
+            <p className="text-sm text-muted-foreground">Lade Dokumente...</p>
+          )}
 
           {!loading && filteredSops.length === 0 && (
             <Card className="border border-dashed">
@@ -354,10 +411,16 @@ export default function Guidelines() {
                       <div>
                         <h3 className="text-lg font-semibold">{sop.title}</h3>
                         <p className="text-xs text-muted-foreground">
-                          Aktualisiert: {formatDate(sop.publishedAt || sop.updatedAt) || "-"}
+                          Aktualisiert:{" "}
+                          {formatDate(sop.publishedAt || sop.updatedAt) || "-"}
                         </p>
                       </div>
-                      <Badge className={CATEGORY_STYLES[normalizeSopCategory(sop.category)] || "bg-slate-100 text-slate-700 border-slate-200"}>
+                      <Badge
+                        className={
+                          CATEGORY_STYLES[normalizeSopCategory(sop.category)] ||
+                          "bg-slate-100 text-slate-700 border-slate-200"
+                        }
+                      >
                         {normalizeSopCategory(sop.category)}
                       </Badge>
                     </div>
@@ -372,7 +435,9 @@ export default function Guidelines() {
                           </Badge>
                         ))}
                         {sop.keywords.length > 4 && (
-                          <Badge variant="outline">+{sop.keywords.length - 4}</Badge>
+                          <Badge variant="outline">
+                            +{sop.keywords.length - 4}
+                          </Badge>
                         )}
                       </div>
                     )}
@@ -389,29 +454,45 @@ export default function Guidelines() {
           <DialogHeader>
             <DialogTitle>Dokument Details</DialogTitle>
           </DialogHeader>
-          {detailLoading && <p className="text-sm text-muted-foreground">Lade...</p>}
+          {detailLoading && (
+            <p className="text-sm text-muted-foreground">Lade...</p>
+          )}
           {!detailLoading && detailSop && (
             <div className="space-y-4">
               <div className="space-y-1">
                 <h3 className="text-lg font-semibold">{detailSop.title}</h3>
                 <div className="flex flex-wrap gap-2">
-                  <Badge className={CATEGORY_STYLES[detailCategory || "SOP"] || "bg-slate-100 text-slate-700 border-slate-200"}>
+                  <Badge
+                    className={
+                      CATEGORY_STYLES[detailCategory || "SOP"] ||
+                      "bg-slate-100 text-slate-700 border-slate-200"
+                    }
+                  >
                     {detailCategory || detailSop.category}
                   </Badge>
                   <Badge variant="outline">Version {detailSop.version}</Badge>
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" onClick={() => downloadDocx(detailSop)} disabled={docxDownloading}>
-                  <Download className="w-4 h-4 mr-1" />Word
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => downloadDocx(detailSop)}
+                  disabled={docxDownloading}
+                >
+                  <Download className="w-4 h-4 mr-1" />
+                  Word
                 </Button>
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={() => setHistoryOpen(true)}
-                  disabled={!detailSop.versions || detailSop.versions.length === 0}
+                  disabled={
+                    !detailSop.versions || detailSop.versions.length === 0
+                  }
                 >
-                  <History className="w-4 h-4 mr-1" />Historie
+                  <History className="w-4 h-4 mr-1" />
+                  Historie
                 </Button>
               </div>
 
@@ -459,16 +540,26 @@ export default function Guidelines() {
                 <h4 className="text-sm font-semibold">Referenzen</h4>
                 {detailSop.references && detailSop.references.length > 0 ? (
                   <div className="space-y-2">
-                    {sortReferences(detailSop.references.filter((ref) => ref.status === "accepted")).map((ref) => (
-                      <div key={ref.id} className="border rounded-lg p-3 text-sm">
+                    {sortReferences(
+                      detailSop.references.filter(
+                        (ref) => ref.status === "accepted",
+                      ),
+                    ).map((ref) => (
+                      <div
+                        key={ref.id}
+                        className="border rounded-lg p-3 text-sm"
+                      >
                         <div className="flex items-start justify-between gap-2">
                           <div>
                             <p className="font-medium">{ref.title}</p>
                             <p className="text-xs text-muted-foreground">
-                              {ref.publisher || "Unbekannt"} {ref.yearOrVersion || ""}
+                              {ref.publisher || "Unbekannt"}{" "}
+                              {ref.yearOrVersion || ""}
                             </p>
                           </div>
-                          <Badge variant="outline">{ref.type.toUpperCase()}</Badge>
+                          <Badge variant="outline">
+                            {ref.type.toUpperCase()}
+                          </Badge>
                         </div>
                         {ref.url && (
                           <a
@@ -484,7 +575,9 @@ export default function Guidelines() {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground">Keine Referenzen vorhanden.</p>
+                  <p className="text-sm text-muted-foreground">
+                    Keine Referenzen vorhanden.
+                  </p>
                 )}
               </div>
             </div>
@@ -502,7 +595,9 @@ export default function Guidelines() {
               <label className="text-sm font-medium">Titel</label>
               <Input
                 value={editorForm.title}
-                onChange={(event) => setEditorForm({ ...editorForm, title: event.target.value })}
+                onChange={(event) =>
+                  setEditorForm({ ...editorForm, title: event.target.value })
+                }
               />
             </div>
             <div>
@@ -527,11 +622,16 @@ export default function Guidelines() {
               <div className="space-y-4">
                 {SOP_SECTION_DEFINITIONS.map((section) => (
                   <div key={section.key}>
-                    <label className="text-sm font-medium">{section.title}</label>
+                    <label className="text-sm font-medium">
+                      {section.title}
+                    </label>
                     <MarkdownEditor
                       value={editorSections[section.key] || ""}
                       onChange={(value) =>
-                        setEditorSections((prev) => ({ ...prev, [section.key]: value }))
+                        setEditorSections((prev) => ({
+                          ...prev,
+                          [section.key]: value,
+                        }))
                       }
                       height={section.key === "content" ? 320 : 200}
                       className="border rounded-md"
@@ -544,29 +644,39 @@ export default function Guidelines() {
                 <label className="text-sm font-medium">Inhalt</label>
                 <MarkdownEditor
                   value={editorForm.contentMarkdown}
-                  onChange={(value) => setEditorForm({ ...editorForm, contentMarkdown: value })}
+                  onChange={(value) =>
+                    setEditorForm({ ...editorForm, contentMarkdown: value })
+                  }
                   height={360}
                   className="border rounded-md"
                 />
               </div>
             )}
             <div>
-              <label className="text-sm font-medium">Schlagwoerter (Komma getrennt)</label>
+              <label className="text-sm font-medium">
+                Schlagwoerter (Komma getrennt)
+              </label>
               <Input
                 value={editorForm.keywords}
-                onChange={(event) => setEditorForm({ ...editorForm, keywords: event.target.value })}
+                onChange={(event) =>
+                  setEditorForm({ ...editorForm, keywords: event.target.value })
+                }
               />
             </div>
             <div>
               <label className="text-sm font-medium">AWMF-Link</label>
               <Input
                 value={editorForm.awmfLink}
-                onChange={(event) => setEditorForm({ ...editorForm, awmfLink: event.target.value })}
+                onChange={(event) =>
+                  setEditorForm({ ...editorForm, awmfLink: event.target.value })
+                }
               />
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-4">
-            <Button variant="outline" onClick={() => setEditorOpen(false)}>Abbrechen</Button>
+            <Button variant="outline" onClick={() => setEditorOpen(false)}>
+              Abbrechen
+            </Button>
             <Button onClick={handleCreate} disabled={editorSaving}>
               {editorSaving ? "Speichere..." : "Vorschlagen"}
             </Button>
@@ -595,7 +705,10 @@ export default function Guidelines() {
                     <TableCell>{version.versionNumber}</TableCell>
                     <TableCell>{formatDate(version.releasedAt)}</TableCell>
                     <TableCell>
-                      {formatEmployeeName(version.releasedByName, version.releasedByLastName)}
+                      {formatEmployeeName(
+                        version.releasedByName,
+                        version.releasedByLastName,
+                      )}
                     </TableCell>
                     <TableCell>{version.changeNote || "-"}</TableCell>
                   </TableRow>
@@ -603,7 +716,9 @@ export default function Guidelines() {
               </TableBody>
             </Table>
           ) : (
-            <p className="text-sm text-muted-foreground">Keine Historie vorhanden.</p>
+            <p className="text-sm text-muted-foreground">
+              Keine Historie vorhanden.
+            </p>
           )}
         </DialogContent>
       </Dialog>

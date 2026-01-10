@@ -4,10 +4,25 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { MarkdownEditor, MarkdownViewer } from "@/components/editor/MarkdownEditor";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  MarkdownEditor,
+  MarkdownViewer,
+} from "@/components/editor/MarkdownEditor";
 import { Plus, Search } from "lucide-react";
 import type { ProjectInitiative } from "@shared/schema";
 import { projectApi, type ProjectDetail } from "@/lib/api";
@@ -17,14 +32,14 @@ const CATEGORY_STYLES: Record<string, string> = {
   SOP: "bg-blue-100 text-blue-700 border-blue-200",
   Studie: "bg-emerald-100 text-emerald-700 border-emerald-200",
   Administrativ: "bg-amber-100 text-amber-700 border-amber-200",
-  "Qualitätsprojekt": "bg-slate-100 text-slate-700 border-slate-200"
+  Qualitätsprojekt: "bg-slate-100 text-slate-700 border-slate-200",
 };
 
 const PROJECT_CATEGORIES = [
   "SOP",
   "Studie",
   "Administrativ",
-  "Qualitätsprojekt"
+  "Qualitätsprojekt",
 ] as const;
 
 export default function Projects() {
@@ -36,13 +51,15 @@ export default function Projects() {
 
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [detailProject, setDetailProject] = useState<ProjectDetail | null>(null);
+  const [detailProject, setDetailProject] = useState<ProjectDetail | null>(
+    null,
+  );
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorSaving, setEditorSaving] = useState(false);
   const [editorForm, setEditorForm] = useState({
     title: "",
     category: "Administrativ",
-    description: ""
+    description: "",
   });
 
   useEffect(() => {
@@ -55,7 +72,7 @@ export default function Projects() {
         toast({
           title: "Fehler",
           description: "Projekte konnten nicht geladen werden",
-          variant: "destructive"
+          variant: "destructive",
         });
       } finally {
         setLoading(false);
@@ -72,8 +89,10 @@ export default function Projects() {
   const filteredProjects = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     return projects.filter((project) => {
-      const matchesCategory = selectedCategory === "Alle" || project.category === selectedCategory;
-      const matchesSearch = !term ||
+      const matchesCategory =
+        selectedCategory === "Alle" || project.category === selectedCategory;
+      const matchesSearch =
+        !term ||
         project.title.toLowerCase().includes(term) ||
         (project.description || "").toLowerCase().includes(term);
       return matchesCategory && matchesSearch;
@@ -90,7 +109,7 @@ export default function Projects() {
       toast({
         title: "Fehler",
         description: "Projekt konnte nicht geladen werden",
-        variant: "destructive"
+        variant: "destructive",
       });
       setDetailOpen(false);
     } finally {
@@ -102,7 +121,7 @@ export default function Projects() {
     setEditorForm({
       title: "",
       category: "Administrativ",
-      description: ""
+      description: "",
     });
     setEditorOpen(true);
   };
@@ -112,7 +131,7 @@ export default function Projects() {
     if (!title) {
       toast({
         title: "Titel fehlt",
-        description: "Bitte einen Projekttitel angeben."
+        description: "Bitte einen Projekttitel angeben.",
       });
       return;
     }
@@ -122,18 +141,18 @@ export default function Projects() {
         title,
         description: editorForm.description.trim() || null,
         category: editorForm.category,
-        status: "proposed"
+        status: "proposed",
       });
       toast({
         title: "Projekt vorgeschlagen",
-        description: "Der Vorschlag wurde zur Freigabe eingereicht."
+        description: "Der Vorschlag wurde zur Freigabe eingereicht.",
       });
       setEditorOpen(false);
     } catch (error) {
       toast({
         title: "Fehler",
         description: "Projekt konnte nicht angelegt werden",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setEditorSaving(false);
@@ -144,9 +163,12 @@ export default function Projects() {
     <Layout title="Projekte">
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex flex-col gap-3">
-          <h2 className="text-2xl font-semibold tracking-tight">Abgeschlossene Projekte</h2>
+          <h2 className="text-2xl font-semibold tracking-tight">
+            Abgeschlossene Projekte
+          </h2>
           <p className="text-muted-foreground max-w-2xl">
-            Freigegebene Projekte und SOP-Umsetzungen zur Information der Abteilung.
+            Freigegebene Projekte und SOP-Umsetzungen zur Information der
+            Abteilung.
           </p>
         </div>
 
@@ -178,7 +200,9 @@ export default function Projects() {
           </Button>
         </div>
 
-        {loading && <p className="text-sm text-muted-foreground">Lade Projekte...</p>}
+        {loading && (
+          <p className="text-sm text-muted-foreground">Lade Projekte...</p>
+        )}
 
         {!loading && filteredProjects.length === 0 && (
           <Card className="border border-dashed">
@@ -206,7 +230,12 @@ export default function Projects() {
                         </p>
                       )}
                     </div>
-                    <Badge className={CATEGORY_STYLES[project.category] || "bg-slate-100 text-slate-700 border-slate-200"}>
+                    <Badge
+                      className={
+                        CATEGORY_STYLES[project.category] ||
+                        "bg-slate-100 text-slate-700 border-slate-200"
+                      }
+                    >
                       {project.category}
                     </Badge>
                   </div>
@@ -222,28 +251,45 @@ export default function Projects() {
           <DialogHeader>
             <DialogTitle>Projekt Details</DialogTitle>
           </DialogHeader>
-          {detailLoading && <p className="text-sm text-muted-foreground">Lade...</p>}
+          {detailLoading && (
+            <p className="text-sm text-muted-foreground">Lade...</p>
+          )}
           {!detailLoading && detailProject && (
             <div className="space-y-4">
               <div className="space-y-1">
                 <h3 className="text-lg font-semibold">{detailProject.title}</h3>
-                <Badge className={CATEGORY_STYLES[detailProject.category] || "bg-slate-100 text-slate-700 border-slate-200"}>
+                <Badge
+                  className={
+                    CATEGORY_STYLES[detailProject.category] ||
+                    "bg-slate-100 text-slate-700 border-slate-200"
+                  }
+                >
                   {detailProject.category}
                 </Badge>
               </div>
               <Separator />
               {detailProject.description ? (
-                <MarkdownViewer value={detailProject.description} className="text-sm" />
+                <MarkdownViewer
+                  value={detailProject.description}
+                  className="text-sm"
+                />
               ) : (
-                <p className="text-sm text-muted-foreground">Keine Beschreibung hinterlegt.</p>
+                <p className="text-sm text-muted-foreground">
+                  Keine Beschreibung hinterlegt.
+                </p>
               )}
               {detailProject.members && detailProject.members.length > 0 && (
                 <div className="space-y-2">
                   <h4 className="text-sm font-semibold">Beteiligte</h4>
                   <div className="flex flex-wrap gap-2">
                     {detailProject.members.map((member) => (
-                      <Badge key={`${detailProject.id}-${member.employeeId}`} variant="secondary">
-                        {member.lastName || member.name || `#${member.employeeId}`}
+                      <Badge
+                        key={`${detailProject.id}-${member.employeeId}`}
+                        variant="secondary"
+                      >
+                        {member.lastName ||
+                          member.name ||
+                          `#${member.employeeId}`}
                       </Badge>
                     ))}
                   </div>
@@ -264,7 +310,12 @@ export default function Projects() {
               <label className="text-sm font-medium">Titel</label>
               <Input
                 value={editorForm.title}
-                onChange={(event) => setEditorForm((prev) => ({ ...prev, title: event.target.value }))}
+                onChange={(event) =>
+                  setEditorForm((prev) => ({
+                    ...prev,
+                    title: event.target.value,
+                  }))
+                }
                 placeholder="Projekt-Titel"
               />
             </div>
@@ -272,7 +323,9 @@ export default function Projects() {
               <label className="text-sm font-medium">Kategorie</label>
               <Select
                 value={editorForm.category}
-                onValueChange={(value) => setEditorForm((prev) => ({ ...prev, category: value }))}
+                onValueChange={(value) =>
+                  setEditorForm((prev) => ({ ...prev, category: value }))
+                }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Kategorie auswählen" />
@@ -290,7 +343,9 @@ export default function Projects() {
               <label className="text-sm font-medium">Beschreibung</label>
               <MarkdownEditor
                 value={editorForm.description}
-                onChange={(value) => setEditorForm((prev) => ({ ...prev, description: value }))}
+                onChange={(value) =>
+                  setEditorForm((prev) => ({ ...prev, description: value }))
+                }
                 height={420}
                 placeholder="Projektbeschreibung..."
               />

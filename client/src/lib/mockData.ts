@@ -1,138 +1,149 @@
 // Mock Data for Employees
 export const MOCK_EMPLOYEES = [
-  { 
-    id: 1, 
-    name: "PD Dr. Johannes Lermann", 
-    role: "Primararzt", 
-    competencies: ["Senior Mamma Surgeon", "Endometriose", "Gyn-Onkologie", "Geburtshilfe", "Urogynäkologie"], 
+  {
+    id: 1,
+    name: "PD Dr. Johannes Lermann",
+    role: "Primararzt",
+    competencies: [
+      "Senior Mamma Surgeon",
+      "Endometriose",
+      "Gyn-Onkologie",
+      "Geburtshilfe",
+      "Urogynäkologie",
+    ],
     status: "active",
-    email: "johannes.lermann@kabeg.at"
+    email: "johannes.lermann@kabeg.at",
   },
-  { 
-    id: 2, 
-    name: "Dr. Stefan Hinterberger", 
-    role: "1. Oberarzt", 
-    competencies: ["Gynäkologische Chirurgie", "Geburtshilfe", "ÖGUM I", "Dysplasie"], 
+  {
+    id: 2,
+    name: "Dr. Stefan Hinterberger",
+    role: "1. Oberarzt",
+    competencies: [
+      "Gynäkologische Chirurgie",
+      "Geburtshilfe",
+      "ÖGUM I",
+      "Dysplasie",
+    ],
     status: "active",
-    email: "stefan.hinterberger@kabeg.at"
+    email: "stefan.hinterberger@kabeg.at",
   },
-  { 
-    id: 3, 
-    name: "Dr. Janos Gellen", 
-    role: "Oberarzt", 
-    competencies: ["ÖGUM II"], 
-    status: "active" 
+  {
+    id: 3,
+    name: "Dr. Janos Gellen",
+    role: "Oberarzt",
+    competencies: ["ÖGUM II"],
+    status: "active",
   },
-  { 
-    id: 4, 
-    name: "Dr. Andreja Gornjec", 
-    role: "Oberärztin", 
-    competencies: ["Gyn-Onkologie", "Dysplasie"], 
-    status: "active" 
+  {
+    id: 4,
+    name: "Dr. Andreja Gornjec",
+    role: "Oberärztin",
+    competencies: ["Gyn-Onkologie", "Dysplasie"],
+    status: "active",
   },
-  { 
-    id: 5, 
-    name: "Dr. Christoph Herbst", 
-    role: "Oberarzt", 
-    competencies: ["ÖGUM I", "Geburtshilfe"], 
-    status: "active" 
+  {
+    id: 5,
+    name: "Dr. Christoph Herbst",
+    role: "Oberarzt",
+    competencies: ["ÖGUM I", "Geburtshilfe"],
+    status: "active",
   },
-  { 
-    id: 6, 
-    name: "Dr. Kerstin Herzog", 
-    role: "Oberärztin", 
-    competencies: ["Allgemeine Gynäkologie"], 
-    status: "active" 
+  {
+    id: 6,
+    name: "Dr. Kerstin Herzog",
+    role: "Oberärztin",
+    competencies: ["Allgemeine Gynäkologie"],
+    status: "active",
   },
-  { 
-    id: 7, 
-    name: "Dr. Martina Krenn", 
-    role: "Oberärztin", 
-    competencies: ["Allgemeine Gynäkologie", "Mamma"], 
-    status: "active" 
+  {
+    id: 7,
+    name: "Dr. Martina Krenn",
+    role: "Oberärztin",
+    competencies: ["Allgemeine Gynäkologie", "Mamma"],
+    status: "active",
   },
-  { 
-    id: 8, 
-    name: "Dr. Kristin Köck", 
-    role: "Oberärztin", 
-    competencies: ["Mamma", "Allgemeine Gynäkologie"], 
-    status: "active" 
+  {
+    id: 8,
+    name: "Dr. Kristin Köck",
+    role: "Oberärztin",
+    competencies: ["Mamma", "Allgemeine Gynäkologie"],
+    status: "active",
   },
-  { 
-    id: 9, 
-    name: "Dr. Barbara Markota", 
-    role: "Oberärztin", 
-    competencies: ["ÖGUM II", "Geburtshilfe", "Gynäkologische Chirurgie"], 
-    status: "active" 
+  {
+    id: 9,
+    name: "Dr. Barbara Markota",
+    role: "Oberärztin",
+    competencies: ["ÖGUM II", "Geburtshilfe", "Gynäkologische Chirurgie"],
+    status: "active",
   },
-  { 
-    id: 10, 
-    name: "Dr. Marlene Waschnig", 
-    role: "Oberärztin", 
-    competencies: ["Allgemeine Gynäkologie", "Mamma Ambulanz"], 
-    status: "active" 
+  {
+    id: 10,
+    name: "Dr. Marlene Waschnig",
+    role: "Oberärztin",
+    competencies: ["Allgemeine Gynäkologie", "Mamma Ambulanz"],
+    status: "active",
   },
-  { 
-    id: 11, 
-    name: "Dr. Lucia Gerhold", 
-    role: "Oberärztin", 
-    competencies: ["Gynäkologische Chirurgie", "Geburtshilfe", "Dysplasie"], 
-    status: "active" 
+  {
+    id: 11,
+    name: "Dr. Lucia Gerhold",
+    role: "Oberärztin",
+    competencies: ["Gynäkologische Chirurgie", "Geburtshilfe", "Dysplasie"],
+    status: "active",
   },
-  { 
-    id: 12, 
-    name: "Dr. Lukas Dullnig", 
-    role: "Assistenzarzt", 
-    competencies: [], 
-    status: "active" 
+  {
+    id: 12,
+    name: "Dr. Lukas Dullnig",
+    role: "Assistenzarzt",
+    competencies: [],
+    status: "active",
   },
-  { 
-    id: 13, 
-    name: "Dr. Lena Gruber", 
-    role: "Assistenzärztin", 
-    competencies: [], 
-    status: "active" 
+  {
+    id: 13,
+    name: "Dr. Lena Gruber",
+    role: "Assistenzärztin",
+    competencies: [],
+    status: "active",
   },
-  { 
-    id: 14, 
-    name: "Dr. Jelizaveta Gurmane", 
-    role: "Assistenzärztin", 
-    competencies: [], 
-    status: "active" 
+  {
+    id: 14,
+    name: "Dr. Jelizaveta Gurmane",
+    role: "Assistenzärztin",
+    competencies: [],
+    status: "active",
   },
-  { 
-    id: 15, 
-    name: "Dr. Isabel Krauss", 
-    role: "Assistenzärztin", 
-    competencies: ["Dysplasie"], 
-    status: "active" 
+  {
+    id: 15,
+    name: "Dr. Isabel Krauss",
+    role: "Assistenzärztin",
+    competencies: ["Dysplasie"],
+    status: "active",
   },
-  { 
-    id: 16, 
-    name: "Dr. Katharina Lesnik", 
-    role: "Assistenzärztin", 
-    competencies: ["Dysplasie"], 
-    status: "active" 
+  {
+    id: 16,
+    name: "Dr. Katharina Lesnik",
+    role: "Assistenzärztin",
+    competencies: ["Dysplasie"],
+    status: "active",
   },
-  { 
-    id: 17, 
-    name: "Dr. Magdalena Rosenkranz", 
-    role: "Assistenzärztin", 
-    competencies: ["Kindergynäkologie"], 
-    status: "active" 
+  {
+    id: 17,
+    name: "Dr. Magdalena Rosenkranz",
+    role: "Assistenzärztin",
+    competencies: ["Kindergynäkologie"],
+    status: "active",
   },
-  { 
-    id: 18, 
-    name: "Dr. Anna Sellner", 
-    role: "Assistenzärztin", 
-    competencies: ["Dysplasie", "Urogynäkologie"], 
-    status: "active" 
+  {
+    id: 18,
+    name: "Dr. Anna Sellner",
+    role: "Assistenzärztin",
+    competencies: ["Dysplasie", "Urogynäkologie"],
+    status: "active",
   },
-  { 
-    id: 19, 
-    name: "Dr. Magdalena Stöger", 
-    role: "Assistenzärztin", 
-    competencies: [], 
-    status: "active" 
-  }
+  {
+    id: 19,
+    name: "Dr. Magdalena Stöger",
+    role: "Assistenzärztin",
+    competencies: [],
+    status: "active",
+  },
 ];

@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { 
-  type User, 
+import {
+  type User,
   type InsertUser,
   type Employee,
   type InsertEmployee,
@@ -55,7 +55,7 @@ import {
   shiftWishes,
   longTermShiftWishes,
   longTermAbsences,
-  plannedAbsences
+  plannedAbsences,
 } from "@shared/schema";
 import { eq, and, gte, lte, desc, gt } from "drizzle-orm";
 
@@ -64,122 +64,198 @@ export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
-  
+
   // Employee methods
   getEmployees(): Promise<Employee[]>;
   getEmployee(id: number): Promise<Employee | undefined>;
   createEmployee(employee: InsertEmployee): Promise<Employee>;
-  updateEmployee(id: number, employee: Partial<InsertEmployee>): Promise<Employee | undefined>;
+  updateEmployee(
+    id: number,
+    employee: Partial<InsertEmployee>,
+  ): Promise<Employee | undefined>;
   deleteEmployee(id: number): Promise<boolean>;
-  
+
   // Roster methods
   getRosterShiftsByMonth(year: number, month: number): Promise<RosterShift[]>;
   getRosterShiftsByDate(date: string): Promise<RosterShift[]>;
   createRosterShift(shift: InsertRosterShift): Promise<RosterShift>;
   deleteRosterShift(id: number): Promise<boolean>;
-  getLatestDutyPlanByStatus(status: DutyPlan["status"]): Promise<DutyPlan | undefined>;
-  
+  getLatestDutyPlanByStatus(
+    status: DutyPlan["status"],
+  ): Promise<DutyPlan | undefined>;
+
   // Absence methods
-  getAbsencesByDateRange(startDate: string, endDate: string): Promise<Absence[]>;
+  getAbsencesByDateRange(
+    startDate: string,
+    endDate: string,
+  ): Promise<Absence[]>;
   getAbsencesByEmployee(employeeId: number): Promise<Absence[]>;
   createAbsence(absence: InsertAbsence): Promise<Absence>;
   deleteAbsence(id: number): Promise<boolean>;
-  
+
   // Resource methods
   getResources(): Promise<Resource[]>;
-  updateResource(id: number, resource: Partial<InsertResource>): Promise<Resource | undefined>;
-  
+  updateResource(
+    id: number,
+    resource: Partial<InsertResource>,
+  ): Promise<Resource | undefined>;
+
   // Weekly assignment methods
-  getWeeklyAssignments(weekYear: number, weekNumber: number): Promise<WeeklyAssignment[]>;
-  upsertWeeklyAssignment(assignment: InsertWeeklyAssignment): Promise<WeeklyAssignment>;
+  getWeeklyAssignments(
+    weekYear: number,
+    weekNumber: number,
+  ): Promise<WeeklyAssignment[]>;
+  upsertWeeklyAssignment(
+    assignment: InsertWeeklyAssignment,
+  ): Promise<WeeklyAssignment>;
   deleteWeeklyAssignment(id: number): Promise<boolean>;
-  bulkUpsertWeeklyAssignments(assignments: InsertWeeklyAssignment[]): Promise<WeeklyAssignment[]>;
-  
+  bulkUpsertWeeklyAssignments(
+    assignments: InsertWeeklyAssignment[],
+  ): Promise<WeeklyAssignment[]>;
+
   // Project management methods
   getProjectInitiatives(): Promise<ProjectInitiative[]>;
   getProjectInitiative(id: number): Promise<ProjectInitiative | undefined>;
-  createProjectInitiative(initiative: InsertProjectInitiative): Promise<ProjectInitiative>;
-  updateProjectInitiative(id: number, initiative: Partial<InsertProjectInitiative>): Promise<ProjectInitiative | undefined>;
+  createProjectInitiative(
+    initiative: InsertProjectInitiative,
+  ): Promise<ProjectInitiative>;
+  updateProjectInitiative(
+    id: number,
+    initiative: Partial<InsertProjectInitiative>,
+  ): Promise<ProjectInitiative | undefined>;
   deleteProjectInitiative(id: number): Promise<boolean>;
-  
+
   getProjectTasks(initiativeId: number): Promise<ProjectTask[]>;
   getProjectTask(id: number): Promise<ProjectTask | undefined>;
   createProjectTask(task: InsertProjectTask): Promise<ProjectTask>;
-  updateProjectTask(id: number, task: Partial<InsertProjectTask>): Promise<ProjectTask | undefined>;
+  updateProjectTask(
+    id: number,
+    task: Partial<InsertProjectTask>,
+  ): Promise<ProjectTask | undefined>;
   deleteProjectTask(id: number): Promise<boolean>;
-  
+
   getProjectDocuments(initiativeId: number): Promise<ProjectDocument[]>;
   getProjectDocument(id: number): Promise<ProjectDocument | undefined>;
   createProjectDocument(doc: InsertProjectDocument): Promise<ProjectDocument>;
-  updateProjectDocument(id: number, doc: Partial<InsertProjectDocument>): Promise<ProjectDocument | undefined>;
+  updateProjectDocument(
+    id: number,
+    doc: Partial<InsertProjectDocument>,
+  ): Promise<ProjectDocument | undefined>;
   deleteProjectDocument(id: number): Promise<boolean>;
-  
+
   getApprovals(documentId: number): Promise<Approval[]>;
   createApproval(approval: InsertApproval): Promise<Approval>;
-  updateApproval(id: number, approval: Partial<InsertApproval>): Promise<Approval | undefined>;
-  
+  updateApproval(
+    id: number,
+    approval: Partial<InsertApproval>,
+  ): Promise<Approval | undefined>;
+
   getTaskActivities(taskId: number): Promise<TaskActivity[]>;
   createTaskActivity(activity: InsertTaskActivity): Promise<TaskActivity>;
-  
+
   getPublishedDocuments(): Promise<ProjectDocument[]>;
-  
+
   // Auth methods
   getEmployeeByEmail(email: string): Promise<Employee | undefined>;
-  setEmployeePassword(employeeId: number, passwordHash: string): Promise<Employee | undefined>;
+  setEmployeePassword(
+    employeeId: number,
+    passwordHash: string,
+  ): Promise<Employee | undefined>;
   updateEmployeeLastLogin(employeeId: number): Promise<void>;
-  
+
   // Session methods
   createSession(session: InsertSession): Promise<Session>;
   getSessionByToken(token: string): Promise<Session | undefined>;
   deleteSession(token: string): Promise<boolean>;
   deleteSessionsByEmployee(employeeId: number): Promise<boolean>;
   cleanupExpiredSessions(): Promise<number>;
-  
+
   // Shift swap request methods
   getShiftSwapRequests(): Promise<ShiftSwapRequest[]>;
-  getShiftSwapRequestsByEmployee(employeeId: number): Promise<ShiftSwapRequest[]>;
-  getShiftSwapRequestsByTargetEmployee(employeeId: number): Promise<ShiftSwapRequest[]>;
+  getShiftSwapRequestsByEmployee(
+    employeeId: number,
+  ): Promise<ShiftSwapRequest[]>;
+  getShiftSwapRequestsByTargetEmployee(
+    employeeId: number,
+  ): Promise<ShiftSwapRequest[]>;
   getPendingShiftSwapRequests(): Promise<ShiftSwapRequest[]>;
   getShiftSwapRequest(id: number): Promise<ShiftSwapRequest | undefined>;
-  createShiftSwapRequest(request: InsertShiftSwapRequest): Promise<ShiftSwapRequest>;
-  updateShiftSwapRequest(id: number, request: Partial<InsertShiftSwapRequest>): Promise<ShiftSwapRequest | undefined>;
+  createShiftSwapRequest(
+    request: InsertShiftSwapRequest,
+  ): Promise<ShiftSwapRequest>;
+  updateShiftSwapRequest(
+    id: number,
+    request: Partial<InsertShiftSwapRequest>,
+  ): Promise<ShiftSwapRequest | undefined>;
   deleteShiftSwapRequest(id: number): Promise<boolean>;
-  
+
   // Roster methods extended
   getRosterShift(id: number): Promise<RosterShift | undefined>;
-  updateRosterShift(id: number, shift: Partial<InsertRosterShift>): Promise<RosterShift | undefined>;
+  updateRosterShift(
+    id: number,
+    shift: Partial<InsertRosterShift>,
+  ): Promise<RosterShift | undefined>;
   bulkCreateRosterShifts(shifts: InsertRosterShift[]): Promise<RosterShift[]>;
   deleteRosterShiftsByMonth(year: number, month: number): Promise<boolean>;
-  
+
   // Roster settings methods
   getRosterSettings(): Promise<RosterSettings | undefined>;
   upsertRosterSettings(settings: InsertRosterSettings): Promise<RosterSettings>;
-  
+
   // Shift wishes methods
   getShiftWishesByMonth(year: number, month: number): Promise<ShiftWish[]>;
-  getShiftWishByEmployeeAndMonth(employeeId: number, year: number, month: number): Promise<ShiftWish | undefined>;
+  getShiftWishByEmployeeAndMonth(
+    employeeId: number,
+    year: number,
+    month: number,
+  ): Promise<ShiftWish | undefined>;
   createShiftWish(wish: InsertShiftWish): Promise<ShiftWish>;
-  updateShiftWish(id: number, wish: Partial<InsertShiftWish>): Promise<ShiftWish | undefined>;
+  updateShiftWish(
+    id: number,
+    wish: Partial<InsertShiftWish>,
+  ): Promise<ShiftWish | undefined>;
   deleteShiftWish(id: number): Promise<boolean>;
   getSubmittedWishesCount(year: number, month: number): Promise<number>;
-  getLongTermShiftWishByEmployee(employeeId: number): Promise<LongTermShiftWish | undefined>;
+  getLongTermShiftWishByEmployee(
+    employeeId: number,
+  ): Promise<LongTermShiftWish | undefined>;
   getLongTermShiftWish(id: number): Promise<LongTermShiftWish | undefined>;
-  upsertLongTermShiftWish(wish: InsertLongTermShiftWish): Promise<LongTermShiftWish>;
-  updateLongTermShiftWish(id: number, wish: Partial<InsertLongTermShiftWish>): Promise<LongTermShiftWish | undefined>;
+  upsertLongTermShiftWish(
+    wish: InsertLongTermShiftWish,
+  ): Promise<LongTermShiftWish>;
+  updateLongTermShiftWish(
+    id: number,
+    wish: Partial<InsertLongTermShiftWish>,
+  ): Promise<LongTermShiftWish | undefined>;
   getLongTermShiftWishesByStatus(status: string): Promise<LongTermShiftWish[]>;
 
   // Long-term absences methods
   getLongTermAbsencesByEmployee(employeeId: number): Promise<LongTermAbsence[]>;
   getLongTermAbsence(id: number): Promise<LongTermAbsence | undefined>;
-  createLongTermAbsence(absence: InsertLongTermAbsence): Promise<LongTermAbsence>;
-  updateLongTermAbsence(id: number, absence: Partial<InsertLongTermAbsence>): Promise<LongTermAbsence | undefined>;
+  createLongTermAbsence(
+    absence: InsertLongTermAbsence,
+  ): Promise<LongTermAbsence>;
+  updateLongTermAbsence(
+    id: number,
+    absence: Partial<InsertLongTermAbsence>,
+  ): Promise<LongTermAbsence | undefined>;
   getLongTermAbsencesByStatus(status: string): Promise<LongTermAbsence[]>;
-  
+
   // Planned absences methods
-  getPlannedAbsencesByMonth(year: number, month: number): Promise<PlannedAbsence[]>;
-  getPlannedAbsencesByEmployee(employeeId: number, year: number, month: number): Promise<PlannedAbsence[]>;
+  getPlannedAbsencesByMonth(
+    year: number,
+    month: number,
+  ): Promise<PlannedAbsence[]>;
+  getPlannedAbsencesByEmployee(
+    employeeId: number,
+    year: number,
+    month: number,
+  ): Promise<PlannedAbsence[]>;
   createPlannedAbsence(absence: InsertPlannedAbsence): Promise<PlannedAbsence>;
-  updatePlannedAbsence(id: number, absence: Partial<InsertPlannedAbsence>): Promise<PlannedAbsence | undefined>;
+  updatePlannedAbsence(
+    id: number,
+    absence: Partial<InsertPlannedAbsence>,
+  ): Promise<PlannedAbsence | undefined>;
   deletePlannedAbsence(id: number): Promise<boolean>;
 }
 
@@ -191,7 +267,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    const result = await db.select().from(users).where(eq(users.username, username));
+    const result = await db
+      .select()
+      .from(users)
+      .where(eq(users.username, username));
     return result[0];
   }
 
@@ -202,11 +281,17 @@ export class DatabaseStorage implements IStorage {
 
   // Employee methods
   async getEmployees(): Promise<Employee[]> {
-    return await db.select().from(employees).where(eq(employees.isActive, true));
+    return await db
+      .select()
+      .from(employees)
+      .where(eq(employees.isActive, true));
   }
 
   async getEmployee(id: number): Promise<Employee | undefined> {
-    const result = await db.select().from(employees).where(eq(employees.id, id));
+    const result = await db
+      .select()
+      .from(employees)
+      .where(eq(employees.id, id));
     return result[0];
   }
 
@@ -215,8 +300,12 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async updateEmployee(id: number, employee: Partial<InsertEmployee>): Promise<Employee | undefined> {
-    const result = await db.update(employees)
+  async updateEmployee(
+    id: number,
+    employee: Partial<InsertEmployee>,
+  ): Promise<Employee | undefined> {
+    const result = await db
+      .update(employees)
       .set(employee)
       .where(eq(employees.id, id))
       .returning();
@@ -224,28 +313,33 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteEmployee(id: number): Promise<boolean> {
-    await db.update(employees)
+    await db
+      .update(employees)
       .set({ isActive: false })
       .where(eq(employees.id, id));
     return true;
   }
 
   // Roster methods
-  async getRosterShiftsByMonth(year: number, month: number): Promise<RosterShift[]> {
+  async getRosterShiftsByMonth(
+    year: number,
+    month: number,
+  ): Promise<RosterShift[]> {
     const lastDay = new Date(year, month, 0).getDate();
-    const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-    const endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-    
-    return await db.select()
+    const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+    const endDate = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+
+    return await db
+      .select()
       .from(rosterShifts)
-      .where(and(
-        gte(rosterShifts.date, startDate),
-        lte(rosterShifts.date, endDate)
-      ));
+      .where(
+        and(gte(rosterShifts.date, startDate), lte(rosterShifts.date, endDate)),
+      );
   }
 
   async getRosterShiftsByDate(date: string): Promise<RosterShift[]> {
-    return await db.select()
+    return await db
+      .select()
       .from(rosterShifts)
       .where(eq(rosterShifts.date, date));
   }
@@ -261,17 +355,21 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Absence methods
-  async getAbsencesByDateRange(startDate: string, endDate: string): Promise<Absence[]> {
-    return await db.select()
+  async getAbsencesByDateRange(
+    startDate: string,
+    endDate: string,
+  ): Promise<Absence[]> {
+    return await db
+      .select()
       .from(absences)
-      .where(and(
-        gte(absences.endDate, startDate),
-        lte(absences.startDate, endDate)
-      ));
+      .where(
+        and(gte(absences.endDate, startDate), lte(absences.startDate, endDate)),
+      );
   }
 
   async getAbsencesByEmployee(employeeId: number): Promise<Absence[]> {
-    return await db.select()
+    return await db
+      .select()
       .from(absences)
       .where(eq(absences.employeeId, employeeId));
   }
@@ -291,8 +389,12 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(resources);
   }
 
-  async updateResource(id: number, resource: Partial<InsertResource>): Promise<Resource | undefined> {
-    const result = await db.update(resources)
+  async updateResource(
+    id: number,
+    resource: Partial<InsertResource>,
+  ): Promise<Resource | undefined> {
+    const result = await db
+      .update(resources)
       .set(resource)
       .where(eq(resources.id, id))
       .returning();
@@ -300,36 +402,55 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Weekly assignment methods
-  async getWeeklyAssignments(weekYear: number, weekNumber: number): Promise<WeeklyAssignment[]> {
-    return await db.select()
+  async getWeeklyAssignments(
+    weekYear: number,
+    weekNumber: number,
+  ): Promise<WeeklyAssignment[]> {
+    return await db
+      .select()
       .from(weeklyAssignments)
-      .where(and(
-        eq(weeklyAssignments.weekYear, weekYear),
-        eq(weeklyAssignments.weekNumber, weekNumber)
-      ));
+      .where(
+        and(
+          eq(weeklyAssignments.weekYear, weekYear),
+          eq(weeklyAssignments.weekNumber, weekNumber),
+        ),
+      );
   }
 
-  async upsertWeeklyAssignment(assignment: InsertWeeklyAssignment): Promise<WeeklyAssignment> {
-    const existing = await db.select()
+  async upsertWeeklyAssignment(
+    assignment: InsertWeeklyAssignment,
+  ): Promise<WeeklyAssignment> {
+    const existing = await db
+      .select()
       .from(weeklyAssignments)
-      .where(and(
-        eq(weeklyAssignments.weekYear, assignment.weekYear),
-        eq(weeklyAssignments.weekNumber, assignment.weekNumber),
-        eq(weeklyAssignments.dayOfWeek, assignment.dayOfWeek),
-        eq(weeklyAssignments.area, assignment.area),
-        eq(weeklyAssignments.subArea, assignment.subArea),
-        eq(weeklyAssignments.roleSlot, assignment.roleSlot)
-      ));
+      .where(
+        and(
+          eq(weeklyAssignments.weekYear, assignment.weekYear),
+          eq(weeklyAssignments.weekNumber, assignment.weekNumber),
+          eq(weeklyAssignments.dayOfWeek, assignment.dayOfWeek),
+          eq(weeklyAssignments.area, assignment.area),
+          eq(weeklyAssignments.subArea, assignment.subArea),
+          eq(weeklyAssignments.roleSlot, assignment.roleSlot),
+        ),
+      );
 
     if (existing.length > 0) {
-      const result = await db.update(weeklyAssignments)
-        .set({ employeeId: assignment.employeeId, notes: assignment.notes, isClosed: assignment.isClosed })
+      const result = await db
+        .update(weeklyAssignments)
+        .set({
+          employeeId: assignment.employeeId,
+          notes: assignment.notes,
+          isClosed: assignment.isClosed,
+        })
         .where(eq(weeklyAssignments.id, existing[0].id))
         .returning();
       return result[0];
     }
 
-    const result = await db.insert(weeklyAssignments).values(assignment).returning();
+    const result = await db
+      .insert(weeklyAssignments)
+      .values(assignment)
+      .returning();
     return result[0];
   }
 
@@ -338,27 +459,35 @@ export class DatabaseStorage implements IStorage {
     return true;
   }
 
-  async bulkUpsertWeeklyAssignments(assignments: InsertWeeklyAssignment[]): Promise<WeeklyAssignment[]> {
+  async bulkUpsertWeeklyAssignments(
+    assignments: InsertWeeklyAssignment[],
+  ): Promise<WeeklyAssignment[]> {
     const results: WeeklyAssignment[] = [];
     for (const assignment of assignments) {
-      const isEmpty = assignment.employeeId === null && 
-                      (assignment.notes === null || assignment.notes === "") && 
-                      !assignment.isClosed;
-      
+      const isEmpty =
+        assignment.employeeId === null &&
+        (assignment.notes === null || assignment.notes === "") &&
+        !assignment.isClosed;
+
       if (isEmpty) {
-        const existing = await db.select()
+        const existing = await db
+          .select()
           .from(weeklyAssignments)
-          .where(and(
-            eq(weeklyAssignments.weekYear, assignment.weekYear),
-            eq(weeklyAssignments.weekNumber, assignment.weekNumber),
-            eq(weeklyAssignments.dayOfWeek, assignment.dayOfWeek),
-            eq(weeklyAssignments.area, assignment.area),
-            eq(weeklyAssignments.subArea, assignment.subArea),
-            eq(weeklyAssignments.roleSlot, assignment.roleSlot)
-          ));
-        
+          .where(
+            and(
+              eq(weeklyAssignments.weekYear, assignment.weekYear),
+              eq(weeklyAssignments.weekNumber, assignment.weekNumber),
+              eq(weeklyAssignments.dayOfWeek, assignment.dayOfWeek),
+              eq(weeklyAssignments.area, assignment.area),
+              eq(weeklyAssignments.subArea, assignment.subArea),
+              eq(weeklyAssignments.roleSlot, assignment.roleSlot),
+            ),
+          );
+
         if (existing.length > 0) {
-          await db.delete(weeklyAssignments).where(eq(weeklyAssignments.id, existing[0].id));
+          await db
+            .delete(weeklyAssignments)
+            .where(eq(weeklyAssignments.id, existing[0].id));
         }
       } else {
         const result = await this.upsertWeeklyAssignment(assignment);
@@ -370,23 +499,38 @@ export class DatabaseStorage implements IStorage {
 
   // Project management methods
   async getProjectInitiatives(): Promise<ProjectInitiative[]> {
-    return await db.select()
+    return await db
+      .select()
       .from(projectInitiatives)
       .orderBy(desc(projectInitiatives.createdAt));
   }
 
-  async getProjectInitiative(id: number): Promise<ProjectInitiative | undefined> {
-    const result = await db.select().from(projectInitiatives).where(eq(projectInitiatives.id, id));
+  async getProjectInitiative(
+    id: number,
+  ): Promise<ProjectInitiative | undefined> {
+    const result = await db
+      .select()
+      .from(projectInitiatives)
+      .where(eq(projectInitiatives.id, id));
     return result[0];
   }
 
-  async createProjectInitiative(initiative: InsertProjectInitiative): Promise<ProjectInitiative> {
-    const result = await db.insert(projectInitiatives).values(initiative).returning();
+  async createProjectInitiative(
+    initiative: InsertProjectInitiative,
+  ): Promise<ProjectInitiative> {
+    const result = await db
+      .insert(projectInitiatives)
+      .values(initiative)
+      .returning();
     return result[0];
   }
 
-  async updateProjectInitiative(id: number, initiative: Partial<InsertProjectInitiative>): Promise<ProjectInitiative | undefined> {
-    const result = await db.update(projectInitiatives)
+  async updateProjectInitiative(
+    id: number,
+    initiative: Partial<InsertProjectInitiative>,
+  ): Promise<ProjectInitiative | undefined> {
+    const result = await db
+      .update(projectInitiatives)
       .set({ ...initiative, updatedAt: new Date() })
       .where(eq(projectInitiatives.id, id))
       .returning();
@@ -399,14 +543,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getProjectTasks(initiativeId: number): Promise<ProjectTask[]> {
-    return await db.select()
+    return await db
+      .select()
       .from(projectTasks)
       .where(eq(projectTasks.initiativeId, initiativeId))
       .orderBy(projectTasks.orderIndex);
   }
 
   async getProjectTask(id: number): Promise<ProjectTask | undefined> {
-    const result = await db.select().from(projectTasks).where(eq(projectTasks.id, id));
+    const result = await db
+      .select()
+      .from(projectTasks)
+      .where(eq(projectTasks.id, id));
     return result[0];
   }
 
@@ -415,8 +563,12 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async updateProjectTask(id: number, task: Partial<InsertProjectTask>): Promise<ProjectTask | undefined> {
-    const result = await db.update(projectTasks)
+  async updateProjectTask(
+    id: number,
+    task: Partial<InsertProjectTask>,
+  ): Promise<ProjectTask | undefined> {
+    const result = await db
+      .update(projectTasks)
       .set({ ...task, updatedAt: new Date() })
       .where(eq(projectTasks.id, id))
       .returning();
@@ -429,24 +581,34 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getProjectDocuments(initiativeId: number): Promise<ProjectDocument[]> {
-    return await db.select()
+    return await db
+      .select()
       .from(projectDocuments)
       .where(eq(projectDocuments.initiativeId, initiativeId))
       .orderBy(desc(projectDocuments.updatedAt));
   }
 
   async getProjectDocument(id: number): Promise<ProjectDocument | undefined> {
-    const result = await db.select().from(projectDocuments).where(eq(projectDocuments.id, id));
+    const result = await db
+      .select()
+      .from(projectDocuments)
+      .where(eq(projectDocuments.id, id));
     return result[0];
   }
 
-  async createProjectDocument(doc: InsertProjectDocument): Promise<ProjectDocument> {
+  async createProjectDocument(
+    doc: InsertProjectDocument,
+  ): Promise<ProjectDocument> {
     const result = await db.insert(projectDocuments).values(doc).returning();
     return result[0];
   }
 
-  async updateProjectDocument(id: number, doc: Partial<InsertProjectDocument>): Promise<ProjectDocument | undefined> {
-    const result = await db.update(projectDocuments)
+  async updateProjectDocument(
+    id: number,
+    doc: Partial<InsertProjectDocument>,
+  ): Promise<ProjectDocument | undefined> {
+    const result = await db
+      .update(projectDocuments)
       .set({ ...doc, updatedAt: new Date() })
       .where(eq(projectDocuments.id, id))
       .returning();
@@ -459,7 +621,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getApprovals(documentId: number): Promise<Approval[]> {
-    return await db.select()
+    return await db
+      .select()
       .from(approvals)
       .where(eq(approvals.documentId, documentId))
       .orderBy(desc(approvals.requestedAt));
@@ -470,8 +633,12 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async updateApproval(id: number, approval: Partial<InsertApproval>): Promise<Approval | undefined> {
-    const result = await db.update(approvals)
+  async updateApproval(
+    id: number,
+    approval: Partial<InsertApproval>,
+  ): Promise<Approval | undefined> {
+    const result = await db
+      .update(approvals)
       .set(approval)
       .where(eq(approvals.id, id))
       .returning();
@@ -479,19 +646,23 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTaskActivities(taskId: number): Promise<TaskActivity[]> {
-    return await db.select()
+    return await db
+      .select()
       .from(taskActivities)
       .where(eq(taskActivities.taskId, taskId))
       .orderBy(desc(taskActivities.createdAt));
   }
 
-  async createTaskActivity(activity: InsertTaskActivity): Promise<TaskActivity> {
+  async createTaskActivity(
+    activity: InsertTaskActivity,
+  ): Promise<TaskActivity> {
     const result = await db.insert(taskActivities).values(activity).returning();
     return result[0];
   }
 
   async getPublishedDocuments(): Promise<ProjectDocument[]> {
-    return await db.select()
+    return await db
+      .select()
       .from(projectDocuments)
       .where(eq(projectDocuments.isPublished, true))
       .orderBy(desc(projectDocuments.publishedAt));
@@ -499,17 +670,19 @@ export class DatabaseStorage implements IStorage {
 
   // Auth methods
   async getEmployeeByEmail(email: string): Promise<Employee | undefined> {
-    const result = await db.select()
+    const result = await db
+      .select()
       .from(employees)
-      .where(and(
-        eq(employees.email, email),
-        eq(employees.isActive, true)
-      ));
+      .where(and(eq(employees.email, email), eq(employees.isActive, true)));
     return result[0];
   }
 
-  async setEmployeePassword(employeeId: number, passwordHash: string): Promise<Employee | undefined> {
-    const result = await db.update(employees)
+  async setEmployeePassword(
+    employeeId: number,
+    passwordHash: string,
+  ): Promise<Employee | undefined> {
+    const result = await db
+      .update(employees)
       .set({ passwordHash })
       .where(eq(employees.id, employeeId))
       .returning();
@@ -517,7 +690,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateEmployeeLastLogin(employeeId: number): Promise<void> {
-    await db.update(employees)
+    await db
+      .update(employees)
       .set({ lastLoginAt: new Date() })
       .where(eq(employees.id, employeeId));
   }
@@ -529,12 +703,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getSessionByToken(token: string): Promise<Session | undefined> {
-    const result = await db.select()
+    const result = await db
+      .select()
       .from(sessions)
-      .where(and(
-        eq(sessions.token, token),
-        gt(sessions.expiresAt, new Date())
-      ));
+      .where(
+        and(eq(sessions.token, token), gt(sessions.expiresAt, new Date())),
+      );
     return result[0];
   }
 
@@ -549,52 +723,73 @@ export class DatabaseStorage implements IStorage {
   }
 
   async cleanupExpiredSessions(): Promise<number> {
-    const result = await db.delete(sessions)
+    const result = await db
+      .delete(sessions)
       .where(lte(sessions.expiresAt, new Date()))
       .returning();
     return result.length;
   }
-  
+
   // Shift swap request methods
   async getShiftSwapRequests(): Promise<ShiftSwapRequest[]> {
-    return await db.select()
+    return await db
+      .select()
       .from(shiftSwapRequests)
       .orderBy(desc(shiftSwapRequests.requestedAt));
   }
 
-  async getShiftSwapRequestsByEmployee(employeeId: number): Promise<ShiftSwapRequest[]> {
-    return await db.select()
+  async getShiftSwapRequestsByEmployee(
+    employeeId: number,
+  ): Promise<ShiftSwapRequest[]> {
+    return await db
+      .select()
       .from(shiftSwapRequests)
       .where(eq(shiftSwapRequests.requesterId, employeeId))
       .orderBy(desc(shiftSwapRequests.requestedAt));
   }
 
-  async getShiftSwapRequestsByTargetEmployee(employeeId: number): Promise<ShiftSwapRequest[]> {
-    return await db.select()
+  async getShiftSwapRequestsByTargetEmployee(
+    employeeId: number,
+  ): Promise<ShiftSwapRequest[]> {
+    return await db
+      .select()
       .from(shiftSwapRequests)
       .where(eq(shiftSwapRequests.targetEmployeeId, employeeId))
       .orderBy(desc(shiftSwapRequests.requestedAt));
   }
 
   async getPendingShiftSwapRequests(): Promise<ShiftSwapRequest[]> {
-    return await db.select()
+    return await db
+      .select()
       .from(shiftSwapRequests)
-      .where(eq(shiftSwapRequests.status, 'Ausstehend'))
+      .where(eq(shiftSwapRequests.status, "Ausstehend"))
       .orderBy(desc(shiftSwapRequests.requestedAt));
   }
 
   async getShiftSwapRequest(id: number): Promise<ShiftSwapRequest | undefined> {
-    const result = await db.select().from(shiftSwapRequests).where(eq(shiftSwapRequests.id, id));
+    const result = await db
+      .select()
+      .from(shiftSwapRequests)
+      .where(eq(shiftSwapRequests.id, id));
     return result[0];
   }
 
-  async createShiftSwapRequest(request: InsertShiftSwapRequest): Promise<ShiftSwapRequest> {
-    const result = await db.insert(shiftSwapRequests).values(request).returning();
+  async createShiftSwapRequest(
+    request: InsertShiftSwapRequest,
+  ): Promise<ShiftSwapRequest> {
+    const result = await db
+      .insert(shiftSwapRequests)
+      .values(request)
+      .returning();
     return result[0];
   }
 
-  async updateShiftSwapRequest(id: number, request: Partial<InsertShiftSwapRequest>): Promise<ShiftSwapRequest | undefined> {
-    const result = await db.update(shiftSwapRequests)
+  async updateShiftSwapRequest(
+    id: number,
+    request: Partial<InsertShiftSwapRequest>,
+  ): Promise<ShiftSwapRequest | undefined> {
+    const result = await db
+      .update(shiftSwapRequests)
       .set(request)
       .where(eq(shiftSwapRequests.id, id))
       .returning();
@@ -605,37 +800,49 @@ export class DatabaseStorage implements IStorage {
     await db.delete(shiftSwapRequests).where(eq(shiftSwapRequests.id, id));
     return true;
   }
-  
+
   // Roster methods extended
   async getRosterShift(id: number): Promise<RosterShift | undefined> {
-    const result = await db.select().from(rosterShifts).where(eq(rosterShifts.id, id));
+    const result = await db
+      .select()
+      .from(rosterShifts)
+      .where(eq(rosterShifts.id, id));
     return result[0];
   }
 
-  async updateRosterShift(id: number, shift: Partial<InsertRosterShift>): Promise<RosterShift | undefined> {
-    const result = await db.update(rosterShifts)
+  async updateRosterShift(
+    id: number,
+    shift: Partial<InsertRosterShift>,
+  ): Promise<RosterShift | undefined> {
+    const result = await db
+      .update(rosterShifts)
       .set(shift)
       .where(eq(rosterShifts.id, id))
       .returning();
     return result[0];
   }
 
-  async bulkCreateRosterShifts(shifts: InsertRosterShift[]): Promise<RosterShift[]> {
+  async bulkCreateRosterShifts(
+    shifts: InsertRosterShift[],
+  ): Promise<RosterShift[]> {
     if (shifts.length === 0) return [];
     const result = await db.insert(rosterShifts).values(shifts).returning();
     return result;
   }
 
-  async deleteRosterShiftsByMonth(year: number, month: number): Promise<boolean> {
+  async deleteRosterShiftsByMonth(
+    year: number,
+    month: number,
+  ): Promise<boolean> {
     const lastDayOfMonth = new Date(year, month, 0).getDate();
-    const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-    const endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDayOfMonth).padStart(2, '0')}`;
-    
-    await db.delete(rosterShifts)
-      .where(and(
-        gte(rosterShifts.date, startDate),
-        lte(rosterShifts.date, endDate)
-      ));
+    const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+    const endDate = `${year}-${String(month).padStart(2, "0")}-${String(lastDayOfMonth).padStart(2, "0")}`;
+
+    await db
+      .delete(rosterShifts)
+      .where(
+        and(gte(rosterShifts.date, startDate), lte(rosterShifts.date, endDate)),
+      );
     return true;
   }
 
@@ -645,7 +852,9 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async getLatestDutyPlanByStatus(status: DutyPlan["status"]): Promise<DutyPlan | undefined> {
+  async getLatestDutyPlanByStatus(
+    status: DutyPlan["status"],
+  ): Promise<DutyPlan | undefined> {
     const result = await db
       .select()
       .from(dutyPlans)
@@ -655,59 +864,84 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async upsertRosterSettings(settings: InsertRosterSettings): Promise<RosterSettings> {
+  async upsertRosterSettings(
+    settings: InsertRosterSettings,
+  ): Promise<RosterSettings> {
     const existing = await this.getRosterSettings();
     if (existing) {
-      const result = await db.update(rosterSettings)
+      const result = await db
+        .update(rosterSettings)
         .set({ ...settings, updatedAt: new Date() })
         .where(eq(rosterSettings.id, existing.id))
         .returning();
       return result[0];
     } else {
-      const result = await db.insert(rosterSettings).values(settings).returning();
+      const result = await db
+        .insert(rosterSettings)
+        .values(settings)
+        .returning();
       return result[0];
     }
   }
 
   // Shift wishes methods
-  async getShiftWishesByMonth(year: number, month: number): Promise<ShiftWish[]> {
-    return await db.select()
+  async getShiftWishesByMonth(
+    year: number,
+    month: number,
+  ): Promise<ShiftWish[]> {
+    return await db
+      .select()
       .from(shiftWishes)
-      .where(and(
-        eq(shiftWishes.year, year),
-        eq(shiftWishes.month, month)
-      ));
+      .where(and(eq(shiftWishes.year, year), eq(shiftWishes.month, month)));
   }
 
-  async getShiftWishByEmployeeAndMonth(employeeId: number, year: number, month: number): Promise<ShiftWish | undefined> {
-    const result = await db.select()
+  async getShiftWishByEmployeeAndMonth(
+    employeeId: number,
+    year: number,
+    month: number,
+  ): Promise<ShiftWish | undefined> {
+    const result = await db
+      .select()
       .from(shiftWishes)
-      .where(and(
-        eq(shiftWishes.employeeId, employeeId),
-        eq(shiftWishes.year, year),
-        eq(shiftWishes.month, month)
-      ));
+      .where(
+        and(
+          eq(shiftWishes.employeeId, employeeId),
+          eq(shiftWishes.year, year),
+          eq(shiftWishes.month, month),
+        ),
+      );
     return result[0];
   }
 
   async createShiftWish(wish: InsertShiftWish): Promise<ShiftWish> {
     const wishData = {
       ...wish,
-      preferredShiftDays: wish.preferredShiftDays ? wish.preferredShiftDays : null,
+      preferredShiftDays: wish.preferredShiftDays
+        ? wish.preferredShiftDays
+        : null,
       avoidShiftDays: wish.avoidShiftDays ? wish.avoidShiftDays : null,
-      preferredServiceTypes: wish.preferredServiceTypes ? wish.preferredServiceTypes : null,
+      preferredServiceTypes: wish.preferredServiceTypes
+        ? wish.preferredServiceTypes
+        : null,
       avoidServiceTypes: wish.avoidServiceTypes ? wish.avoidServiceTypes : null,
       avoidWeekdays: wish.avoidWeekdays ? wish.avoidWeekdays : null,
       maxShiftsPerMonth: wish.maxShiftsPerMonth ?? null,
-      maxWeekendShifts: wish.maxWeekendShifts ?? null
+      maxWeekendShifts: wish.maxWeekendShifts ?? null,
     };
-    const result = await db.insert(shiftWishes).values(wishData as any).returning();
+    const result = await db
+      .insert(shiftWishes)
+      .values(wishData as any)
+      .returning();
     return result[0];
   }
 
-  async updateShiftWish(id: number, wish: Partial<InsertShiftWish>): Promise<ShiftWish | undefined> {
+  async updateShiftWish(
+    id: number,
+    wish: Partial<InsertShiftWish>,
+  ): Promise<ShiftWish | undefined> {
     const updateData: any = { ...wish, updatedAt: new Date() };
-    const result = await db.update(shiftWishes)
+    const result = await db
+      .update(shiftWishes)
       .set(updateData)
       .where(eq(shiftWishes.id, id))
       .returning();
@@ -720,42 +954,55 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getSubmittedWishesCount(year: number, month: number): Promise<number> {
-    const result = await db.select()
+    const result = await db
+      .select()
       .from(shiftWishes)
-      .where(and(
-        eq(shiftWishes.year, year),
-        eq(shiftWishes.month, month),
-        eq(shiftWishes.status, 'Eingereicht')
-      ));
+      .where(
+        and(
+          eq(shiftWishes.year, year),
+          eq(shiftWishes.month, month),
+          eq(shiftWishes.status, "Eingereicht"),
+        ),
+      );
     return result.length;
   }
 
   // Long-term shift wishes methods
-  async getLongTermShiftWishByEmployee(employeeId: number): Promise<LongTermShiftWish | undefined> {
-    const result = await db.select()
+  async getLongTermShiftWishByEmployee(
+    employeeId: number,
+  ): Promise<LongTermShiftWish | undefined> {
+    const result = await db
+      .select()
       .from(longTermShiftWishes)
       .where(eq(longTermShiftWishes.employeeId, employeeId));
     return result[0];
   }
 
-  async getLongTermShiftWish(id: number): Promise<LongTermShiftWish | undefined> {
-    const result = await db.select()
+  async getLongTermShiftWish(
+    id: number,
+  ): Promise<LongTermShiftWish | undefined> {
+    const result = await db
+      .select()
       .from(longTermShiftWishes)
       .where(eq(longTermShiftWishes.id, id));
     return result[0];
   }
 
-  async upsertLongTermShiftWish(wish: InsertLongTermShiftWish): Promise<LongTermShiftWish> {
+  async upsertLongTermShiftWish(
+    wish: InsertLongTermShiftWish,
+  ): Promise<LongTermShiftWish> {
     const existing = await this.getLongTermShiftWishByEmployee(wish.employeeId);
     if (existing) {
-      const result = await db.update(longTermShiftWishes)
+      const result = await db
+        .update(longTermShiftWishes)
         .set({ ...wish, updatedAt: new Date() })
         .where(eq(longTermShiftWishes.id, existing.id))
         .returning();
       return result[0];
     }
 
-    const result = await db.insert(longTermShiftWishes)
+    const result = await db
+      .insert(longTermShiftWishes)
       .values(wish as any)
       .returning();
     return result[0];
@@ -763,37 +1010,48 @@ export class DatabaseStorage implements IStorage {
 
   async updateLongTermShiftWish(
     id: number,
-    wish: Partial<InsertLongTermShiftWish>
+    wish: Partial<InsertLongTermShiftWish>,
   ): Promise<LongTermShiftWish | undefined> {
-    const result = await db.update(longTermShiftWishes)
+    const result = await db
+      .update(longTermShiftWishes)
       .set({ ...wish, updatedAt: new Date() })
       .where(eq(longTermShiftWishes.id, id))
       .returning();
     return result[0];
   }
 
-  async getLongTermShiftWishesByStatus(status: string): Promise<LongTermShiftWish[]> {
-    return await db.select()
+  async getLongTermShiftWishesByStatus(
+    status: string,
+  ): Promise<LongTermShiftWish[]> {
+    return await db
+      .select()
       .from(longTermShiftWishes)
       .where(eq(longTermShiftWishes.status, status as any));
   }
 
   // Long-term absences methods
-  async getLongTermAbsencesByEmployee(employeeId: number): Promise<LongTermAbsence[]> {
-    return await db.select()
+  async getLongTermAbsencesByEmployee(
+    employeeId: number,
+  ): Promise<LongTermAbsence[]> {
+    return await db
+      .select()
       .from(longTermAbsences)
       .where(eq(longTermAbsences.employeeId, employeeId));
   }
 
   async getLongTermAbsence(id: number): Promise<LongTermAbsence | undefined> {
-    const result = await db.select()
+    const result = await db
+      .select()
       .from(longTermAbsences)
       .where(eq(longTermAbsences.id, id));
     return result[0];
   }
 
-  async createLongTermAbsence(absence: InsertLongTermAbsence): Promise<LongTermAbsence> {
-    const result = await db.insert(longTermAbsences)
+  async createLongTermAbsence(
+    absence: InsertLongTermAbsence,
+  ): Promise<LongTermAbsence> {
+    const result = await db
+      .insert(longTermAbsences)
       .values(absence as any)
       .returning();
     return result[0];
@@ -801,48 +1059,68 @@ export class DatabaseStorage implements IStorage {
 
   async updateLongTermAbsence(
     id: number,
-    absence: Partial<InsertLongTermAbsence>
+    absence: Partial<InsertLongTermAbsence>,
   ): Promise<LongTermAbsence | undefined> {
-    const result = await db.update(longTermAbsences)
+    const result = await db
+      .update(longTermAbsences)
       .set({ ...absence, updatedAt: new Date() })
       .where(eq(longTermAbsences.id, id))
       .returning();
     return result[0];
   }
 
-  async getLongTermAbsencesByStatus(status: string): Promise<LongTermAbsence[]> {
-    return await db.select()
+  async getLongTermAbsencesByStatus(
+    status: string,
+  ): Promise<LongTermAbsence[]> {
+    return await db
+      .select()
       .from(longTermAbsences)
       .where(eq(longTermAbsences.status, status as any));
   }
 
   // Planned absences methods
-  async getPlannedAbsencesByMonth(year: number, month: number): Promise<PlannedAbsence[]> {
-    return await db.select()
+  async getPlannedAbsencesByMonth(
+    year: number,
+    month: number,
+  ): Promise<PlannedAbsence[]> {
+    return await db
+      .select()
       .from(plannedAbsences)
-      .where(and(
-        eq(plannedAbsences.year, year),
-        eq(plannedAbsences.month, month)
-      ));
+      .where(
+        and(eq(plannedAbsences.year, year), eq(plannedAbsences.month, month)),
+      );
   }
 
-  async getPlannedAbsencesByEmployee(employeeId: number, year: number, month: number): Promise<PlannedAbsence[]> {
-    return await db.select()
+  async getPlannedAbsencesByEmployee(
+    employeeId: number,
+    year: number,
+    month: number,
+  ): Promise<PlannedAbsence[]> {
+    return await db
+      .select()
       .from(plannedAbsences)
-      .where(and(
-        eq(plannedAbsences.employeeId, employeeId),
-        eq(plannedAbsences.year, year),
-        eq(plannedAbsences.month, month)
-      ));
+      .where(
+        and(
+          eq(plannedAbsences.employeeId, employeeId),
+          eq(plannedAbsences.year, year),
+          eq(plannedAbsences.month, month),
+        ),
+      );
   }
 
-  async createPlannedAbsence(absence: InsertPlannedAbsence): Promise<PlannedAbsence> {
+  async createPlannedAbsence(
+    absence: InsertPlannedAbsence,
+  ): Promise<PlannedAbsence> {
     const result = await db.insert(plannedAbsences).values(absence).returning();
     return result[0];
   }
 
-  async updatePlannedAbsence(id: number, absence: Partial<InsertPlannedAbsence>): Promise<PlannedAbsence | undefined> {
-    const result = await db.update(plannedAbsences)
+  async updatePlannedAbsence(
+    id: number,
+    absence: Partial<InsertPlannedAbsence>,
+  ): Promise<PlannedAbsence | undefined> {
+    const result = await db
+      .update(plannedAbsences)
       .set(absence)
       .where(eq(plannedAbsences.id, id))
       .returning();

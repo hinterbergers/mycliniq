@@ -1,11 +1,24 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Layout } from "@/components/layout/Layout";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { 
-  CalendarDays, FileText, ArrowRight, Star, Cake, 
-  Users, Clock, BookOpen, TrendingUp
+import {
+  CalendarDays,
+  FileText,
+  ArrowRight,
+  Star,
+  Cake,
+  Users,
+  Clock,
+  BookOpen,
+  TrendingUp,
 } from "lucide-react";
 import { dashboardApi, type DashboardResponse } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -19,7 +32,7 @@ const DUTY_ABBREVIATIONS: Record<string, string> = {
   "gynaekologie (oa)": "Gyn",
   "kreisszimmer (ass.)": "Geb",
   "turnus (ass./ta)": "Ta",
-  "ueberdienst": "Ü",
+  ueberdienst: "Ü",
 };
 
 const normalizeDutyLabel = (label: string) =>
@@ -54,15 +67,38 @@ const getGreeting = () => {
 };
 
 const DUMMY_NEW_SOPS = [
-  { id: 1, title: "PPROM Management", category: "Geburtshilfe", date: "Vor 2 Tagen", isNew: true },
-  { id: 2, title: "Präeklampsie Leitlinie", category: "Geburtshilfe", date: "Vor 4 Tagen", isNew: true },
-  { id: 3, title: "Sectio-Indikationen", category: "OP", date: "Vor 1 Woche", isNew: true },
+  {
+    id: 1,
+    title: "PPROM Management",
+    category: "Geburtshilfe",
+    date: "Vor 2 Tagen",
+    isNew: true,
+  },
+  {
+    id: 2,
+    title: "Präeklampsie Leitlinie",
+    category: "Geburtshilfe",
+    date: "Vor 4 Tagen",
+    isNew: true,
+  },
+  {
+    id: 3,
+    title: "Sectio-Indikationen",
+    category: "OP",
+    date: "Vor 1 Woche",
+    isNew: true,
+  },
 ];
 
 const DUMMY_POPULAR_SOPS = [
   { id: 4, title: "CTG-Beurteilung", category: "Geburtshilfe", views: 128 },
   { id: 5, title: "Postpartale Hämorrhagie", category: "Notfall", views: 96 },
-  { id: 6, title: "Endometriose Diagnostik", category: "Gynäkologie", views: 84 },
+  {
+    id: 6,
+    title: "Endometriose Diagnostik",
+    category: "Gynäkologie",
+    views: 84,
+  },
 ];
 
 const DUMMY_PRESENT_STAFF = [
@@ -86,20 +122,29 @@ type PreviewCard = {
 };
 
 const isWeekendDate = (date: Date) => [0, 6].includes(date.getDay());
-const ABSENCE_KEYWORDS = ["urlaub", "fortbildung", "zeitausgleich", "pflegeurlaub", "krankenstand"];
+const ABSENCE_KEYWORDS = [
+  "urlaub",
+  "fortbildung",
+  "zeitausgleich",
+  "pflegeurlaub",
+  "krankenstand",
+];
 const SICK_KEYWORDS = ["krankenstand", "pflegeurlaub"];
 
 export default function Dashboard() {
   const { employee, user, isAdmin } = useAuth();
   const [, setLocation] = useLocation();
-  
-  const firstName = employee?.firstName
-    || user?.name
-    || employee?.name?.split(' ')[0]
-    || "Kolleg:in";
+
+  const firstName =
+    employee?.firstName ||
+    user?.name ||
+    employee?.name?.split(" ")[0] ||
+    "Kolleg:in";
   const greeting = getGreeting();
 
-  const [dashboardData, setDashboardData] = useState<DashboardResponse | null>(null);
+  const [dashboardData, setDashboardData] = useState<DashboardResponse | null>(
+    null,
+  );
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(true);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [isAcceptingZe, setIsAcceptingZe] = useState(false);
@@ -152,8 +197,12 @@ export default function Dashboard() {
   const statusLabel = todayEntry?.statusLabel ?? "";
   const normalizedStatus = statusLabel.toLowerCase();
   const hasEntry = Boolean(statusLabel || todayEntry?.workplace);
-  const isAbsenceLabel = ABSENCE_KEYWORDS.some((keyword) => normalizedStatus.includes(keyword));
-  const isSickLabel = SICK_KEYWORDS.some((keyword) => normalizedStatus.includes(keyword));
+  const isAbsenceLabel = ABSENCE_KEYWORDS.some((keyword) =>
+    normalizedStatus.includes(keyword),
+  );
+  const isSickLabel = SICK_KEYWORDS.some((keyword) =>
+    normalizedStatus.includes(keyword),
+  );
 
   let heroIcon = "🗓️";
   let heroText = "Heute kein Eintrag";
@@ -188,7 +237,9 @@ export default function Dashboard() {
     todayTeamNames.length > 0;
 
   const birthdayEntry = dashboardData?.birthday;
-  const birthdayName = birthdayEntry ? buildFullName(birthdayEntry.firstName, birthdayEntry.lastName) : null;
+  const birthdayName = birthdayEntry
+    ? buildFullName(birthdayEntry.firstName, birthdayEntry.lastName)
+    : null;
   const showZeBadge = Boolean(todayZe && !todayZe.accepted);
 
   const handleAcceptZe = useCallback(async () => {
@@ -198,14 +249,14 @@ export default function Dashboard() {
       await dashboardApi.acceptZeitausgleich(todayZe.id);
       toast({
         title: "Zeitausgleich bestätigt",
-        description: "Der Platz wurde für dich reserviert."
+        description: "Der Platz wurde für dich reserviert.",
       });
       await refreshDashboard();
     } catch (error: any) {
       toast({
         title: "Zeitausgleich konnte nicht bestätigt werden",
         description: error?.message || "Bitte versuche es erneut.",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setIsAcceptingZe(false);
@@ -232,7 +283,7 @@ export default function Dashboard() {
             .map((mate) => buildFullName(mate.firstName, mate.lastName))
             .filter(Boolean),
           dayLabel: format(dateInstance, "EEEE", { locale: de }),
-          dateLabel: format(dateInstance, "dd. MMM", { locale: de })
+          dateLabel: format(dateInstance, "dd. MMM", { locale: de }),
         };
       })
       .filter((card): card is PreviewCard => card !== null);
@@ -241,14 +292,19 @@ export default function Dashboard() {
   return (
     <Layout title="Dashboard">
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-        
         <div className="md:col-span-8 space-y-6">
           <div className="bg-gradient-to-br from-primary to-primary/80 rounded-2xl p-8 text-primary-foreground shadow-lg shadow-primary/10">
             <div className="flex items-center justify-between mb-2">
-              <h2 className="text-3xl font-bold text-white" data-testid="text-greeting">
+              <h2
+                className="text-3xl font-bold text-white"
+                data-testid="text-greeting"
+              >
                 {greeting} {firstName}
               </h2>
-              <Badge variant="outline" className="text-primary-foreground border-primary-foreground/30 bg-primary-foreground/10">
+              <Badge
+                variant="outline"
+                className="text-primary-foreground border-primary-foreground/30 bg-primary-foreground/10"
+              >
                 KABEG Klinikum Klagenfurt
               </Badge>
             </div>
@@ -262,18 +318,18 @@ export default function Dashboard() {
               </p>
             )}
             <div className="mt-6 flex gap-3">
-              <Button 
-                variant="secondary" 
+              <Button
+                variant="secondary"
                 className="text-primary font-medium shadow-none border-0"
-                onClick={() => setLocation('/dienstplaene')}
+                onClick={() => setLocation("/dienstplaene")}
                 data-testid="button-to-roster"
               >
                 Zum Dienstplan
               </Button>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 className="bg-transparent border-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"
-                onClick={() => setLocation('/dienstwuensche')}
+                onClick={() => setLocation("/dienstwuensche")}
                 data-testid="button-request-vacation"
               >
                 Dienstwünsche
@@ -300,7 +356,9 @@ export default function Dashboard() {
                   <BookOpen className="w-6 h-6 text-primary" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground font-medium">Neue SOPs</p>
+                  <p className="text-sm text-muted-foreground font-medium">
+                    Neue SOPs
+                  </p>
                   <p className="text-2xl font-bold text-foreground">–</p>
                 </div>
               </CardContent>
@@ -311,7 +369,9 @@ export default function Dashboard() {
                   <Star className="w-6 h-6 text-amber-600" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground font-medium">Meine Favoriten</p>
+                  <p className="text-sm text-muted-foreground font-medium">
+                    Meine Favoriten
+                  </p>
                   <p className="text-2xl font-bold text-foreground">–</p>
                 </div>
               </CardContent>
@@ -321,11 +381,11 @@ export default function Dashboard() {
           <Card className="border-none kabeg-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-lg">Neue Dokumente</CardTitle>
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 className="text-muted-foreground"
-                onClick={() => setLocation('/wissen')}
+                onClick={() => setLocation("/wissen")}
               >
                 Alle anzeigen
               </Button>
@@ -339,8 +399,8 @@ export default function Dashboard() {
                   </h4>
                   <div className="space-y-2">
                     {DUMMY_NEW_SOPS.map((sop) => (
-                      <div 
-                        key={sop.id} 
+                      <div
+                        key={sop.id}
                         className="flex items-center justify-between p-3 rounded-lg hover:bg-secondary/50 transition-colors border border-transparent hover:border-border group cursor-pointer"
                         data-testid={`sop-new-${sop.id}`}
                       >
@@ -349,10 +409,19 @@ export default function Dashboard() {
                             <FileText className="w-4 h-4" />
                           </div>
                           <div>
-                            <h4 className="font-medium text-foreground text-sm">{sop.title}</h4>
+                            <h4 className="font-medium text-foreground text-sm">
+                              {sop.title}
+                            </h4>
                             <div className="flex items-center gap-2">
-                              <Badge variant="outline" className="text-[10px] px-1.5 py-0">{sop.category}</Badge>
-                              <span className="text-[10px] text-muted-foreground">{sop.date}</span>
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] px-1.5 py-0"
+                              >
+                                {sop.category}
+                              </Badge>
+                              <span className="text-[10px] text-muted-foreground">
+                                {sop.date}
+                              </span>
                             </div>
                           </div>
                         </div>
@@ -361,7 +430,7 @@ export default function Dashboard() {
                     ))}
                   </div>
                 </div>
-                
+
                 <div>
                   <h4 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
                     <Star className="w-4 h-4" />
@@ -369,8 +438,8 @@ export default function Dashboard() {
                   </h4>
                   <div className="space-y-2">
                     {DUMMY_POPULAR_SOPS.map((sop) => (
-                      <div 
-                        key={sop.id} 
+                      <div
+                        key={sop.id}
                         className="flex items-center justify-between p-3 rounded-lg hover:bg-secondary/50 transition-colors border border-transparent hover:border-border group cursor-pointer"
                         data-testid={`sop-popular-${sop.id}`}
                       >
@@ -379,10 +448,19 @@ export default function Dashboard() {
                             <FileText className="w-4 h-4" />
                           </div>
                           <div>
-                            <h4 className="font-medium text-foreground text-sm">{sop.title}</h4>
+                            <h4 className="font-medium text-foreground text-sm">
+                              {sop.title}
+                            </h4>
                             <div className="flex items-center gap-2">
-                              <Badge variant="outline" className="text-[10px] px-1.5 py-0">{sop.category}</Badge>
-                              <span className="text-[10px] text-muted-foreground">{sop.views} Aufrufe</span>
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] px-1.5 py-0"
+                              >
+                                {sop.category}
+                              </Badge>
+                              <span className="text-[10px] text-muted-foreground">
+                                {sop.views} Aufrufe
+                              </span>
                             </div>
                           </div>
                         </div>
@@ -406,8 +484,16 @@ export default function Dashboard() {
               <CardContent>
                 <div className="flex flex-wrap gap-2 mb-4">
                   {DUMMY_PRESENT_STAFF.map((staff, i) => (
-                    <Badge key={i} variant="secondary" className="py-1.5" data-testid={`staff-present-${i}`}>
-                      {staff.name} <span className="text-muted-foreground ml-1">({staff.area})</span>
+                    <Badge
+                      key={i}
+                      variant="secondary"
+                      className="py-1.5"
+                      data-testid={`staff-present-${i}`}
+                    >
+                      {staff.name}{" "}
+                      <span className="text-muted-foreground ml-1">
+                        ({staff.area})
+                      </span>
                     </Badge>
                   ))}
                 </div>
@@ -428,8 +514,15 @@ export default function Dashboard() {
                   <Cake className="w-6 h-6 text-pink-600" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-foreground">Heute hat Geburtstag:</p>
-                  <p className="text-base font-bold text-pink-700" data-testid="text-birthday">{birthdayName}</p>
+                  <p className="text-sm font-medium text-foreground">
+                    Heute hat Geburtstag:
+                  </p>
+                  <p
+                    className="text-base font-bold text-pink-700"
+                    data-testid="text-birthday"
+                  >
+                    {birthdayName}
+                  </p>
                 </div>
               </CardContent>
             </Card>
@@ -446,50 +539,66 @@ export default function Dashboard() {
             <CardContent className="flex-1">
               <div className="space-y-4">
                 {isLoadingDashboard ? (
-                  <p className="text-sm text-muted-foreground">Wochenvorschau wird geladen…</p>
+                  <p className="text-sm text-muted-foreground">
+                    Wochenvorschau wird geladen…
+                  </p>
                 ) : dashboardError ? (
-                  <p className="text-sm text-destructive">Fehler: {dashboardError}</p>
+                  <p className="text-sm text-destructive">
+                    Fehler: {dashboardError}
+                  </p>
                 ) : previewCards.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Keine Einsätze für die Vorschau verfügbar.</p>
+                  <p className="text-sm text-muted-foreground">
+                    Keine Einsätze für die Vorschau verfügbar.
+                  </p>
                 ) : (
                   previewCards.map((item, i) => {
                     const badgeText = getDutyBadgeText(item.statusLabel); // null => kein Badge
-                  
+
                     // Zeile 2: Abwesenheit bevorzugen, sonst workplace
-                    const normalizedStatus = (item.statusLabel ?? "").toLowerCase();
-                    const isAbsence = ABSENCE_KEYWORDS.some((k) => normalizedStatus.includes(k));
-                  
+                    const normalizedStatus = (
+                      item.statusLabel ?? ""
+                    ).toLowerCase();
+                    const isAbsence = ABSENCE_KEYWORDS.some((k) =>
+                      normalizedStatus.includes(k),
+                    );
+
                     const line2Raw = isAbsence
                       ? (item.statusLabel ?? "")
                       : (item.workplace ?? "");
-                  
+
                     // "Diensthabende" ausblenden, keine Platzhalter
-                    const line2 = line2Raw && line2Raw !== "Diensthabende" ? line2Raw : "";
-                  
+                    const line2 =
+                      line2Raw && line2Raw !== "Diensthabende" ? line2Raw : "";
+
                     return (
                       <div
                         key={`${item.date}-${i}`}
                         className={`p-3 rounded-lg border ${
-                          i === 0 ? "bg-primary/5 border-primary/20" : "border-border"
+                          i === 0
+                            ? "bg-primary/5 border-primary/20"
+                            : "border-border"
                         }`}
                         data-testid={`schedule-day-${i}`}
                       >
                         <div className="flex items-center justify-between mb-1">
                           <span className="font-medium text-sm">
-                            {item.dayLabel} <span className="text-muted-foreground">– {item.dateLabel}</span>
+                            {item.dayLabel}{" "}
+                            <span className="text-muted-foreground">
+                              – {item.dateLabel}
+                            </span>
                           </span>
-                  
+
                           {/* Badge nur, wenn Dienst vorhanden */}
                           {badgeText ? <Badge>{badgeText}</Badge> : null}
                         </div>
-                  
+
                         {/* Zeile 2 ohne "Bereich:" und ohne "-" */}
                         {line2 ? (
                           <p className="text-xs text-muted-foreground mb-1">
                             {line2}
                           </p>
                         ) : null}
-                  
+
                         {/* Zeile 3 nur wenn teammates vorhanden */}
                         {item.teammateNames.length > 0 && (
                           <p className="text-xs text-muted-foreground">
@@ -501,7 +610,6 @@ export default function Dashboard() {
                   })
                 )}
               </div>
-              
             </CardContent>
           </Card>
         </div>

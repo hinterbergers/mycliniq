@@ -1,10 +1,22 @@
 import { Layout } from "@/components/layout/Layout";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Building, Save, Loader2, Plus, Trash2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -24,7 +36,15 @@ interface Clinic {
 
 type ServiceLineForm = Pick<
   ServiceLine,
-  "id" | "key" | "label" | "roleGroup" | "startTime" | "endTime" | "endsNextDay" | "sortOrder" | "isActive"
+  | "id"
+  | "key"
+  | "label"
+  | "roleGroup"
+  | "startTime"
+  | "endTime"
+  | "endsNextDay"
+  | "sortOrder"
+  | "isActive"
 >;
 
 const normalizeTime = (value?: string | null) => {
@@ -34,11 +54,12 @@ const normalizeTime = (value?: string | null) => {
   return `${hours.padStart(2, "0")}:${minutes.padStart(2, "0")}`;
 };
 
-const COUNTRY_OPTIONS = [
-  { value: "AT", label: "Österreich" }
-];
+const COUNTRY_OPTIONS = [{ value: "AT", label: "Österreich" }];
 
-const STATE_OPTIONS_BY_COUNTRY: Record<string, Array<{ value: string; label: string }>> = {
+const STATE_OPTIONS_BY_COUNTRY: Record<
+  string,
+  Array<{ value: string; label: string }>
+> = {
   AT: [
     { value: "AT-1", label: "Burgenland" },
     { value: "AT-2", label: "Kärnten" },
@@ -48,8 +69,8 @@ const STATE_OPTIONS_BY_COUNTRY: Record<string, Array<{ value: string; label: str
     { value: "AT-6", label: "Steiermark" },
     { value: "AT-7", label: "Tirol" },
     { value: "AT-8", label: "Vorarlberg" },
-    { value: "AT-9", label: "Wien" }
-  ]
+    { value: "AT-9", label: "Wien" },
+  ],
 };
 
 const getDefaultStateForCountry = (country: string) => {
@@ -67,13 +88,19 @@ export default function ClinicSettings() {
     timezone: "Europe/Vienna",
     country: "AT",
     state: "AT-2",
-    logoUrl: ""
+    logoUrl: "",
   });
   const [serviceLines, setServiceLines] = useState<ServiceLineForm[]>([]);
   const [serviceLinesLoading, setServiceLinesLoading] = useState(true);
-  const [serviceLineSavingId, setServiceLineSavingId] = useState<number | null>(null);
-  const [serviceLineDeletingId, setServiceLineDeletingId] = useState<number | null>(null);
-  const [newServiceLine, setNewServiceLine] = useState<Omit<ServiceLineForm, "id">>({
+  const [serviceLineSavingId, setServiceLineSavingId] = useState<number | null>(
+    null,
+  );
+  const [serviceLineDeletingId, setServiceLineDeletingId] = useState<
+    number | null
+  >(null);
+  const [newServiceLine, setNewServiceLine] = useState<
+    Omit<ServiceLineForm, "id">
+  >({
     key: "",
     label: "",
     roleGroup: "ALL",
@@ -81,7 +108,7 @@ export default function ClinicSettings() {
     endTime: "08:00",
     endsNextDay: true,
     sortOrder: 0,
-    isActive: true
+    isActive: true,
   });
 
   useEffect(() => {
@@ -102,7 +129,7 @@ export default function ClinicSettings() {
         endTime: normalizeTime(line.endTime),
         endsNextDay: Boolean(line.endsNextDay),
         sortOrder: line.sortOrder ?? 0,
-        isActive: line.isActive !== false
+        isActive: line.isActive !== false,
       }));
       setServiceLines(normalized);
     } catch (error) {
@@ -110,7 +137,7 @@ export default function ClinicSettings() {
       toast({
         title: "Fehler",
         description: "Dienstschienen konnten nicht geladen werden",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setServiceLinesLoading(false);
@@ -122,8 +149,8 @@ export default function ClinicSettings() {
       const token = getAuthToken();
       const response = await fetch("/api/admin/clinic", {
         headers: {
-          Authorization: `Bearer ${token}`
-        }
+          Authorization: `Bearer ${token}`,
+        },
       });
 
       if (!response.ok) {
@@ -139,7 +166,7 @@ export default function ClinicSettings() {
           timezone: result.data.timezone || "Europe/Vienna",
           country: result.data.country || "AT",
           state: result.data.state || "AT-2",
-          logoUrl: result.data.logoUrl || ""
+          logoUrl: result.data.logoUrl || "",
         });
       }
     } catch (error) {
@@ -147,7 +174,7 @@ export default function ClinicSettings() {
       toast({
         title: "Fehler",
         description: "Klinik-Einstellungen konnten nicht geladen werden",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setLoading(false);
@@ -162,9 +189,9 @@ export default function ClinicSettings() {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(formData),
       });
 
       if (!response.ok) {
@@ -177,15 +204,17 @@ export default function ClinicSettings() {
         setClinic(result.data);
         toast({
           title: "Erfolgreich",
-          description: "Klinik-Einstellungen wurden gespeichert"
+          description: "Klinik-Einstellungen wurden gespeichert",
         });
       }
     } catch (error: any) {
       console.error("Error saving clinic:", error);
       toast({
         title: "Fehler",
-        description: error.message || "Klinik-Einstellungen konnten nicht gespeichert werden",
-        variant: "destructive"
+        description:
+          error.message ||
+          "Klinik-Einstellungen konnten nicht gespeichert werden",
+        variant: "destructive",
       });
     } finally {
       setSaving(false);
@@ -195,10 +224,10 @@ export default function ClinicSettings() {
   const updateServiceLineField = (
     id: number,
     field: keyof ServiceLineForm,
-    value: ServiceLineForm[keyof ServiceLineForm]
+    value: ServiceLineForm[keyof ServiceLineForm],
   ) => {
     setServiceLines((prev) =>
-      prev.map((line) => (line.id === id ? { ...line, [field]: value } : line))
+      prev.map((line) => (line.id === id ? { ...line, [field]: value } : line)),
     );
   };
 
@@ -215,18 +244,19 @@ export default function ClinicSettings() {
         endTime: line.endTime,
         endsNextDay: line.endsNextDay,
         sortOrder: Number(line.sortOrder) || 0,
-        isActive: line.isActive
+        isActive: line.isActive,
       });
       toast({
         title: "Gespeichert",
-        description: "Dienstschiene wurde aktualisiert"
+        description: "Dienstschiene wurde aktualisiert",
       });
     } catch (error: any) {
       console.error("Error saving service line:", error);
       toast({
         title: "Fehler",
-        description: error.message || "Dienstschiene konnte nicht gespeichert werden",
-        variant: "destructive"
+        description:
+          error.message || "Dienstschiene konnte nicht gespeichert werden",
+        variant: "destructive",
       });
     } finally {
       setServiceLineSavingId(null);
@@ -240,14 +270,15 @@ export default function ClinicSettings() {
       setServiceLines((prev) => prev.filter((line) => line.id !== id));
       toast({
         title: "Gelöscht",
-        description: "Dienstschiene wurde entfernt"
+        description: "Dienstschiene wurde entfernt",
       });
     } catch (error: any) {
       console.error("Error deleting service line:", error);
       toast({
         title: "Fehler",
-        description: error.message || "Dienstschiene konnte nicht gelöscht werden",
-        variant: "destructive"
+        description:
+          error.message || "Dienstschiene konnte nicht gelöscht werden",
+        variant: "destructive",
       });
     } finally {
       setServiceLineDeletingId(null);
@@ -259,7 +290,7 @@ export default function ClinicSettings() {
       toast({
         title: "Fehler",
         description: "Key und Bezeichnung sind erforderlich",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
@@ -273,7 +304,7 @@ export default function ClinicSettings() {
         endTime: newServiceLine.endTime,
         endsNextDay: newServiceLine.endsNextDay,
         sortOrder: Number(newServiceLine.sortOrder) || 0,
-        isActive: newServiceLine.isActive
+        isActive: newServiceLine.isActive,
       });
       setServiceLines((prev) => [
         ...prev,
@@ -286,8 +317,8 @@ export default function ClinicSettings() {
           endTime: normalizeTime(created.endTime),
           endsNextDay: Boolean(created.endsNextDay),
           sortOrder: created.sortOrder ?? 0,
-          isActive: created.isActive !== false
-        }
+          isActive: created.isActive !== false,
+        },
       ]);
       setNewServiceLine({
         key: "",
@@ -297,18 +328,19 @@ export default function ClinicSettings() {
         endTime: "08:00",
         endsNextDay: true,
         sortOrder: serviceLines.length + 1,
-        isActive: true
+        isActive: true,
       });
       toast({
         title: "Erstellt",
-        description: "Dienstschiene wurde hinzugefügt"
+        description: "Dienstschiene wurde hinzugefügt",
       });
     } catch (error: any) {
       console.error("Error creating service line:", error);
       toast({
         title: "Fehler",
-        description: error.message || "Dienstschiene konnte nicht erstellt werden",
-        variant: "destructive"
+        description:
+          error.message || "Dienstschiene konnte nicht erstellt werden",
+        variant: "destructive",
       });
     }
   };
@@ -333,8 +365,12 @@ export default function ClinicSettings() {
     <Layout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Klinik-Einstellungen</h1>
-          <p className="text-gray-600 mt-1">Verwalten Sie die Einstellungen Ihrer Klinik</p>
+          <h1 className="text-3xl font-bold text-gray-900">
+            Klinik-Einstellungen
+          </h1>
+          <p className="text-gray-600 mt-1">
+            Verwalten Sie die Einstellungen Ihrer Klinik
+          </p>
         </div>
 
         <Card>
@@ -353,7 +389,9 @@ export default function ClinicSettings() {
               <Input
                 id="name"
                 value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, name: e.target.value })
+                }
                 placeholder="z.B. Klinikum Klagenfurt"
               />
             </div>
@@ -363,11 +401,17 @@ export default function ClinicSettings() {
               <Input
                 id="slug"
                 value={formData.slug}
-                onChange={(e) => setFormData({ ...formData, slug: e.target.value.toLowerCase().replace(/\s+/g, '-') })}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    slug: e.target.value.toLowerCase().replace(/\s+/g, "-"),
+                  })
+                }
                 placeholder="z.B. klinikum-klagenfurt"
               />
               <p className="text-sm text-gray-500">
-                Wird für URLs verwendet. Nur Kleinbuchstaben, Zahlen und Bindestriche.
+                Wird für URLs verwendet. Nur Kleinbuchstaben, Zahlen und
+                Bindestriche.
               </p>
             </div>
 
@@ -376,7 +420,9 @@ export default function ClinicSettings() {
               <Input
                 id="timezone"
                 value={formData.timezone}
-                onChange={(e) => setFormData({ ...formData, timezone: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, timezone: e.target.value })
+                }
                 placeholder="Europe/Vienna"
               />
               <p className="text-sm text-gray-500">
@@ -391,11 +437,15 @@ export default function ClinicSettings() {
                   value={formData.country}
                   onValueChange={(value) => {
                     const nextState = STATE_OPTIONS_BY_COUNTRY[value]?.some(
-                      (option) => option.value === formData.state
+                      (option) => option.value === formData.state,
                     )
                       ? formData.state
                       : getDefaultStateForCountry(value);
-                    setFormData({ ...formData, country: value, state: nextState });
+                    setFormData({
+                      ...formData,
+                      country: value,
+                      state: nextState,
+                    });
                   }}
                 >
                   <SelectTrigger id="country">
@@ -414,17 +464,21 @@ export default function ClinicSettings() {
                 <Label htmlFor="state">Bundesland</Label>
                 <Select
                   value={formData.state}
-                  onValueChange={(value) => setFormData({ ...formData, state: value })}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, state: value })
+                  }
                 >
                   <SelectTrigger id="state">
                     <SelectValue placeholder="Bundesland waehlen" />
                   </SelectTrigger>
                   <SelectContent>
-                    {(STATE_OPTIONS_BY_COUNTRY[formData.country] || []).map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
+                    {(STATE_OPTIONS_BY_COUNTRY[formData.country] || []).map(
+                      (option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ),
+                    )}
                   </SelectContent>
                 </Select>
                 <p className="text-sm text-gray-500">
@@ -438,13 +492,18 @@ export default function ClinicSettings() {
               <Input
                 id="logoUrl"
                 value={formData.logoUrl}
-                onChange={(e) => setFormData({ ...formData, logoUrl: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, logoUrl: e.target.value })
+                }
                 placeholder="https://example.com/logo.png"
               />
             </div>
 
             <div className="flex justify-end pt-4">
-              <Button onClick={handleSave} disabled={saving || !formData.name || !formData.slug}>
+              <Button
+                onClick={handleSave}
+                disabled={saving || !formData.name || !formData.slug}
+              >
                 {saving ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -465,7 +524,8 @@ export default function ClinicSettings() {
           <CardHeader>
             <CardTitle>Dienstschienen</CardTitle>
             <CardDescription>
-              Bezeichnungen, Gruppen und Dienstzeiten für Kalender und Dienstpläne
+              Bezeichnungen, Gruppen und Dienstzeiten für Kalender und
+              Dienstpläne
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -482,13 +542,22 @@ export default function ClinicSettings() {
                   </p>
                 ) : (
                   orderedServiceLines.map((line) => (
-                    <div key={line.id} className="rounded-lg border border-gray-200 p-4 space-y-3">
+                    <div
+                      key={line.id}
+                      className="rounded-lg border border-gray-200 p-4 space-y-3"
+                    >
                       <div className="grid gap-3 md:grid-cols-[1.2fr,1fr,0.7fr,0.7fr,0.6fr,0.6fr,0.6fr] items-end">
                         <div className="space-y-2">
                           <Label>Bezeichnung</Label>
                           <Input
                             value={line.label}
-                            onChange={(e) => updateServiceLineField(line.id, "label", e.target.value)}
+                            onChange={(e) =>
+                              updateServiceLineField(
+                                line.id,
+                                "label",
+                                e.target.value,
+                              )
+                            }
                             placeholder="z.B. Kreißzimmer (Ass.)"
                           />
                         </div>
@@ -496,7 +565,13 @@ export default function ClinicSettings() {
                           <Label>Key</Label>
                           <Input
                             value={line.key}
-                            onChange={(e) => updateServiceLineField(line.id, "key", e.target.value)}
+                            onChange={(e) =>
+                              updateServiceLineField(
+                                line.id,
+                                "key",
+                                e.target.value,
+                              )
+                            }
                             placeholder="z.B. kreiszimmer"
                           />
                         </div>
@@ -504,7 +579,13 @@ export default function ClinicSettings() {
                           <Label>Gruppe</Label>
                           <Input
                             value={line.roleGroup || ""}
-                            onChange={(e) => updateServiceLineField(line.id, "roleGroup", e.target.value)}
+                            onChange={(e) =>
+                              updateServiceLineField(
+                                line.id,
+                                "roleGroup",
+                                e.target.value,
+                              )
+                            }
                             placeholder="OA / ASS / TURNUS / ALL"
                           />
                         </div>
@@ -513,7 +594,13 @@ export default function ClinicSettings() {
                           <Input
                             type="time"
                             value={line.startTime}
-                            onChange={(e) => updateServiceLineField(line.id, "startTime", e.target.value)}
+                            onChange={(e) =>
+                              updateServiceLineField(
+                                line.id,
+                                "startTime",
+                                e.target.value,
+                              )
+                            }
                           />
                         </div>
                         <div className="space-y-2">
@@ -521,7 +608,13 @@ export default function ClinicSettings() {
                           <Input
                             type="time"
                             value={line.endTime}
-                            onChange={(e) => updateServiceLineField(line.id, "endTime", e.target.value)}
+                            onChange={(e) =>
+                              updateServiceLineField(
+                                line.id,
+                                "endTime",
+                                e.target.value,
+                              )
+                            }
                           />
                         </div>
                         <div className="space-y-2">
@@ -530,10 +623,16 @@ export default function ClinicSettings() {
                             <Checkbox
                               checked={line.endsNextDay}
                               onCheckedChange={(checked) =>
-                                updateServiceLineField(line.id, "endsNextDay", Boolean(checked))
+                                updateServiceLineField(
+                                  line.id,
+                                  "endsNextDay",
+                                  Boolean(checked),
+                                )
                               }
                             />
-                            <span className="text-sm text-gray-500">Folgetag</span>
+                            <span className="text-sm text-gray-500">
+                              Folgetag
+                            </span>
                           </div>
                         </div>
                         <div className="space-y-2">
@@ -542,7 +641,11 @@ export default function ClinicSettings() {
                             type="number"
                             value={line.sortOrder ?? 0}
                             onChange={(e) =>
-                              updateServiceLineField(line.id, "sortOrder", Number(e.target.value))
+                              updateServiceLineField(
+                                line.id,
+                                "sortOrder",
+                                Number(e.target.value),
+                              )
                             }
                           />
                         </div>
@@ -553,7 +656,11 @@ export default function ClinicSettings() {
                           <Checkbox
                             checked={line.isActive}
                             onCheckedChange={(checked) =>
-                              updateServiceLineField(line.id, "isActive", Boolean(checked))
+                              updateServiceLineField(
+                                line.id,
+                                "isActive",
+                                Boolean(checked),
+                              )
                             }
                           />
                           <span className="text-sm text-gray-600">Aktiv</span>
@@ -596,7 +703,10 @@ export default function ClinicSettings() {
                       <Input
                         value={newServiceLine.label}
                         onChange={(e) =>
-                          setNewServiceLine((prev) => ({ ...prev, label: e.target.value }))
+                          setNewServiceLine((prev) => ({
+                            ...prev,
+                            label: e.target.value,
+                          }))
                         }
                         placeholder="z.B. Long Day"
                       />
@@ -606,7 +716,10 @@ export default function ClinicSettings() {
                       <Input
                         value={newServiceLine.key}
                         onChange={(e) =>
-                          setNewServiceLine((prev) => ({ ...prev, key: e.target.value }))
+                          setNewServiceLine((prev) => ({
+                            ...prev,
+                            key: e.target.value,
+                          }))
                         }
                         placeholder="z.B. long_day"
                       />
@@ -616,7 +729,10 @@ export default function ClinicSettings() {
                       <Input
                         value={newServiceLine.roleGroup || ""}
                         onChange={(e) =>
-                          setNewServiceLine((prev) => ({ ...prev, roleGroup: e.target.value }))
+                          setNewServiceLine((prev) => ({
+                            ...prev,
+                            roleGroup: e.target.value,
+                          }))
                         }
                         placeholder="OA / ASS / TURNUS / ALL"
                       />
@@ -627,7 +743,10 @@ export default function ClinicSettings() {
                         type="time"
                         value={newServiceLine.startTime}
                         onChange={(e) =>
-                          setNewServiceLine((prev) => ({ ...prev, startTime: e.target.value }))
+                          setNewServiceLine((prev) => ({
+                            ...prev,
+                            startTime: e.target.value,
+                          }))
                         }
                       />
                     </div>
@@ -637,7 +756,10 @@ export default function ClinicSettings() {
                         type="time"
                         value={newServiceLine.endTime}
                         onChange={(e) =>
-                          setNewServiceLine((prev) => ({ ...prev, endTime: e.target.value }))
+                          setNewServiceLine((prev) => ({
+                            ...prev,
+                            endTime: e.target.value,
+                          }))
                         }
                       />
                     </div>
@@ -647,7 +769,10 @@ export default function ClinicSettings() {
                         <Checkbox
                           checked={newServiceLine.endsNextDay}
                           onCheckedChange={(checked) =>
-                            setNewServiceLine((prev) => ({ ...prev, endsNextDay: Boolean(checked) }))
+                            setNewServiceLine((prev) => ({
+                              ...prev,
+                              endsNextDay: Boolean(checked),
+                            }))
                           }
                         />
                         <span className="text-sm text-gray-500">Folgetag</span>
@@ -661,7 +786,7 @@ export default function ClinicSettings() {
                         onChange={(e) =>
                           setNewServiceLine((prev) => ({
                             ...prev,
-                            sortOrder: Number(e.target.value)
+                            sortOrder: Number(e.target.value),
                           }))
                         }
                       />
@@ -673,7 +798,10 @@ export default function ClinicSettings() {
                       <Checkbox
                         checked={newServiceLine.isActive}
                         onCheckedChange={(checked) =>
-                          setNewServiceLine((prev) => ({ ...prev, isActive: Boolean(checked) }))
+                          setNewServiceLine((prev) => ({
+                            ...prev,
+                            isActive: Boolean(checked),
+                          }))
                         }
                       />
                       <span className="text-sm text-gray-600">Aktiv</span>

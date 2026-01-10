@@ -9,7 +9,7 @@ import {
   Send,
   Plus,
   CheckCircle,
-  Pencil
+  Pencil,
 } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -18,7 +18,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -29,7 +35,7 @@ import {
   employeeApi,
   plannedAbsencesAdminApi,
   type MessageThreadListItem,
-  type MessageWithSender
+  type MessageWithSender,
 } from "@/lib/api";
 import type { Employee, Notification } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
@@ -43,7 +49,8 @@ function formatTimestamp(value?: string | Date | null) {
   }
 }
 
-const normalizeWhitespace = (value?: string | null) => (value ?? "").trim().replace(/\s+/g, " ");
+const normalizeWhitespace = (value?: string | null) =>
+  (value ?? "").trim().replace(/\s+/g, " ");
 
 const dedupeAdjacentTokens = (value: string) => {
   const tokens = value.split(" ").filter(Boolean);
@@ -57,7 +64,10 @@ const dedupeAdjacentTokens = (value: string) => {
   return deduped.join(" ");
 };
 
-function displayMemberName(member: { name?: string | null; lastName?: string | null }) {
+function displayMemberName(member: {
+  name?: string | null;
+  lastName?: string | null;
+}) {
   const name = dedupeAdjacentTokens(normalizeWhitespace(member.name));
   const lastName = dedupeAdjacentTokens(normalizeWhitespace(member.lastName));
   if (name && lastName) {
@@ -85,10 +95,14 @@ export default function Messages() {
   const [messages, setMessages] = useState<MessageWithSender[]>([]);
   const [threadSearch, setThreadSearch] = useState("");
   const [messageDraft, setMessageDraft] = useState("");
-  const [processingNotificationIds, setProcessingNotificationIds] = useState<number[]>([]);
+  const [processingNotificationIds, setProcessingNotificationIds] = useState<
+    number[]
+  >([]);
 
   const [newThreadOpen, setNewThreadOpen] = useState(false);
-  const [newThreadType, setNewThreadType] = useState<"direct" | "group">("direct");
+  const [newThreadType, setNewThreadType] = useState<"direct" | "group">(
+    "direct",
+  );
   const [newThreadTitle, setNewThreadTitle] = useState("");
   const [newThreadMemberIds, setNewThreadMemberIds] = useState<number[]>([]);
   const [newThreadSearch, setNewThreadSearch] = useState("");
@@ -140,7 +154,7 @@ export default function Messages() {
       toast({
         title: "Fehler",
         description: "Systemnachrichten konnten nicht geladen werden",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setLoadingNotifications(false);
@@ -156,7 +170,7 @@ export default function Messages() {
       toast({
         title: "Fehler",
         description: "Nachrichten konnten nicht geladen werden",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setLoadingThreads(false);
@@ -171,7 +185,7 @@ export default function Messages() {
       toast({
         title: "Fehler",
         description: "Mitarbeiter konnten nicht geladen werden",
-        variant: "destructive"
+        variant: "destructive",
       });
     }
   };
@@ -185,7 +199,7 @@ export default function Messages() {
       toast({
         title: "Fehler",
         description: "Nachrichten konnten nicht geladen werden",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setLoadingMessages(false);
@@ -222,23 +236,32 @@ export default function Messages() {
 
   const selectedThread = useMemo(
     () => threads.find((thread) => thread.id === selectedThreadId) || null,
-    [threads, selectedThreadId]
+    [threads, selectedThreadId],
   );
 
   const isGroupOwner = useMemo(() => {
     if (!selectedThread || !currentEmployeeId) return false;
-    return selectedThread.members?.some(
-      (member) => member.employeeId === currentEmployeeId && member.role === "owner"
-    ) ?? false;
+    return (
+      selectedThread.members?.some(
+        (member) =>
+          member.employeeId === currentEmployeeId && member.role === "owner",
+      ) ?? false
+    );
   }, [selectedThread, currentEmployeeId]);
 
-  const canEditGroup = selectedThread?.type === "group" && (isGroupOwner || canManageGroups);
+  const canEditGroup =
+    selectedThread?.type === "group" && (isGroupOwner || canManageGroups);
 
-  const unreadNotifications = notifications.filter((note) => !note.isRead).length;
+  const unreadNotifications = notifications.filter(
+    (note) => !note.isRead,
+  ).length;
 
   const getThreadTitle = (thread: MessageThreadListItem) => {
     if (thread.type === "group") return thread.title || "Gruppe";
-    const members = thread.members?.filter((member) => member.employeeId !== currentEmployeeId) || [];
+    const members =
+      thread.members?.filter(
+        (member) => member.employeeId !== currentEmployeeId,
+      ) || [];
     if (members.length) {
       return members.map(displayMemberName).join(", ");
     }
@@ -261,7 +284,7 @@ export default function Messages() {
       toast({
         title: "Fehler",
         description: "Nachricht konnte nicht gesendet werden",
-        variant: "destructive"
+        variant: "destructive",
       });
     }
   };
@@ -269,7 +292,7 @@ export default function Messages() {
   const toggleMemberSelection = (
     list: number[],
     setter: (ids: number[]) => void,
-    id: number
+    id: number,
   ) => {
     if (list.includes(id)) {
       setter(list.filter((memberId) => memberId !== id));
@@ -284,7 +307,7 @@ export default function Messages() {
       toast({
         title: "Fehler",
         description: "Bitte mindestens einen Empfaenger waehlen",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
@@ -292,7 +315,7 @@ export default function Messages() {
       toast({
         title: "Fehler",
         description: "Bitte einen Gruppennamen eingeben",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
@@ -301,7 +324,7 @@ export default function Messages() {
       const thread = await messagesApi.createThread({
         type: newThreadType,
         title: newThreadType === "group" ? newThreadTitle.trim() : undefined,
-        memberIds: newThreadMemberIds
+        memberIds: newThreadMemberIds,
       });
       setNewThreadOpen(false);
       setNewThreadMemberIds([]);
@@ -313,7 +336,7 @@ export default function Messages() {
       toast({
         title: "Fehler",
         description: "Nachricht konnte nicht erstellt werden",
-        variant: "destructive"
+        variant: "destructive",
       });
     }
   };
@@ -321,7 +344,9 @@ export default function Messages() {
   const openGroupEditor = () => {
     if (!selectedThread) return;
     setGroupTitle(selectedThread.title || "");
-    setGroupMemberIds((selectedThread.members || []).map((member) => member.employeeId));
+    setGroupMemberIds(
+      (selectedThread.members || []).map((member) => member.employeeId),
+    );
     setGroupSearch("");
     setGroupEditOpen(true);
   };
@@ -332,16 +357,20 @@ export default function Messages() {
       toast({
         title: "Fehler",
         description: "Mindestens ein Mitglied muss vorhanden sein",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
 
     try {
-      const currentMemberIds = new Set((selectedThread.members || []).map((member) => member.employeeId));
+      const currentMemberIds = new Set(
+        (selectedThread.members || []).map((member) => member.employeeId),
+      );
       const desiredIds = new Set(groupMemberIds);
       const add = [...desiredIds].filter((id) => !currentMemberIds.has(id));
-      const remove = [...currentMemberIds].filter((id) => !desiredIds.has(id) && id !== currentEmployeeId);
+      const remove = [...currentMemberIds].filter(
+        (id) => !desiredIds.has(id) && id !== currentEmployeeId,
+      );
 
       if (selectedThread.title !== groupTitle.trim()) {
         await messagesApi.renameThread(selectedThread.id, groupTitle.trim());
@@ -356,7 +385,7 @@ export default function Messages() {
       toast({
         title: "Fehler",
         description: "Gruppe konnte nicht aktualisiert werden",
-        variant: "destructive"
+        variant: "destructive",
       });
     }
   };
@@ -365,12 +394,14 @@ export default function Messages() {
     if (note.isRead) return;
     try {
       const updated = await notificationsApi.markRead(note.id);
-      setNotifications((prev) => prev.map((item) => (item.id === note.id ? updated : item)));
+      setNotifications((prev) =>
+        prev.map((item) => (item.id === note.id ? updated : item)),
+      );
     } catch (error) {
       toast({
         title: "Fehler",
         description: "Benachrichtigung konnte nicht aktualisiert werden",
-        variant: "destructive"
+        variant: "destructive",
       });
     }
   };
@@ -383,7 +414,7 @@ export default function Messages() {
       toast({
         title: "Fehler",
         description: "Benachrichtigung konnte nicht geloescht werden",
-        variant: "destructive"
+        variant: "destructive",
       });
     }
   };
@@ -396,7 +427,10 @@ export default function Messages() {
       startDate?: string;
       endDate?: string;
     };
-    if (meta.kind !== "zeitausgleich_request" || typeof meta.absenceId !== "number") {
+    if (
+      meta.kind !== "zeitausgleich_request" ||
+      typeof meta.absenceId !== "number"
+    ) {
       return null;
     }
     return meta;
@@ -404,7 +438,7 @@ export default function Messages() {
 
   const handleZeitausgleichResponse = async (
     note: Notification,
-    action: "accept" | "decline"
+    action: "accept" | "decline",
   ) => {
     const meta = getZeitausgleichMetadata(note);
     if (!meta) return;
@@ -412,24 +446,33 @@ export default function Messages() {
     setProcessingNotificationIds((prev) => [...prev, note.id]);
     try {
       await plannedAbsencesAdminApi.respond(meta.absenceId, action);
-      const updated = note.isRead ? note : await notificationsApi.markRead(note.id);
+      const updated = note.isRead
+        ? note
+        : await notificationsApi.markRead(note.id);
       setNotifications((prev) =>
-        prev.map((item) => (item.id === note.id ? { ...item, ...updated } : item))
+        prev.map((item) =>
+          item.id === note.id ? { ...item, ...updated } : item,
+        ),
       );
       toast({
-        title: action === "accept" ? "Zeitausgleich bestaetigt" : "Zeitausgleich abgelehnt",
+        title:
+          action === "accept"
+            ? "Zeitausgleich bestaetigt"
+            : "Zeitausgleich abgelehnt",
         description: meta.startDate
           ? `Antwort fuer ${meta.startDate} gespeichert.`
-          : "Antwort gespeichert."
+          : "Antwort gespeichert.",
       });
     } catch (error) {
       toast({
         title: "Fehler",
         description: "Antwort konnte nicht gespeichert werden",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
-      setProcessingNotificationIds((prev) => prev.filter((id) => id !== note.id));
+      setProcessingNotificationIds((prev) =>
+        prev.filter((id) => id !== note.id),
+      );
     }
   };
 
@@ -470,16 +513,22 @@ export default function Messages() {
               </CardHeader>
               <CardContent className="space-y-3">
                 {loadingNotifications && (
-                  <p className="text-sm text-muted-foreground">Lade Systemnachrichten...</p>
+                  <p className="text-sm text-muted-foreground">
+                    Lade Systemnachrichten...
+                  </p>
                 )}
                 {!loadingNotifications && notifications.length === 0 && (
-                  <p className="text-sm text-muted-foreground">Keine Systemnachrichten vorhanden.</p>
+                  <p className="text-sm text-muted-foreground">
+                    Keine Systemnachrichten vorhanden.
+                  </p>
                 )}
                 {!loadingNotifications && notifications.length > 0 && (
                   <div className="space-y-3">
                     {notifications.map((note) => {
                       const zeitausgleichMeta = getZeitausgleichMetadata(note);
-                      const isProcessing = processingNotificationIds.includes(note.id);
+                      const isProcessing = processingNotificationIds.includes(
+                        note.id,
+                      );
                       return (
                         <div
                           key={note.id}
@@ -489,12 +538,20 @@ export default function Messages() {
                         >
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
-                              <p className="text-sm font-semibold">{note.title}</p>
-                              <p className="text-xs text-muted-foreground">{formatTimestamp(note.createdAt)}</p>
+                              <p className="text-sm font-semibold">
+                                {note.title}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {formatTimestamp(note.createdAt)}
+                              </p>
                             </div>
                             <div className="flex items-center gap-2">
                               {!note.isRead && (
-                                <Button size="sm" variant="secondary" onClick={() => handleMarkRead(note)}>
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => handleMarkRead(note)}
+                                >
                                   Gelesen
                                 </Button>
                               )}
@@ -513,7 +570,9 @@ export default function Messages() {
                               <Button
                                 size="icon"
                                 variant="ghost"
-                                onClick={() => handleDeleteNotification(note.id)}
+                                onClick={() =>
+                                  handleDeleteNotification(note.id)
+                                }
                               >
                                 <Trash2 className="w-4 h-4" />
                               </Button>
@@ -528,7 +587,9 @@ export default function Messages() {
                             <div className="flex flex-wrap items-center gap-2 pt-2">
                               <Button
                                 size="sm"
-                                onClick={() => handleZeitausgleichResponse(note, "accept")}
+                                onClick={() =>
+                                  handleZeitausgleichResponse(note, "accept")
+                                }
                                 disabled={isProcessing}
                               >
                                 Bestaetigen
@@ -536,13 +597,17 @@ export default function Messages() {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => handleZeitausgleichResponse(note, "decline")}
+                                onClick={() =>
+                                  handleZeitausgleichResponse(note, "decline")
+                                }
                                 disabled={isProcessing}
                               >
                                 Ablehnen
                               </Button>
                               {isProcessing && (
-                                <span className="text-xs text-muted-foreground">Antwort wird gespeichert...</span>
+                                <span className="text-xs text-muted-foreground">
+                                  Antwort wird gespeichert...
+                                </span>
                               )}
                             </div>
                           )}
@@ -573,10 +638,14 @@ export default function Messages() {
                   />
                   <ScrollArea className="flex-1 pr-2">
                     {loadingThreads && (
-                      <p className="text-sm text-muted-foreground">Lade Threads...</p>
+                      <p className="text-sm text-muted-foreground">
+                        Lade Threads...
+                      </p>
                     )}
                     {!loadingThreads && filteredThreads.length === 0 && (
-                      <p className="text-sm text-muted-foreground">Keine Threads gefunden.</p>
+                      <p className="text-sm text-muted-foreground">
+                        Keine Threads gefunden.
+                      </p>
                     )}
                     {!loadingThreads && filteredThreads.length > 0 && (
                       <div className="space-y-2">
@@ -588,7 +657,9 @@ export default function Messages() {
                               type="button"
                               onClick={() => openThread(thread.id)}
                               className={`w-full text-left border rounded-lg p-3 transition-colors ${
-                                isActive ? "border-primary bg-primary/5" : "border-border hover:bg-muted"
+                                isActive
+                                  ? "border-primary bg-primary/5"
+                                  : "border-border hover:bg-muted"
                               }`}
                             >
                               <div className="flex items-center justify-between gap-2">
@@ -596,7 +667,10 @@ export default function Messages() {
                                   {getThreadTitle(thread)}
                                 </p>
                                 {thread.type === "group" && (
-                                  <Badge variant="secondary" className="text-[10px]">
+                                  <Badge
+                                    variant="secondary"
+                                    className="text-[10px]"
+                                  >
                                     Gruppe
                                   </Badge>
                                 )}
@@ -619,16 +693,24 @@ export default function Messages() {
                 <CardHeader className="flex flex-row items-center justify-between">
                   <div>
                     <CardTitle className="text-base">
-                      {selectedThread ? getThreadTitle(selectedThread) : "Thread auswaehlen"}
+                      {selectedThread
+                        ? getThreadTitle(selectedThread)
+                        : "Thread auswaehlen"}
                     </CardTitle>
                     {selectedThread && (
                       <p className="text-xs text-muted-foreground">
-                        {selectedThread.type === "group" ? "Gruppe" : "Direktnachricht"}
+                        {selectedThread.type === "group"
+                          ? "Gruppe"
+                          : "Direktnachricht"}
                       </p>
                     )}
                   </div>
                   {selectedThread && canEditGroup && (
-                    <Button size="sm" variant="outline" onClick={openGroupEditor}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={openGroupEditor}
+                    >
                       <Pencil className="w-4 h-4 mr-1" />
                       Gruppe bearbeiten
                     </Button>
@@ -644,10 +726,14 @@ export default function Messages() {
                     <>
                       <ScrollArea className="flex-1 pr-2">
                         {loadingMessages && (
-                          <p className="text-sm text-muted-foreground">Lade Nachrichten...</p>
+                          <p className="text-sm text-muted-foreground">
+                            Lade Nachrichten...
+                          </p>
                         )}
                         {!loadingMessages && messages.length === 0 && (
-                          <p className="text-sm text-muted-foreground">Noch keine Nachrichten.</p>
+                          <p className="text-sm text-muted-foreground">
+                            Noch keine Nachrichten.
+                          </p>
                         )}
                         {!loadingMessages && messages.length > 0 && (
                           <div className="space-y-3">
@@ -657,7 +743,9 @@ export default function Messages() {
                                 <div
                                   key={msg.id}
                                   className={`rounded-lg p-3 border ${
-                                    isOwn ? "bg-primary/5 border-primary/20" : "bg-white"
+                                    isOwn
+                                      ? "bg-primary/5 border-primary/20"
+                                      : "bg-white"
                                   }`}
                                 >
                                   <div className="flex items-center justify-between gap-2">
@@ -665,7 +753,7 @@ export default function Messages() {
                                       {msg.senderName || msg.senderLastName
                                         ? displayMemberName({
                                             name: msg.senderName,
-                                            lastName: msg.senderLastName
+                                            lastName: msg.senderLastName,
                                           })
                                         : "Unbekannt"}
                                     </p>
@@ -687,10 +775,15 @@ export default function Messages() {
                         <Textarea
                           placeholder="Nachricht schreiben..."
                           value={messageDraft}
-                          onChange={(event) => setMessageDraft(event.target.value)}
+                          onChange={(event) =>
+                            setMessageDraft(event.target.value)
+                          }
                           className="min-h-[80px]"
                         />
-                        <Button onClick={handleSendMessage} disabled={!messageDraft.trim()}>
+                        <Button
+                          onClick={handleSendMessage}
+                          disabled={!messageDraft.trim()}
+                        >
                           <Send className="w-4 h-4 mr-1" />
                           Senden
                         </Button>
@@ -741,19 +834,32 @@ export default function Messages() {
             <ScrollArea className="max-h-60 pr-2">
               <div className="space-y-2">
                 {filteredEmployees.map((emp) => (
-                  <label key={emp.id} className="flex items-center gap-3 text-sm">
+                  <label
+                    key={emp.id}
+                    className="flex items-center gap-3 text-sm"
+                  >
                     <Checkbox
                       checked={newThreadMemberIds.includes(emp.id)}
                       onCheckedChange={() =>
-                        toggleMemberSelection(newThreadMemberIds, setNewThreadMemberIds, emp.id)
+                        toggleMemberSelection(
+                          newThreadMemberIds,
+                          setNewThreadMemberIds,
+                          emp.id,
+                        )
                       }
                     />
-                    <span>{emp.firstName} {emp.lastName}</span>
-                    <span className="text-xs text-muted-foreground">{emp.role}</span>
+                    <span>
+                      {emp.firstName} {emp.lastName}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {emp.role}
+                    </span>
                   </label>
                 ))}
                 {filteredEmployees.length === 0 && (
-                  <p className="text-sm text-muted-foreground">Keine Mitarbeiter gefunden.</p>
+                  <p className="text-sm text-muted-foreground">
+                    Keine Mitarbeiter gefunden.
+                  </p>
                 )}
               </div>
             </ScrollArea>
@@ -789,19 +895,32 @@ export default function Messages() {
             <ScrollArea className="max-h-60 pr-2">
               <div className="space-y-2">
                 {filteredGroupEmployees.map((emp) => (
-                  <label key={emp.id} className="flex items-center gap-3 text-sm">
+                  <label
+                    key={emp.id}
+                    className="flex items-center gap-3 text-sm"
+                  >
                     <Checkbox
                       checked={groupMemberIds.includes(emp.id)}
                       onCheckedChange={() =>
-                        toggleMemberSelection(groupMemberIds, setGroupMemberIds, emp.id)
+                        toggleMemberSelection(
+                          groupMemberIds,
+                          setGroupMemberIds,
+                          emp.id,
+                        )
                       }
                     />
-                    <span>{emp.firstName} {emp.lastName}</span>
-                    <span className="text-xs text-muted-foreground">{emp.role}</span>
+                    <span>
+                      {emp.firstName} {emp.lastName}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {emp.role}
+                    </span>
                   </label>
                 ))}
                 {filteredGroupEmployees.length === 0 && (
-                  <p className="text-sm text-muted-foreground">Keine Mitarbeiter gefunden.</p>
+                  <p className="text-sm text-muted-foreground">
+                    Keine Mitarbeiter gefunden.
+                  </p>
                 )}
               </div>
             </ScrollArea>

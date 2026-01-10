@@ -1,8 +1,18 @@
 import type { Router } from "express";
 import { ok, created, notFound, asyncHandler } from "../../lib/api-response";
-import { validateBody, validateParams, idParamSchema } from "../../lib/validate";
+import {
+  validateBody,
+  validateParams,
+  idParamSchema,
+} from "../../lib/validate";
 import { db, eq } from "../../lib/db";
-import { competencies, employeeCompetencies, insertCompetencySchema, diplomas, competencyDiplomas } from "@shared/schema";
+import {
+  competencies,
+  employeeCompetencies,
+  insertCompetencySchema,
+  diplomas,
+  competencyDiplomas,
+} from "@shared/schema";
 import { z } from "zod";
 
 /**
@@ -11,56 +21,68 @@ import { z } from "zod";
  */
 export function registerCompetencyRoutes(router: Router) {
   const diplomasUpdateSchema = z.object({
-    diplomaIds: z.array(z.number().positive("Diplom-ID muss positiv sein"))
+    diplomaIds: z.array(z.number().positive("Diplom-ID muss positiv sein")),
   });
 
   /**
    * GET /api/competencies
    * Get all competencies
    */
-  router.get("/", asyncHandler(async (req, res) => {
-    // TODO: Implement via storage interface
-    const result = await db.select().from(competencies);
-    return ok(res, result);
-  }));
+  router.get(
+    "/",
+    asyncHandler(async (req, res) => {
+      // TODO: Implement via storage interface
+      const result = await db.select().from(competencies);
+      return ok(res, result);
+    }),
+  );
 
   /**
    * GET /api/competencies/:id
    * Get competency by ID
    */
-  router.get("/:id",
+  router.get(
+    "/:id",
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
       const { id } = req.params;
       // TODO: Implement via storage interface
-      const [competency] = await db.select().from(competencies).where(eq(competencies.id, Number(id)));
-      
+      const [competency] = await db
+        .select()
+        .from(competencies)
+        .where(eq(competencies.id, Number(id)));
+
       if (!competency) {
         return notFound(res, "Kompetenz");
       }
-      
+
       return ok(res, competency);
-    })
+    }),
   );
 
   /**
    * POST /api/competencies
    * Create new competency
    */
-  router.post("/",
+  router.post(
+    "/",
     validateBody(insertCompetencySchema),
     asyncHandler(async (req, res) => {
       // TODO: Implement via storage interface
-      const [competency] = await db.insert(competencies).values(req.body).returning();
+      const [competency] = await db
+        .insert(competencies)
+        .values(req.body)
+        .returning();
       return created(res, competency);
-    })
+    }),
   );
 
   /**
    * PUT /api/competencies/:id
    * Update competency
    */
-  router.put("/:id",
+  router.put(
+    "/:id",
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
       const { id } = req.params;
@@ -70,34 +92,38 @@ export function registerCompetencyRoutes(router: Router) {
         .set(req.body)
         .where(eq(competencies.id, Number(id)))
         .returning();
-      
+
       if (!competency) {
         return notFound(res, "Kompetenz");
       }
-      
+
       return ok(res, competency);
-    })
+    }),
   );
 
   /**
    * DELETE /api/competencies/:id
    * Delete competency
    */
-  router.delete("/:id",
+  router.delete(
+    "/:id",
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
       const { id } = req.params;
       // TODO: Implement via storage interface
-      const result = await db.delete(competencies).where(eq(competencies.id, Number(id)));
+      const result = await db
+        .delete(competencies)
+        .where(eq(competencies.id, Number(id)));
       return ok(res, { deleted: true });
-    })
+    }),
   );
 
   /**
    * GET /api/competencies/employee/:employeeId
    * Get competencies for a specific employee
    */
-  router.get("/employee/:employeeId",
+  router.get(
+    "/employee/:employeeId",
     asyncHandler(async (req, res) => {
       const { employeeId } = req.params;
       // TODO: Implement via storage interface - join employee_competencies with competencies
@@ -106,7 +132,7 @@ export function registerCompetencyRoutes(router: Router) {
         .from(employeeCompetencies)
         .where(eq(employeeCompetencies.employeeId, Number(employeeId)));
       return ok(res, result);
-    })
+    }),
   );
 
   /**
@@ -114,7 +140,8 @@ export function registerCompetencyRoutes(router: Router) {
    * Replace diploma prerequisites for a competency
    * Body: { diplomaIds: number[] }
    */
-  router.put("/:id/diplomas",
+  router.put(
+    "/:id/diplomas",
     validateParams(idParamSchema),
     validateBody(diplomasUpdateSchema),
     asyncHandler(async (req, res) => {
@@ -122,7 +149,10 @@ export function registerCompetencyRoutes(router: Router) {
       const competencyId = Number(id);
       const { diplomaIds } = req.body;
 
-      const [existing] = await db.select().from(competencies).where(eq(competencies.id, competencyId));
+      const [existing] = await db
+        .select()
+        .from(competencies)
+        .where(eq(competencies.id, competencyId));
       if (!existing) {
         return notFound(res, "Kompetenz");
       }
@@ -134,12 +164,10 @@ export function registerCompetencyRoutes(router: Router) {
       if (diplomaIds.length > 0) {
         const newDiplomas = diplomaIds.map((diplomaId: number) => ({
           competencyId,
-          diplomaId
+          diplomaId,
         }));
 
-        await db
-          .insert(competencyDiplomas)
-          .values(newDiplomas);
+        await db.insert(competencyDiplomas).values(newDiplomas);
       }
 
       const updatedDiplomas = await db
@@ -147,7 +175,7 @@ export function registerCompetencyRoutes(router: Router) {
           diplomaId: competencyDiplomas.diplomaId,
           name: diplomas.name,
           description: diplomas.description,
-          isActive: diplomas.isActive
+          isActive: diplomas.isActive,
         })
         .from(competencyDiplomas)
         .leftJoin(diplomas, eq(competencyDiplomas.diplomaId, diplomas.id))
@@ -156,22 +184,26 @@ export function registerCompetencyRoutes(router: Router) {
       return ok(res, {
         id: competencyId,
         diplomas: updatedDiplomas,
-        count: updatedDiplomas.length
+        count: updatedDiplomas.length,
       });
-    })
+    }),
   );
 
   /**
    * GET /api/competencies/:id/diplomas
    * Get diploma prerequisites for a competency
    */
-  router.get("/:id/diplomas",
+  router.get(
+    "/:id/diplomas",
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
       const { id } = req.params;
       const competencyId = Number(id);
 
-      const [existing] = await db.select().from(competencies).where(eq(competencies.id, competencyId));
+      const [existing] = await db
+        .select()
+        .from(competencies)
+        .where(eq(competencies.id, competencyId));
       if (!existing) {
         return notFound(res, "Kompetenz");
       }
@@ -181,14 +213,14 @@ export function registerCompetencyRoutes(router: Router) {
           diplomaId: competencyDiplomas.diplomaId,
           name: diplomas.name,
           description: diplomas.description,
-          isActive: diplomas.isActive
+          isActive: diplomas.isActive,
         })
         .from(competencyDiplomas)
         .leftJoin(diplomas, eq(competencyDiplomas.diplomaId, diplomas.id))
         .where(eq(competencyDiplomas.competencyId, competencyId));
 
       return ok(res, requiredDiplomas);
-    })
+    }),
   );
 
   return router;

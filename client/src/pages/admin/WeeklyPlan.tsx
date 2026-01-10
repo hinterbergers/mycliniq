@@ -1,5 +1,22 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { format, startOfWeek, endOfWeek, addWeeks, subWeeks, getWeek, getYear, eachDayOfInterval, addDays } from "date-fns";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  format,
+  startOfWeek,
+  endOfWeek,
+  addWeeks,
+  subWeeks,
+  getWeek,
+  getYear,
+  eachDayOfInterval,
+  addDays,
+} from "date-fns";
 import { de } from "date-fns/locale";
 import {
   ArrowLeft,
@@ -14,16 +31,28 @@ import {
   Info,
   Lock,
   Unlock,
-  StickyNote
+  StickyNote,
 } from "lucide-react";
 
 import { Layout } from "@/components/layout/Layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -37,7 +66,7 @@ import {
   weeklyPlanApi,
   type PlannedAbsenceAdmin,
   type WeeklyPlanAssignmentResponse,
-  type WeeklyPlanResponse
+  type WeeklyPlanResponse,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -53,7 +82,7 @@ import {
   getRoomSettingForDate,
   isEmployeeAbsentOnDate,
   isEmployeeEligibleForRoom,
-  isEmployeeOnDutyDate
+  isEmployeeOnDutyDate,
 } from "@/lib/weeklyPlanUtils";
 
 const ROLE_COLORS: Record<string, string> = {
@@ -69,7 +98,7 @@ const ROLE_COLORS: Record<string, string> = {
   Turnusarzt: "bg-amber-100 text-amber-800 border-amber-200",
   "Student (KPJ)": "bg-orange-100 text-orange-800 border-orange-200",
   "Student (Famulant)": "bg-orange-100 text-orange-800 border-orange-200",
-  Sekretariat: "bg-slate-100 text-slate-700 border-slate-200"
+  Sekretariat: "bg-slate-100 text-slate-700 border-slate-200",
 };
 
 const ROLE_BADGES: Record<string, string> = {
@@ -85,7 +114,7 @@ const ROLE_BADGES: Record<string, string> = {
   Turnusarzt: "TA",
   "Student (KPJ)": "KPJ",
   "Student (Famulant)": "FAM",
-  Sekretariat: "SEK"
+  Sekretariat: "SEK",
 };
 
 const ROLE_GROUP_ORDER: Record<string, number> = {
@@ -99,7 +128,7 @@ const ROLE_GROUP_ORDER: Record<string, number> = {
   turnus: 8,
   student: 9,
   sonstige: 90,
-  sekretariat: 99
+  sekretariat: 99,
 };
 
 const normalizeRole = (role?: string | null) => {
@@ -121,7 +150,8 @@ const getRoleGroupKey = (role?: string | null) => {
   if (!normalized) return "sonstige";
   const compact = normalized.replace(/\s+/g, "");
   if (normalized.includes("sekretariat")) return "sekretariat";
-  if (compact.includes("primar") || compact.includes("primaer")) return "primar";
+  if (compact.includes("primar") || compact.includes("primaer"))
+    return "primar";
   if (
     normalized.includes("1 oberarzt") ||
     normalized.includes("1 oberaerzt") ||
@@ -131,20 +161,42 @@ const getRoleGroupKey = (role?: string | null) => {
     normalized.includes("erste oberaerzt")
   )
     return "erster_oa";
-  if (compact.includes("funktionsoberarzt") || compact.includes("funktionsoberaerzt")) return "funktions_oa";
-  if (compact.includes("ausbildungsoberarzt") || compact.includes("ausbildungsoberaerzt")) return "ausbildungs_oa";
-  if (compact.includes("oberarzt") || compact.includes("oberaerzt")) return "oberarzt";
-  if (compact.includes("facharzt") || compact.includes("fachaerzt")) return "facharzt";
-  if (compact.includes("assistenzarzt") || compact.includes("assistenzaerzt")) return "assistenzarzt";
-  if (compact.includes("turnusarzt") || compact.includes("turnusaerzt") || normalized.includes("turnus"))
+  if (
+    compact.includes("funktionsoberarzt") ||
+    compact.includes("funktionsoberaerzt")
+  )
+    return "funktions_oa";
+  if (
+    compact.includes("ausbildungsoberarzt") ||
+    compact.includes("ausbildungsoberaerzt")
+  )
+    return "ausbildungs_oa";
+  if (compact.includes("oberarzt") || compact.includes("oberaerzt"))
+    return "oberarzt";
+  if (compact.includes("facharzt") || compact.includes("fachaerzt"))
+    return "facharzt";
+  if (compact.includes("assistenzarzt") || compact.includes("assistenzaerzt"))
+    return "assistenzarzt";
+  if (
+    compact.includes("turnusarzt") ||
+    compact.includes("turnusaerzt") ||
+    normalized.includes("turnus")
+  )
     return "turnus";
-  if (normalized.includes("student") || normalized.includes("kpj") || normalized.includes("famul")) return "student";
+  if (
+    normalized.includes("student") ||
+    normalized.includes("kpj") ||
+    normalized.includes("famul")
+  )
+    return "student";
   return "sonstige";
 };
 
 const compareAvailabilityEmployees = (a: Employee, b: Employee) => {
-  const groupA = ROLE_GROUP_ORDER[getRoleGroupKey(a.role)] ?? ROLE_GROUP_ORDER.sonstige;
-  const groupB = ROLE_GROUP_ORDER[getRoleGroupKey(b.role)] ?? ROLE_GROUP_ORDER.sonstige;
+  const groupA =
+    ROLE_GROUP_ORDER[getRoleGroupKey(a.role)] ?? ROLE_GROUP_ORDER.sonstige;
+  const groupB =
+    ROLE_GROUP_ORDER[getRoleGroupKey(b.role)] ?? ROLE_GROUP_ORDER.sonstige;
   if (groupA !== groupB) return groupA - groupB;
   const lastA = (a.lastName || a.name || "").toLocaleLowerCase("de");
   const lastB = (b.lastName || b.name || "").toLocaleLowerCase("de");
@@ -152,24 +204,27 @@ const compareAvailabilityEmployees = (a: Employee, b: Employee) => {
   const firstA = (a.firstName || "").toLocaleLowerCase("de");
   const firstB = (b.firstName || "").toLocaleLowerCase("de");
   if (firstA !== firstB) return firstA.localeCompare(firstB, "de");
-  return getEmployeeDisplayName(a).localeCompare(getEmployeeDisplayName(b), "de");
+  return getEmployeeDisplayName(a).localeCompare(
+    getEmployeeDisplayName(b),
+    "de",
+  );
 };
 
 const statusBadgeStyles: Record<WeeklyPlanResponse["status"], string> = {
   Entwurf: "bg-amber-50 text-amber-700 border-amber-200",
   Vorläufig: "bg-sky-50 text-sky-700 border-sky-200",
-  Freigegeben: "bg-green-50 text-green-700 border-green-200"
+  Freigegeben: "bg-green-50 text-green-700 border-green-200",
 };
 
 const ZEITAUSGLEICH_STATUS_STYLES: Record<string, string> = {
   Geplant: "bg-amber-50 text-amber-700 border-amber-200",
   Genehmigt: "bg-green-50 text-green-700 border-green-200",
-  Abgelehnt: "bg-rose-50 text-rose-700 border-rose-200"
+  Abgelehnt: "bg-rose-50 text-rose-700 border-rose-200",
 };
 
 const getWeekKey = (date: Date) => ({
   year: getYear(startOfWeek(date, { weekStartsOn: 1 })),
-  week: getWeek(date, { weekStartsOn: 1 })
+  week: getWeek(date, { weekStartsOn: 1 }),
 });
 
 const formatDateRange = (start: Date, end: Date) =>
@@ -192,8 +247,12 @@ export default function WeeklyPlan() {
   const [rooms, setRooms] = useState<WeeklyPlanRoom[]>([]);
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlanResponse | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [plannedAbsences, setPlannedAbsences] = useState<PlannedAbsenceAdmin[]>([]);
-  const [longTermAbsences, setLongTermAbsences] = useState<LongTermAbsence[]>([]);
+  const [plannedAbsences, setPlannedAbsences] = useState<PlannedAbsenceAdmin[]>(
+    [],
+  );
+  const [longTermAbsences, setLongTermAbsences] = useState<LongTermAbsence[]>(
+    [],
+  );
   const [rosterShifts, setRosterShifts] = useState<RosterShift[]>([]);
   const [noteDialog, setNoteDialog] = useState<NoteDialogState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -230,18 +289,29 @@ export default function WeeklyPlan() {
     };
   }, []);
 
-  const weekStart = useMemo(() => startOfWeek(currentDate, { weekStartsOn: 1 }), [currentDate]);
-  const weekEnd = useMemo(() => endOfWeek(currentDate, { weekStartsOn: 1 }), [currentDate]);
-  const weekNumber = useMemo(() => getWeek(currentDate, { weekStartsOn: 1 }), [currentDate]);
+  const weekStart = useMemo(
+    () => startOfWeek(currentDate, { weekStartsOn: 1 }),
+    [currentDate],
+  );
+  const weekEnd = useMemo(
+    () => endOfWeek(currentDate, { weekStartsOn: 1 }),
+    [currentDate],
+  );
+  const weekNumber = useMemo(
+    () => getWeek(currentDate, { weekStartsOn: 1 }),
+    [currentDate],
+  );
   const weekYear = useMemo(() => getYear(weekStart), [weekStart]);
 
   const days = useMemo(
     () => eachDayOfInterval({ start: weekStart, end: addDays(weekStart, 6) }),
-    [weekStart]
+    [weekStart],
   );
 
   const selectedDayDate = days[selectedWeekday - 1] ?? days[0];
-  const selectedDateKey = selectedDayDate ? format(selectedDayDate, "yyyy-MM-dd") : "";
+  const selectedDateKey = selectedDayDate
+    ? format(selectedDayDate, "yyyy-MM-dd")
+    : "";
 
   const weekOptions = useMemo(() => {
     return Array.from({ length: 16 }, (_, i) => {
@@ -288,7 +358,10 @@ export default function WeeklyPlan() {
       const counts = new Map<number, number>();
       dayAssignments.forEach((assignment) => {
         if (!assignment.employeeId) return;
-        counts.set(assignment.employeeId, (counts.get(assignment.employeeId) ?? 0) + 1);
+        counts.set(
+          assignment.employeeId,
+          (counts.get(assignment.employeeId) ?? 0) + 1,
+        );
       });
       const duplicates = new Set<number>();
       counts.forEach((count, employeeId) => {
@@ -306,8 +379,19 @@ export default function WeeklyPlan() {
       const previousDay = addDays(day, -1);
       const available = employees
         .filter((employee) => employee.isActive)
-        .filter((employee) => !isEmployeeAbsentOnDate(employee, day, plannedAbsences, longTermAbsences))
-        .filter((employee) => !isEmployeeOnDutyDate(employee.id, previousDay, rosterShifts))
+        .filter(
+          (employee) =>
+            !isEmployeeAbsentOnDate(
+              employee,
+              day,
+              plannedAbsences,
+              longTermAbsences,
+            ),
+        )
+        .filter(
+          (employee) =>
+            !isEmployeeOnDutyDate(employee.id, previousDay, rosterShifts),
+        )
         .filter((employee) => getRoleGroupKey(employee.role) !== "sekretariat")
         .sort(compareAvailabilityEmployees);
       map.set(weekday, available);
@@ -321,11 +405,11 @@ export default function WeeklyPlan() {
       const assignedIds = new Set(
         (assignmentsByWeekday.get(weekday) ?? [])
           .map((assignment) => assignment.employeeId)
-          .filter((id): id is number => typeof id === "number")
+          .filter((id): id is number => typeof id === "number"),
       );
       map.set(
         weekday,
-        available.filter((employee) => !assignedIds.has(employee.id))
+        available.filter((employee) => !assignedIds.has(employee.id)),
       );
     });
     return map;
@@ -352,7 +436,7 @@ export default function WeeklyPlan() {
       (absence) =>
         absence.reason === "Zeitausgleich" &&
         absence.startDate <= selectedDateKey &&
-        absence.endDate >= selectedDateKey
+        absence.endDate >= selectedDateKey,
     );
   }, [plannedAbsences, selectedDateKey]);
 
@@ -364,25 +448,39 @@ export default function WeeklyPlan() {
           absence.reason === "Zeitausgleich" &&
           absence.status === "Abgelehnt" &&
           absence.startDate <= selectedDateKey &&
-          absence.endDate >= selectedDateKey
+          absence.endDate >= selectedDateKey,
       )
       .map((absence) => absence.employeeId);
     return new Set(ids);
   }, [plannedAbsences, selectedDateKey]);
 
   const activeRoomsByDay = useMemo(() => {
-    const map = new Map<number, Array<{ room: WeeklyPlanRoom; setting: ReturnType<typeof getRoomSettingForDate> }>>();
+    const map = new Map<
+      number,
+      Array<{
+        room: WeeklyPlanRoom;
+        setting: ReturnType<typeof getRoomSettingForDate>;
+      }>
+    >();
     days.forEach((day) => {
       const weekday = day.getDay() === 0 ? 7 : day.getDay();
       const dayRooms = rooms
         .map((room) => ({ room, setting: getRoomSettingForDate(room, day) }))
         .filter((item) => Boolean(item.setting) && !item.setting?.isClosed)
         .sort((a, b) => {
-          const orderDiff = (a.room.weeklyPlanSortOrder ?? 0) - (b.room.weeklyPlanSortOrder ?? 0);
+          const orderDiff =
+            (a.room.weeklyPlanSortOrder ?? 0) -
+            (b.room.weeklyPlanSortOrder ?? 0);
           if (orderDiff !== 0) return orderDiff;
           return a.room.name.localeCompare(b.room.name);
         });
-      map.set(weekday, dayRooms as Array<{ room: WeeklyPlanRoom; setting: ReturnType<typeof getRoomSettingForDate> }>);
+      map.set(
+        weekday,
+        dayRooms as Array<{
+          room: WeeklyPlanRoom;
+          setting: ReturnType<typeof getRoomSettingForDate>;
+        }>,
+      );
     });
     return map;
   }, [days, rooms]);
@@ -393,26 +491,51 @@ export default function WeeklyPlan() {
       const from = format(weekStart, "yyyy-MM-dd");
       const to = format(weekEnd, "yyyy-MM-dd");
       const dayBeforeWeekStart = addDays(weekStart, -1);
-      const monthStart = { year: weekStart.getFullYear(), month: weekStart.getMonth() + 1 };
-      const monthEnd = { year: weekEnd.getFullYear(), month: weekEnd.getMonth() + 1 };
-      const monthBefore = { year: dayBeforeWeekStart.getFullYear(), month: dayBeforeWeekStart.getMonth() + 1 };
+      const monthStart = {
+        year: weekStart.getFullYear(),
+        month: weekStart.getMonth() + 1,
+      };
+      const monthEnd = {
+        year: weekEnd.getFullYear(),
+        month: weekEnd.getMonth() + 1,
+      };
+      const monthBefore = {
+        year: dayBeforeWeekStart.getFullYear(),
+        month: dayBeforeWeekStart.getMonth() + 1,
+      };
       const monthKeys = [monthStart];
-      if (monthStart.year !== monthEnd.year || monthStart.month !== monthEnd.month) {
+      if (
+        monthStart.year !== monthEnd.year ||
+        monthStart.month !== monthEnd.month
+      ) {
         monthKeys.push(monthEnd);
       }
-      if (!monthKeys.some((key) => key.year === monthBefore.year && key.month === monthBefore.month)) {
+      if (
+        !monthKeys.some(
+          (key) =>
+            key.year === monthBefore.year && key.month === monthBefore.month,
+        )
+      ) {
         monthKeys.push(monthBefore);
       }
 
-      const [roomsData, planData, employeesData, longTermData, plannedData, rosterData] =
-        await Promise.all([
-          roomApi.getWeeklyPlan(),
-          weeklyPlanApi.getByWeek(weekYear, weekNumber, true),
-          employeeApi.getAll(),
-          longTermAbsencesApi.getByStatus("Genehmigt", from, to),
-          plannedAbsencesAdminApi.getRange({ from, to }),
-          Promise.all(monthKeys.map((key) => rosterApi.getByMonth(key.year, key.month)))
-        ]);
+      const [
+        roomsData,
+        planData,
+        employeesData,
+        longTermData,
+        plannedData,
+        rosterData,
+      ] = await Promise.all([
+        roomApi.getWeeklyPlan(),
+        weeklyPlanApi.getByWeek(weekYear, weekNumber, true),
+        employeeApi.getAll(),
+        longTermAbsencesApi.getByStatus("Genehmigt", from, to),
+        plannedAbsencesAdminApi.getRange({ from, to }),
+        Promise.all(
+          monthKeys.map((key) => rosterApi.getByMonth(key.year, key.month)),
+        ),
+      ]);
 
       setRooms(roomsData);
       setWeeklyPlan(planData);
@@ -425,7 +548,7 @@ export default function WeeklyPlan() {
       toast({
         title: "Fehler",
         description: "Wochenplan-Daten konnten nicht geladen werden.",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setIsLoading(false);
@@ -447,7 +570,11 @@ export default function WeeklyPlan() {
     setRoomOrderIds([]);
   }, [selectedWeekday, weekNumber, weekYear]);
 
-  const handleAssignEmployee = async (roomId: number, weekday: number, employeeId: number) => {
+  const handleAssignEmployee = async (
+    roomId: number,
+    weekday: number,
+    employeeId: number,
+  ) => {
     if (!weeklyPlan) return;
     if (isPlanReleased || lockedWeekdays.includes(weekday)) return;
 
@@ -457,17 +584,19 @@ export default function WeeklyPlan() {
         roomId,
         weekday,
         employeeId,
-        assignmentType: "Plan"
+        assignmentType: "Plan",
       });
       setWeeklyPlan((prev) =>
-        prev ? { ...prev, assignments: [...prev.assignments, assignment] } : prev
+        prev
+          ? { ...prev, assignments: [...prev.assignments, assignment] }
+          : prev,
       );
     } catch (error) {
       console.error("Failed to assign employee", error);
       toast({
         title: "Zuweisung fehlgeschlagen",
         description: "Der Mitarbeiter konnte nicht zugewiesen werden.",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setIsSaving(false);
@@ -482,45 +611,65 @@ export default function WeeklyPlan() {
     try {
       await weeklyPlanApi.deleteAssignment(assignmentId);
       setWeeklyPlan((prev) =>
-        prev ? { ...prev, assignments: prev.assignments.filter((item) => item.id !== assignmentId) } : prev
+        prev
+          ? {
+              ...prev,
+              assignments: prev.assignments.filter(
+                (item) => item.id !== assignmentId,
+              ),
+            }
+          : prev,
       );
     } catch (error) {
       console.error("Failed to delete assignment", error);
       toast({
         title: "Entfernen fehlgeschlagen",
         description: "Der Eintrag konnte nicht entfernt werden.",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleDuplicateAssignment = async (roomId: number, weekday: number, employeeId: number) => {
+  const handleDuplicateAssignment = async (
+    roomId: number,
+    weekday: number,
+    employeeId: number,
+  ) => {
     await handleAssignEmployee(roomId, weekday, employeeId);
   };
 
-  const handleMoveAssignment = async (assignmentId: number, roomId: number, weekday: number) => {
+  const handleMoveAssignment = async (
+    assignmentId: number,
+    roomId: number,
+    weekday: number,
+  ) => {
     if (!weeklyPlan) return;
     if (isPlanReleased || lockedWeekdays.includes(weekday)) return;
 
     setIsSaving(true);
     try {
-      const updated = await weeklyPlanApi.updateAssignment(assignmentId, { roomId, weekday });
+      const updated = await weeklyPlanApi.updateAssignment(assignmentId, {
+        roomId,
+        weekday,
+      });
       setWeeklyPlan((prev) =>
         prev
           ? {
               ...prev,
-              assignments: prev.assignments.map((item) => (item.id === updated.id ? updated : item))
+              assignments: prev.assignments.map((item) =>
+                item.id === updated.id ? updated : item,
+              ),
             }
-          : prev
+          : prev,
       );
     } catch (error) {
       console.error("Failed to move assignment", error);
       toast({
         title: "Verschieben fehlgeschlagen",
         description: "Die Zuweisung konnte nicht verschoben werden.",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setIsSaving(false);
@@ -530,14 +679,17 @@ export default function WeeklyPlan() {
   const handleOpenNoteDialog = (roomId: number, weekday: number) => {
     const existing = assignmentsByDayRoom
       .get(`${weekday}-${roomId}`)
-      ?.find((assignment) => !assignment.employeeId && (assignment.note || assignment.isBlocked));
+      ?.find(
+        (assignment) =>
+          !assignment.employeeId && (assignment.note || assignment.isBlocked),
+      );
 
     setNoteDialog({
       roomId,
       weekday,
       note: existing?.note ?? "",
       isBlocked: existing?.isBlocked ?? false,
-      assignmentId: existing?.id ?? null
+      assignmentId: existing?.id ?? null,
     });
   };
 
@@ -550,7 +702,7 @@ export default function WeeklyPlan() {
         roomId: noteDialog.roomId,
         weekday: noteDialog.weekday,
         note: noteDialog.note.trim() ? noteDialog.note.trim() : null,
-        isBlocked: noteDialog.isBlocked
+        isBlocked: noteDialog.isBlocked,
       };
 
       if (noteDialog.assignmentId) {
@@ -560,26 +712,35 @@ export default function WeeklyPlan() {
             prev
               ? {
                   ...prev,
-                  assignments: prev.assignments.filter((item) => item.id !== noteDialog.assignmentId)
+                  assignments: prev.assignments.filter(
+                    (item) => item.id !== noteDialog.assignmentId,
+                  ),
                 }
-              : prev
+              : prev,
           );
         } else {
-          const updated = await weeklyPlanApi.updateAssignment(noteDialog.assignmentId, payload);
+          const updated = await weeklyPlanApi.updateAssignment(
+            noteDialog.assignmentId,
+            payload,
+          );
           setWeeklyPlan((prev) =>
             prev
               ? {
                   ...prev,
                   assignments: prev.assignments.map((item) =>
-                    item.id === updated.id ? updated : item
-                  )
+                    item.id === updated.id ? updated : item,
+                  ),
                 }
-              : prev
+              : prev,
           );
         }
       } else if (payload.note || payload.isBlocked) {
         const created = await weeklyPlanApi.assign(weeklyPlan.id, payload);
-        setWeeklyPlan((prev) => (prev ? { ...prev, assignments: [...prev.assignments, created] } : prev));
+        setWeeklyPlan((prev) =>
+          prev
+            ? { ...prev, assignments: [...prev.assignments, created] }
+            : prev,
+        );
       }
       setNoteDialog(null);
     } catch (error) {
@@ -587,7 +748,7 @@ export default function WeeklyPlan() {
       toast({
         title: "Hinweis speichern fehlgeschlagen",
         description: "Die Sperre oder Notiz konnte nicht gespeichert werden.",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setIsSaving(false);
@@ -599,13 +760,14 @@ export default function WeeklyPlan() {
     if (isPlanReleased || lockedWeekdays.includes(selectedWeekday)) return;
 
     const alreadyRequested = zeitausgleichAbsencesForSelectedDay.some(
-      (absence) => absence.employeeId === employeeId
+      (absence) => absence.employeeId === employeeId,
     );
     if (alreadyRequested) {
       toast({
         title: "Bereits angefragt",
-        description: "Fuer diese Person besteht bereits ein Zeitausgleich-Eintrag.",
-        variant: "destructive"
+        description:
+          "Fuer diese Person besteht bereits ein Zeitausgleich-Eintrag.",
+        variant: "destructive",
       });
       return;
     }
@@ -616,38 +778,49 @@ export default function WeeklyPlan() {
         employeeId,
         startDate: selectedDateKey,
         endDate: selectedDateKey,
-        reason: "Zeitausgleich"
+        reason: "Zeitausgleich",
       });
       setPlannedAbsences((prev) => [...prev, created]);
       toast({
         title: "Zeitausgleich angefragt",
-        description: "Die Anfrage wurde erstellt und als Abwesenheit vorgemerkt."
+        description:
+          "Die Anfrage wurde erstellt und als Abwesenheit vorgemerkt.",
       });
     } catch (error) {
       console.error("Failed to request zeitausgleich", error);
       toast({
         title: "Zeitausgleich fehlgeschlagen",
         description: "Die Anfrage konnte nicht erstellt werden.",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleMoveAssignmentToZeitausgleich = async (assignmentId: number, employeeId: number) => {
+  const handleMoveAssignmentToZeitausgleich = async (
+    assignmentId: number,
+    employeeId: number,
+  ) => {
     if (!selectedDateKey) return;
     if (isPlanReleased || lockedWeekdays.includes(selectedWeekday)) return;
 
     const alreadyRequested = zeitausgleichAbsencesForSelectedDay.some(
-      (absence) => absence.employeeId === employeeId
+      (absence) => absence.employeeId === employeeId,
     );
 
     setIsSaving(true);
     try {
       await weeklyPlanApi.deleteAssignment(assignmentId);
       setWeeklyPlan((prev) =>
-        prev ? { ...prev, assignments: prev.assignments.filter((item) => item.id !== assignmentId) } : prev
+        prev
+          ? {
+              ...prev,
+              assignments: prev.assignments.filter(
+                (item) => item.id !== assignmentId,
+              ),
+            }
+          : prev,
       );
 
       if (!alreadyRequested) {
@@ -655,7 +828,7 @@ export default function WeeklyPlan() {
           employeeId,
           startDate: selectedDateKey,
           endDate: selectedDateKey,
-          reason: "Zeitausgleich"
+          reason: "Zeitausgleich",
         });
         setPlannedAbsences((prev) => [...prev, created]);
       }
@@ -663,8 +836,9 @@ export default function WeeklyPlan() {
       console.error("Failed to move to zeitausgleich", error);
       toast({
         title: "Zeitausgleich fehlgeschlagen",
-        description: "Der Eintrag konnte nicht in Zeitausgleich verschoben werden.",
-        variant: "destructive"
+        description:
+          "Der Eintrag konnte nicht in Zeitausgleich verschoben werden.",
+        variant: "destructive",
       });
     } finally {
       setIsSaving(false);
@@ -675,7 +849,7 @@ export default function WeeklyPlan() {
     absenceId: number,
     employeeId: number,
     roomId: number,
-    weekday: number
+    weekday: number,
   ) => {
     if (!selectedDateKey || !weeklyPlan) return;
     if (isPlanReleased || lockedWeekdays.includes(weekday)) return;
@@ -683,22 +857,27 @@ export default function WeeklyPlan() {
     setIsSaving(true);
     try {
       await plannedAbsencesAdminApi.delete(absenceId);
-      setPlannedAbsences((prev) => prev.filter((item) => item.id !== absenceId));
+      setPlannedAbsences((prev) =>
+        prev.filter((item) => item.id !== absenceId),
+      );
       const assignment = await weeklyPlanApi.assign(weeklyPlan.id, {
         roomId,
         weekday,
         employeeId,
-        assignmentType: "Plan"
+        assignmentType: "Plan",
       });
       setWeeklyPlan((prev) =>
-        prev ? { ...prev, assignments: [...prev.assignments, assignment] } : prev
+        prev
+          ? { ...prev, assignments: [...prev.assignments, assignment] }
+          : prev,
       );
     } catch (error) {
       console.error("Failed to move from zeitausgleich", error);
       toast({
         title: "Verschieben fehlgeschlagen",
-        description: "Der Zeitausgleich konnte nicht in eine Zuweisung umgewandelt werden.",
-        variant: "destructive"
+        description:
+          "Der Zeitausgleich konnte nicht in eine Zuweisung umgewandelt werden.",
+        variant: "destructive",
       });
     } finally {
       setIsSaving(false);
@@ -712,13 +891,15 @@ export default function WeeklyPlan() {
     setIsSaving(true);
     try {
       await plannedAbsencesAdminApi.delete(absenceId);
-      setPlannedAbsences((prev) => prev.filter((item) => item.id !== absenceId));
+      setPlannedAbsences((prev) =>
+        prev.filter((item) => item.id !== absenceId),
+      );
     } catch (error) {
       console.error("Failed to delete absence", error);
       toast({
         title: "Eintrag entfernen fehlgeschlagen",
         description: "Der Zeitausgleich konnte nicht entfernt werden.",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setIsSaving(false);
@@ -733,14 +914,21 @@ export default function WeeklyPlan() {
       : [...lockedWeekdays, weekday];
 
     try {
-      const updatedPlan = await weeklyPlanApi.updateLockedWeekdays(weeklyPlan.id, updated);
-      setWeeklyPlan((prev) => (prev ? { ...prev, lockedWeekdays: updatedPlan.lockedWeekdays ?? updated } : prev));
+      const updatedPlan = await weeklyPlanApi.updateLockedWeekdays(
+        weeklyPlan.id,
+        updated,
+      );
+      setWeeklyPlan((prev) =>
+        prev
+          ? { ...prev, lockedWeekdays: updatedPlan.lockedWeekdays ?? updated }
+          : prev,
+      );
     } catch (error) {
       console.error("Failed to update locked weekdays", error);
       toast({
         title: "Sperre aktualisieren fehlgeschlagen",
         description: "Die Tages-Sperre konnte nicht gespeichert werden.",
-        variant: "destructive"
+        variant: "destructive",
       });
     }
   };
@@ -755,7 +943,7 @@ export default function WeeklyPlan() {
       toast({
         title: "Status-Update fehlgeschlagen",
         description: "Der Status konnte nicht aktualisiert werden.",
-        variant: "destructive"
+        variant: "destructive",
       });
     }
   };
@@ -765,8 +953,9 @@ export default function WeeklyPlan() {
     if (isPlanReleased) {
       toast({
         title: "Plan ist freigegeben",
-        description: "Bitte zuerst den Status auf Entwurf setzen, um die KI zu nutzen.",
-        variant: "destructive"
+        description:
+          "Bitte zuerst den Status auf Entwurf setzen, um die KI zu nutzen.",
+        variant: "destructive",
       });
       return;
     }
@@ -783,22 +972,27 @@ export default function WeeklyPlan() {
         const assignedIds = new Set(
           (assignmentsByWeekday.get(weekday) ?? [])
             .map((assignment) => assignment.employeeId)
-            .filter((id): id is number => typeof id === "number")
+            .filter((id): id is number => typeof id === "number"),
         );
 
         const roomsForDay = activeRoomsByDay.get(weekday) ?? [];
         for (const { room, setting } of roomsForDay) {
           if (!setting || setting.isClosed) continue;
 
-          const existing = assignmentsByDayRoom.get(`${weekday}-${room.id}`) ?? [];
-          const hasBlocked = existing.some((assignment) => assignment.isBlocked);
-          const hasEmployee = existing.some((assignment) => assignment.employeeId);
+          const existing =
+            assignmentsByDayRoom.get(`${weekday}-${room.id}`) ?? [];
+          const hasBlocked = existing.some(
+            (assignment) => assignment.isBlocked,
+          );
+          const hasEmployee = existing.some(
+            (assignment) => assignment.employeeId,
+          );
           if (hasBlocked || hasEmployee) continue;
 
           const eligible = available.filter(
             (employee) =>
               !assignedIds.has(employee.id) &&
-              isEmployeeEligibleForRoom(employee, room)
+              isEmployeeEligibleForRoom(employee, room),
           );
 
           if (eligible.length === 0) continue;
@@ -808,7 +1002,7 @@ export default function WeeklyPlan() {
             roomId: room.id,
             weekday,
             employeeId: candidate.id,
-            assignmentType: "Plan"
+            assignmentType: "Plan",
           });
           newAssignments.push(assignment);
           assignedIds.add(candidate.id);
@@ -816,19 +1010,21 @@ export default function WeeklyPlan() {
       }
 
       setWeeklyPlan((prev) =>
-        prev ? { ...prev, assignments: [...prev.assignments, ...newAssignments] } : prev
+        prev
+          ? { ...prev, assignments: [...prev.assignments, ...newAssignments] }
+          : prev,
       );
 
       toast({
         title: "KI-Vorschlag",
-        description: "Die passenden Mitarbeitenden wurden vorgeschlagen."
+        description: "Die passenden Mitarbeitenden wurden vorgeschlagen.",
       });
     } catch (error) {
       console.error("Failed to generate AI weekly plan", error);
       toast({
         title: "KI-Vorschlag fehlgeschlagen",
         description: "Die automatische Zuteilung konnte nicht erstellt werden.",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setIsSaving(false);
@@ -836,7 +1032,8 @@ export default function WeeklyPlan() {
   };
 
   const selectedRooms = activeRoomsByDay.get(selectedWeekday) ?? [];
-  const availableEmployees = unassignedAvailableByWeekday.get(selectedWeekday) ?? [];
+  const availableEmployees =
+    unassignedAvailableByWeekday.get(selectedWeekday) ?? [];
   const selectedAbsences = absencesByDate.get(selectedDateKey) ?? [];
 
   const displayRooms = useMemo(() => {
@@ -844,13 +1041,16 @@ export default function WeeklyPlan() {
       return selectedRooms;
     }
     const roomMap = new Map(selectedRooms.map((item) => [item.room.id, item]));
-    return roomOrderIds.map((id) => roomMap.get(id)).filter(Boolean) as typeof selectedRooms;
+    return roomOrderIds
+      .map((id) => roomMap.get(id))
+      .filter(Boolean) as typeof selectedRooms;
   }, [isReorderMode, roomOrderIds, selectedRooms]);
 
   const handleToggleReorderMode = async () => {
     if (isReorderMode) {
       const sortedRooms = [...rooms].sort((a, b) => {
-        const diff = (a.weeklyPlanSortOrder ?? 0) - (b.weeklyPlanSortOrder ?? 0);
+        const diff =
+          (a.weeklyPlanSortOrder ?? 0) - (b.weeklyPlanSortOrder ?? 0);
         if (diff !== 0) return diff;
         return a.name.localeCompare(b.name);
       });
@@ -862,16 +1062,18 @@ export default function WeeklyPlan() {
 
       let activeIndex = 0;
       const newOrder = sortedRooms.map((room) =>
-        activeSet.has(room.id) ? reorderedActive[activeIndex++] : room
+        activeSet.has(room.id) ? reorderedActive[activeIndex++] : room,
       );
 
       const updates = newOrder
         .map((room, order) => ({
           room,
-          order
+          order,
         }))
         .filter(
-          ({ room, order }) => room.weeklyPlanSortOrder == null || room.weeklyPlanSortOrder !== order
+          ({ room, order }) =>
+            room.weeklyPlanSortOrder == null ||
+            room.weeklyPlanSortOrder !== order,
         );
 
       if (updates.length === 0) {
@@ -883,15 +1085,19 @@ export default function WeeklyPlan() {
       setIsSaving(true);
       try {
         await Promise.all(
-          updates.map(({ room, order }) => roomApi.update(room.id, { weeklyPlanSortOrder: order }))
+          updates.map(({ room, order }) =>
+            roomApi.update(room.id, { weeklyPlanSortOrder: order }),
+          ),
         );
-        const updateMap = new Map(updates.map(({ room, order }) => [room.id, order]));
+        const updateMap = new Map(
+          updates.map(({ room, order }) => [room.id, order]),
+        );
         setRooms((prev) =>
           prev.map((room) => {
             const updatedOrder = updateMap.get(room.id);
             if (updatedOrder === undefined) return room;
             return { ...room, weeklyPlanSortOrder: updatedOrder };
-          })
+          }),
         );
         setIsReorderMode(false);
         setRoomOrderIds([]);
@@ -900,7 +1106,7 @@ export default function WeeklyPlan() {
         toast({
           title: "Reihenfolge speichern fehlgeschlagen",
           description: "Die Reihenfolge konnte nicht gespeichert werden.",
-          variant: "destructive"
+          variant: "destructive",
         });
       } finally {
         setIsSaving(false);
@@ -915,13 +1121,18 @@ export default function WeeklyPlan() {
     <Layout title="Wochenplan-Editor" disableMotion>
       <div className="space-y-4">
         <div className="space-y-1">
-          <h1 className="text-2xl font-bold text-foreground">Wochenplan-Editor</h1>
+          <h1 className="text-2xl font-bold text-foreground">
+            Wochenplan-Editor
+          </h1>
           <p className="text-muted-foreground">
             Wocheneinsatzpläne nach Arbeitsplätzen erstellen und anpassen.
           </p>
         </div>
 
-        <div ref={toolbarRef} className="sticky top-0 z-30 -mx-6 bg-background/95 backdrop-blur pb-2">
+        <div
+          ref={toolbarRef}
+          className="sticky top-0 z-30 -mx-6 bg-background/95 backdrop-blur pb-2"
+        >
           <div className="px-6 pt-2 space-y-2">
             <Card className="border-none kabeg-shadow">
               <CardContent className="p-2">
@@ -947,12 +1158,17 @@ export default function WeeklyPlan() {
                       >
                         <SelectTrigger className="w-32 h-7 border-0 bg-transparent text-[11px]">
                           <SelectValue>
-                            <span className="font-semibold">KW {weekNumber} / {weekYear}</span>
+                            <span className="font-semibold">
+                              KW {weekNumber} / {weekYear}
+                            </span>
                           </SelectValue>
                         </SelectTrigger>
                         <SelectContent>
                           {weekOptions.map((option) => (
-                            <SelectItem key={`${option.week}-${option.year}`} value={`${option.week}-${option.year}`}>
+                            <SelectItem
+                              key={`${option.week}-${option.year}`}
+                              value={`${option.week}-${option.year}`}
+                            >
                               KW {option.week} / {option.year}
                             </SelectItem>
                           ))}
@@ -973,7 +1189,13 @@ export default function WeeklyPlan() {
                     </div>
 
                     {weeklyPlan && (
-                      <Badge variant="outline" className={cn("text-xs", statusBadgeStyles[weeklyPlan.status])}>
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-xs",
+                          statusBadgeStyles[weeklyPlan.status],
+                        )}
+                      >
                         {weeklyPlan.status}
                       </Badge>
                     )}
@@ -998,7 +1220,9 @@ export default function WeeklyPlan() {
                       disabled={isSaving || selectedRooms.length === 0}
                     >
                       <GripVertical className="w-3.5 h-3.5" />
-                      {isReorderMode ? "Reihenfolge speichern" : "Reihenfolge ändern"}
+                      {isReorderMode
+                        ? "Reihenfolge speichern"
+                        : "Reihenfolge ändern"}
                     </Button>
                     {weeklyPlan?.status === "Freigegeben" ? (
                       <Button
@@ -1011,7 +1235,11 @@ export default function WeeklyPlan() {
                         Bearbeitung freischalten
                       </Button>
                     ) : (
-                      <Button size="sm" className="gap-2" onClick={() => handleUpdateStatus("Freigegeben")}>
+                      <Button
+                        size="sm"
+                        className="gap-2"
+                        onClick={() => handleUpdateStatus("Freigegeben")}
+                      >
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         Freigeben
                       </Button>
@@ -1021,7 +1249,10 @@ export default function WeeklyPlan() {
               </CardContent>
             </Card>
 
-            <Tabs value={selectedWeekday.toString()} onValueChange={(value) => setSelectedWeekday(Number(value))}>
+            <Tabs
+              value={selectedWeekday.toString()}
+              onValueChange={(value) => setSelectedWeekday(Number(value))}
+            >
               <TabsList className="w-full justify-start bg-card border kabeg-shadow h-10">
                 {days.map((day, index) => {
                   const weekday = index + 1;
@@ -1033,8 +1264,12 @@ export default function WeeklyPlan() {
                       className="flex-1 text-xs data-[state=active]:bg-primary data-[state=active]:text-white"
                     >
                       <div className="flex flex-col items-center gap-1">
-                        <span className="text-[11px] font-semibold">{WEEKDAY_LABELS[index]}</span>
-                        <span className="text-[11px] opacity-70">{format(day, "dd.MM.", { locale: de })}</span>
+                        <span className="text-[11px] font-semibold">
+                          {WEEKDAY_LABELS[index]}
+                        </span>
+                        <span className="text-[11px] opacity-70">
+                          {format(day, "dd.MM.", { locale: de })}
+                        </span>
                         <button
                           type="button"
                           onClick={(event) => {
@@ -1045,10 +1280,14 @@ export default function WeeklyPlan() {
                             "text-[10px] flex items-center gap-1 px-2 py-0.5 rounded-full border",
                             isLocked
                               ? "border-amber-200 text-amber-700 bg-amber-50"
-                              : "border-emerald-200 text-emerald-700 bg-emerald-50"
+                              : "border-emerald-200 text-emerald-700 bg-emerald-50",
                           )}
                         >
-                          {isLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+                          {isLocked ? (
+                            <Lock className="w-3 h-3" />
+                          ) : (
+                            <Unlock className="w-3 h-3" />
+                          )}
                           {isLocked ? "Fix" : "Offen"}
                         </button>
                       </div>
@@ -1073,51 +1312,76 @@ export default function WeeklyPlan() {
                 const key = `${selectedWeekday}-${room.id}`;
                 const roomAssignments = assignmentsByDayRoom.get(key) ?? [];
                 const noteAssignment = roomAssignments.find(
-                  (assignment) => !assignment.employeeId && (assignment.note || assignment.isBlocked)
+                  (assignment) =>
+                    !assignment.employeeId &&
+                    (assignment.note || assignment.isBlocked),
                 );
-                const employeeAssignments = roomAssignments.filter((assignment) => assignment.employeeId);
+                const employeeAssignments = roomAssignments.filter(
+                  (assignment) => assignment.employeeId,
+                );
                 const assignedEmployeeIds = new Set(
                   employeeAssignments
                     .map((assignment) => assignment.employeeId)
-                    .filter((id): id is number => typeof id === "number")
+                    .filter((id): id is number => typeof id === "number"),
                 );
 
-                const availableForRoom = (availabilityByWeekday.get(selectedWeekday) ?? []).filter((employee) =>
-                  isEmployeeEligibleForRoom(employee, room)
+                const availableForRoom = (
+                  availabilityByWeekday.get(selectedWeekday) ?? []
+                ).filter((employee) =>
+                  isEmployeeEligibleForRoom(employee, room),
                 );
-                const remainingEligible = availableForRoom.filter((employee) => !assignedEmployeeIds.has(employee.id));
+                const remainingEligible = availableForRoom.filter(
+                  (employee) => !assignedEmployeeIds.has(employee.id),
+                );
 
-                const hasEligibleAssignment = employeeAssignments.some((assignment) => {
-                  if (!assignment.employeeId) return false;
-                  const employee = employeesById.get(assignment.employeeId);
-                  return employee ? isEmployeeEligibleForRoom(employee, room) : false;
-                });
+                const hasEligibleAssignment = employeeAssignments.some(
+                  (assignment) => {
+                    if (!assignment.employeeId) return false;
+                    const employee = employeesById.get(assignment.employeeId);
+                    return employee
+                      ? isEmployeeEligibleForRoom(employee, room)
+                      : false;
+                  },
+                );
 
-                const competencyStatus = employeeAssignments.length === 0
-                  ? "missing"
-                  : hasEligibleAssignment
-                  ? "fulfilled"
-                  : "partial";
+                const competencyStatus =
+                  employeeAssignments.length === 0
+                    ? "missing"
+                    : hasEligibleAssignment
+                      ? "fulfilled"
+                      : "partial";
 
                 const isClosed = setting?.isClosed;
                 const isBlocked = noteAssignment?.isBlocked;
                 const isLocked = lockedWeekdays.includes(selectedWeekday);
-                const disableEditing = Boolean(isClosed || isBlocked || isLocked || isPlanReleased || isReorderMode);
-                const showNoAvailableWarning = !disableEditing && employeeAssignments.length === 0 && remainingEligible.length === 0;
+                const disableEditing = Boolean(
+                  isClosed ||
+                  isBlocked ||
+                  isLocked ||
+                  isPlanReleased ||
+                  isReorderMode,
+                );
+                const showNoAvailableWarning =
+                  !disableEditing &&
+                  employeeAssignments.length === 0 &&
+                  remainingEligible.length === 0;
 
                 return (
                   <Card
                     key={room.id}
                     className={cn(
                       "border-none kabeg-shadow",
-                      isReorderMode && "cursor-grab active:cursor-grabbing"
+                      isReorderMode && "cursor-grab active:cursor-grabbing",
                     )}
                     draggable={isReorderMode}
                     onDragStart={(event) => {
                       if (!isReorderMode) return;
                       draggedRoomIdRef.current = room.id;
                       event.dataTransfer.effectAllowed = "move";
-                      event.dataTransfer.setData("text/plain", room.id.toString());
+                      event.dataTransfer.setData(
+                        "text/plain",
+                        room.id.toString(),
+                      );
                       event.dataTransfer.setData("dragType", "room-order");
                       event.dataTransfer.setData("roomId", room.id.toString());
                     }}
@@ -1132,8 +1396,12 @@ export default function WeeklyPlan() {
                     onDrop={(event) => {
                       if (!isReorderMode) return;
                       event.preventDefault();
-                      const draggedId = draggedRoomIdRef.current
-                        ?? Number(event.dataTransfer.getData("text/plain") || event.dataTransfer.getData("roomId"));
+                      const draggedId =
+                        draggedRoomIdRef.current ??
+                        Number(
+                          event.dataTransfer.getData("text/plain") ||
+                            event.dataTransfer.getData("roomId"),
+                        );
                       if (!draggedId || draggedId === room.id) return;
                       setRoomOrderIds((prev) => {
                         const next = [...prev];
@@ -1154,12 +1422,19 @@ export default function WeeklyPlan() {
                             {!isReorderMode && showNoAvailableWarning && (
                               <AlertTriangle className="w-4 h-4 text-amber-500" />
                             )}
-                            {isReorderMode && <GripVertical className="w-4 h-4 text-muted-foreground" />}
+                            {isReorderMode && (
+                              <GripVertical className="w-4 h-4 text-muted-foreground" />
+                            )}
                           </CardTitle>
                           {!isReorderMode && (
                             <div className="text-xs text-muted-foreground">
-                              {setting?.usageLabel ? `${setting.usageLabel} · ` : ""}
-                              {formatRoomTime(setting?.timeFrom, setting?.timeTo)}
+                              {setting?.usageLabel
+                                ? `${setting.usageLabel} · `
+                                : ""}
+                              {formatRoomTime(
+                                setting?.timeFrom,
+                                setting?.timeTo,
+                              )}
                             </div>
                           )}
                         </div>
@@ -1179,16 +1454,19 @@ export default function WeeklyPlan() {
                               variant="outline"
                               className={cn(
                                 "text-[10px]",
-                                competencyStatus === "fulfilled" && "bg-green-50 text-green-700 border-green-200",
-                                competencyStatus === "partial" && "bg-amber-50 text-amber-700 border-amber-200",
-                                competencyStatus === "missing" && "bg-red-50 text-red-700 border-red-200"
+                                competencyStatus === "fulfilled" &&
+                                  "bg-green-50 text-green-700 border-green-200",
+                                competencyStatus === "partial" &&
+                                  "bg-amber-50 text-amber-700 border-amber-200",
+                                competencyStatus === "missing" &&
+                                  "bg-red-50 text-red-700 border-red-200",
                               )}
                             >
                               {competencyStatus === "fulfilled"
                                 ? "Vollständig"
                                 : competencyStatus === "partial"
-                                ? "Optional fehlt"
-                                : "Pflicht fehlt"}
+                                  ? "Optional fehlt"
+                                  : "Pflicht fehlt"}
                             </Badge>
                           </div>
                         )}
@@ -1198,27 +1476,42 @@ export default function WeeklyPlan() {
                           <div className="flex flex-wrap gap-2 mt-2">
                             {room.physicalRooms?.length ? (
                               room.physicalRooms.map((physical) => (
-                                <Badge key={physical.id} variant="secondary" className="text-[10px]">
+                                <Badge
+                                  key={physical.id}
+                                  variant="secondary"
+                                  className="text-[10px]"
+                                >
                                   {physical.name}
                                 </Badge>
                               ))
                             ) : (
-                              <Badge variant="secondary" className="text-[10px]">Kein Raum</Badge>
+                              <Badge
+                                variant="secondary"
+                                className="text-[10px]"
+                              >
+                                Kein Raum
+                              </Badge>
                             )}
                             {room.requiredCompetencies?.map((comp) => (
-                              <Badge key={comp.id} variant="outline" className="text-[10px]">
+                              <Badge
+                                key={comp.id}
+                                variant="outline"
+                                className="text-[10px]"
+                              >
                                 {comp.competencyCode || comp.competencyName}
                               </Badge>
                             ))}
                             {room.requiredRoleCompetencies?.length ? (
                               <Badge variant="outline" className="text-[10px]">
-                                Rollen: {room.requiredRoleCompetencies.join(", ")}
+                                Rollen:{" "}
+                                {room.requiredRoleCompetencies.join(", ")}
                               </Badge>
                             ) : null}
                           </div>
                           {isClosed && (
                             <div className="text-xs text-red-600 mt-2">
-                              {setting?.closedReason || "Arbeitsplatz geschlossen"}
+                              {setting?.closedReason ||
+                                "Arbeitsplatz geschlossen"}
                             </div>
                           )}
                           {noteAssignment?.note && (
@@ -1234,7 +1527,9 @@ export default function WeeklyPlan() {
                         <div
                           className={cn(
                             "space-y-2 border-2 border-dashed rounded-xl p-3",
-                            disableEditing ? "bg-muted/30 border-muted-foreground/20" : "border-primary/20"
+                            disableEditing
+                              ? "bg-muted/30 border-muted-foreground/20"
+                              : "border-primary/20",
                           )}
                           onDragOver={(event) => {
                             if (disableEditing) return;
@@ -1243,36 +1538,69 @@ export default function WeeklyPlan() {
                           onDrop={async (event) => {
                             if (disableEditing) return;
                             event.preventDefault();
-                            const employeeId = Number(event.dataTransfer.getData("employeeId"));
+                            const employeeId = Number(
+                              event.dataTransfer.getData("employeeId"),
+                            );
                             if (!employeeId) return;
-                            const dragType = event.dataTransfer.getData("dragType");
-                            const assignmentId = Number(event.dataTransfer.getData("assignmentId"));
-                            const absenceId = Number(event.dataTransfer.getData("absenceId"));
-                            const sourceRoomId = Number(event.dataTransfer.getData("sourceRoomId"));
-                            const sourceWeekday = Number(event.dataTransfer.getData("sourceWeekday"));
+                            const dragType =
+                              event.dataTransfer.getData("dragType");
+                            const assignmentId = Number(
+                              event.dataTransfer.getData("assignmentId"),
+                            );
+                            const absenceId = Number(
+                              event.dataTransfer.getData("absenceId"),
+                            );
+                            const sourceRoomId = Number(
+                              event.dataTransfer.getData("sourceRoomId"),
+                            );
+                            const sourceWeekday = Number(
+                              event.dataTransfer.getData("sourceWeekday"),
+                            );
 
                             if (dragType === "assignment" && assignmentId) {
-                              if (sourceRoomId === room.id && sourceWeekday === selectedWeekday) return;
-                              await handleMoveAssignment(assignmentId, room.id, selectedWeekday);
+                              if (
+                                sourceRoomId === room.id &&
+                                sourceWeekday === selectedWeekday
+                              )
+                                return;
+                              await handleMoveAssignment(
+                                assignmentId,
+                                room.id,
+                                selectedWeekday,
+                              );
                               return;
                             }
 
                             if (dragType === "zeitausgleich" && absenceId) {
-                              await handleMoveZeitausgleichToAssignment(absenceId, employeeId, room.id, selectedWeekday);
+                              await handleMoveZeitausgleichToAssignment(
+                                absenceId,
+                                employeeId,
+                                room.id,
+                                selectedWeekday,
+                              );
                               return;
                             }
 
-                            await handleAssignEmployee(room.id, selectedWeekday, employeeId);
+                            await handleAssignEmployee(
+                              room.id,
+                              selectedWeekday,
+                              employeeId,
+                            );
                           }}
                         >
                           {employeeAssignments.length === 0 && (
-                            <div className="text-xs text-muted-foreground">+ Zuweisung</div>
+                            <div className="text-xs text-muted-foreground">
+                              + Zuweisung
+                            </div>
                           )}
                           {employeeAssignments.map((assignment) => {
                             const employee = assignment.employeeId
                               ? employeesById.get(assignment.employeeId)
                               : null;
-                            const displayName = assignment.employeeLastName || employee?.lastName || assignment.employeeName;
+                            const displayName =
+                              assignment.employeeLastName ||
+                              employee?.lastName ||
+                              assignment.employeeName;
                             const isDuplicate = assignment.employeeId
                               ? duplicateEmployeeIdsByWeekday
                                   .get(selectedWeekday)
@@ -1285,27 +1613,52 @@ export default function WeeklyPlan() {
                                 className={cn(
                                   "flex items-center justify-between rounded-lg border px-2 py-1",
                                   isDuplicate && "border-rose-300 bg-rose-50",
-                                  assignment.assignmentType !== "Plan" && "border-blue-200 bg-blue-50"
+                                  assignment.assignmentType !== "Plan" &&
+                                    "border-blue-200 bg-blue-50",
                                 )}
                                 draggable={!disableEditing}
                                 onDragStart={(event) => {
-                                  if (disableEditing || !assignment.employeeId) return;
-                                  event.dataTransfer.setData("dragType", "assignment");
-                                  event.dataTransfer.setData("employeeId", assignment.employeeId.toString());
-                                  event.dataTransfer.setData("assignmentId", assignment.id.toString());
-                                  event.dataTransfer.setData("sourceRoomId", room.id.toString());
-                                  event.dataTransfer.setData("sourceWeekday", selectedWeekday.toString());
+                                  if (disableEditing || !assignment.employeeId)
+                                    return;
+                                  event.dataTransfer.setData(
+                                    "dragType",
+                                    "assignment",
+                                  );
+                                  event.dataTransfer.setData(
+                                    "employeeId",
+                                    assignment.employeeId.toString(),
+                                  );
+                                  event.dataTransfer.setData(
+                                    "assignmentId",
+                                    assignment.id.toString(),
+                                  );
+                                  event.dataTransfer.setData(
+                                    "sourceRoomId",
+                                    room.id.toString(),
+                                  );
+                                  event.dataTransfer.setData(
+                                    "sourceWeekday",
+                                    selectedWeekday.toString(),
+                                  );
                                 }}
                               >
                                 <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium">{displayName || "Unbekannt"}</span>
+                                  <span className="text-sm font-medium">
+                                    {displayName || "Unbekannt"}
+                                  </span>
                                   {assignment.assignmentType !== "Plan" && (
-                                    <Badge variant="outline" className="text-[10px]">
+                                    <Badge
+                                      variant="outline"
+                                      className="text-[10px]"
+                                    >
                                       {assignment.assignmentType}
                                     </Badge>
                                   )}
                                   {isDuplicate && (
-                                    <Badge variant="outline" className="text-[10px] bg-rose-100 text-rose-700 border-rose-200">
+                                    <Badge
+                                      variant="outline"
+                                      className="text-[10px] bg-rose-100 text-rose-700 border-rose-200"
+                                    >
                                       Doppelt
                                     </Badge>
                                   )}
@@ -1315,7 +1668,14 @@ export default function WeeklyPlan() {
                                     size="icon"
                                     variant="ghost"
                                     className="h-7 w-7"
-                                    onClick={() => assignment.employeeId && handleDuplicateAssignment(room.id, selectedWeekday, assignment.employeeId)}
+                                    onClick={() =>
+                                      assignment.employeeId &&
+                                      handleDuplicateAssignment(
+                                        room.id,
+                                        selectedWeekday,
+                                        assignment.employeeId,
+                                      )
+                                    }
                                     disabled={disableEditing}
                                   >
                                     <Plus className="w-4 h-4" />
@@ -1324,7 +1684,9 @@ export default function WeeklyPlan() {
                                     size="icon"
                                     variant="ghost"
                                     className="h-7 w-7 text-red-600"
-                                    onClick={() => handleDeleteAssignment(assignment.id)}
+                                    onClick={() =>
+                                      handleDeleteAssignment(assignment.id)
+                                    }
                                     disabled={disableEditing}
                                   >
                                     <X className="w-4 h-4" />
@@ -1339,14 +1701,19 @@ export default function WeeklyPlan() {
                             size="sm"
                             variant="outline"
                             className="gap-2"
-                            onClick={() => handleOpenNoteDialog(room.id, selectedWeekday)}
+                            onClick={() =>
+                              handleOpenNoteDialog(room.id, selectedWeekday)
+                            }
                             disabled={disableEditing}
                           >
                             <StickyNote className="w-4 h-4" />
                             Kommentar / Sperre
                           </Button>
                           {showNoAvailableWarning && (
-                            <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] bg-amber-50 text-amber-700 border-amber-200"
+                            >
                               Keine passenden Mitarbeiter mehr verfügbar
                             </Badge>
                           )}
@@ -1362,7 +1729,10 @@ export default function WeeklyPlan() {
           <div className="lg:col-span-1 overflow-visible">
             <div
               className="lg:sticky lg:self-start lg:z-20"
-              style={{ top: rightPaneOffset, height: `calc(100vh - ${rightPaneOffset}px - 16px)` }}
+              style={{
+                top: rightPaneOffset,
+                height: `calc(100vh - ${rightPaneOffset}px - 16px)`,
+              }}
             >
               <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden">
                 <Card className="border-none kabeg-shadow flex flex-col min-h-0 flex-[2]">
@@ -1372,28 +1742,47 @@ export default function WeeklyPlan() {
                       Verfügbares Personal
                     </CardTitle>
                     <p className="text-xs text-muted-foreground">
-                      {WEEKDAY_FULL[selectedWeekday - 1]}, {selectedDayDate ? format(selectedDayDate, "dd.MM.yyyy", { locale: de }) : ""}
+                      {WEEKDAY_FULL[selectedWeekday - 1]},{" "}
+                      {selectedDayDate
+                        ? format(selectedDayDate, "dd.MM.yyyy", { locale: de })
+                        : ""}
                     </p>
                   </CardHeader>
                   <CardContent className="flex-1 min-h-0 overflow-y-auto">
                     <div
                       className={cn(
                         "space-y-2 rounded-xl p-1",
-                        isPlanReleased || lockedWeekdays.includes(selectedWeekday) || isReorderMode
+                        isPlanReleased ||
+                          lockedWeekdays.includes(selectedWeekday) ||
+                          isReorderMode
                           ? ""
-                          : "border border-dashed border-transparent"
+                          : "border border-dashed border-transparent",
                       )}
                       onDragOver={(event) => {
-                        if (isPlanReleased || lockedWeekdays.includes(selectedWeekday) || isReorderMode) return;
+                        if (
+                          isPlanReleased ||
+                          lockedWeekdays.includes(selectedWeekday) ||
+                          isReorderMode
+                        )
+                          return;
                         if (!event.dataTransfer.getData("dragType")) return;
                         event.preventDefault();
                       }}
                       onDrop={async (event) => {
-                        if (isPlanReleased || lockedWeekdays.includes(selectedWeekday) || isReorderMode) return;
+                        if (
+                          isPlanReleased ||
+                          lockedWeekdays.includes(selectedWeekday) ||
+                          isReorderMode
+                        )
+                          return;
                         event.preventDefault();
                         const dragType = event.dataTransfer.getData("dragType");
-                        const assignmentId = Number(event.dataTransfer.getData("assignmentId"));
-                        const absenceId = Number(event.dataTransfer.getData("absenceId"));
+                        const assignmentId = Number(
+                          event.dataTransfer.getData("assignmentId"),
+                        );
+                        const absenceId = Number(
+                          event.dataTransfer.getData("absenceId"),
+                        );
                         if (dragType === "assignment" && assignmentId) {
                           await handleDeleteAssignment(assignmentId);
                         }
@@ -1403,50 +1792,85 @@ export default function WeeklyPlan() {
                       }}
                     >
                       {isLoading ? (
-                        <div className="text-sm text-muted-foreground text-center py-4">Laden...</div>
+                        <div className="text-sm text-muted-foreground text-center py-4">
+                          Laden...
+                        </div>
                       ) : availableEmployees.length === 0 ? (
-                        <div className="text-sm text-muted-foreground text-center py-4">Keine Verfügbarkeit</div>
+                        <div className="text-sm text-muted-foreground text-center py-4">
+                          Keine Verfügbarkeit
+                        </div>
                       ) : (
-                        availableEmployees.map((employee) => (
+                        availableEmployees.map((employee) =>
                           (() => {
-                            const isOnDutyToday =
-                              selectedDayDate ? isEmployeeOnDutyDate(employee.id, selectedDayDate, rosterShifts) : false;
+                            const isOnDutyToday = selectedDayDate
+                              ? isEmployeeOnDutyDate(
+                                  employee.id,
+                                  selectedDayDate,
+                                  rosterShifts,
+                                )
+                              : false;
                             return (
-                          <div
-                            key={employee.id}
-                            className="flex items-center gap-2 p-2 rounded-lg border bg-card hover:bg-muted/50 cursor-grab active:cursor-grabbing transition-all hover:shadow-sm group"
-                            draggable={!isPlanReleased && !lockedWeekdays.includes(selectedWeekday) && !isReorderMode}
-                            onDragStart={(event) => {
-                              event.dataTransfer.setData("dragType", "available");
-                              event.dataTransfer.setData("employeeId", employee.id.toString());
-                            }}
-                          >
-                            <GripVertical className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className={cn("text-sm font-medium truncate", isOnDutyToday && "text-rose-600")}>
-                                  {getEmployeeDisplayName(employee)}
-                                </span>
-                                <Badge
-                                  variant="outline"
-                                  className={cn("text-[10px] px-1.5 py-0 h-5 shrink-0", ROLE_COLORS[employee.role] || "bg-gray-100")}
-                                >
-                                  {ROLE_BADGES[employee.role] || employee.role?.substring(0, 2)}
-                                </Badge>
-                                {declinedZeitausgleichIds.has(employee.id) && (
-                                  <Badge variant="outline" className="text-[10px] bg-rose-50 text-rose-700 border-rose-200">
-                                    ZA abgelehnt
-                                  </Badge>
-                                )}
+                              <div
+                                key={employee.id}
+                                className="flex items-center gap-2 p-2 rounded-lg border bg-card hover:bg-muted/50 cursor-grab active:cursor-grabbing transition-all hover:shadow-sm group"
+                                draggable={
+                                  !isPlanReleased &&
+                                  !lockedWeekdays.includes(selectedWeekday) &&
+                                  !isReorderMode
+                                }
+                                onDragStart={(event) => {
+                                  event.dataTransfer.setData(
+                                    "dragType",
+                                    "available",
+                                  );
+                                  event.dataTransfer.setData(
+                                    "employeeId",
+                                    employee.id.toString(),
+                                  );
+                                }}
+                              >
+                                <GripVertical className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className={cn(
+                                        "text-sm font-medium truncate",
+                                        isOnDutyToday && "text-rose-600",
+                                      )}
+                                    >
+                                      {getEmployeeDisplayName(employee)}
+                                    </span>
+                                    <Badge
+                                      variant="outline"
+                                      className={cn(
+                                        "text-[10px] px-1.5 py-0 h-5 shrink-0",
+                                        ROLE_COLORS[employee.role] ||
+                                          "bg-gray-100",
+                                      )}
+                                    >
+                                      {ROLE_BADGES[employee.role] ||
+                                        employee.role?.substring(0, 2)}
+                                    </Badge>
+                                    {declinedZeitausgleichIds.has(
+                                      employee.id,
+                                    ) && (
+                                      <Badge
+                                        variant="outline"
+                                        className="text-[10px] bg-rose-50 text-rose-700 border-rose-200"
+                                      >
+                                        ZA abgelehnt
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <div className="text-[10px] text-muted-foreground whitespace-normal leading-snug">
+                                    {employee.competencies?.join(", ") ||
+                                      "Keine Kompetenzen"}
+                                  </div>
+                                </div>
                               </div>
-                              <div className="text-[10px] text-muted-foreground whitespace-normal leading-snug">
-                                {employee.competencies?.join(", ") || "Keine Kompetenzen"}
-                              </div>
-                            </div>
-                          </div>
                             );
-                          })()
-                        ))
+                          })(),
+                        )
                       )}
                     </div>
                   </CardContent>
@@ -1454,32 +1878,59 @@ export default function WeeklyPlan() {
 
                 <Card className="border-none kabeg-shadow flex flex-col min-h-0 flex-1">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium">Zeitausgleich moeglich</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      Zeitausgleich moeglich
+                    </CardTitle>
                     <p className="text-xs text-muted-foreground">
-                      Ziehen Sie Mitarbeitende hierher, um eine Anfrage zu senden.
+                      Ziehen Sie Mitarbeitende hierher, um eine Anfrage zu
+                      senden.
                     </p>
                   </CardHeader>
                   <CardContent className="flex-1 min-h-0 overflow-y-auto space-y-2">
                     <div
                       className={cn(
                         "space-y-2 border-2 border-dashed rounded-xl p-3 min-h-[96px]",
-                        isPlanReleased || lockedWeekdays.includes(selectedWeekday)
+                        isPlanReleased ||
+                          lockedWeekdays.includes(selectedWeekday)
                           ? "bg-muted/30 border-muted-foreground/20"
-                          : "border-primary/20"
+                          : "border-primary/20",
                       )}
                       onDragOver={(event) => {
-                        if (isPlanReleased || lockedWeekdays.includes(selectedWeekday) || isReorderMode) return;
+                        if (
+                          isPlanReleased ||
+                          lockedWeekdays.includes(selectedWeekday) ||
+                          isReorderMode
+                        )
+                          return;
                         event.preventDefault();
                       }}
                       onDrop={async (event) => {
-                        if (isPlanReleased || lockedWeekdays.includes(selectedWeekday) || isReorderMode) return;
+                        if (
+                          isPlanReleased ||
+                          lockedWeekdays.includes(selectedWeekday) ||
+                          isReorderMode
+                        )
+                          return;
                         event.preventDefault();
                         const dragType = event.dataTransfer.getData("dragType");
-                        const employeeId = Number(event.dataTransfer.getData("employeeId"));
-                        const assignmentId = Number(event.dataTransfer.getData("assignmentId"));
-                        const absenceId = Number(event.dataTransfer.getData("absenceId"));
-                        if (dragType === "assignment" && assignmentId && employeeId) {
-                          await handleMoveAssignmentToZeitausgleich(assignmentId, employeeId);
+                        const employeeId = Number(
+                          event.dataTransfer.getData("employeeId"),
+                        );
+                        const assignmentId = Number(
+                          event.dataTransfer.getData("assignmentId"),
+                        );
+                        const absenceId = Number(
+                          event.dataTransfer.getData("absenceId"),
+                        );
+                        if (
+                          dragType === "assignment" &&
+                          assignmentId &&
+                          employeeId
+                        ) {
+                          await handleMoveAssignmentToZeitausgleich(
+                            assignmentId,
+                            employeeId,
+                          );
                           return;
                         }
                         if (!employeeId || dragType === "zeitausgleich") return;
@@ -1487,29 +1938,57 @@ export default function WeeklyPlan() {
                       }}
                     >
                       {zeitausgleichAbsencesForSelectedDay.length === 0 && (
-                        <div className="text-xs text-muted-foreground">+ Person hinzufuegen</div>
+                        <div className="text-xs text-muted-foreground">
+                          + Person hinzufuegen
+                        </div>
                       )}
                       {zeitausgleichAbsencesForSelectedDay.map((absence) => {
                         const employee = employeesById.get(absence.employeeId);
-                        const displayName = absence.employeeLastName || employee?.lastName || employee?.name || "Unbekannt";
+                        const displayName =
+                          absence.employeeLastName ||
+                          employee?.lastName ||
+                          employee?.name ||
+                          "Unbekannt";
                         const statusLabel = absence.status || "Geplant";
                         return (
                           <div
-                            key={absence.id ?? `${absence.employeeId}-${absence.startDate}`}
+                            key={
+                              absence.id ??
+                              `${absence.employeeId}-${absence.startDate}`
+                            }
                             className="flex items-center justify-between rounded-lg border px-2 py-1"
-                            draggable={!isPlanReleased && !lockedWeekdays.includes(selectedWeekday) && !isReorderMode}
+                            draggable={
+                              !isPlanReleased &&
+                              !lockedWeekdays.includes(selectedWeekday) &&
+                              !isReorderMode
+                            }
                             onDragStart={(event) => {
                               if (!absence.id) return;
-                              event.dataTransfer.setData("dragType", "zeitausgleich");
-                              event.dataTransfer.setData("employeeId", absence.employeeId.toString());
-                              event.dataTransfer.setData("absenceId", absence.id.toString());
+                              event.dataTransfer.setData(
+                                "dragType",
+                                "zeitausgleich",
+                              );
+                              event.dataTransfer.setData(
+                                "employeeId",
+                                absence.employeeId.toString(),
+                              );
+                              event.dataTransfer.setData(
+                                "absenceId",
+                                absence.id.toString(),
+                              );
                             }}
                           >
                             <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium">{displayName}</span>
+                              <span className="text-sm font-medium">
+                                {displayName}
+                              </span>
                               <Badge
                                 variant="outline"
-                                className={cn("text-[10px]", ZEITAUSGLEICH_STATUS_STYLES[statusLabel] || "bg-slate-50 text-slate-700 border-slate-200")}
+                                className={cn(
+                                  "text-[10px]",
+                                  ZEITAUSGLEICH_STATUS_STYLES[statusLabel] ||
+                                    "bg-slate-50 text-slate-700 border-slate-200",
+                                )}
                               >
                                 {statusLabel}
                               </Badge>
@@ -1519,7 +1998,10 @@ export default function WeeklyPlan() {
                               variant="ghost"
                               className="h-7 w-7 text-red-600"
                               onClick={() => handleDeleteAbsence(absence.id)}
-                              disabled={isPlanReleased || lockedWeekdays.includes(selectedWeekday)}
+                              disabled={
+                                isPlanReleased ||
+                                lockedWeekdays.includes(selectedWeekday)
+                              }
                             >
                               <X className="w-4 h-4" />
                             </Button>
@@ -1532,21 +2014,37 @@ export default function WeeklyPlan() {
 
                 <Card className="border-none kabeg-shadow flex flex-col min-h-0 flex-1">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium">Abwesenheiten des Tages</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      Abwesenheiten des Tages
+                    </CardTitle>
                     <p className="text-xs text-muted-foreground">
-                      {selectedDayDate ? format(selectedDayDate, "dd.MM.yyyy", { locale: de }) : ""}
+                      {selectedDayDate
+                        ? format(selectedDayDate, "dd.MM.yyyy", { locale: de })
+                        : ""}
                     </p>
                   </CardHeader>
                   <CardContent className="flex-1 min-h-0 overflow-y-auto space-y-2">
                     {selectedAbsences.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">Keine Abwesenheiten</div>
+                      <div className="text-sm text-muted-foreground">
+                        Keine Abwesenheiten
+                      </div>
                     ) : (
                       selectedAbsences.map((absence, index) => {
                         const employee = employeesById.get(absence.employeeId);
                         return (
-                          <div key={`${absence.employeeId}-${index}`} className="text-xs">
-                            <span className="font-medium">{employee?.lastName || employee?.name || "Unbekannt"}</span>
-                            <span className="text-muted-foreground"> · {absence.reason}</span>
+                          <div
+                            key={`${absence.employeeId}-${index}`}
+                            className="text-xs"
+                          >
+                            <span className="font-medium">
+                              {employee?.lastName ||
+                                employee?.name ||
+                                "Unbekannt"}
+                            </span>
+                            <span className="text-muted-foreground">
+                              {" "}
+                              · {absence.reason}
+                            </span>
                           </div>
                         );
                       })
@@ -1561,12 +2059,16 @@ export default function WeeklyPlan() {
         <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 flex gap-3">
           <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
           <p className="text-sm text-blue-700">
-            Die KI belegt nur offene Tage ohne Sperre. Gesperrte Tage werden nicht ueberschrieben.
+            Die KI belegt nur offene Tage ohne Sperre. Gesperrte Tage werden
+            nicht ueberschrieben.
           </p>
         </div>
       </div>
 
-      <Dialog open={Boolean(noteDialog)} onOpenChange={(open) => !open && setNoteDialog(null)}>
+      <Dialog
+        open={Boolean(noteDialog)}
+        onOpenChange={(open) => !open && setNoteDialog(null)}
+      >
         <DialogContent className="sm:max-w-[520px]">
           <DialogHeader>
             <DialogTitle>Kommentar / Sperre</DialogTitle>
@@ -1577,7 +2079,9 @@ export default function WeeklyPlan() {
               <Textarea
                 value={noteDialog?.note ?? ""}
                 onChange={(event) =>
-                  setNoteDialog((prev) => (prev ? { ...prev, note: event.target.value } : prev))
+                  setNoteDialog((prev) =>
+                    prev ? { ...prev, note: event.target.value } : prev,
+                  )
                 }
                 rows={4}
               />
@@ -1585,12 +2089,16 @@ export default function WeeklyPlan() {
             <div className="flex items-center justify-between rounded-lg border p-3">
               <div>
                 <p className="text-sm font-medium">Arbeitsplatz sperren</p>
-                <p className="text-xs text-muted-foreground">Keine Zuweisung moeglich, solange gesperrt.</p>
+                <p className="text-xs text-muted-foreground">
+                  Keine Zuweisung moeglich, solange gesperrt.
+                </p>
               </div>
               <Switch
                 checked={noteDialog?.isBlocked ?? false}
                 onCheckedChange={(checked) =>
-                  setNoteDialog((prev) => (prev ? { ...prev, isBlocked: checked } : prev))
+                  setNoteDialog((prev) =>
+                    prev ? { ...prev, isBlocked: checked } : prev,
+                  )
                 }
               />
             </div>

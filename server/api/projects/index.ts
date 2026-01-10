@@ -1,20 +1,19 @@
 import type { Router } from "express";
 import { z } from "zod";
 import { db, eq, and, inArray, desc, isNull, or } from "../../lib/db";
+import { ok, created, notFound, asyncHandler } from "../../lib/api-response";
 import {
-  ok,
-  created,
-  notFound,
-  asyncHandler
-} from "../../lib/api-response";
-import { validateBody, validateParams, idParamSchema } from "../../lib/validate";
+  validateBody,
+  validateParams,
+  idParamSchema,
+} from "../../lib/validate";
 import {
   projectInitiatives,
   projectMembers,
   employees,
   permissions,
   userPermissions,
-  notifications
+  notifications,
 } from "@shared/schema";
 import { requireAuth, hasCapability } from "../middleware/auth";
 
@@ -26,7 +25,7 @@ const projectCategorySchema = z.enum([
   "Studie",
   "Administrativ",
   "Qualitaetsprojekt",
-  "Qualitätsprojekt"
+  "Qualitätsprojekt",
 ]);
 
 const createProjectSchema = z.object({
@@ -35,16 +34,20 @@ const createProjectSchema = z.object({
   category: projectCategorySchema.optional(),
   status: z.enum(["proposed", "active", "done", "archived"]).optional(),
   ownerId: z.number().positive().nullable().optional(),
-  dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  dueDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional(),
   priority: z.number().min(0).max(10).optional(),
   assignees: z
     .array(
       z.object({
         employeeId: z.number().positive(),
-        role: z.enum(["read", "edit"]).default("read")
-      })
+        role: z.enum(["read", "edit"]).default("read"),
+      }),
     )
-    .optional()
+    .optional(),
 });
 
 const updateProjectSchema = z.object({
@@ -53,21 +56,25 @@ const updateProjectSchema = z.object({
   category: projectCategorySchema.optional(),
   status: z.enum(["proposed", "active", "done", "archived"]).optional(),
   ownerId: z.number().positive().nullable().optional(),
-  dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
-  priority: z.number().min(0).max(10).optional()
+  dueDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional(),
+  priority: z.number().min(0).max(10).optional(),
 });
 
 const assignMembersSchema = z.object({
   members: z.array(
     z.object({
       employeeId: z.number().positive(),
-      role: z.enum(["read", "edit"]).default("read")
-    })
-  )
+      role: z.enum(["read", "edit"]).default("read"),
+    }),
+  ),
 });
 
 const statusReasonSchema = z.object({
-  reason: z.string().min(1, "Begruendung erforderlich")
+  reason: z.string().min(1, "Begruendung erforderlich"),
 });
 
 function canManage(req: Parameters<typeof hasCapability>[0]): boolean {
@@ -94,23 +101,36 @@ function normalizeProjectCategory(category?: string | null) {
   return category;
 }
 
-async function isMember(projectId: number, employeeId: number): Promise<boolean> {
+async function isMember(
+  projectId: number,
+  employeeId: number,
+): Promise<boolean> {
   const [member] = await db
     .select({ projectId: projectMembers.projectId })
     .from(projectMembers)
-    .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.employeeId, employeeId)))
+    .where(
+      and(
+        eq(projectMembers.projectId, projectId),
+        eq(projectMembers.employeeId, employeeId),
+      ),
+    )
     .limit(1);
   return Boolean(member);
 }
 
 async function getMemberRole(
   projectId: number,
-  employeeId: number
+  employeeId: number,
 ): Promise<"read" | "edit" | null> {
   const [member] = await db
     .select({ role: projectMembers.role })
     .from(projectMembers)
-    .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.employeeId, employeeId)))
+    .where(
+      and(
+        eq(projectMembers.projectId, projectId),
+        eq(projectMembers.employeeId, employeeId),
+      ),
+    )
     .limit(1);
   if (!member) return null;
   return member.role === "read" ? "read" : "edit";
@@ -118,7 +138,13 @@ async function getMemberRole(
 
 async function createNotification(
   employeeIds: number[],
-  payload: { type?: "system" | "sop" | "project" | "message"; title: string; message: string; link?: string; metadata?: Record<string, unknown> }
+  payload: {
+    type?: "system" | "sop" | "project" | "message";
+    title: string;
+    message: string;
+    link?: string;
+    metadata?: Record<string, unknown>;
+  },
 ): Promise<void> {
   if (!employeeIds.length) return;
   const rows = employeeIds.map((recipientId) => ({
@@ -127,7 +153,7 @@ async function createNotification(
     title: payload.title,
     message: payload.message,
     link: payload.link || null,
-    metadata: payload.metadata || null
+    metadata: payload.metadata || null,
   }));
   await db.insert(notifications).values(rows);
 }
@@ -135,29 +161,50 @@ async function createNotification(
 async function notifyPermissionGroup(
   departmentId: number | undefined,
   permissionKey: string,
-  payload: { title: string; message: string; link?: string; metadata?: Record<string, unknown> }
+  payload: {
+    title: string;
+    message: string;
+    link?: string;
+    metadata?: Record<string, unknown>;
+  },
 ): Promise<void> {
   if (!departmentId) return;
   const recipients = await db
     .select({ userId: userPermissions.userId })
     .from(userPermissions)
     .innerJoin(permissions, eq(userPermissions.permissionId, permissions.id))
-    .where(and(eq(userPermissions.departmentId, departmentId), eq(permissions.key, permissionKey)));
-  await createNotification(recipients.map((row) => row.userId), {
-    type: "project",
-    title: payload.title,
-    message: payload.message,
-    link: payload.link,
-    metadata: payload.metadata
-  });
+    .where(
+      and(
+        eq(userPermissions.departmentId, departmentId),
+        eq(permissions.key, permissionKey),
+      ),
+    );
+  await createNotification(
+    recipients.map((row) => row.userId),
+    {
+      type: "project",
+      title: payload.title,
+      message: payload.message,
+      link: payload.link,
+      metadata: payload.metadata,
+    },
+  );
 }
 
 async function notifyProjectOwners(
   projectId: number,
-  payload: { title: string; message: string; link?: string; metadata?: Record<string, unknown> }
+  payload: {
+    title: string;
+    message: string;
+    link?: string;
+    metadata?: Record<string, unknown>;
+  },
 ): Promise<void> {
   const ownerRows = await db
-    .select({ ownerId: projectInitiatives.ownerId, createdById: projectInitiatives.createdById })
+    .select({
+      ownerId: projectInitiatives.ownerId,
+      createdById: projectInitiatives.createdById,
+    })
     .from(projectInitiatives)
     .where(eq(projectInitiatives.id, projectId))
     .limit(1);
@@ -176,7 +223,7 @@ async function notifyProjectOwners(
     title: payload.title,
     message: payload.message,
     link: payload.link,
-    metadata: payload.metadata
+    metadata: payload.metadata,
   });
 }
 
@@ -187,7 +234,9 @@ export function registerProjectRoutes(router: Router) {
     "/",
     asyncHandler(async (req, res) => {
       if (!req.user) {
-        return res.status(401).json({ success: false, error: "Nicht authentifiziert" });
+        return res
+          .status(401)
+          .json({ success: false, error: "Nicht authentifiziert" });
       }
       const { status, category } = req.query;
       const baseRows = await db
@@ -205,7 +254,7 @@ export function registerProjectRoutes(router: Router) {
           createdAt: projectInitiatives.createdAt,
           updatedAt: projectInitiatives.updatedAt,
           ownerName: employees.name,
-          ownerLastName: employees.lastName
+          ownerLastName: employees.lastName,
         })
         .from(projectInitiatives)
         .leftJoin(employees, eq(projectInitiatives.ownerId, employees.id))
@@ -230,14 +279,18 @@ export function registerProjectRoutes(router: Router) {
 
       if (status) {
         const statusValue = String(status);
-        rows = rows.filter((project) => normalizeProjectStatus(project.status) === normalizeProjectStatus(statusValue));
+        rows = rows.filter(
+          (project) =>
+            normalizeProjectStatus(project.status) ===
+            normalizeProjectStatus(statusValue),
+        );
       }
       if (category) {
         rows = rows.filter((project) => project.category === category);
       }
 
       return ok(res, rows);
-    })
+    }),
   );
 
   router.get(
@@ -245,7 +298,9 @@ export function registerProjectRoutes(router: Router) {
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
       if (!req.user) {
-        return res.status(401).json({ success: false, error: "Nicht authentifiziert" });
+        return res
+          .status(401)
+          .json({ success: false, error: "Nicht authentifiziert" });
       }
       const projectId = Number(req.params.id);
       const [project] = await db
@@ -263,7 +318,7 @@ export function registerProjectRoutes(router: Router) {
           createdAt: projectInitiatives.createdAt,
           updatedAt: projectInitiatives.updatedAt,
           ownerName: employees.name,
-          ownerLastName: employees.lastName
+          ownerLastName: employees.lastName,
         })
         .from(projectInitiatives)
         .leftJoin(employees, eq(projectInitiatives.ownerId, employees.id))
@@ -283,7 +338,9 @@ export function registerProjectRoutes(router: Router) {
         normalized === "done";
 
       if (!allowed) {
-        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
       }
 
       const members = await db
@@ -291,7 +348,7 @@ export function registerProjectRoutes(router: Router) {
           employeeId: projectMembers.employeeId,
           role: projectMembers.role,
           name: employees.name,
-          lastName: employees.lastName
+          lastName: employees.lastName,
         })
         .from(projectMembers)
         .leftJoin(employees, eq(projectMembers.employeeId, employees.id))
@@ -303,12 +360,12 @@ export function registerProjectRoutes(router: Router) {
           ? {
               id: ownerId,
               name: project.ownerName,
-              lastName: project.ownerLastName
+              lastName: project.ownerLastName,
             }
           : null,
-        members
+        members,
       });
-    })
+    }),
   );
 
   router.post(
@@ -316,7 +373,9 @@ export function registerProjectRoutes(router: Router) {
     validateBody(createProjectSchema),
     asyncHandler(async (req, res) => {
       if (!req.user) {
-        return res.status(401).json({ success: false, error: "Nicht authentifiziert" });
+        return res
+          .status(401)
+          .json({ success: false, error: "Nicht authentifiziert" });
       }
       const {
         title,
@@ -326,7 +385,7 @@ export function registerProjectRoutes(router: Router) {
         ownerId,
         dueDate,
         priority,
-        assignees
+        assignees,
       } = req.body;
 
       const normalizedCategory = normalizeProjectCategory(category);
@@ -346,23 +405,25 @@ export function registerProjectRoutes(router: Router) {
           ownerId: ownerId || req.user.employeeId,
           createdById: req.user.employeeId,
           dueDate: dueDate || null,
-          priority: priority ?? 0
+          priority: priority ?? 0,
         })
         .returning();
 
       const members = new Map<number, "read" | "edit">();
       members.set(req.user.employeeId, "edit");
-      (assignees || []).forEach((member: { employeeId: number; role: "read" | "edit" }) => {
-        members.set(member.employeeId, member.role || "read");
-      });
+      (assignees || []).forEach(
+        (member: { employeeId: number; role: "read" | "edit" }) => {
+          members.set(member.employeeId, member.role || "read");
+        },
+      );
 
       if (members.size) {
         await db.insert(projectMembers).values(
           Array.from(members.entries()).map(([employeeId, role]) => ({
             projectId: project.id,
             employeeId,
-            role
-          }))
+            role,
+          })),
         );
       }
 
@@ -371,12 +432,12 @@ export function registerProjectRoutes(router: Router) {
           title: "Neues Projekt vorgeschlagen",
           message: `${req.user.name} ${req.user.lastName} hat \"${title}\" vorgeschlagen.`,
           link: `/admin/projects?project=${project.id}`,
-          metadata: { projectId: project.id }
+          metadata: { projectId: project.id },
         });
       }
 
       return created(res, project);
-    })
+    }),
   );
 
   router.patch(
@@ -385,22 +446,33 @@ export function registerProjectRoutes(router: Router) {
     validateBody(updateProjectSchema),
     asyncHandler(async (req, res) => {
       if (!req.user) {
-        return res.status(401).json({ success: false, error: "Nicht authentifiziert" });
+        return res
+          .status(401)
+          .json({ success: false, error: "Nicht authentifiziert" });
       }
       const projectId = Number(req.params.id);
-      const [existing] = await db.select().from(projectInitiatives).where(eq(projectInitiatives.id, projectId));
+      const [existing] = await db
+        .select()
+        .from(projectInitiatives)
+        .where(eq(projectInitiatives.id, projectId));
       if (!existing || existing.deletedAt) {
         return notFound(res, "Projekt");
       }
       const memberRole = await getMemberRole(projectId, req.user.employeeId);
       const ownerId = existing.ownerId || existing.createdById;
-      if (!canManage(req) && ownerId !== req.user.employeeId && memberRole !== "edit") {
-        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+      if (
+        !canManage(req) &&
+        ownerId !== req.user.employeeId &&
+        memberRole !== "edit"
+      ) {
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
       }
 
       const updates = {
         ...req.body,
-        updatedAt: new Date()
+        updatedAt: new Date(),
       } as typeof req.body & { updatedAt: Date };
       if (updates.category) {
         updates.category = normalizeProjectCategory(updates.category);
@@ -413,7 +485,7 @@ export function registerProjectRoutes(router: Router) {
         .returning();
 
       return ok(res, updated);
-    })
+    }),
   );
 
   router.post(
@@ -422,28 +494,37 @@ export function registerProjectRoutes(router: Router) {
     validateBody(assignMembersSchema),
     asyncHandler(async (req, res) => {
       if (!req.user) {
-        return res.status(401).json({ success: false, error: "Nicht authentifiziert" });
+        return res
+          .status(401)
+          .json({ success: false, error: "Nicht authentifiziert" });
       }
       if (!canManage(req)) {
-        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
       }
       const projectId = Number(req.params.id);
-      const [existing] = await db.select().from(projectInitiatives).where(eq(projectInitiatives.id, projectId));
+      const [existing] = await db
+        .select()
+        .from(projectInitiatives)
+        .where(eq(projectInitiatives.id, projectId));
       if (!existing || existing.deletedAt) {
         return notFound(res, "Projekt");
       }
-      await db.delete(projectMembers).where(eq(projectMembers.projectId, projectId));
+      await db
+        .delete(projectMembers)
+        .where(eq(projectMembers.projectId, projectId));
       if (req.body.members.length) {
         await db.insert(projectMembers).values(
           req.body.members.map((member) => ({
             projectId,
             employeeId: member.employeeId,
-            role: member.role
-          }))
+            role: member.role,
+          })),
         );
       }
       return ok(res, { success: true });
-    })
+    }),
   );
 
   router.post(
@@ -451,10 +532,15 @@ export function registerProjectRoutes(router: Router) {
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
       if (!canManage(req)) {
-        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
       }
       const projectId = Number(req.params.id);
-      const [existing] = await db.select().from(projectInitiatives).where(eq(projectInitiatives.id, projectId));
+      const [existing] = await db
+        .select()
+        .from(projectInitiatives)
+        .where(eq(projectInitiatives.id, projectId));
       if (!existing || existing.deletedAt) return notFound(res, "Projekt");
       const [updated] = await db
         .update(projectInitiatives)
@@ -464,10 +550,10 @@ export function registerProjectRoutes(router: Router) {
       await notifyProjectOwners(projectId, {
         title: "Projekt angenommen",
         message: `\"${existing.title}\" wurde zur Bearbeitung angenommen.`,
-        link: `/admin/projects?project=${projectId}`
+        link: `/admin/projects?project=${projectId}`,
       });
       return ok(res, updated);
-    })
+    }),
   );
 
   router.post(
@@ -476,13 +562,20 @@ export function registerProjectRoutes(router: Router) {
     validateBody(statusReasonSchema),
     asyncHandler(async (req, res) => {
       if (!canManage(req)) {
-        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
       }
       if (!req.user) {
-        return res.status(401).json({ success: false, error: "Nicht authentifiziert" });
+        return res
+          .status(401)
+          .json({ success: false, error: "Nicht authentifiziert" });
       }
       const projectId = Number(req.params.id);
-      const [existing] = await db.select().from(projectInitiatives).where(eq(projectInitiatives.id, projectId));
+      const [existing] = await db
+        .select()
+        .from(projectInitiatives)
+        .where(eq(projectInitiatives.id, projectId));
       if (!existing || existing.deletedAt) return notFound(res, "Projekt");
 
       const [updated] = await db
@@ -490,7 +583,7 @@ export function registerProjectRoutes(router: Router) {
         .set({
           deletedAt: new Date(),
           deletedById: req.user.employeeId,
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .where(eq(projectInitiatives.id, projectId))
         .returning();
@@ -498,11 +591,11 @@ export function registerProjectRoutes(router: Router) {
       await notifyProjectOwners(projectId, {
         title: "Projekt abgelehnt",
         message: `\"${existing.title}\" wurde abgelehnt: ${req.body.reason}`,
-        link: `/admin/projects`
+        link: `/admin/projects`,
       });
 
       return ok(res, updated);
-    })
+    }),
   );
 
   router.post(
@@ -510,10 +603,15 @@ export function registerProjectRoutes(router: Router) {
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
       if (!canManage(req)) {
-        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
       }
       const projectId = Number(req.params.id);
-      const [existing] = await db.select().from(projectInitiatives).where(eq(projectInitiatives.id, projectId));
+      const [existing] = await db
+        .select()
+        .from(projectInitiatives)
+        .where(eq(projectInitiatives.id, projectId));
       if (!existing || existing.deletedAt) return notFound(res, "Projekt");
       const [updated] = await db
         .update(projectInitiatives)
@@ -521,7 +619,7 @@ export function registerProjectRoutes(router: Router) {
         .where(eq(projectInitiatives.id, projectId))
         .returning();
       return ok(res, updated);
-    })
+    }),
   );
 
   router.delete(
@@ -529,13 +627,20 @@ export function registerProjectRoutes(router: Router) {
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
       if (!req.user) {
-        return res.status(401).json({ success: false, error: "Nicht authentifiziert" });
+        return res
+          .status(401)
+          .json({ success: false, error: "Nicht authentifiziert" });
       }
       if (!canDelete(req)) {
-        return res.status(403).json({ success: false, error: "Keine Berechtigung" });
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
       }
       const projectId = Number(req.params.id);
-      const [existing] = await db.select().from(projectInitiatives).where(eq(projectInitiatives.id, projectId));
+      const [existing] = await db
+        .select()
+        .from(projectInitiatives)
+        .where(eq(projectInitiatives.id, projectId));
       if (!existing || existing.deletedAt) return notFound(res, "Projekt");
 
       const [updated] = await db
@@ -543,12 +648,12 @@ export function registerProjectRoutes(router: Router) {
         .set({
           deletedAt: new Date(),
           deletedById: req.user.employeeId,
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .where(eq(projectInitiatives.id, projectId))
         .returning();
 
       return ok(res, updated);
-    })
+    }),
   );
 }

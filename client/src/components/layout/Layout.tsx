@@ -19,9 +19,7 @@ export function Layout({ children, title, disableMotion }: LayoutProps) {
       <main className="flex-1 min-h-0 flex flex-col min-w-0">
         <Header title={title} />
         <div className="flex-1 min-h-0 p-6 overflow-y-auto">
-          <div className={contentClassName}>
-            {children}
-          </div>
+          <div className={contentClassName}>{children}</div>
         </div>
       </main>
     </div>

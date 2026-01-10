@@ -11,107 +11,118 @@ import {
   sopReferences,
   projectInitiatives,
   projectMembers,
-  notifications
+  notifications,
 } from "@shared/schema";
 
 const TEAM_DATA = [
-  { 
-    name: "PD Dr. Johannes Lermann", 
-    role: "Primararzt" as const, 
-    competencies: ["Senior Mamma Surgeon", "Endometriose", "Gyn-Onkologie", "Geburtshilfe", "Urogynäkologie"], 
-    email: "johannes.lermann@kabeg.at"
+  {
+    name: "PD Dr. Johannes Lermann",
+    role: "Primararzt" as const,
+    competencies: [
+      "Senior Mamma Surgeon",
+      "Endometriose",
+      "Gyn-Onkologie",
+      "Geburtshilfe",
+      "Urogynäkologie",
+    ],
+    email: "johannes.lermann@kabeg.at",
   },
-  { 
-    name: "Dr. Stefan Hinterberger", 
-    role: "1. Oberarzt" as const, 
-    competencies: ["Gynäkologische Chirurgie", "Geburtshilfe", "ÖGUM I", "Dysplasie"], 
-    email: "stefan.hinterberger@kabeg.at"
+  {
+    name: "Dr. Stefan Hinterberger",
+    role: "1. Oberarzt" as const,
+    competencies: [
+      "Gynäkologische Chirurgie",
+      "Geburtshilfe",
+      "ÖGUM I",
+      "Dysplasie",
+    ],
+    email: "stefan.hinterberger@kabeg.at",
   },
-  { 
-    name: "Dr. Janos Gellen", 
-    role: "Oberarzt" as const, 
-    competencies: ["ÖGUM II"]
+  {
+    name: "Dr. Janos Gellen",
+    role: "Oberarzt" as const,
+    competencies: ["ÖGUM II"],
   },
-  { 
-    name: "Dr. Andreja Gornjec", 
-    role: "Oberärztin" as const, 
-    competencies: ["Gyn-Onkologie", "Dysplasie"]
+  {
+    name: "Dr. Andreja Gornjec",
+    role: "Oberärztin" as const,
+    competencies: ["Gyn-Onkologie", "Dysplasie"],
   },
-  { 
-    name: "Dr. Christoph Herbst", 
-    role: "Oberarzt" as const, 
-    competencies: ["ÖGUM I", "Geburtshilfe"]
+  {
+    name: "Dr. Christoph Herbst",
+    role: "Oberarzt" as const,
+    competencies: ["ÖGUM I", "Geburtshilfe"],
   },
-  { 
-    name: "Dr. Kerstin Herzog", 
-    role: "Oberärztin" as const, 
-    competencies: ["Allgemeine Gynäkologie"]
+  {
+    name: "Dr. Kerstin Herzog",
+    role: "Oberärztin" as const,
+    competencies: ["Allgemeine Gynäkologie"],
   },
-  { 
-    name: "Dr. Martina Krenn", 
-    role: "Oberärztin" as const, 
-    competencies: ["Allgemeine Gynäkologie", "Mamma"]
+  {
+    name: "Dr. Martina Krenn",
+    role: "Oberärztin" as const,
+    competencies: ["Allgemeine Gynäkologie", "Mamma"],
   },
-  { 
-    name: "Dr. Kristin Köck", 
-    role: "Oberärztin" as const, 
-    competencies: ["Mamma", "Allgemeine Gynäkologie"]
+  {
+    name: "Dr. Kristin Köck",
+    role: "Oberärztin" as const,
+    competencies: ["Mamma", "Allgemeine Gynäkologie"],
   },
-  { 
-    name: "Dr. Barbara Markota", 
-    role: "Oberärztin" as const, 
-    competencies: ["ÖGUM II", "Geburtshilfe", "Gynäkologische Chirurgie"]
+  {
+    name: "Dr. Barbara Markota",
+    role: "Oberärztin" as const,
+    competencies: ["ÖGUM II", "Geburtshilfe", "Gynäkologische Chirurgie"],
   },
-  { 
-    name: "Dr. Marlene Waschnig", 
-    role: "Oberärztin" as const, 
-    competencies: ["Allgemeine Gynäkologie", "Mamma Ambulanz"]
+  {
+    name: "Dr. Marlene Waschnig",
+    role: "Oberärztin" as const,
+    competencies: ["Allgemeine Gynäkologie", "Mamma Ambulanz"],
   },
-  { 
-    name: "Dr. Lucia Gerhold", 
-    role: "Oberärztin" as const, 
-    competencies: ["Gynäkologische Chirurgie", "Geburtshilfe", "Dysplasie"]
+  {
+    name: "Dr. Lucia Gerhold",
+    role: "Oberärztin" as const,
+    competencies: ["Gynäkologische Chirurgie", "Geburtshilfe", "Dysplasie"],
   },
-  { 
-    name: "Dr. Lukas Dullnig", 
-    role: "Assistenzarzt" as const, 
-    competencies: []
+  {
+    name: "Dr. Lukas Dullnig",
+    role: "Assistenzarzt" as const,
+    competencies: [],
   },
-  { 
-    name: "Dr. Lena Gruber", 
-    role: "Assistenzärztin" as const, 
-    competencies: []
+  {
+    name: "Dr. Lena Gruber",
+    role: "Assistenzärztin" as const,
+    competencies: [],
   },
-  { 
-    name: "Dr. Jelizaveta Gurmane", 
-    role: "Assistenzärztin" as const, 
-    competencies: []
+  {
+    name: "Dr. Jelizaveta Gurmane",
+    role: "Assistenzärztin" as const,
+    competencies: [],
   },
-  { 
-    name: "Dr. Isabel Krauss", 
-    role: "Assistenzärztin" as const, 
-    competencies: ["Dysplasie"]
+  {
+    name: "Dr. Isabel Krauss",
+    role: "Assistenzärztin" as const,
+    competencies: ["Dysplasie"],
   },
-  { 
-    name: "Dr. Katharina Lesnik", 
-    role: "Assistenzärztin" as const, 
-    competencies: ["Dysplasie"]
+  {
+    name: "Dr. Katharina Lesnik",
+    role: "Assistenzärztin" as const,
+    competencies: ["Dysplasie"],
   },
-  { 
-    name: "Dr. Magdalena Rosenkranz", 
-    role: "Assistenzärztin" as const, 
-    competencies: ["Kindergynäkologie"]
+  {
+    name: "Dr. Magdalena Rosenkranz",
+    role: "Assistenzärztin" as const,
+    competencies: ["Kindergynäkologie"],
   },
-  { 
-    name: "Dr. Anna Sellner", 
-    role: "Assistenzärztin" as const, 
-    competencies: ["Dysplasie", "Urogynäkologie"]
+  {
+    name: "Dr. Anna Sellner",
+    role: "Assistenzärztin" as const,
+    competencies: ["Dysplasie", "Urogynäkologie"],
   },
-  { 
-    name: "Dr. Magdalena Stöger", 
-    role: "Assistenzärztin" as const, 
-    competencies: []
-  }
+  {
+    name: "Dr. Magdalena Stöger",
+    role: "Assistenzärztin" as const,
+    competencies: [],
+  },
 ];
 
 const RESOURCES_DATA = [
@@ -120,61 +131,115 @@ const RESOURCES_DATA = [
   { name: "OP 1", category: "OP", isAvailable: true },
   { name: "OP 2", category: "OP", isAvailable: true },
   { name: "Ambulanz Gyn", category: "Ambulanz", isAvailable: true },
-  { name: "Mamma Ambulanz", category: "Ambulanz", isAvailable: true }
+  { name: "Mamma Ambulanz", category: "Ambulanz", isAvailable: true },
 ];
 
 async function seed() {
   try {
     console.log("Seeding database...");
-    
+
     // Seed clinic
-    const [clinic] = await db.insert(clinics).values({
-      name: "Klinikum Klagenfurt",
-      slug: "klinikum-klagenfurt",
-      timezone: "Europe/Vienna",
-      country: "AT",
-      state: "AT-2"
-    }).returning();
+    const [clinic] = await db
+      .insert(clinics)
+      .values({
+        name: "Klinikum Klagenfurt",
+        slug: "klinikum-klagenfurt",
+        timezone: "Europe/Vienna",
+        country: "AT",
+        state: "AT-2",
+      })
+      .returning();
     console.log("✓ Seeded clinic");
-    
+
     // Seed department
-    const [department] = await db.insert(departments).values({
-      clinicId: clinic.id,
-      name: "Gynäkologie und Geburtshilfe",
-      slug: "gyn-geb"
-    }).returning();
+    const [department] = await db
+      .insert(departments)
+      .values({
+        clinicId: clinic.id,
+        name: "Gynäkologie und Geburtshilfe",
+        slug: "gyn-geb",
+      })
+      .returning();
     console.log("✓ Seeded department");
-    
+
     // Seed permissions
     const permissionData = [
-      { key: "users.manage", label: "Kann Benutzer anlegen / verwalten", scope: "department" },
-      { key: "dutyplan.edit", label: "Kann Dienstplan bearbeiten", scope: "department" },
-      { key: "dutyplan.publish", label: "Kann Dienstplan freigeben", scope: "department" },
-      { key: "vacation.lock", label: "Kann Urlaubsplanung bearbeiten (Sperrzeitraum)", scope: "department" },
-      { key: "vacation.approve", label: "Kann Urlaub freigeben", scope: "department" },
-      { key: "absence.create", label: "Kann Abwesenheiten eintragen", scope: "department" },
-      { key: "perm.sop_manage", label: "Kann SOPs verwalten", scope: "department" },
-      { key: "perm.sop_publish", label: "Kann SOPs freigeben", scope: "department" },
-      { key: "perm.project_manage", label: "Kann Projekte verwalten", scope: "department" },
-      { key: "perm.project_delete", label: "Kann Projekte loeschen", scope: "department" },
-      { key: "perm.message_group_manage", label: "Kann Gruppen verwalten", scope: "department" },
-      { key: "training.edit", label: "Kann Ausbildungsplan bearbeiten", scope: "department" }
+      {
+        key: "users.manage",
+        label: "Kann Benutzer anlegen / verwalten",
+        scope: "department",
+      },
+      {
+        key: "dutyplan.edit",
+        label: "Kann Dienstplan bearbeiten",
+        scope: "department",
+      },
+      {
+        key: "dutyplan.publish",
+        label: "Kann Dienstplan freigeben",
+        scope: "department",
+      },
+      {
+        key: "vacation.lock",
+        label: "Kann Urlaubsplanung bearbeiten (Sperrzeitraum)",
+        scope: "department",
+      },
+      {
+        key: "vacation.approve",
+        label: "Kann Urlaub freigeben",
+        scope: "department",
+      },
+      {
+        key: "absence.create",
+        label: "Kann Abwesenheiten eintragen",
+        scope: "department",
+      },
+      {
+        key: "perm.sop_manage",
+        label: "Kann SOPs verwalten",
+        scope: "department",
+      },
+      {
+        key: "perm.sop_publish",
+        label: "Kann SOPs freigeben",
+        scope: "department",
+      },
+      {
+        key: "perm.project_manage",
+        label: "Kann Projekte verwalten",
+        scope: "department",
+      },
+      {
+        key: "perm.project_delete",
+        label: "Kann Projekte loeschen",
+        scope: "department",
+      },
+      {
+        key: "perm.message_group_manage",
+        label: "Kann Gruppen verwalten",
+        scope: "department",
+      },
+      {
+        key: "training.edit",
+        label: "Kann Ausbildungsplan bearbeiten",
+        scope: "department",
+      },
     ];
-    
+
     for (const perm of permissionData) {
       await db.insert(permissions).values(perm);
     }
     console.log(`✓ Seeded ${permissionData.length} permissions`);
-    
+
     // Seed employees with department
     for (const emp of TEAM_DATA) {
       await db.insert(employees).values({
         ...emp,
-        departmentId: department.id
+        departmentId: department.id,
       });
     }
     console.log(`✓ Seeded ${TEAM_DATA.length} employees`);
-    
+
     // Seed resources
     for (const res of RESOURCES_DATA) {
       await db.insert(resources).values(res);
@@ -206,8 +271,9 @@ async function seed() {
           title: "SOP Vorschlag: Postpartale Blutung",
           category: "SOP",
           status: "proposed",
-          contentMarkdown: "Bitte Standardablauf fuer die Erstversorgung definieren.",
-          createdById: ownerId
+          contentMarkdown:
+            "Bitte Standardablauf fuer die Erstversorgung definieren.",
+          createdById: ownerId,
         })
         .returning();
       const [inProgressSop] = await db
@@ -217,7 +283,7 @@ async function seed() {
           category: "SOP",
           status: "in_progress",
           contentMarkdown: "Diagnostik, Therapie und Nachsorge fuer GDM.",
-          createdById: ownerId
+          createdById: ownerId,
         })
         .returning();
       const [reviewSop] = await db
@@ -226,8 +292,9 @@ async function seed() {
           title: "Dienstanweisung Review: Praenatale Diagnostik",
           category: "Dienstanweisung",
           status: "review",
-          contentMarkdown: "Update der Untersuchungsintervalle und Dokumentation.",
-          createdById: ownerId
+          contentMarkdown:
+            "Update der Untersuchungsintervalle und Dokumentation.",
+          createdById: ownerId,
         })
         .returning();
       const [publishedSop] = await db
@@ -239,7 +306,7 @@ async function seed() {
           contentMarkdown: "Standardablauf vor, waehrend und nach Sectio.",
           createdById: ownerId,
           approvedById: publisherId,
-          publishedAt: new Date()
+          publishedAt: new Date(),
         })
         .returning();
 
@@ -251,7 +318,7 @@ async function seed() {
           title: publishedSop.title,
           contentMarkdown: publishedSop.contentMarkdown || "",
           changeNote: "Erstveroeffentlichung",
-          releasedById: publisherId
+          releasedById: publisherId,
         })
         .returning();
 
@@ -261,7 +328,7 @@ async function seed() {
           currentVersionId: version.id,
           version: "1",
           approvedById: publisherId,
-          publishedAt: new Date()
+          publishedAt: new Date(),
         })
         .where(eq(sops.id, publishedSop.id));
 
@@ -277,7 +344,7 @@ async function seed() {
         createdById: ownerId,
         createdByAi: false,
         verifiedById: publisherId,
-        verifiedAt: new Date()
+        verifiedAt: new Date(),
       });
 
       console.log("✓ Seeded SOP samples");
@@ -292,11 +359,12 @@ async function seed() {
         .insert(projectInitiatives)
         .values({
           title: "Projektvorschlag: SOP Digitale Kurve",
-          description: "Erstellung einer SOP fuer die digitale Geburtsdokumentation.",
+          description:
+            "Erstellung einer SOP fuer die digitale Geburtsdokumentation.",
           category: "SOP",
           status: "proposed",
           createdById: ownerId,
-          ownerId
+          ownerId,
         })
         .returning();
       const [activeProject] = await db
@@ -307,7 +375,7 @@ async function seed() {
           category: "Qualitätsprojekt",
           status: "active",
           createdById: ownerId,
-          ownerId
+          ownerId,
         })
         .returning();
       const [doneProject] = await db
@@ -318,14 +386,14 @@ async function seed() {
           category: "Studie",
           status: "done",
           createdById: ownerId,
-          ownerId
+          ownerId,
         })
         .returning();
 
       await db.insert(projectMembers).values([
         { projectId: proposedProject.id, employeeId: ownerId, role: "Leitung" },
         { projectId: activeProject.id, employeeId: ownerId, role: "Leitung" },
-        { projectId: doneProject.id, employeeId: ownerId, role: "Leitung" }
+        { projectId: doneProject.id, employeeId: ownerId, role: "Leitung" },
       ]);
 
       console.log("✓ Seeded project samples");
@@ -341,11 +409,11 @@ async function seed() {
         type: "system",
         title: "Willkommen bei SOPs & Projekten",
         message: "Neue SOPs und Projekte warten auf Ihre Freigabe.",
-        link: "/nachrichten"
+        link: "/nachrichten",
       });
       console.log("✓ Seeded notifications");
     }
-    
+
     console.log("Seeding complete!");
     process.exit(0);
   } catch (error) {

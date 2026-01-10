@@ -1,9 +1,26 @@
 import type { Router } from "express";
 import { z } from "zod";
 import { db, eq, and, asc } from "../../lib/db";
-import { ok, created, notFound, validationError, asyncHandler } from "../../lib/api-response";
-import { validateBody, validateParams, idParamSchema } from "../../lib/validate";
-import { serviceLines, clinics, rosterShifts, shiftWishes, longTermShiftWishes, employees } from "@shared/schema";
+import {
+  ok,
+  created,
+  notFound,
+  validationError,
+  asyncHandler,
+} from "../../lib/api-response";
+import {
+  validateBody,
+  validateParams,
+  idParamSchema,
+} from "../../lib/validate";
+import {
+  serviceLines,
+  clinics,
+  rosterShifts,
+  shiftWishes,
+  longTermShiftWishes,
+  employees,
+} from "@shared/schema";
 
 const DEFAULT_SERVICE_LINES = [
   {
@@ -13,7 +30,7 @@ const DEFAULT_SERVICE_LINES = [
     startTime: "07:30",
     endTime: "08:00",
     endsNextDay: true,
-    sortOrder: 1
+    sortOrder: 1,
   },
   {
     key: "gyn",
@@ -22,7 +39,7 @@ const DEFAULT_SERVICE_LINES = [
     startTime: "07:30",
     endTime: "08:00",
     endsNextDay: true,
-    sortOrder: 2
+    sortOrder: 2,
   },
   {
     key: "turnus",
@@ -31,7 +48,7 @@ const DEFAULT_SERVICE_LINES = [
     startTime: "07:30",
     endTime: "08:00",
     endsNextDay: true,
-    sortOrder: 3
+    sortOrder: 3,
   },
   {
     key: "overduty",
@@ -40,8 +57,8 @@ const DEFAULT_SERVICE_LINES = [
     startTime: "07:30",
     endTime: "08:00",
     endsNextDay: true,
-    sortOrder: 4
-  }
+    sortOrder: 4,
+  },
 ];
 
 const createServiceLineSchema = z.object({
@@ -52,12 +69,16 @@ const createServiceLineSchema = z.object({
   endTime: z.string().regex(/^\d{2}:\d{2}$/),
   endsNextDay: z.boolean().optional(),
   sortOrder: z.number().int().optional(),
-  isActive: z.boolean().optional()
+  isActive: z.boolean().optional(),
 });
 
 const updateServiceLineSchema = createServiceLineSchema.partial();
 
-const replaceServiceTypeInArray = (values: unknown, fromKey: string, toKey: string) => {
+const replaceServiceTypeInArray = (
+  values: unknown,
+  fromKey: string,
+  toKey: string,
+) => {
   if (!Array.isArray(values)) return null;
   let changed = false;
   const updated = values.map((value) => {
@@ -68,11 +89,19 @@ const replaceServiceTypeInArray = (values: unknown, fromKey: string, toKey: stri
     return value;
   });
   if (!changed) return null;
-  const deduped = Array.from(new Set(updated.filter((value): value is string => typeof value === "string")));
+  const deduped = Array.from(
+    new Set(
+      updated.filter((value): value is string => typeof value === "string"),
+    ),
+  );
   return deduped;
 };
 
-const replaceServiceTypeInRules = (values: unknown, fromKey: string, toKey: string) => {
+const replaceServiceTypeInRules = (
+  values: unknown,
+  fromKey: string,
+  toKey: string,
+) => {
   if (!Array.isArray(values)) return null;
   let changed = false;
   const updated = values.map((rule) => {
@@ -101,8 +130,8 @@ async function ensureDefaults(clinicId: number) {
       DEFAULT_SERVICE_LINES.map((line) => ({
         clinicId,
         ...line,
-        isActive: true
-      }))
+        isActive: true,
+      })),
     )
     .returning();
   return inserted;
@@ -122,31 +151,35 @@ export function registerServiceLineRoutes(router: Router) {
    * GET /api/service-lines
    * Returns service lines for the current clinic (auto-seeded if empty).
    */
-  router.get("/", asyncHandler(async (req, res) => {
-    const clinicId = resolveClinicId(req);
-    if (!clinicId) {
-      return validationError(res, "Klinik-ID fehlt");
-    }
+  router.get(
+    "/",
+    asyncHandler(async (req, res) => {
+      const clinicId = resolveClinicId(req);
+      if (!clinicId) {
+        return validationError(res, "Klinik-ID fehlt");
+      }
 
-    const seeded = await ensureDefaults(clinicId);
-    const lines = await db
-      .select()
-      .from(serviceLines)
-      .where(eq(serviceLines.clinicId, clinicId))
-      .orderBy(asc(serviceLines.sortOrder), asc(serviceLines.label));
+      const seeded = await ensureDefaults(clinicId);
+      const lines = await db
+        .select()
+        .from(serviceLines)
+        .where(eq(serviceLines.clinicId, clinicId))
+        .orderBy(asc(serviceLines.sortOrder), asc(serviceLines.label));
 
-    if (!lines.length) {
-      return ok(res, seeded);
-    }
+      if (!lines.length) {
+        return ok(res, seeded);
+      }
 
-    return ok(res, lines);
-  }));
+      return ok(res, lines);
+    }),
+  );
 
   /**
    * POST /api/service-lines
    * Create a new service line for the current clinic.
    */
-  router.post("/",
+  router.post(
+    "/",
     validateBody(createServiceLineSchema),
     asyncHandler(async (req, res) => {
       const clinicId = resolveClinicId(req);
@@ -154,13 +187,25 @@ export function registerServiceLineRoutes(router: Router) {
         return validationError(res, "Klinik-ID fehlt");
       }
 
-      const { key, label, roleGroup, startTime, endTime, endsNextDay, sortOrder, isActive } = req.body;
+      const {
+        key,
+        label,
+        roleGroup,
+        startTime,
+        endTime,
+        endsNextDay,
+        sortOrder,
+        isActive,
+      } = req.body;
       const normalizedKey = typeof key === "string" ? key.trim() : "";
       if (!normalizedKey) {
         return validationError(res, "Key ist erforderlich");
       }
 
-      const [clinic] = await db.select().from(clinics).where(eq(clinics.id, clinicId));
+      const [clinic] = await db
+        .select()
+        .from(clinics)
+        .where(eq(clinics.id, clinicId));
       if (!clinic) {
         return notFound(res, "Klinik");
       }
@@ -176,19 +221,20 @@ export function registerServiceLineRoutes(router: Router) {
           endTime,
           endsNextDay: Boolean(endsNextDay),
           sortOrder: typeof sortOrder === "number" ? sortOrder : 0,
-          isActive: isActive !== false
+          isActive: isActive !== false,
         })
         .returning();
 
       return created(res, createdLine);
-    })
+    }),
   );
 
   /**
    * PATCH /api/service-lines/:id
    * Update a service line.
    */
-  router.patch("/:id",
+  router.patch(
+    "/:id",
     validateParams(idParamSchema),
     validateBody(updateServiceLineSchema),
     asyncHandler(async (req, res) => {
@@ -201,19 +247,27 @@ export function registerServiceLineRoutes(router: Router) {
       const [existing] = await db
         .select()
         .from(serviceLines)
-        .where(and(eq(serviceLines.id, id), eq(serviceLines.clinicId, clinicId)));
+        .where(
+          and(eq(serviceLines.id, id), eq(serviceLines.clinicId, clinicId)),
+        );
       if (!existing) {
         return notFound(res, "Dienstschiene");
       }
 
-      const normalizedKey = typeof req.body.key === "string" ? req.body.key.trim() : undefined;
+      const normalizedKey =
+        typeof req.body.key === "string" ? req.body.key.trim() : undefined;
       const nextKey = normalizedKey || existing.key;
 
       if (normalizedKey && normalizedKey !== existing.key) {
         const [conflict] = await db
           .select()
           .from(serviceLines)
-          .where(and(eq(serviceLines.clinicId, clinicId), eq(serviceLines.key, normalizedKey)));
+          .where(
+            and(
+              eq(serviceLines.clinicId, clinicId),
+              eq(serviceLines.key, normalizedKey),
+            ),
+          );
         if (conflict) {
           return validationError(res, "Key ist bereits vergeben");
         }
@@ -227,28 +281,47 @@ export function registerServiceLineRoutes(router: Router) {
             .where(eq(rosterShifts.serviceType, existing.key));
 
           const wishRows = await tx
-            .select({ id: shiftWishes.id, preferred: shiftWishes.preferredServiceTypes, avoid: shiftWishes.avoidServiceTypes })
+            .select({
+              id: shiftWishes.id,
+              preferred: shiftWishes.preferredServiceTypes,
+              avoid: shiftWishes.avoidServiceTypes,
+            })
             .from(shiftWishes);
           for (const wish of wishRows) {
-            const nextPreferred = replaceServiceTypeInArray(wish.preferred, existing.key, nextKey);
-            const nextAvoid = replaceServiceTypeInArray(wish.avoid, existing.key, nextKey);
+            const nextPreferred = replaceServiceTypeInArray(
+              wish.preferred,
+              existing.key,
+              nextKey,
+            );
+            const nextAvoid = replaceServiceTypeInArray(
+              wish.avoid,
+              existing.key,
+              nextKey,
+            );
             if (nextPreferred || nextAvoid) {
               await tx
                 .update(shiftWishes)
                 .set({
                   preferredServiceTypes: nextPreferred ?? wish.preferred,
                   avoidServiceTypes: nextAvoid ?? wish.avoid,
-                  updatedAt: new Date()
+                  updatedAt: new Date(),
                 })
                 .where(eq(shiftWishes.id, wish.id));
             }
           }
 
           const longTermRows = await tx
-            .select({ id: longTermShiftWishes.id, rules: longTermShiftWishes.rules })
+            .select({
+              id: longTermShiftWishes.id,
+              rules: longTermShiftWishes.rules,
+            })
             .from(longTermShiftWishes);
           for (const entry of longTermRows) {
-            const nextRules = replaceServiceTypeInRules(entry.rules, existing.key, nextKey);
+            const nextRules = replaceServiceTypeInRules(
+              entry.rules,
+              existing.key,
+              nextKey,
+            );
             if (nextRules) {
               await tx
                 .update(longTermShiftWishes)
@@ -258,14 +331,30 @@ export function registerServiceLineRoutes(router: Router) {
           }
 
           const employeeRows = await tx
-            .select({ id: employees.id, shiftPreferences: employees.shiftPreferences })
+            .select({
+              id: employees.id,
+              shiftPreferences: employees.shiftPreferences,
+            })
             .from(employees);
           for (const emp of employeeRows) {
-            if (!emp.shiftPreferences || typeof emp.shiftPreferences !== "object") continue;
-            const prefs = emp.shiftPreferences as { serviceTypeOverrides?: unknown };
-            const nextOverrides = replaceServiceTypeInArray(prefs.serviceTypeOverrides, existing.key, nextKey);
+            if (
+              !emp.shiftPreferences ||
+              typeof emp.shiftPreferences !== "object"
+            )
+              continue;
+            const prefs = emp.shiftPreferences as {
+              serviceTypeOverrides?: unknown;
+            };
+            const nextOverrides = replaceServiceTypeInArray(
+              prefs.serviceTypeOverrides,
+              existing.key,
+              nextKey,
+            );
             if (!nextOverrides) continue;
-            const updatedPrefs = { ...(emp.shiftPreferences as Record<string, unknown>), serviceTypeOverrides: nextOverrides };
+            const updatedPrefs = {
+              ...(emp.shiftPreferences as Record<string, unknown>),
+              serviceTypeOverrides: nextOverrides,
+            };
             await tx
               .update(employees)
               .set({ shiftPreferences: updatedPrefs, updatedAt: new Date() })
@@ -281,14 +370,15 @@ export function registerServiceLineRoutes(router: Router) {
       });
 
       return ok(res, updated);
-    })
+    }),
   );
 
   /**
    * DELETE /api/service-lines/:id
    * Delete a service line.
    */
-  router.delete("/:id",
+  router.delete(
+    "/:id",
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
       const id = Number(req.params.id);
@@ -300,13 +390,15 @@ export function registerServiceLineRoutes(router: Router) {
       const [existing] = await db
         .select()
         .from(serviceLines)
-        .where(and(eq(serviceLines.id, id), eq(serviceLines.clinicId, clinicId)));
+        .where(
+          and(eq(serviceLines.id, id), eq(serviceLines.clinicId, clinicId)),
+        );
       if (!existing) {
         return notFound(res, "Dienstschiene");
       }
 
       await db.delete(serviceLines).where(eq(serviceLines.id, id));
       return ok(res, { deleted: true, id });
-    })
+    }),
   );
 }

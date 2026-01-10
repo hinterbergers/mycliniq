@@ -1,6 +1,10 @@
 import type { Router } from "express";
 import { ok, created, notFound, asyncHandler } from "../../lib/api-response";
-import { validateBody, validateParams, idParamSchema } from "../../lib/validate";
+import {
+  validateBody,
+  validateParams,
+  idParamSchema,
+} from "../../lib/validate";
 import { db, eq } from "../../lib/db";
 import { physicalRooms, insertPhysicalRoomSchema } from "@shared/schema";
 
@@ -15,46 +19,58 @@ export function registerPhysicalRoomRoutes(router: Router) {
    * GET /api/physical-rooms
    * Get all physical rooms
    */
-  router.get("/", asyncHandler(async (_req, res) => {
-    const result = await db.select().from(physicalRooms);
-    return ok(res, result);
-  }));
+  router.get(
+    "/",
+    asyncHandler(async (_req, res) => {
+      const result = await db.select().from(physicalRooms);
+      return ok(res, result);
+    }),
+  );
 
   /**
    * GET /api/physical-rooms/:id
    * Get physical room by ID
    */
-  router.get("/:id",
+  router.get(
+    "/:id",
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
       const { id } = req.params;
-      const [room] = await db.select().from(physicalRooms).where(eq(physicalRooms.id, Number(id)));
+      const [room] = await db
+        .select()
+        .from(physicalRooms)
+        .where(eq(physicalRooms.id, Number(id)));
 
       if (!room) {
         return notFound(res, "Raum");
       }
 
       return ok(res, room);
-    })
+    }),
   );
 
   /**
    * POST /api/physical-rooms
    * Create new physical room
    */
-  router.post("/",
+  router.post(
+    "/",
     validateBody(insertPhysicalRoomSchema),
     asyncHandler(async (req, res) => {
-      const [room] = await db.insert(physicalRooms).values(req.body).returning();
+      const [room] = await db
+        .insert(physicalRooms)
+        .values(req.body)
+        .returning();
       return created(res, room);
-    })
+    }),
   );
 
   /**
    * PUT /api/physical-rooms/:id
    * Update physical room
    */
-  router.put("/:id",
+  router.put(
+    "/:id",
     validateParams(idParamSchema),
     validateBody(updatePhysicalRoomSchema),
     asyncHandler(async (req, res) => {
@@ -70,14 +86,15 @@ export function registerPhysicalRoomRoutes(router: Router) {
       }
 
       return ok(res, room);
-    })
+    }),
   );
 
   /**
    * DELETE /api/physical-rooms/:id
    * Deactivate physical room
    */
-  router.delete("/:id",
+  router.delete(
+    "/:id",
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
       const { id } = req.params;
@@ -92,7 +109,7 @@ export function registerPhysicalRoomRoutes(router: Router) {
       }
 
       return ok(res, { id: room.id, deactivated: true });
-    })
+    }),
   );
 
   return router;

@@ -1,7 +1,22 @@
 import { Layout } from "@/components/layout/Layout";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Users, Building2, CalendarClock, UserCog, CalendarRange, Briefcase, Building, CalendarDays } from "lucide-react";
+import {
+  Users,
+  Building2,
+  CalendarClock,
+  UserCog,
+  CalendarRange,
+  Briefcase,
+  Building,
+  CalendarDays,
+} from "lucide-react";
 import { useLocation } from "wouter";
 
 export default function PlanningCockpit() {
@@ -14,7 +29,7 @@ export default function PlanningCockpit() {
       icon: CalendarClock,
       action: () => setLocation("/admin/roster"),
       color: "text-primary",
-      bg: "bg-primary/10"
+      bg: "bg-primary/10",
     },
     {
       title: "Wochenplan-Editor",
@@ -22,7 +37,7 @@ export default function PlanningCockpit() {
       icon: CalendarRange,
       action: () => setLocation("/admin/weekly"),
       color: "text-primary",
-      bg: "bg-primary/10"
+      bg: "bg-primary/10",
     },
     {
       title: "Urlaubsplan-Editor",
@@ -30,7 +45,7 @@ export default function PlanningCockpit() {
       icon: CalendarDays,
       action: () => setLocation("/admin/urlaubsplan"),
       color: "text-amber-600",
-      bg: "bg-amber-50"
+      bg: "bg-amber-50",
     },
     {
       title: "Mitarbeiter & Kompetenzen",
@@ -38,7 +53,7 @@ export default function PlanningCockpit() {
       icon: Users,
       action: () => setLocation("/admin/employees"),
       color: "text-blue-600",
-      bg: "bg-blue-50"
+      bg: "bg-blue-50",
     },
     {
       title: "Arbeitsplätze & Räume",
@@ -46,7 +61,7 @@ export default function PlanningCockpit() {
       icon: Building2,
       action: () => setLocation("/admin/resources"),
       color: "text-emerald-600",
-      bg: "bg-emerald-50"
+      bg: "bg-emerald-50",
     },
     {
       title: "SOPs und Projekte verwalten",
@@ -54,7 +69,7 @@ export default function PlanningCockpit() {
       icon: Briefcase,
       action: () => setLocation("/admin/projects"),
       color: "text-amber-600",
-      bg: "bg-amber-50"
+      bg: "bg-amber-50",
     },
     {
       title: "Klinik-Einstellungen",
@@ -62,7 +77,7 @@ export default function PlanningCockpit() {
       icon: Building,
       action: () => setLocation("/admin/clinic"),
       color: "text-indigo-600",
-      bg: "bg-indigo-50"
+      bg: "bg-indigo-50",
     },
   ];
 
@@ -70,7 +85,9 @@ export default function PlanningCockpit() {
     <Layout title="Planungs-Cockpit (Sekretariat)">
       <div className="max-w-5xl mx-auto space-y-8">
         <div className="flex flex-col gap-2">
-          <h2 className="text-2xl font-bold tracking-tight">Verwaltungsebene</h2>
+          <h2 className="text-2xl font-bold tracking-tight">
+            Verwaltungsebene
+          </h2>
           <p className="text-muted-foreground">
             Zentrale Steuerung für Stammdaten, Arbeitsplätze und Dienstplanung.
           </p>
@@ -78,14 +95,16 @@ export default function PlanningCockpit() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {modules.map((module, i) => (
-            <Card 
-              key={i} 
+            <Card
+              key={i}
               className="border-none kabeg-shadow hover:shadow-md transition-all cursor-pointer group"
               onClick={module.action}
               data-testid={`card-module-${i}`}
             >
               <CardContent className="p-6 flex items-start gap-4">
-                <div className={`w-12 h-12 rounded-xl ${module.bg} flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-200`}>
+                <div
+                  className={`w-12 h-12 rounded-xl ${module.bg} flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-200`}
+                >
                   <module.icon className={`w-6 h-6 ${module.color}`} />
                 </div>
                 <div className="space-y-1">
@@ -113,24 +132,26 @@ export default function PlanningCockpit() {
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-3">
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 className="bg-background border-dashed border-border"
                 onClick={() => console.log("Krankmeldung erfassen clicked")}
                 data-testid="button-sick-report"
               >
                 + Krankmeldung erfassen
               </Button>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 className="bg-background border-dashed border-border"
-                onClick={() => console.log("Arbeitsplatz kurzfristig sperren clicked")}
+                onClick={() =>
+                  console.log("Arbeitsplatz kurzfristig sperren clicked")
+                }
                 data-testid="button-lock-room"
               >
                 + Arbeitsplatz kurzfristig sperren
               </Button>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 className="bg-background border-dashed border-border"
                 onClick={() => console.log("User neu anlegen clicked")}
                 data-testid="button-new-user"

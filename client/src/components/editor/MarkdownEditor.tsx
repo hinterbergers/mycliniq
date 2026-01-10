@@ -26,7 +26,7 @@ const EDITOR_COMMANDS = [
   commands.divider,
   commands.link,
   commands.table,
-  commands.hr
+  commands.hr,
 ];
 
 export function MarkdownEditor({
@@ -34,7 +34,7 @@ export function MarkdownEditor({
   onChange,
   height = 420,
   placeholder,
-  className
+  className,
 }: MarkdownEditorProps) {
   return (
     <div data-color-mode="light" className={className}>

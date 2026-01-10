@@ -11,7 +11,11 @@ import {
 import type { Employee } from "@shared/schema";
 import { clearAuthToken, readAuthToken, writeAuthToken } from "./authToken";
 
-type SystemRole = "employee" | "department_admin" | "clinic_admin" | "system_admin";
+type SystemRole =
+  | "employee"
+  | "department_admin"
+  | "clinic_admin"
+  | "system_admin";
 
 export interface UserData {
   id: number;
@@ -57,7 +61,11 @@ export interface AuthContextType {
 
   capabilities: string[];
 
-  login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
+  login: (
+    email: string,
+    password: string,
+    rememberMe?: boolean,
+  ) => Promise<void>;
   logout: () => Promise<void>;
   refreshAuth: () => Promise<void>;
 }
@@ -94,7 +102,10 @@ function buildUserFromEmployee(emp: any): UserData {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [employee, setEmployee] = useState<Omit<Employee, "passwordHash"> | null>(null);
+  const [employee, setEmployee] = useState<Omit<
+    Employee,
+    "passwordHash"
+  > | null>(null);
   const [user, setUser] = useState<UserData | null>(null);
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [token, setToken] = useState<string | null>(null);
@@ -112,7 +123,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (employee) {
       const role = (employee as any).role;
       if (employee.isAdmin) return true;
-      if (typeof role === "string" && (ADMIN_ROLES as readonly string[]).includes(role)) return true;
+      if (
+        typeof role === "string" &&
+        (ADMIN_ROLES as readonly string[]).includes(role)
+      )
+        return true;
     }
     return false;
   }, [user, employee]);
@@ -124,17 +139,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const isAdmin = useMemo(
     () => isAdminActual && !viewAsUser,
-    [isAdminActual, viewAsUser]
+    [isAdminActual, viewAsUser],
   );
 
   const isTechnicalAdmin = useMemo(
     () => isTechnicalAdminActual && !viewAsUser,
-    [isTechnicalAdminActual, viewAsUser]
+    [isTechnicalAdminActual, viewAsUser],
   );
 
   const effectiveCapabilities = useMemo(
     () => (viewAsUser ? [] : capabilities),
-    [capabilities, viewAsUser]
+    [capabilities, viewAsUser],
   );
 
   const setViewAsUser = useCallback(
@@ -142,7 +157,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!isAdminActual) return;
       setViewAsUserState(value);
     },
-    [isAdminActual]
+    [isAdminActual],
   );
 
   const resetAuthState = () => {
@@ -168,14 +183,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (typeof next.token !== "undefined") setToken(next.token);
     if (typeof next.employee !== "undefined") setEmployee(next.employee);
     if (typeof next.user !== "undefined") setUser(next.user);
-    if (typeof next.capabilities !== "undefined") setCapabilities(next.capabilities);
+    if (typeof next.capabilities !== "undefined")
+      setCapabilities(next.capabilities);
   };
 
   // -------- API Calls --------
 
   const fetchMe = async (authToken: string) => {
     const res = await fetch("/api/me", {
-      headers: { Authorization: `Bearer ${authToken}`, Accept: "application/json" },
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+        Accept: "application/json",
+      },
     });
     const data = await safeJson(res);
     return { ok: res.ok, status: res.status, data };
@@ -183,7 +202,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchAuthMe = async (authToken: string) => {
     const res = await fetch("/api/auth/me", {
-      headers: { Authorization: `Bearer ${authToken}`, Accept: "application/json" },
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+        Accept: "application/json",
+      },
     });
     const data = await safeJson(res);
     return { ok: res.ok, status: res.status, data };
@@ -197,13 +219,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // 1) Primär: /api/me  -> { success:true, data:{ user, department, clinic, capabilities, employee? } }
         const primary = await fetchMe(authToken);
         const primaryData = primary.data?.data ?? primary.data;
-        if (primary.ok && primary.data?.success !== false && primaryData?.user) {
+        if (
+          primary.ok &&
+          primary.data?.success !== false &&
+          primaryData?.user
+        ) {
           const meData = primaryData as MeData;
 
           applyAuthState({
             user: meData.user,
-            capabilities: Array.isArray(meData.capabilities) ? meData.capabilities : [],
-            employee: (meData.employee ?? null) as Omit<Employee, "passwordHash"> | null,
+            capabilities: Array.isArray(meData.capabilities)
+              ? meData.capabilities
+              : [],
+            employee: (meData.employee ?? null) as Omit<
+              Employee,
+              "passwordHash"
+            > | null,
           });
 
           // Wenn employee fehlt: optionaler Fallback, aber NICHT mehr auth-blocking
@@ -212,7 +243,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             if (fb.ok) {
               const fbData = fb.data?.data ?? fb.data;
               if (fbData?.employee) {
-                applyAuthState({ employee: fbData.employee as Omit<Employee, "passwordHash"> });
+                applyAuthState({
+                  employee: fbData.employee as Omit<Employee, "passwordHash">,
+                });
               }
               if (!meData.user && fbData?.user) {
                 applyAuthState({ user: fbData.user as UserData });
@@ -227,8 +260,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (fallback.ok && fallback.data?.success !== false) {
           const fbData = fallback.data?.data ?? fallback.data;
           const fbUser = fbData?.user as UserData | undefined;
-          const fbEmployee = fbData?.employee as Omit<Employee, "passwordHash"> | undefined;
-          const fbCapabilities = Array.isArray(fbData?.capabilities) ? fbData.capabilities : [];
+          const fbEmployee = fbData?.employee as
+            | Omit<Employee, "passwordHash">
+            | undefined;
+          const fbCapabilities = Array.isArray(fbData?.capabilities)
+            ? fbData.capabilities
+            : [];
 
           if (fbUser) {
             applyAuthState({
@@ -260,7 +297,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
+    [],
   );
 
   // Initial: Token laden + verifizieren
@@ -304,7 +341,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const res = await fetch("/api/auth/login", {
           method: "POST",
-          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
           body: JSON.stringify({ email, password, rememberMe: !!rememberMe }),
         });
 
@@ -327,7 +367,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const emp = data.employee as Omit<Employee, "passwordHash">;
           applyAuthState({
             employee: emp,
-            user: data.user ? (data.user as UserData) : buildUserFromEmployee(emp),
+            user: data.user
+              ? (data.user as UserData)
+              : buildUserFromEmployee(emp),
             capabilities: [],
           });
         }
@@ -338,7 +380,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsLoading(false);
       }
     },
-    [verifyToken]
+    [verifyToken],
   );
 
   const logout = useCallback(async () => {
@@ -346,7 +388,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (token) {
         await fetch("/api/auth/logout", {
           method: "POST",
-          headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+          },
         });
       }
     } catch {
@@ -402,7 +447,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       logout,
       refreshAuth,
-    ]
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

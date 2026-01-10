@@ -17,7 +17,7 @@ export interface ApiResponse<T = unknown> {
 export function ok<T>(res: Response, data: T, statusCode = 200): Response {
   return res.status(statusCode).json({
     success: true,
-    data
+    data,
   } as ApiResponse<T>);
 }
 
@@ -34,7 +34,7 @@ export function created<T>(res: Response, data: T): Response {
 export function okMessage(res: Response, message: string): Response {
   return res.status(200).json({
     success: true,
-    message
+    message,
   } as ApiResponse);
 }
 
@@ -42,13 +42,13 @@ export function okMessage(res: Response, message: string): Response {
  * Send an error response
  */
 export function error(
-  res: Response, 
-  message: string, 
-  statusCode = 400
+  res: Response,
+  message: string,
+  statusCode = 400,
 ): Response {
   return res.status(statusCode).json({
     success: false,
-    error: message
+    error: message,
   } as ApiResponse);
 }
 
@@ -62,14 +62,20 @@ export function notFound(res: Response, entity = "Ressource"): Response {
 /**
  * Send an unauthorized error
  */
-export function unauthorized(res: Response, message = "Nicht authentifiziert"): Response {
+export function unauthorized(
+  res: Response,
+  message = "Nicht authentifiziert",
+): Response {
   return error(res, message, 401);
 }
 
 /**
  * Send a forbidden error
  */
-export function forbidden(res: Response, message = "Keine Berechtigung"): Response {
+export function forbidden(
+  res: Response,
+  message = "Keine Berechtigung",
+): Response {
   return error(res, message, 403);
 }
 
@@ -83,16 +89,17 @@ export function validationError(res: Response, message: string): Response {
 /**
  * Send a server error
  */
-export function serverError(res: Response, message = "Interner Serverfehler"): Response {
+export function serverError(
+  res: Response,
+  message = "Interner Serverfehler",
+): Response {
   return error(res, message, 500);
 }
 
 /**
  * Wrap async route handlers to catch errors
  */
-export function asyncHandler(
-  fn: (req: any, res: Response) => Promise<any>
-) {
+export function asyncHandler(fn: (req: any, res: Response) => Promise<any>) {
   return (req: any, res: Response) => {
     Promise.resolve(fn(req, res)).catch((err) => {
       console.error("API Error:", err);
