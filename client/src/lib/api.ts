@@ -64,15 +64,22 @@ export type DashboardTeammate = {
   lastName: string | null;
 };
 
+export type DashboardZeInfo = {
+  id: number;
+  possible: true;
+  accepted: boolean;
+};
+
 export type DashboardDay = {
   date: string;
   statusLabel: string | null;
   workplace: string | null;
   teammates: DashboardTeammate[];
+  ze?: DashboardZeInfo | null;
 };
 
 export type DashboardResponse = {
-  today: DashboardDay;
+  today: DashboardDay & { ze: DashboardZeInfo | null };
   birthday: null | { firstName: string | null; lastName: string | null };
   weekPreview: DashboardDay[];
 };
@@ -152,6 +159,17 @@ export const dashboardApi = {
       throw new Error(`Fehler beim Laden (Status ${response.status})`);
     }
     return handleResponse<DashboardResponse>(response);
+  },
+  acceptZeitausgleich: async (id: number): Promise<{
+    id: number;
+    accepted: boolean;
+    acceptedAt?: string | null;
+    acceptedById?: number | null;
+  }> => {
+    const response = await apiFetch(`${API_BASE}/zeitausgleich/${id}/accept`, {
+      method: "POST"
+    });
+    return handleResponse(response);
   }
 };
 

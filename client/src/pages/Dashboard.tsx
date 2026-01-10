@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,7 @@ import { useLocation } from "wouter";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { getAustrianHoliday } from "@/lib/holidays";
+import { useToast } from "@/hooks/use-toast";
 
 const DUTY_ABBREVIATIONS: Record<string, string> = {
   "gynaekologie (oa)": "Gyn",
@@ -102,13 +103,29 @@ export default function Dashboard() {
   const [dashboardData, setDashboardData] = useState<DashboardResponse | null>(null);
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(true);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
+  const [isAcceptingZe, setIsAcceptingZe] = useState(false);
+  const { toast } = useToast();
+
+  const fetchDashboard = useCallback(() => dashboardApi.get(), []);
+  const refreshDashboard = useCallback(async () => {
+    setIsLoadingDashboard(true);
+    setDashboardError(null);
+    try {
+      const data = await fetchDashboard();
+      setDashboardData(data);
+    } catch (error: any) {
+      setDashboardError(error.message || "Fehler beim Laden des Dashboards");
+    } finally {
+      setIsLoadingDashboard(false);
+    }
+  }, [fetchDashboard]);
 
   useEffect(() => {
     let cancelled = false;
     setIsLoadingDashboard(true);
     setDashboardError(null);
 
-    dashboardApi.get()
+    fetchDashboard()
       .then((data) => {
         if (cancelled) return;
         setDashboardData(data);
@@ -125,9 +142,10 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [fetchDashboard]);
 
   const todayEntry = dashboardData?.today;
+  const todayZe = todayEntry?.ze;
   const todayTeamNames = (todayEntry?.teammates ?? [])
     .map((mate) => buildFullName(mate.firstName, mate.lastName))
     .filter(Boolean);
@@ -172,6 +190,28 @@ export default function Dashboard() {
 
   const birthdayEntry = dashboardData?.birthday;
   const birthdayName = birthdayEntry ? buildFullName(birthdayEntry.firstName, birthdayEntry.lastName) : null;
+  const showZeBadge = Boolean(todayZe && !todayZe.accepted);
+
+  const handleAcceptZe = useCallback(async () => {
+    if (!todayZe) return;
+    setIsAcceptingZe(true);
+    try {
+      await dashboardApi.acceptZeitausgleich(todayZe.id);
+      toast({
+        title: "Zeitausgleich bestätigt",
+        description: "Der Platz wurde für dich reserviert."
+      });
+      await refreshDashboard();
+    } catch (error: any) {
+      toast({
+        title: "Zeitausgleich konnte nicht bestätigt werden",
+        description: error?.message || "Bitte versuche es erneut.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsAcceptingZe(false);
+    }
+  }, [refreshDashboard, toast, todayZe]);
 
   const previewCards = useMemo<PreviewCard[]>(() => {
     if (!dashboardData?.weekPreview) return [];
@@ -240,6 +280,18 @@ export default function Dashboard() {
                 Dienstwünsche
               </Button>
             </div>
+            {showZeBadge && (
+              <div className="mt-4">
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center rounded-full bg-rose-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-rose-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-200 disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={handleAcceptZe}
+                  disabled={isAcceptingZe}
+                >
+                  Zeitausgleich möglich
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
