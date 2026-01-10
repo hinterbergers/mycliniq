@@ -14,6 +14,30 @@ import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { getAustrianHoliday } from "@/lib/holidays";
 
+const WEEK_PREVIEW_STATUS_ABBREVIATIONS: Record<string, string> = {
+  "gynaekologie (oa)": "Gyn",
+  "kreiszimmer (ass.)": "Geb",
+  "turnus (ass./ta)": "Ta",
+  "ueberdienst": "Ü",
+};
+
+const normalizeWeekStatusLabel = (label: string) => {
+  return label
+    .trim()
+    .toLowerCase()
+    .replace(/ß/g, "ss")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+};
+
+const getWeekPreviewBadgeLabel = (statusLabel: string | null) => {
+  if (!statusLabel) {
+    return "Kein Dienst";
+  }
+  const normalized = normalizeWeekStatusLabel(statusLabel);
+  return WEEK_PREVIEW_STATUS_ABBREVIATIONS[normalized] ?? statusLabel;
+};
+
 const getGreeting = () => {
   const now = new Date();
   const minutes = now.getHours() * 60 + now.getMinutes();
@@ -394,14 +418,12 @@ export default function Dashboard() {
                           variant={item.statusLabel ? "default" : "secondary"}
                           className={!item.statusLabel ? "bg-muted text-muted-foreground" : ""}
                         >
-                          {item.statusLabel || "Kein Dienst"}
+                          {getWeekPreviewBadgeLabel(item.statusLabel)}
                         </Badge>
                       </div>
-                      {item.workplace && (
-                        <p className="text-xs text-muted-foreground mb-1">
-                          Bereich: {item.workplace}
-                        </p>
-                      )}
+                      <p className="text-xs text-muted-foreground mb-1">
+                        Bereich: {item.workplace ?? "–"}
+                      </p>
                       {item.teammateNames.length > 0 && (
                         <p className="text-xs text-muted-foreground">
                           Mit: {item.teammateNames.join(", ")}
@@ -412,15 +434,6 @@ export default function Dashboard() {
                 )}
               </div>
               
-              <div className="mt-6 pt-4 border-t border-border">
-                <Button 
-                  variant="outline" 
-                  className="w-full"
-                  onClick={() => setLocation('/dienstplaene')}
-                >
-                  Kompletten Dienstplan anzeigen
-                </Button>
-              </div>
             </CardContent>
           </Card>
         </div>
