@@ -880,14 +880,26 @@ export async function registerRoutes(
 
       const serviceLineLabels = await loadServiceLineLabels(user.clinicId);
       const shiftRows = await db
+      const shiftRows = await db
       .select({
         id: rosterShifts.id,
         date: rosterShifts.date,
         serviceType: rosterShifts.serviceType,
         employeeId: rosterShifts.employeeId,
         assigneeFreeText: rosterShifts.assigneeFreeText,
-        ...
+        primaryDeploymentArea: employees.primaryDeploymentArea,
+        firstName: employees.firstName,
+        lastName: employees.lastName,
+        isActive: employees.isActive
       })
+      .from(rosterShifts)
+      .leftJoin(employees, eq(rosterShifts.employeeId, employees.id))
+      .where(
+        and(
+          gte(rosterShifts.date, startDate),
+          lte(rosterShifts.date, endDate)
+        )
+      );
 
       .from(rosterShifts)
       .leftJoin(employees, eq(rosterShifts.employeeId, employees.id))
