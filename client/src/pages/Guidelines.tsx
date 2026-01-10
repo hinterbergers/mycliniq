@@ -36,6 +36,7 @@ import { Search, ExternalLink, Download, History, Plus } from "lucide-react";
 import type { Sop, SopReference } from "@shared/schema";
 import { sopApi, type SopDetail } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/auth";
 import {
   SOP_SECTION_DEFINITIONS,
   DEFAULT_SOP_SECTIONS,
@@ -131,6 +132,7 @@ const formatEmployeeName = (name?: string | null, lastName?: string | null) => {
 
 export default function Guidelines() {
   const { toast } = useToast();
+  const { employee } = useAuth();
   const [sops, setSops] = useState<Sop[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -281,6 +283,16 @@ export default function Guidelines() {
         : editorForm.contentMarkdown?.trim()
           ? editorForm.contentMarkdown.trim()
           : null;
+
+    if (!employee?.id) {
+      toast({
+        title: "Fehler",
+        description: "Kein Benutzerkontext (createdById) vorhanden.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setEditorSaving(true);
     try {
       await sopApi.create({
@@ -295,6 +307,7 @@ export default function Guidelines() {
           : [],
         awmfLink: editorForm.awmfLink.trim() || null,
         status: "proposed",
+        createdById: employee.id,
       });
       toast({ title: "Dokument vorgeschlagen" });
       setEditorOpen(false);

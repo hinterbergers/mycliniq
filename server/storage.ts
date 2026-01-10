@@ -32,6 +32,7 @@ import {
   type ShiftWish,
   type InsertShiftWish,
   type LongTermShiftWish,
+  type LongTermWishRule,
   type InsertLongTermShiftWish,
   type LongTermAbsence,
   type InsertLongTermAbsence,
@@ -58,6 +59,36 @@ import {
   plannedAbsences,
 } from "@shared/schema";
 import { eq, and, gte, lte, desc, gt } from "drizzle-orm";
+
+const normalizeLongTermWishRules = (
+  rules: unknown,
+): LongTermWishRule[] | null | undefined => {
+  if (rules === undefined) return undefined;
+  if (rules === null) return null;
+  if (!Array.isArray(rules)) return null;
+
+  return rules
+    .filter(
+      (rule): rule is LongTermWishRule =>
+        typeof rule === "object" &&
+        rule !== null &&
+        typeof (rule as any).weekday === "string" &&
+        typeof (rule as any).kind === "string" &&
+        typeof (rule as any).strength === "string",
+    )
+    .map((rule) => {
+      const r = rule as any;
+      const out: LongTermWishRule = {
+        weekday: r.weekday,
+        kind: r.kind,
+        strength: r.strength,
+      };
+      if (typeof r.serviceType === "string") {
+        (out as any).serviceType = r.serviceType;
+      }
+      return out;
+    });
+};
 
 export interface IStorage {
   // User methods
@@ -995,7 +1026,11 @@ export class DatabaseStorage implements IStorage {
     if (existing) {
       const result = await db
         .update(longTermShiftWishes)
-        .set({ ...wish, updatedAt: new Date() })
+        .set({
+          ...wish,
+          rules: normalizeLongTermWishRules((wish as any).rules) ?? null,
+          updatedAt: new Date(),
+        })
         .where(eq(longTermShiftWishes.id, existing.id))
         .returning();
       return result[0];
@@ -1014,7 +1049,11 @@ export class DatabaseStorage implements IStorage {
   ): Promise<LongTermShiftWish | undefined> {
     const result = await db
       .update(longTermShiftWishes)
-      .set({ ...wish, updatedAt: new Date() })
+      .set({
+        ...wish,
+        rules: normalizeLongTermWishRules((wish as any).rules),
+        updatedAt: new Date(),
+      })
       .where(eq(longTermShiftWishes.id, id))
       .returning();
     return result[0];

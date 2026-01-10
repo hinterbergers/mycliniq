@@ -177,14 +177,16 @@ export function registerMessageRoutes(router: Router) {
           .status(401)
           .json({ success: false, error: "Nicht authentifiziert" });
       }
-      const { type, title, memberIds } = req.body;
+      const { type, title, memberIds } = req.body as z.infer<
+        typeof createThreadSchema
+      >;
       if (type === "group" && !title) {
         return res
           .status(400)
           .json({ success: false, error: "Gruppenname erforderlich" });
       }
       const uniqueMembers = Array.from(
-        new Set(memberIds.filter((id) => id !== req.user?.employeeId)),
+        new Set(memberIds.filter((id: number) => id !== req.user.employeeId)),
       );
       if (!uniqueMembers.length) {
         return res.status(400).json({
@@ -239,11 +241,15 @@ export function registerMessageRoutes(router: Router) {
         })
         .returning();
 
-      const members = [
+      const members: Array<{
+        threadId: number;
+        employeeId: number;
+        role: "owner" | "member";
+      }> = [
         {
           threadId: thread.id,
           employeeId: req.user.employeeId,
-          role: "owner" as const,
+          role: "owner",
         },
         ...uniqueMembers.map((employeeId) => ({
           threadId: thread.id,
@@ -383,7 +389,12 @@ export function registerMessageRoutes(router: Router) {
           .status(403)
           .json({ success: false, error: "Keine Berechtigung" });
       }
-      const addIds = req.body.add || [];
+      const { add = [], remove = [] } = req.body as z.infer<
+        typeof updateMembersSchema
+      >;
+      const addIds: number[] = add;
+      const removeIds: number[] = remove;
+
       if (addIds.length) {
         await db
           .insert(messageThreadMembers)
@@ -396,16 +407,17 @@ export function registerMessageRoutes(router: Router) {
           )
           .onConflictDoNothing();
       }
-      const removeIds = (req.body.remove || []).filter(
-        (id) => id !== req.user?.employeeId,
+      const filteredRemoveIds = removeIds.filter(
+        (id: number) => id !== req.user.employeeId,
       );
-      if (removeIds.length) {
+
+      if (filteredRemoveIds.length) {
         await db
           .delete(messageThreadMembers)
           .where(
             and(
               eq(messageThreadMembers.threadId, threadId),
-              inArray(messageThreadMembers.employeeId, removeIds),
+              inArray(messageThreadMembers.employeeId, filteredRemoveIds),
             ),
           );
       }

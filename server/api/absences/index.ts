@@ -377,7 +377,19 @@ export function registerAbsenceRoutes(router: Router) {
         conditions.push(eq(plannedAbsences.month, Number(month)));
       }
       if (status) {
-        conditions.push(eq(plannedAbsences.status, String(status)));
+        const statusParam = Array.isArray(status) ? status[0] : status;
+
+        const statusValue =
+          typeof statusParam === "string" &&
+          (statusParam === "Genehmigt" ||
+            statusParam === "Abgelehnt" ||
+            statusParam === "Geplant")
+            ? statusParam
+            : null;
+
+        if (statusValue) {
+          conditions.push(eq(plannedAbsences.status, statusValue));
+        }
       }
       if (rangeFrom && rangeTo) {
         conditions.push(

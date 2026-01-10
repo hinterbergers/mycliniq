@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { AlertCircle, Building, Pencil, Info, Loader2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { competencyApi, roomApi, physicalRoomApi } from "@/lib/api";
 import type { Competency, Resource, PhysicalRoom } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
@@ -41,7 +41,7 @@ const ROOM_CATEGORIES = [
   "Station",
   "Verwaltung",
   "Sonstiges",
-];
+] as const satisfies ReadonlyArray<Resource["category"]>;
 
 const ROLE_COMPETENCIES = [
   { id: "facharzt", label: "Facharzt/Fachärztin" },
@@ -72,7 +72,7 @@ interface WeeklySchedule {
 interface RoomState {
   id: number;
   name: string;
-  category: string;
+  category: Resource["category"];
   isAvailable: boolean;
   blockReason: string;
   description: string;
@@ -231,7 +231,7 @@ export default function ResourceManagement() {
   const buildEmptyRoom = (): RoomState => ({
     id: 0,
     name: "",
-    category: ROOM_CATEGORIES[0] || "Sonstiges",
+    category: ROOM_CATEGORIES[0] ?? "Sonstiges",
     isAvailable: true,
     blockReason: "",
     description: "",
@@ -245,7 +245,7 @@ export default function ResourceManagement() {
     isActive: true,
   });
 
-  const toggleRoom = async (id: number, e: React.MouseEvent) => {
+  const toggleRoom = async (id: number, e: MouseEvent<HTMLElement>) => {
     e.stopPropagation();
     if (!canEdit) return;
     const target = rooms.find((room) => room.id === id);
@@ -360,8 +360,8 @@ export default function ResourceManagement() {
       };
 
       const persistedRoom = isCreating
-        ? await roomApi.create(basePayload)
-        : await roomApi.update(editingRoom.id, basePayload);
+        ? await roomApi.create(basePayload as any)
+        : await roomApi.update(editingRoom.id, basePayload as any);
 
       const roomId = persistedRoom.id;
 
@@ -547,9 +547,7 @@ export default function ResourceManagement() {
   };
 
   const updateEditingRoom = (updates: Partial<RoomState>) => {
-    if (editingRoom) {
-      setEditingRoom({ ...editingRoom, ...updates });
-    }
+    setEditingRoom((prev) => (prev ? { ...prev, ...updates } : prev));
   };
 
   const updateWeeklySchedule = (
@@ -599,7 +597,10 @@ export default function ResourceManagement() {
     }
   };
 
-  const togglePhysicalRoomActive = async (id: number, e: React.MouseEvent) => {
+  const togglePhysicalRoomActive = async (
+    id: number,
+    e: MouseEvent<HTMLElement>,
+  ) => {
     e.stopPropagation();
     if (!canEdit) return;
     const target = physicalRooms.find((room) => room.id === id);
@@ -936,7 +937,9 @@ export default function ResourceManagement() {
                   <Select
                     value={editingRoom.category}
                     onValueChange={(value) =>
-                      updateEditingRoom({ category: value })
+                      updateEditingRoom({
+                        category: value as Resource["category"],
+                      })
                     }
                     disabled={!canEdit}
                   >

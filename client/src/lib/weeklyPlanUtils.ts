@@ -180,7 +180,7 @@ type WeekdayRecurrence = WeekdaySetting["recurrence"];
 
 export const matchesRecurrence = (
   recurrence: WeekdayRecurrence,
-  date: Date
+  date: Date,
 ) => {
   if (!recurrence || recurrence === "weekly") return true;
 

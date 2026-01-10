@@ -164,7 +164,7 @@ type CalendarAbsence = {
   status?: PlannedAbsenceAdmin["status"] | "Genehmigt";
   notes?: string | null;
   createdAt?: string | null;
-  source: "planned" | "longTerm" | "legacy";
+  source: "planned" | "long_term" | "legacy";
 };
 
 const ROLE_SORT_ORDER: Record<string, number> = {
@@ -242,6 +242,13 @@ const normalizeDateOnly = (value: string | Date | null | undefined) => {
   return formatDateInput(value);
 };
 
+const toIsoString = (value: unknown): string | null => {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(String(value));
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+};
+
 const formatDateTime = (value?: string | null) => {
   if (!value) return "-";
   const parsed = new Date(value);
@@ -280,7 +287,7 @@ const normalizeRole = (role?: string | null) => {
 export default function VacationPlanEditor({
   embedded = false,
 }: { embedded?: boolean } = {}) {
-  const { employee: currentUser, isAdmin } = useAuth();
+  const { employee: currentUser, isAdmin, capabilities } = useAuth();
   const { toast } = useToast();
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [quarter, setQuarter] = useState(() =>
@@ -339,13 +346,9 @@ export default function VacationPlanEditor({
   });
   const [updatingId, setUpdatingId] = useState<number | null>(null);
 
-  const canEditRules =
-    isAdmin || (currentUser?.capabilities?.includes("vacation.lock") ?? false);
-  const canApprove =
-    isAdmin ||
-    (currentUser?.capabilities?.includes("vacation.approve") ?? false);
-  const canEditOthers =
-    isAdmin || (currentUser?.capabilities?.includes("absence.create") ?? false);
+  const canEditRules = isAdmin || capabilities.includes("vacation.lock");
+  const canApprove = isAdmin || capabilities.includes("vacation.approve");
+  const canEditOthers = isAdmin || capabilities.includes("absence.create");
   const canViewRules = !embedded && (canEditRules || canApprove);
   const canOverrideLock = canApprove || canEditOthers;
 
@@ -492,7 +495,7 @@ export default function VacationPlanEditor({
       styleKey: resolveReasonStyleKey(absence.reason),
       status: absence.status,
       notes: absence.notes,
-      createdAt: absence.createdAt ?? null,
+      createdAt: toIsoString(absence.createdAt),
       source: "planned",
     }));
 
@@ -508,8 +511,8 @@ export default function VacationPlanEditor({
           styleKey: resolveReasonStyleKey(absence.reason),
           status: "Genehmigt",
           notes: absence.approvalNotes,
-          createdAt: (absence.approvedAt ?? absence.createdAt) || null,
-          source: "longTerm",
+          createdAt: toIsoString(absence.approvedAt ?? absence.createdAt),
+          source: "long_term",
         });
       });
 
@@ -526,7 +529,7 @@ export default function VacationPlanEditor({
         reason: reasonValue,
         styleKey: resolveReasonStyleKey(reasonValue),
         status: "Genehmigt",
-        createdAt: (emp.updatedAt ?? emp.createdAt) || null,
+        createdAt: toIsoString(emp.updatedAt ?? emp.createdAt),
         source: "legacy",
       });
     });
@@ -1175,10 +1178,7 @@ export default function VacationPlanEditor({
       const payload: VacationRuleInput = {
         departmentId,
         ruleType: ruleDraft.ruleType,
-        minCount:
-          ruleDraft.ruleType === "training_priority"
-            ? null
-            : (ruleDraft.minCount ?? 0),
+        minCount: ruleDraft.minCount ?? 0,
         roleGroup:
           ruleDraft.ruleType === "role_min"
             ? (ruleDraft.roleGroup ?? "OA")
@@ -1859,7 +1859,7 @@ export default function VacationPlanEditor({
                             dayKey,
                           );
                           const reasonStyle = absence
-                            ? REASON_STYLES[absence.reason]
+                            ? REASON_STYLES[absence.styleKey]
                             : null;
                           const cellClass = getDayClass(date);
                           const isRejected = absence?.status === "Abgelehnt";

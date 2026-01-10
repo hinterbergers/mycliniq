@@ -27,6 +27,7 @@ import { Plus, Search } from "lucide-react";
 import type { ProjectInitiative } from "@shared/schema";
 import { projectApi, type ProjectDetail } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/auth";
 
 const CATEGORY_STYLES: Record<string, string> = {
   SOP: "bg-blue-100 text-blue-700 border-blue-200",
@@ -42,8 +43,17 @@ const PROJECT_CATEGORIES = [
   "Qualitätsprojekt",
 ] as const;
 
+type ProjectCategory = (typeof PROJECT_CATEGORIES)[number];
+
+type ProjectEditorForm = {
+  title: string;
+  category: ProjectCategory;
+  description: string;
+};
+
 export default function Projects() {
   const { toast } = useToast();
+  const { employee } = useAuth();
   const [projects, setProjects] = useState<ProjectInitiative[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -56,7 +66,7 @@ export default function Projects() {
   );
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorSaving, setEditorSaving] = useState(false);
-  const [editorForm, setEditorForm] = useState({
+  const [editorForm, setEditorForm] = useState<ProjectEditorForm>({
     title: "",
     category: "Administrativ",
     description: "",
@@ -135,6 +145,15 @@ export default function Projects() {
       });
       return;
     }
+    if (!employee?.id) {
+      toast({
+        title: "Fehler",
+        description: "Kein Benutzerkontext (createdById) vorhanden.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setEditorSaving(true);
     try {
       await projectApi.create({
@@ -142,6 +161,7 @@ export default function Projects() {
         description: editorForm.description.trim() || null,
         category: editorForm.category,
         status: "proposed",
+        createdById: employee.id,
       });
       toast({
         title: "Projekt vorgeschlagen",
@@ -324,7 +344,10 @@ export default function Projects() {
               <Select
                 value={editorForm.category}
                 onValueChange={(value) =>
-                  setEditorForm((prev) => ({ ...prev, category: value }))
+                  setEditorForm((prev) => ({
+                    ...prev,
+                    category: value as ProjectCategory,
+                  }))
                 }
               >
                 <SelectTrigger>

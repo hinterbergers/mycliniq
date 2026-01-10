@@ -236,7 +236,11 @@ export function registerAdminRoutes(app: Express): void {
       if (!req.user?.clinicId) {
         return res
           .status(404)
-          .json(createApiResponse(null, false, "Keine Klinik zugeordnet"));
+          .json({
+            success: false,
+            data: null,
+            error: "Keine Klinik zugeordnet",
+          });
       }
 
       const { name, slug, timezone, logoUrl, country, state } = req.body;

@@ -546,7 +546,15 @@ function RosterView({
     return "bg-slate-100 text-slate-500 border-slate-200";
   };
 
-  const isLegacyInactiveOnDate = (employee: Employee, dateStr: string) => {
+  type LegacyInactiveEmployeeLike = Pick<
+    Employee,
+    "inactiveFrom" | "inactiveUntil"
+  >;
+
+  const isLegacyInactiveOnDate = (
+    employee: LegacyInactiveEmployeeLike,
+    dateStr: string,
+  ) => {
     if (!employee.inactiveFrom && !employee.inactiveUntil) return false;
     const target = new Date(`${dateStr}T00:00:00`);
     const from = employee.inactiveFrom
@@ -576,50 +584,57 @@ function RosterView({
 
   const getAbsencesForDate = (date: Date): RosterAbsenceEntry[] => {
     const dateStr = format(date, "yyyy-MM-dd");
-    const plannedEntries = activePlannedAbsences
+    const plannedEntries: RosterAbsenceEntry[] = activePlannedAbsences
       .filter(
         (absence) => absence.startDate <= dateStr && absence.endDate >= dateStr,
       )
-      .map((absence) => ({
-        employeeId: absence.employeeId,
-        name: resolveEmployeeLastName(
-          absence.employeeId,
-          absence.employeeName,
-          absence.employeeLastName,
-        ),
-        reason: absence.reason,
-        source: "planned",
-        absenceId: absence.id,
-        status: absence.status,
-        notes: absence.notes ?? null,
-      }));
+      .map(
+        (absence): RosterAbsenceEntry => ({
+          employeeId: absence.employeeId,
+          name: resolveEmployeeLastName(
+            absence.employeeId,
+            absence.employeeName,
+            absence.employeeLastName,
+          ),
+          reason: absence.reason,
+          source: "planned",
+          absenceId: absence.id,
+          status: absence.status,
+          notes: absence.notes ?? null,
+        }),
+      );
 
-    const longTermEntries = longTermAbsences
+    const longTermEntries: RosterAbsenceEntry[] = longTermAbsences
       .filter(
         (absence) =>
           absence.status === "Genehmigt" &&
           absence.startDate <= dateStr &&
           absence.endDate >= dateStr,
       )
-      .map((absence) => ({
-        employeeId: absence.employeeId,
-        name: resolveEmployeeLastName(absence.employeeId),
-        reason: absence.reason,
-        source: "long_term",
-      }));
+      .map(
+        (absence): RosterAbsenceEntry => ({
+          employeeId: absence.employeeId,
+          name: resolveEmployeeLastName(absence.employeeId),
+          reason: absence.reason,
+          source: "long_term",
+          status: "Genehmigt",
+        }),
+      );
 
-    const legacyEntries = employees
+    const legacyEntries: RosterAbsenceEntry[] = employees
       .filter((employee) => isLegacyInactiveOnDate(employee, dateStr))
-      .map((employee) => ({
-        employeeId: employee.id,
-        name: resolveEmployeeLastName(
-          employee.id,
-          employee.name,
-          employee.lastName,
-        ),
-        reason: "Langzeit-Deaktivierung",
-        source: "legacy",
-      }));
+      .map(
+        (employee): RosterAbsenceEntry => ({
+          employeeId: employee.id,
+          name: resolveEmployeeLastName(
+            employee.id,
+            employee.name,
+            employee.lastName,
+          ),
+          reason: "Langzeit-Deaktivierung",
+          source: "legacy",
+        }),
+      );
 
     return [...plannedEntries, ...longTermEntries, ...legacyEntries].sort(
       (a, b) => a.name.localeCompare(b.name),

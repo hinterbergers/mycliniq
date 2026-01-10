@@ -12,6 +12,7 @@ import {
   projectInitiatives,
   projectMembers,
   notifications,
+  type Resource,
 } from "@shared/schema";
 
 const TEAM_DATA = [
@@ -132,7 +133,9 @@ const RESOURCES_DATA = [
   { name: "OP 2", category: "OP", isAvailable: true },
   { name: "Ambulanz Gyn", category: "Ambulanz", isAvailable: true },
   { name: "Mamma Ambulanz", category: "Ambulanz", isAvailable: true },
-];
+] as const satisfies ReadonlyArray<
+  Pick<Resource, "name" | "category" | "isAvailable">
+>;
 
 async function seed() {
   try {

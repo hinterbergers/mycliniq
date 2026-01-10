@@ -419,21 +419,35 @@ export default function Messages() {
     }
   };
 
-  const getZeitausgleichMetadata = (note: Notification) => {
+  type ZeitausgleichMetadata = {
+    kind: "zeitausgleich_request";
+    absenceId: number;
+    startDate?: string;
+    endDate?: string;
+  };
+
+  const getZeitausgleichMetadata = (
+    note: Notification,
+  ): ZeitausgleichMetadata | null => {
     if (!note.metadata || typeof note.metadata !== "object") return null;
+
     const meta = note.metadata as {
       kind?: string;
-      absenceId?: number;
-      startDate?: string;
-      endDate?: string;
+      absenceId?: unknown;
+      startDate?: unknown;
+      endDate?: unknown;
     };
-    if (
-      meta.kind !== "zeitausgleich_request" ||
-      typeof meta.absenceId !== "number"
-    ) {
-      return null;
-    }
-    return meta;
+
+    if (meta.kind !== "zeitausgleich_request") return null;
+    if (typeof meta.absenceId !== "number") return null;
+
+    return {
+      kind: "zeitausgleich_request",
+      absenceId: meta.absenceId,
+      startDate:
+        typeof meta.startDate === "string" ? meta.startDate : undefined,
+      endDate: typeof meta.endDate === "string" ? meta.endDate : undefined,
+    };
   };
 
   const handleZeitausgleichResponse = async (

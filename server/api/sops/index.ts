@@ -42,6 +42,7 @@ const SOP_PUBLISH_CAP = "perm.sop_publish";
 
 const createSopSchema = z.object({
   title: z.string().min(1, "Titel erforderlich"),
+  createdById: z.number().positive().optional(),
   category: z
     .enum([
       "SOP",
@@ -91,6 +92,8 @@ const assignMembersSchema = z.object({
     }),
   ),
 });
+type AssignMembersPayload = z.infer<typeof assignMembersSchema>;
+type AssignMember = AssignMembersPayload["members"][number];
 
 const statusReasonSchema = z.object({
   reason: z.string().min(1, "Begruendung erforderlich"),
@@ -619,8 +622,6 @@ export function registerSopRoutes(router: Router) {
           changeNote: sopVersions.changeNote,
           releasedById: sopVersions.releasedById,
           releasedAt: sopVersions.releasedAt,
-          createdAt: sopVersions.createdAt,
-          updatedAt: sopVersions.updatedAt,
           releasedByName: employees.name,
           releasedByLastName: employees.lastName,
         })
@@ -774,16 +775,20 @@ export function registerSopRoutes(router: Router) {
       if (!existing) {
         return notFound(res, "SOP");
       }
+
+      const payload = req.body as AssignMembersPayload;
+
       await db.delete(sopMembers).where(eq(sopMembers.sopId, sopId));
-      if (req.body.members.length) {
+      if (payload.members.length) {
         await db.insert(sopMembers).values(
-          req.body.members.map((member) => ({
+          payload.members.map((member: AssignMember) => ({
             sopId,
             employeeId: member.employeeId,
             role: member.role,
           })),
         );
       }
+
       return ok(res, { success: true });
     }),
   );
@@ -1024,8 +1029,6 @@ export function registerSopRoutes(router: Router) {
           changeNote: sopVersions.changeNote,
           releasedById: sopVersions.releasedById,
           releasedAt: sopVersions.releasedAt,
-          createdAt: sopVersions.createdAt,
-          updatedAt: sopVersions.updatedAt,
           releasedByName: employees.name,
           releasedByLastName: employees.lastName,
         })

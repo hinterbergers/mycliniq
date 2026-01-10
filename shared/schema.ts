@@ -17,6 +17,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import type { LongTermWishRule } from "./shiftTypes";
+export type { LongTermWishRule } from "./shiftTypes";
 import { z } from "zod";
 
 // User App Role Enum (for authentication/authorization)

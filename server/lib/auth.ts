@@ -2,18 +2,8 @@ import type { Request, Response, NextFunction } from "express";
 import { db, eq } from "./db";
 import { employees } from "@shared/schema";
 
-/**
- * User context attached to authenticated requests
- */
-export interface AuthUser {
-  id: number;
-  oderId?: string;
-  employeeId: number;
-  appRole: "Admin" | "Editor" | "User";
-  isAdmin: boolean;
-  name: string;
-  lastName: string;
-}
+import type { AuthUser as AuthUserType } from "../api/middleware/auth";
+export type AuthUser = AuthUserType;
 
 /**
  * Session data interface
@@ -21,18 +11,6 @@ export interface AuthUser {
 interface SessionData {
   employeeId?: number;
   userId?: string;
-}
-
-/**
- * Extend Express Request to include user and session
- */
-declare global {
-  namespace Express {
-    interface Request {
-      user?: AuthUser;
-      session?: SessionData & Record<string, any>;
-    }
-  }
 }
 
 /**
@@ -48,8 +26,9 @@ function extractToken(req: Request): string | null {
 
   // Check session cookie
   // TODO: Implement session-based auth
-  if (req.session?.employeeId) {
-    return `session:${req.session.employeeId}`;
+  const session = (req as any).session as SessionData | undefined;
+  if (session?.employeeId) {
+    return `session:${session.employeeId}`;
   }
 
   return null;
@@ -92,11 +71,19 @@ async function getAuthUserByEmployeeId(
     return null;
   }
 
+  const appRole = employee.appRole as "Admin" | "Editor" | "User";
+  const systemRole = (employee as any).systemRole ?? appRole;
+  const capabilities = Array.isArray((employee as any).capabilities)
+    ? ((employee as any).capabilities as string[])
+    : [];
+
   return {
     id: employee.userId ? parseInt(employee.userId) : employee.id,
     employeeId: employee.id,
-    appRole: employee.appRole as "Admin" | "Editor" | "User",
-    isAdmin: employee.isAdmin || employee.appRole === "Admin",
+    appRole,
+    systemRole,
+    capabilities,
+    isAdmin: employee.isAdmin || appRole === "Admin",
     name: employee.name,
     lastName: employee.lastName || "",
   };
@@ -124,8 +111,9 @@ export async function authenticate(
       // For development, allow through with mock user or check session
 
       // Check if we have session-based auth
-      if (req.session?.employeeId) {
-        const user = await getAuthUserByEmployeeId(req.session.employeeId);
+      const session = (req as any).session as SessionData | undefined;
+      if (session?.employeeId) {
+        const user = await getAuthUserByEmployeeId(session.employeeId);
         if (user) {
           req.user = user;
           return next();

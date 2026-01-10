@@ -106,6 +106,14 @@ interface GeneratedShift {
   employeeName: string;
 }
 
+type ServiceLineConfig = {
+  key: string;
+  label: string;
+  sortOrder?: number | null;
+  isActive?: boolean | null;
+  roleGroup?: string | null;
+};
+
 const SERVICE_LINE_PALETTE = [
   {
     header: "bg-pink-50/50 border-pink-100 text-pink-900",
@@ -318,12 +326,23 @@ export default function RosterPlan() {
   const planStatusLabel = PLAN_STATUS_LABELS[planStatus];
 
   const serviceLineDisplay = useMemo(() => {
-    const lines = serviceLines.length ? serviceLines : FALLBACK_SERVICE_LINES;
+    const lines: ServiceLineConfig[] = (
+      serviceLines.length ? serviceLines : FALLBACK_SERVICE_LINES
+    ) as ServiceLineConfig[];
+
     const shiftKeys = new Set(shifts.map((shift) => shift.serviceType));
     const knownKeys = new Set(lines.map((line) => line.key));
-    const extras = [...shiftKeys]
+
+    const extras: ServiceLineConfig[] = [...shiftKeys]
       .filter((key) => !knownKeys.has(key))
-      .map((key) => ({ key, label: key, sortOrder: 999, isActive: true }));
+      .map((key) => ({
+        key,
+        label: key,
+        sortOrder: 999,
+        isActive: true,
+        roleGroup: null,
+      }));
+
     return [...lines, ...extras]
       .filter((line) => line.isActive !== false || shiftKeys.has(line.key))
       .sort((a, b) => {
@@ -334,7 +353,7 @@ export default function RosterPlan() {
       .map((line, index) => ({
         key: line.key as ServiceType,
         label: line.label,
-        roleGroup: line.roleGroup,
+        roleGroup: line.roleGroup ?? null,
         style: SERVICE_LINE_PALETTE[index % SERVICE_LINE_PALETTE.length],
       }));
   }, [serviceLines, shifts]);
@@ -579,50 +598,57 @@ export default function RosterPlan() {
 
   const getAbsences = (date: Date): RosterAbsenceEntry[] => {
     const dateStr = format(date, "yyyy-MM-dd");
-    const plannedEntries = activePlannedAbsences
+
+    const plannedEntries: RosterAbsenceEntry[] = activePlannedAbsences
       .filter(
         (absence) => absence.startDate <= dateStr && absence.endDate >= dateStr,
       )
-      .map((absence) => ({
-        employeeId: absence.employeeId,
-        name: resolveEmployeeLastName(
-          absence.employeeId,
-          absence.employeeName,
-          absence.employeeLastName,
-        ),
-        reason: absence.reason,
-        source: "planned",
-        absenceId: absence.id,
-        status: absence.status,
-        notes: absence.notes ?? null,
-      }));
+      .map(
+        (absence): RosterAbsenceEntry => ({
+          employeeId: absence.employeeId,
+          name: resolveEmployeeLastName(
+            absence.employeeId,
+            absence.employeeName,
+            absence.employeeLastName,
+          ),
+          reason: absence.reason,
+          source: "planned",
+          absenceId: absence.id,
+          status: absence.status,
+          notes: absence.notes ?? null,
+        }),
+      );
 
-    const longTermEntries = longTermAbsences
+    const longTermEntries: RosterAbsenceEntry[] = longTermAbsences
       .filter(
         (absence) =>
           absence.status === "Genehmigt" &&
           absence.startDate <= dateStr &&
           absence.endDate >= dateStr,
       )
-      .map((absence) => ({
-        employeeId: absence.employeeId,
-        name: resolveEmployeeLastName(absence.employeeId),
-        reason: absence.reason,
-        source: "long_term",
-      }));
+      .map(
+        (absence): RosterAbsenceEntry => ({
+          employeeId: absence.employeeId,
+          name: resolveEmployeeLastName(absence.employeeId),
+          reason: absence.reason,
+          source: "long_term",
+        }),
+      );
 
-    const legacyEntries = employees
+    const legacyEntries: RosterAbsenceEntry[] = employees
       .filter((employee) => isLegacyInactiveOnDate(employee, dateStr))
-      .map((employee) => ({
-        employeeId: employee.id,
-        name: resolveEmployeeLastName(
-          employee.id,
-          employee.name,
-          employee.lastName,
-        ),
-        reason: "Langzeit-Deaktivierung",
-        source: "legacy",
-      }));
+      .map(
+        (employee): RosterAbsenceEntry => ({
+          employeeId: employee.id,
+          name: resolveEmployeeLastName(
+            employee.id,
+            employee.name,
+            employee.lastName,
+          ),
+          reason: "Langzeit-Deaktivierung",
+          source: "legacy",
+        }),
+      );
 
     return [...plannedEntries, ...longTermEntries, ...legacyEntries].sort(
       (a, b) => a.name.localeCompare(b.name),

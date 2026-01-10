@@ -507,7 +507,8 @@ export function registerWeeklyPlanRoutes(router: Router) {
     asyncHandler(async (req, res) => {
       const { id } = req.params;
       const planId = Number(id);
-      const { lockedWeekdays } = req.body;
+      // Ensure proper runtime validation + correct TypeScript type (number[])
+      const { lockedWeekdays } = updateLockedWeekdaysSchema.parse(req.body);
 
       const [existing] = await db
         .select()
@@ -517,7 +518,9 @@ export function registerWeeklyPlanRoutes(router: Router) {
         return notFound(res, "Wochenplan");
       }
 
-      const uniqueLocked = Array.from(new Set(lockedWeekdays)).sort();
+      const uniqueLocked = Array.from(new Set(lockedWeekdays)).sort(
+        (a, b) => a - b,
+      );
       const [updated] = await db
         .update(weeklyPlans)
         .set({ lockedWeekdays: uniqueLocked, updatedAt: new Date() })

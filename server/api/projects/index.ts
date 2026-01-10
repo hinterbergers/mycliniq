@@ -73,6 +73,10 @@ const assignMembersSchema = z.object({
   ),
 });
 
+type AssignProjectMemberInput = z.infer<
+  typeof assignMembersSchema
+>["members"][number];
+
 const statusReasonSchema = z.object({
   reason: z.string().min(1, "Begruendung erforderlich"),
 });
@@ -95,10 +99,25 @@ function normalizeProjectStatus(status: string | null | undefined): string {
   return status;
 }
 
-function normalizeProjectCategory(category?: string | null) {
-  if (!category) return category;
+type ProjectInitiativeInsert = typeof projectInitiatives.$inferInsert;
+type ProjectCategory = NonNullable<ProjectInitiativeInsert["category"]>;
+
+const PROJECT_CATEGORIES: readonly ProjectCategory[] = [
+  "SOP",
+  "Studie",
+  "Administrativ",
+  "Qualitätsprojekt",
+];
+
+function normalizeProjectCategory(
+  category?: string | null,
+): ProjectCategory | undefined {
+  if (!category) return undefined;
   if (category === "Qualitaetsprojekt") return "Qualitätsprojekt";
-  return category;
+  if (PROJECT_CATEGORIES.includes(category as ProjectCategory)) {
+    return category as ProjectCategory;
+  }
+  return undefined;
 }
 
 async function isMember(
@@ -388,7 +407,8 @@ export function registerProjectRoutes(router: Router) {
         assignees,
       } = req.body;
 
-      const normalizedCategory = normalizeProjectCategory(category);
+      const normalizedCategory: ProjectCategory =
+        normalizeProjectCategory(category) ?? "Administrativ";
 
       let finalStatus = status || "proposed";
       if (!canManage(req) && finalStatus !== "proposed") {
@@ -400,7 +420,7 @@ export function registerProjectRoutes(router: Router) {
         .values({
           title,
           description: description || null,
-          category: normalizedCategory || "Administrativ",
+          category: normalizedCategory,
           status: finalStatus,
           ownerId: ownerId || req.user.employeeId,
           createdById: req.user.employeeId,
@@ -475,7 +495,10 @@ export function registerProjectRoutes(router: Router) {
         updatedAt: new Date(),
       } as typeof req.body & { updatedAt: Date };
       if (updates.category) {
-        updates.category = normalizeProjectCategory(updates.category);
+        const normalized = normalizeProjectCategory(updates.category);
+        if (normalized) {
+          (updates as { category?: ProjectCategory }).category = normalized;
+        }
       }
 
       const [updated] = await db
@@ -516,7 +539,7 @@ export function registerProjectRoutes(router: Router) {
         .where(eq(projectMembers.projectId, projectId));
       if (req.body.members.length) {
         await db.insert(projectMembers).values(
-          req.body.members.map((member) => ({
+          req.body.members.map((member: AssignProjectMemberInput) => ({
             projectId,
             employeeId: member.employeeId,
             role: member.role,

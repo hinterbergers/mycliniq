@@ -154,8 +154,9 @@ const normalizeReferenceText = (value?: string | null) =>
     .replace(/[\u0300-\u036f]/g, "")
     .toUpperCase();
 
+type SopReference = NonNullable<SopDetail["references"]>[number];
 const getReferenceRank = (
-  ref: Pick<SopDetail["references"][number], "type" | "title" | "publisher">,
+  ref: Pick<SopReference, "type" | "title" | "publisher">,
 ) => {
   const text =
     `${normalizeReferenceText(ref.publisher)} ${normalizeReferenceText(ref.title)}`.trim();
@@ -472,6 +473,15 @@ export default function AdminProjects() {
           awmfLink: sopForm.awmfLink || null,
         });
       } else {
+        if (!employee?.id) {
+          toast({
+            title: "Fehler",
+            description: "Kein Benutzerkontext (createdById) vorhanden.",
+            variant: "destructive",
+          });
+          return;
+        }
+
         const created = await sopApi.create({
           title: sopForm.title.trim(),
           category: normalizedCategory as Sop["category"],
@@ -484,7 +494,9 @@ export default function AdminProjects() {
             : [],
           awmfLink: sopForm.awmfLink || null,
           status: "proposed",
+          createdById: employee.id,
         });
+
         if (publishOnCreate && canPublishSops) {
           if (!publishNote.trim()) {
             toast({
@@ -518,20 +530,36 @@ export default function AdminProjects() {
       });
       return;
     }
+
     try {
-      const payload = {
+      const basePayload = {
         title: projectForm.title.trim(),
         category: projectForm.category as ProjectInitiative["category"],
         description: projectForm.description || null,
         ownerId: projectForm.ownerId ? Number(projectForm.ownerId) : null,
         dueDate: projectForm.dueDate || null,
-        status: "proposed",
       };
+
       if (editingProject) {
-        await projectApi.update(editingProject.id, payload);
+        // Beim Update keinen Status/createdById mitschicken.
+        await projectApi.update(editingProject.id, basePayload);
       } else {
-        await projectApi.create(payload);
+        if (!employee?.id) {
+          toast({
+            title: "Fehler",
+            description: "Kein Benutzerkontext (createdById) vorhanden.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        await projectApi.create({
+          ...basePayload,
+          status: "proposed" as const,
+          createdById: employee.id,
+        });
       }
+
       toast({ title: "Gespeichert" });
       setProjectEditorOpen(false);
       await loadData();
