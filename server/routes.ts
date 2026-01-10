@@ -1063,7 +1063,9 @@ export async function registerRoutes(
         let workplace: string | null = null;
         const teammates: Array<{ firstName: string | null; lastName: string | null }> = [];
         if (userAssignment) {
-          workplace = buildWeeklyPlanWorkplaceLabel(userAssignment);
+          const roomName = normalizeName(userAssignment.roomName);
+          workplace = roomName && roomName !== "Diensthabende" ? roomName : null;
+        
           if (userAssignment.roomId) {
             const seen = new Set<number>();
             for (const assignment of effectiveAssignments) {
@@ -1071,12 +1073,16 @@ export async function registerRoutes(
               if (assignment.roomId !== userAssignment.roomId) continue;
               if (seen.has(assignment.employeeId)) continue;
               seen.add(assignment.employeeId);
+        
               const employeeData = employeeNameMap.get(assignment.employeeId);
-              teammates.push({
-                firstName: employeeData?.firstName ?? null,
-                lastName: employeeData?.lastName ?? null
-              });
+              // nur echte Namen reinlassen
+              const firstName = employeeData?.firstName ?? null;
+              const lastName = employeeData?.lastName ?? null;
+              if (!firstName && !lastName) continue;
+        
+              teammates.push({ firstName, lastName });
             }
+        
             teammates.sort((a, b) => {
               const aLast = a.lastName ?? "";
               const bLast = b.lastName ?? "";
