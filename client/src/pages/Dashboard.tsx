@@ -17,7 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 
 const DUTY_ABBREVIATIONS: Record<string, string> = {
   "gynaekologie (oa)": "Gyn",
-  "kreiszimmer (ass.)": "Geb",
+  "kreisszimmer (ass.)": "Geb",
   "turnus (ass./ta)": "Ta",
   "ueberdienst": "Ü",
 };
@@ -27,15 +27,14 @@ const normalizeDutyLabel = (label: string) =>
     .trim()
     .toLowerCase()
     .replace(/ß/g, "ss")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
+    .replace(/ä/g, "ae")
+    .replace(/ö/g, "oe")
+    .replace(/ü/g, "ue");
 
-const dutyAbbrev = (label: string | null | undefined) => {
-  if (!label) {
-    return "Kein Dienst";
-  }
-  const normalized = normalizeDutyLabel(label);
-  return DUTY_ABBREVIATIONS[normalized] ?? label;
+const getDutyBadgeText = (statusLabel: string | null | undefined) => {
+  if (!statusLabel) return null; // kein Dienst => kein Badge
+  const normalized = normalizeDutyLabel(statusLabel);
+  return DUTY_ABBREVIATIONS[normalized] ?? null; // nur Badge wenn echter Dienst
 };
 
 const getGreeting = () => {
@@ -453,35 +452,53 @@ export default function Dashboard() {
                 ) : previewCards.length === 0 ? (
                   <p className="text-sm text-muted-foreground">Keine Einsätze für die Vorschau verfügbar.</p>
                 ) : (
-                  previewCards.map((item, i) => (
-                    <div 
-                      key={`${item.date}-${i}`} 
-                      className={`p-3 rounded-lg border ${
-                        i === 0 ? "bg-primary/5 border-primary/20" : "border-border"
-                      }`}
-                      data-testid={`schedule-day-${i}`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-medium text-sm">
-                          {item.dayLabel} <span className="text-muted-foreground">– {item.dateLabel}</span>
-                        </span>
-                        <Badge 
-                          variant={item.statusLabel ? "default" : "secondary"}
-                          className={!item.statusLabel ? "bg-muted text-muted-foreground" : ""}
-                        >
-                          {dutyAbbrev(item.statusLabel)}
-                        </Badge>
+                  previewCards.map((item, i) => {
+                    const badgeText = getDutyBadgeText(item.statusLabel); // null => kein Badge
+                  
+                    // Zeile 2: Abwesenheit bevorzugen, sonst workplace
+                    const normalizedStatus = (item.statusLabel ?? "").toLowerCase();
+                    const isAbsence = ABSENCE_KEYWORDS.some((k) => normalizedStatus.includes(k));
+                  
+                    const line2Raw = isAbsence
+                      ? (item.statusLabel ?? "")
+                      : (item.workplace ?? "");
+                  
+                    // "Diensthabende" ausblenden, keine Platzhalter
+                    const line2 = line2Raw && line2Raw !== "Diensthabende" ? line2Raw : "";
+                  
+                    return (
+                      <div
+                        key={`${item.date}-${i}`}
+                        className={`p-3 rounded-lg border ${
+                          i === 0 ? "bg-primary/5 border-primary/20" : "border-border"
+                        }`}
+                        data-testid={`schedule-day-${i}`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-medium text-sm">
+                            {item.dayLabel} <span className="text-muted-foreground">– {item.dateLabel}</span>
+                          </span>
+                  
+                          {/* Badge nur, wenn Dienst vorhanden */}
+                          {badgeText ? <Badge>{badgeText}</Badge> : null}
+                        </div>
+                  
+                        {/* Zeile 2 ohne "Bereich:" und ohne "-" */}
+                        {line2 ? (
+                          <p className="text-xs text-muted-foreground mb-1">
+                            {line2}
+                          </p>
+                        ) : null}
+                  
+                        {/* Zeile 3 nur wenn teammates vorhanden */}
+                        {item.teammateNames.length > 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            Mit: {item.teammateNames.join(", ")}
+                          </p>
+                        )}
                       </div>
-                      <p className="text-xs text-muted-foreground mb-1">
-                        Bereich: {item.workplace ?? "–"}
-                      </p>
-                      {item.teammateNames.length > 0 && (
-                        <p className="text-xs text-muted-foreground">
-                          Mit: {item.teammateNames.join(", ")}
-                        </p>
-                      )}
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
               
