@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   addMonths,
   differenceInCalendarDays,
@@ -13,7 +13,6 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  FileUp,
   Filter,
   Loader2,
   Plus,
@@ -52,7 +51,6 @@ import { getAustrianHoliday } from "@/lib/holidays";
 import { getSchoolHoliday, type SchoolHolidayLocation } from "@/lib/schoolHolidays";
 import { cn } from "@/lib/utils";
 import type { Competency, Employee, LongTermAbsence, RosterSettings, VacationRule } from "@shared/schema";
-import * as XLSX from "xlsx";
 
 const STATUS_OPTIONS = [
   { value: "all", label: "Alle" },
@@ -242,8 +240,6 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
   const [showOnlySelf, setShowOnlySelf] = useState(false);
   const [loading, setLoading] = useState(true);
   const [savingAbsence, setSavingAbsence] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [competencies, setCompetencies] = useState<Competency[]>([]);
   const [absences, setAbsences] = useState<PlannedAbsenceAdmin[]>([]);
@@ -558,6 +554,36 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
       ])
     );
   }, [employees]);
+
+  const handleExportAbsences = () => {
+    if (!activeAbsences.length) {
+      toast({
+        title: "Keine Abwesenheiten",
+        description: "Keine aktiven Abwesenheiten zum Exportieren."
+      });
+      return;
+    }
+
+    const rows = activeAbsences.map((absence) => {
+      const name = employeeNameById.get(absence.employeeId) ?? "Unbekannt";
+      const notes = (absence.notes ?? "")
+        .replace(/[\r\n]+/g, " ")
+        .replace(/;/g, ",");
+      const status = absence.status ?? "";
+      return `${name};${absence.startDate};${absence.endDate};${absence.reason};${status};${notes}`;
+    });
+
+    const csvContent = ["Mitarbeiter;Von;Bis;Grund;Status;Notiz", ...rows].join("\r\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `urlaubsplan-${formatDateInput(new Date())}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   const conflicts = useMemo(() => {
     const conflictList: ConflictEntry[] = [];
@@ -901,271 +927,6 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
     }
   };
 
-  const handleImport = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    if (!isAdmin) {
-      toast({
-        title: "Kein Zugriff",
-        description: "Nur Admins koennen Excel-Importe durchfuehren.",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    const normalizeText = (value: unknown) =>
-      String(value ?? "")
-        .trim()
-        .toLowerCase()
-        .replace(/\u00e4/g, "ae")
-        .replace(/\u00f6/g, "oe")
-        .replace(/\u00fc/g, "ue")
-        .replace(/\u00df/g, "ss")
-        .replace(/\s+/g, " ");
-
-    const monthLookup: Record<string, number> = {
-      jaenner: 1,
-      januar: 1,
-      februar: 2,
-      maerz: 3,
-      marz: 3,
-      april: 4,
-      mai: 5,
-      juni: 6,
-      juli: 7,
-      august: 8,
-      september: 9,
-      oktober: 10,
-      november: 11,
-      dezember: 12
-    };
-
-    const parseDay = (value: unknown) => {
-      const text = String(value ?? "").trim();
-      if (!text) return null;
-      const match = text.match(/(\d{1,2})/);
-      if (!match) return null;
-      const day = Number(match[1]);
-      if (!Number.isFinite(day) || day < 1 || day > 31) return null;
-      return day;
-    };
-
-    const buildDate = (yearValue: number, month: number, day: number) => {
-      const date = new Date(yearValue, month - 1, day);
-      return formatDateInput(date);
-    };
-
-    setImporting(true);
-    try {
-      const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data, { type: "array" });
-      const employeeMap = new Map<string, Employee>();
-      employees.forEach((emp) => {
-        const lastName = normalizeText(emp.lastName || "");
-        const fullName = normalizeText(`${emp.firstName || ""} ${emp.lastName || ""}`);
-        const name = normalizeText(emp.name || "");
-        if (lastName) employeeMap.set(lastName, emp);
-        if (fullName) employeeMap.set(fullName, emp);
-        if (name) employeeMap.set(name, emp);
-      });
-
-      const calendarAbsenceIndex = calendarAbsences.filter((absence) =>
-        ["Urlaub", "Fortbildung"].includes(absence.styleKey)
-      );
-
-      const created: Array<{
-        employeeId: number;
-        startDate: string;
-        endDate: string;
-        reason: "Urlaub" | "Fortbildung";
-      }> = [];
-      let skipped = 0;
-      let unmatched = 0;
-
-      workbook.SheetNames.forEach((sheetName) => {
-        const sheet = workbook.Sheets[sheetName];
-        if (!sheet) return;
-        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false }) as Array<unknown[]>;
-        if (!rows.length) return;
-
-        const yearValue =
-          rows
-            .flat()
-            .map((cell) => Number(String(cell ?? "").trim()))
-            .find((value) => Number.isFinite(value) && value >= 2000 && value <= 2100) ||
-          year;
-
-        let nameColumnIndex = -1;
-        rows.some((row) => {
-          const idx = row.findIndex((cell) => normalizeText(cell) === "namen" || normalizeText(cell) === "name");
-          if (idx >= 0) {
-            nameColumnIndex = idx;
-            return true;
-          }
-          return false;
-        });
-
-        const headerRowIndex = rows.findIndex((row) =>
-          row.some((cell) => normalizeText(cell) in monthLookup)
-        );
-        if (headerRowIndex < 0) return;
-
-        const headerRow = rows[headerRowIndex] || [];
-        const monthStarts: Array<{ month: number; col: number }> = [];
-        headerRow.forEach((cell, colIndex) => {
-          const key = normalizeText(cell);
-          if (key in monthLookup) {
-            monthStarts.push({ month: monthLookup[key], col: colIndex });
-          }
-        });
-        monthStarts.sort((a, b) => a.col - b.col);
-        if (!monthStarts.length) return;
-
-        const monthSegments = monthStarts.map((entry, idx) => ({
-          month: entry.month,
-          start: entry.col,
-          end: (monthStarts[idx + 1]?.col ?? headerRow.length) - 1
-        }));
-
-        const dayRowIndex = rows
-          .slice(headerRowIndex + 1, headerRowIndex + 8)
-          .findIndex((row) => row.filter((cell) => parseDay(cell) !== null).length > 10);
-        if (dayRowIndex < 0) return;
-        const resolvedDayRowIndex = headerRowIndex + 1 + dayRowIndex;
-        const dayRow = rows[resolvedDayRowIndex] || [];
-
-        const dayByCol = new Map<number, number>();
-        monthSegments.forEach((segment) => {
-          for (let col = segment.start; col <= segment.end; col += 1) {
-            const day = parseDay(dayRow[col]);
-            if (day) {
-              dayByCol.set(col, day);
-            }
-          }
-        });
-
-        for (let rowIndex = resolvedDayRowIndex + 1; rowIndex < rows.length; rowIndex += 1) {
-          const row = rows[rowIndex] || [];
-          const candidateCells = [];
-          if (nameColumnIndex >= 0) candidateCells.push(row[nameColumnIndex]);
-          row.forEach((cell) => {
-            if (typeof cell === "string") candidateCells.push(cell);
-          });
-          const employee = candidateCells
-            .map((cell) => employeeMap.get(normalizeText(cell)))
-            .find(Boolean);
-          if (!employee) {
-            const hasEntries = monthSegments.some((segment) => {
-              for (let col = segment.start; col <= segment.end; col += 1) {
-                const symbol = normalizeText(row[col]);
-                if (symbol === "u" || symbol === "f") return true;
-              }
-              return false;
-            });
-            if (hasEntries) unmatched += 1;
-            continue;
-          }
-
-          monthSegments.forEach((segment) => {
-            for (let col = segment.start; col <= segment.end; col += 1) {
-              const day = dayByCol.get(col);
-              if (!day) continue;
-              const symbol = normalizeText(row[col]);
-              if (!symbol) continue;
-              if (symbol === "k") continue;
-              if (symbol !== "u" && symbol !== "f") continue;
-              const reason = symbol === "u" ? "Urlaub" : "Fortbildung";
-              const date = buildDate(yearValue, segment.month, day);
-              created.push({
-                employeeId: employee.id,
-                startDate: date,
-                endDate: date,
-                reason
-              });
-            }
-          });
-        }
-      });
-
-      const grouped = new Map<string, { employeeId: number; reason: "Urlaub" | "Fortbildung"; dates: string[] }>();
-      created.forEach((entry) => {
-        const key = `${entry.employeeId}-${entry.reason}`;
-        const existing = grouped.get(key);
-        if (existing) {
-          existing.dates.push(entry.startDate);
-        } else {
-          grouped.set(key, { employeeId: entry.employeeId, reason: entry.reason, dates: [entry.startDate] });
-        }
-      });
-
-      const ranges: Array<{ employeeId: number; reason: "Urlaub" | "Fortbildung"; startDate: string; endDate: string }> = [];
-      grouped.forEach((group) => {
-        const sortedDates = Array.from(new Set(group.dates)).sort();
-        let start = sortedDates[0];
-        let prev = sortedDates[0];
-        for (let i = 1; i <= sortedDates.length; i += 1) {
-          const current = sortedDates[i];
-          const prevDate = new Date(`${prev}T00:00:00`);
-          const expectedNext = formatDateInput(new Date(prevDate.getTime() + 86400000));
-          if (current && current === expectedNext) {
-            prev = current;
-            continue;
-          }
-          ranges.push({
-            employeeId: group.employeeId,
-            reason: group.reason,
-            startDate: start,
-            endDate: prev
-          });
-          start = current;
-          prev = current;
-        }
-      });
-
-      for (const range of ranges) {
-        const overlap = calendarAbsenceIndex.some(
-          (absence) =>
-            absence.employeeId === range.employeeId &&
-            absence.styleKey === range.reason &&
-            !(absence.endDate < range.startDate || absence.startDate > range.endDate)
-        );
-        if (overlap) {
-          skipped += 1;
-          continue;
-        }
-        await plannedAbsencesAdminApi.create({
-          employeeId: range.employeeId,
-          startDate: range.startDate,
-          endDate: range.endDate,
-          reason: range.reason,
-          notes: "Import (Excel)"
-        });
-      }
-
-      if (!ranges.length) {
-        toast({
-          title: "Kein Import",
-          description: "Keine passenden Eintraege (u/f) im Excel gefunden."
-        });
-      } else {
-        toast({
-          title: "Import abgeschlossen",
-          description: `Importiert: ${ranges.length - skipped}, uebersprungen: ${skipped}, unzugeordnet: ${unmatched}`
-        });
-      }
-      await loadData();
-    } catch (error: any) {
-      toast({
-        title: "Import fehlgeschlagen",
-        description: error.message || "Excel konnte nicht verarbeitet werden.",
-        variant: "destructive"
-      });
-    } finally {
-      setImporting(false);
-    }
-  };
-
   const handleAbsenceDelete = async (absenceId: number) => {
     setUpdatingId(absenceId);
     try {
@@ -1325,13 +1086,6 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
     <div className="space-y-6">
         <Card className="border-none kabeg-shadow">
           <CardContent className="p-4 space-y-4">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx,.xls"
-              className="hidden"
-              onChange={handleImport}
-            />
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="icon" onClick={handlePrevQuarter}>
@@ -1441,21 +1195,14 @@ export default function VacationPlanEditor({ embedded = false }: { embedded?: bo
                     </div>
                   </PopoverContent>
                 </Popover>
-                {isAdmin && (
-                  <Button
-                    variant="outline"
-                    className="gap-2"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={importing}
-                  >
-                    {importing ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <FileUp className="w-4 h-4" />
-                    )}
-                    Excel importieren
-                  </Button>
-                )}
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={handleExportAbsences}
+                  disabled={activeAbsences.length === 0}
+                >
+                  CSV exportieren
+                </Button>
                 <Dialog open={absenceDialogOpen} onOpenChange={setAbsenceDialogOpen}>
                   <DialogTrigger asChild>
                     <Button className="gap-2" disabled={!currentUser}>
