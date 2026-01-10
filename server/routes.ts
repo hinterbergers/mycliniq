@@ -22,7 +22,9 @@ import {
   sessions,
   serviceLines,
   rosterShifts as rosterShiftsTable,
-  type RosterShift
+  weeklyAssignments,
+  type RosterShift,
+  type WeeklyAssignment
 } from "@shared/schema";
   const rosterShifts = rosterShiftsTable;
 import { fromZodError } from "zod-validation-error";
@@ -32,7 +34,7 @@ import { generateRosterPlan } from "./services/rosterGenerator";
 import { registerModularApiRoutes } from "./api";
 import { employeeDoesShifts, OVERDUTY_KEY } from "@shared/shiftTypes";
 import { requireAuth } from "./api/middleware/auth";
-import { getWeek } from "date-fns";
+import { getWeek, getISOWeek, getISOWeekYear, getISODay } from "date-fns";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const isValidEmail = (value: string) =>
@@ -180,6 +182,30 @@ const formatDate = (date: Date) => {
 const countInclusiveDays = (start: Date, end: Date) => {
   const diff = Math.floor((end.getTime() - start.getTime()) / DAY_MS);
   return diff + 1;
+};
+
+const buildWeeklyWorkplaceLabel = (assignment: {
+  area?: string | null;
+  subArea?: string | null;
+  roleSlot?: string | null;
+}) => {
+  const area = assignment.area?.trim() || "";
+  const subArea = assignment.subArea?.trim() || "";
+  const roleSlot = assignment.roleSlot?.trim() || "";
+  const candidate = [area, subArea].filter(Boolean).join(" ").trim() || roleSlot;
+  if (!candidate) {
+    return null;
+  }
+  if (candidate.toLowerCase() === "diensthabende") {
+    return null;
+  }
+  return candidate;
+};
+
+type WeeklyAssignmentWithEmployee = WeeklyAssignment & {
+  firstName: string | null;
+  lastName: string | null;
+  workplaceLabel: string | null;
 };
 
 const VIENNA_DATE_FORMAT = new Intl.DateTimeFormat("en-CA", {
@@ -932,7 +958,86 @@ export async function registerRoutes(
         return teammates;
       };
 
+      const weekKeyMap = new Map<string, { weekYear: number; weekNumber: number }>();
+      previewDates.forEach((date) => {
+        const isoDate = new Date(`${date}T00:00:00`);
+        const weekYear = getISOWeekYear(isoDate);
+        const weekNumber = getISOWeek(isoDate);
+        const key = `${weekYear}-${weekNumber}`;
+        if (!weekKeyMap.has(key)) {
+          weekKeyMap.set(key, { weekYear, weekNumber });
+        }
+      });
+
+      const weeklyAssignmentsByWeek = new Map<string, WeeklyAssignmentWithEmployee[]>();
+      await Promise.all(
+        Array.from(weekKeyMap.entries()).map(async ([key, { weekYear, weekNumber }]) => {
+          const rows = await db
+            .select({
+              id: weeklyAssignments.id,
+              weekYear: weeklyAssignments.weekYear,
+              weekNumber: weeklyAssignments.weekNumber,
+              dayOfWeek: weeklyAssignments.dayOfWeek,
+              area: weeklyAssignments.area,
+              subArea: weeklyAssignments.subArea,
+              roleSlot: weeklyAssignments.roleSlot,
+              employeeId: weeklyAssignments.employeeId,
+              firstName: employees.firstName,
+              lastName: employees.lastName
+            })
+            .from(weeklyAssignments)
+            .leftJoin(employees, eq(weeklyAssignments.employeeId, employees.id))
+            .where(
+              and(
+                eq(weeklyAssignments.weekYear, weekYear),
+                eq(weeklyAssignments.weekNumber, weekNumber)
+              )
+            );
+          weeklyAssignmentsByWeek.set(
+            key,
+            rows.map((assignment) => ({
+              ...assignment,
+              workplaceLabel: buildWeeklyWorkplaceLabel(assignment)
+            }))
+          );
+        })
+      );
+
+      const weeklyOverrides = new Map<
+        string,
+        { workplace: string | null; teammates: Array<{ firstName: string | null; lastName: string | null }> }
+      >();
+      previewDates.forEach((date) => {
+        const isoDate = new Date(`${date}T00:00:00`);
+        const weekYear = getISOWeekYear(isoDate);
+        const weekNumber = getISOWeek(isoDate);
+        const key = `${weekYear}-${weekNumber}`;
+        const isoDay = getISODay(isoDate);
+        const assignmentsForWeek = weeklyAssignmentsByWeek.get(key) ?? [];
+        const assignmentsForDay = assignmentsForWeek.filter((assignment) => assignment.dayOfWeek === isoDay);
+        const userAssignment = user.employeeId
+          ? assignmentsForDay.find((assignment) => assignment.employeeId === user.employeeId)
+          : undefined;
+        const workplace = userAssignment?.workplaceLabel ?? null;
+        const teammates: Array<{ firstName: string | null; lastName: string | null }> = [];
+        if (workplace) {
+          const seen = new Set<number>();
+          for (const assignment of assignmentsForDay) {
+            if (!assignment.employeeId || assignment.employeeId === user.employeeId) continue;
+            if (assignment.workplaceLabel !== workplace) continue;
+            if (seen.has(assignment.employeeId)) continue;
+            seen.add(assignment.employeeId);
+            teammates.push({
+              firstName: assignment.firstName ?? null,
+              lastName: assignment.lastName ?? null
+            });
+          }
+        }
+        weeklyOverrides.set(date, { workplace, teammates });
+      });
+
       const weekPreview = previewDates.map((date) => {
+        const weeklyOverride = weeklyOverrides.get(date);
         const shift = userShifts.get(date);
         if (!shift) {
           return {
@@ -943,11 +1048,13 @@ export async function registerRoutes(
           };
         }
         const statusLabel = getServiceLabel(shift.serviceType);
+        const weeklyWorkplace = weeklyOverride?.workplace;
+        const finalWorkplace = weeklyWorkplace ?? buildWorkplace(shift, statusLabel);
         return {
           date,
           statusLabel,
-          workplace: buildWorkplace(shift, statusLabel),
-          teammates: buildTeammates(date, shift.serviceType)
+          workplace: finalWorkplace,
+          teammates: weeklyWorkplace ? weeklyOverride?.teammates ?? [] : buildTeammates(date, shift.serviceType)
         };
       });
 
