@@ -24,7 +24,21 @@ import {
 
 // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+let openaiClient: OpenAI | null = null;
+
+function getOpenAIClient(): OpenAI {
+  if (openaiClient) return openaiClient;
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "OPENAI_API_KEY fehlt. Setze die Umgebungsvariable, oder deaktiviere die KI-Dienstplan-Generierung.",
+    );
+  }
+
+  openaiClient = new OpenAI({ apiKey });
+  return openaiClient;
+}
 
 interface ShiftPreferences {
   preferredDaysOff?: string[];
@@ -276,7 +290,7 @@ Antworte mit folgendem JSON-Format:
 }`;
 
   try {
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAIClient().chat.completions.create({
       model: "gpt-5",
       messages: [
         {

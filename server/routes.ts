@@ -1201,107 +1201,119 @@ export async function registerRoutes(
           return null;
         };
         const plannedAbsenceRowsForPreview = await db
-  .select({
-    employeeId: plannedAbsences.employeeId,
-    startDate: plannedAbsences.startDate,
-    endDate: plannedAbsences.endDate,
-    reason: plannedAbsences.reason,
-    status: plannedAbsences.status,
-  })
-  .from(plannedAbsences)
-  .where(
-    and(
-      ne(plannedAbsences.status, "Abgelehnt"),
-      lte(plannedAbsences.startDate, endDate),
-      gte(plannedAbsences.endDate, startDate),
-    ),
-  );
+          .select({
+            employeeId: plannedAbsences.employeeId,
+            startDate: plannedAbsences.startDate,
+            endDate: plannedAbsences.endDate,
+            reason: plannedAbsences.reason,
+            status: plannedAbsences.status,
+          })
+          .from(plannedAbsences)
+          .where(
+            and(
+              ne(plannedAbsences.status, "Abgelehnt"),
+              lte(plannedAbsences.startDate, endDate),
+              gte(plannedAbsences.endDate, startDate),
+            ),
+          );
 
-const absentEmployeeIdsForDate = (date: string) => {
-  const set = new Set<number>();
-  plannedAbsenceRowsForPreview.forEach((row) => {
-    const employeeId = row.employeeId;
-    if (!employeeId) return;
-    const rowStart = String(row.startDate);
-    const rowEnd = String(row.endDate);
-    if (rowStart <= date && rowEnd >= date) set.add(employeeId);
-  });
-  return set;
-};
+        const absentEmployeeIdsForDate = (date: string) => {
+          const set = new Set<number>();
+          plannedAbsenceRowsForPreview.forEach((row) => {
+            const employeeId = row.employeeId;
+            if (!employeeId) return;
+            const rowStart = String(row.startDate);
+            const rowEnd = String(row.endDate);
+            if (rowStart <= date && rowEnd >= date) set.add(employeeId);
+          });
+          return set;
+        };
 
-type AttendanceMember = {
-  employeeId: number;
-  firstName: string | null;
-  lastName: string | null;
-  workplace: string | null;
-};
+        type AttendanceMember = {
+          employeeId: number;
+          firstName: string | null;
+          lastName: string | null;
+          workplace: string | null;
+        };
 
-const buildEffectiveAssignmentsForMeta = (meta: { date: string; weekKey: string; isoDay: number }) => {
-  const dayKey = `${meta.weekKey}-${meta.isoDay}`;
-  const assignmentsForDay = assignmentsByDayKey.get(dayKey) ?? [];
-  const overridesForDay = overridesByDate.get(meta.date) ?? [];
+        const buildEffectiveAssignmentsForMeta = (meta: {
+          date: string;
+          weekKey: string;
+          isoDay: number;
+        }) => {
+          const dayKey = `${meta.weekKey}-${meta.isoDay}`;
+          const assignmentsForDay = assignmentsByDayKey.get(dayKey) ?? [];
+          const overridesForDay = overridesByDate.get(meta.date) ?? [];
 
-  return assignmentsForDay.map((assignment) => {
-    const matchingOverride = overridesForDay.find(
-      (override) =>
-        override.roomId === assignment.roomId &&
-        override.originalEmployeeId === assignment.employeeId,
-    );
+          return assignmentsForDay.map((assignment) => {
+            const matchingOverride = overridesForDay.find(
+              (override) =>
+                override.roomId === assignment.roomId &&
+                override.originalEmployeeId === assignment.employeeId,
+            );
 
-    return {
-      ...assignment,
-      employeeId: matchingOverride ? matchingOverride.newEmployeeId ?? null : assignment.employeeId,
-    };
-  });
-};
+            return {
+              ...assignment,
+              employeeId: matchingOverride
+                ? (matchingOverride.newEmployeeId ?? null)
+                : assignment.employeeId,
+            };
+          });
+        };
 
-const buildAttendanceMembers = (
-  meta: { date: string; weekKey: string; isoDay: number },
-  absentIds: Set<number>,
-): AttendanceMember[] => {
-  const effectiveAssignments = buildEffectiveAssignmentsForMeta(meta);
+        const buildAttendanceMembers = (
+          meta: { date: string; weekKey: string; isoDay: number },
+          absentIds: Set<number>,
+        ): AttendanceMember[] => {
+          const effectiveAssignments = buildEffectiveAssignmentsForMeta(meta);
 
-  const seen = new Set<number>();
-  const members: AttendanceMember[] = [];
+          const seen = new Set<number>();
+          const members: AttendanceMember[] = [];
 
-  for (const assignment of effectiveAssignments) {
-    const employeeId = assignment.employeeId ?? null;
-    if (!employeeId) continue;
-    if (absentIds.has(employeeId)) continue;
-    if (seen.has(employeeId)) continue;
-    seen.add(employeeId);
+          for (const assignment of effectiveAssignments) {
+            const employeeId = assignment.employeeId ?? null;
+            if (!employeeId) continue;
+            if (absentIds.has(employeeId)) continue;
+            if (seen.has(employeeId)) continue;
+            seen.add(employeeId);
 
-    const employeeData = employeeNameMap.get(employeeId);
-    const firstName = employeeData?.firstName ?? normalizeName(assignment.firstName) ?? null;
-    const lastName = employeeData?.lastName ?? normalizeName(assignment.lastName) ?? null;
-    if (!firstName && !lastName) continue;
+            const employeeData = employeeNameMap.get(employeeId);
+            const firstName =
+              employeeData?.firstName ??
+              normalizeName(assignment.firstName) ??
+              null;
+            const lastName =
+              employeeData?.lastName ??
+              normalizeName(assignment.lastName) ??
+              null;
+            if (!firstName && !lastName) continue;
 
-    const workplace = buildWeeklyPlanWorkplaceLabel({
-      roomName: assignment.roomName,
-      roleLabel: assignment.roleLabel,
-    });
+            const workplace = buildWeeklyPlanWorkplaceLabel({
+              roomName: assignment.roomName,
+              roleLabel: assignment.roleLabel,
+            });
 
-    members.push({ employeeId, firstName, lastName, workplace });
-  }
+            members.push({ employeeId, firstName, lastName, workplace });
+          }
 
-  members.sort((a, b) => {
-    const aWork = a.workplace ?? "";
-    const bWork = b.workplace ?? "";
-    const workCmp = aWork.localeCompare(bWork, "de");
-    if (workCmp !== 0) return workCmp;
+          members.sort((a, b) => {
+            const aWork = a.workplace ?? "";
+            const bWork = b.workplace ?? "";
+            const workCmp = aWork.localeCompare(bWork, "de");
+            if (workCmp !== 0) return workCmp;
 
-    const aLast = a.lastName ?? "";
-    const bLast = b.lastName ?? "";
-    const lastCmp = aLast.localeCompare(bLast, "de");
-    if (lastCmp !== 0) return lastCmp;
+            const aLast = a.lastName ?? "";
+            const bLast = b.lastName ?? "";
+            const lastCmp = aLast.localeCompare(bLast, "de");
+            if (lastCmp !== 0) return lastCmp;
 
-    const aFirst = a.firstName ?? "";
-    const bFirst = b.firstName ?? "";
-    return aFirst.localeCompare(bFirst, "de");
-  });
+            const aFirst = a.firstName ?? "";
+            const bFirst = b.firstName ?? "";
+            return aFirst.localeCompare(bFirst, "de");
+          });
 
-  return members;
-};
+          return members;
+        };
 
         const weekPreview = previewMeta.map(({ date, weekKey, isoDay }) => {
           const absenceReason = absenceReasonForDate(date);
@@ -1315,6 +1327,7 @@ const buildAttendanceMembers = (
                 override.roomId === assignment.roomId &&
                 override.originalEmployeeId === assignment.employeeId,
             );
+
             return {
               ...assignment,
               employeeId: matchingOverride
@@ -1322,16 +1335,19 @@ const buildAttendanceMembers = (
                 : assignment.employeeId,
             };
           });
+
           const userAssignment = user.employeeId
             ? effectiveAssignments.find(
                 (assignment) => assignment.employeeId === user.employeeId,
               )
             : undefined;
+
           let workplace: string | null = null;
           const teammates: Array<{
             firstName: string | null;
             lastName: string | null;
           }> = [];
+
           if (userAssignment) {
             const roomName = normalizeName(userAssignment.roomName);
             workplace =
@@ -1350,7 +1366,6 @@ const buildAttendanceMembers = (
                 seen.add(assignment.employeeId);
 
                 const employeeData = employeeNameMap.get(assignment.employeeId);
-                // nur echte Namen reinlassen
                 const firstName = employeeData?.firstName ?? null;
                 const lastName = employeeData?.lastName ?? null;
                 if (!firstName && !lastName) continue;
@@ -1369,8 +1384,10 @@ const buildAttendanceMembers = (
               });
             }
           }
+
           const shift = userShifts.get(date);
           const statusLabel = shift ? getServiceLabel(shift.serviceType) : null;
+
           return {
             date,
             statusLabel,
@@ -1379,14 +1396,49 @@ const buildAttendanceMembers = (
             absenceReason,
           };
         });
+        // --- Attendance widget (Heute / Morgen) -----------------------------------
         const todayMeta = previewMeta[0];
         const tomorrowMeta = previewMeta[1];
-        
-        const todayAbsentIds = todayMeta ? absentEmployeeIdsForDate(todayMeta.date) : new Set<number>();
-        const tomorrowAbsentIds = tomorrowMeta ? absentEmployeeIdsForDate(tomorrowMeta.date) : new Set<number>();
-        
-        const attendanceTodayMembers = todayMeta ? buildAttendanceMembers(todayMeta, todayAbsentIds) : [];
-        const attendanceTomorrowMembers = tomorrowMeta ? buildAttendanceMembers(tomorrowMeta, tomorrowAbsentIds) : [];
+
+        // For the dashboard we only treat *approved* absences as “absent”,
+        // otherwise the widget can become empty if many requests are still planned.
+        const approvedAbsentEmployeeIdsForDate = (date: string) => {
+          const set = new Set<number>();
+          plannedAbsenceRowsForPreview.forEach((row) => {
+            if (row.status !== "Genehmigt") return;
+            const employeeId = row.employeeId;
+            if (!employeeId) return;
+            const rowStart = String(row.startDate);
+            const rowEnd = String(row.endDate);
+            if (rowStart <= date && rowEnd >= date) set.add(employeeId);
+          });
+          return set;
+        };
+
+        const todayAbsentIds = todayMeta
+          ? approvedAbsentEmployeeIdsForDate(todayMeta.date)
+          : new Set<number>();
+
+        const tomorrowAbsentIds = tomorrowMeta
+          ? approvedAbsentEmployeeIdsForDate(tomorrowMeta.date)
+          : new Set<number>();
+
+        const attendanceWidget =
+          todayMeta && tomorrowMeta
+            ? {
+                today: {
+                  members: buildAttendanceMembers(todayMeta, todayAbsentIds),
+                  absentCount: todayAbsentIds.size,
+                },
+                tomorrow: {
+                  members: buildAttendanceMembers(
+                    tomorrowMeta,
+                    tomorrowAbsentIds,
+                  ),
+                  absentCount: tomorrowAbsentIds.size,
+                },
+              }
+            : null;
         const todayEntry = weekPreview[0];
         let todayZe: { id: number; possible: true; accepted: boolean } | null =
           null;
@@ -1453,6 +1505,7 @@ const buildAttendanceMembers = (
           },
           birthday,
           weekPreview,
+          attendanceWidget,
         });
       } catch (error) {
         console.error("[Dashboard] Error:", error);

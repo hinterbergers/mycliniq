@@ -1879,12 +1879,8 @@ export default function WeeklyPlan() {
                 <Card className="border-none kabeg-shadow flex flex-col min-h-0 flex-1">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium">
-                      Zeitausgleich moeglich
+                      Zeitausgleich möglich
                     </CardTitle>
-                    <p className="text-xs text-muted-foreground">
-                      Ziehen Sie Mitarbeitende hierher, um eine Anfrage zu
-                      senden.
-                    </p>
                   </CardHeader>
                   <CardContent className="flex-1 min-h-0 overflow-y-auto space-y-2">
                     <div

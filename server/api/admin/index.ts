@@ -234,13 +234,11 @@ export function registerAdminRoutes(app: Express): void {
   router.put("/clinic", requireClinicAdmin, async (req, res) => {
     try {
       if (!req.user?.clinicId) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-            data: null,
-            error: "Keine Klinik zugeordnet",
-          });
+        return res.status(404).json({
+          success: false,
+          data: null,
+          error: "Keine Klinik zugeordnet",
+        });
       }
 
       const { name, slug, timezone, logoUrl, country, state } = req.body;

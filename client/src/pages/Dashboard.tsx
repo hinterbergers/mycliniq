@@ -124,7 +124,6 @@ const ABSENCE_KEYWORDS = [
 ];
 const SICK_KEYWORDS = ["krankenstand", "pflegeurlaub"];
 
-
 const normalizeWorkplace = (value?: string | null) => {
   const trimmed = (value ?? "").trim();
   if (!trimmed || trimmed === "Diensthabende") return null;
@@ -446,7 +445,7 @@ export default function Dashboard() {
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <CalendarDays className="w-4 h-4 text-muted-foreground" />
-                  <p className="text-sm font-medium">Morgen Team</p>
+                  <p className="text-sm font-medium">Team morgen</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {presentTomorrow.length > 0 ? (
@@ -598,7 +597,6 @@ export default function Dashboard() {
               </div>
             </CardContent>
           </Card>
-
         </div>
 
         <div className="md:col-span-4 space-y-6">
