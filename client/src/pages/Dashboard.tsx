@@ -478,17 +478,17 @@ export default function Dashboard() {
                 {showDivider ? <Separator className="w-full my-1" /> : null}
                 <Badge
                   variant="secondary"
-                  className={`inline-flex items-center rounded-md border px-3 py-1 text-[11px] sm:text-xs font-medium leading-none ${
+                  className={`inline-flex flex-col items-start gap-0.5 rounded-md border px-3 py-1 text-[11px] sm:text-xs font-medium leading-tight ${
                     p.isDuty
-                      ? "bg-rose-100 text-rose-700 border-rose-200"
-                      : "bg-slate-100 text-slate-700 border-slate-200"
+                      ? "bg-red-50 text-red-600 border-red-200"
+                      : "bg-slate-50 text-slate-700 border-slate-200"
                   }`}
                   data-testid={`staff-present-${i}`}
                 >
-                  {p.name}
+                  <span>{p.name}</span>
                   {p.workplace ? (
-                    <span className="ml-1 text-[10px] text-muted-foreground">
-                      ({p.workplace})
+                    <span className="text-[10px] sm:text-xs text-muted-foreground leading-tight">
+                      {p.workplace}
                     </span>
                   ) : null}
                 </Badge>
@@ -529,17 +529,17 @@ export default function Dashboard() {
                   {showDivider ? <Separator className="w-full my-1" /> : null}
                   <Badge
                     variant="secondary"
-                    className={`inline-flex items-center rounded-md border px-3 py-1 text-[11px] sm:text-xs font-medium leading-none ${
+                    className={`inline-flex flex-col items-start gap-0.5 rounded-md border px-3 py-1 text-[11px] sm:text-xs font-medium leading-tight ${
                       p.isDuty
-                        ? "bg-rose-100 text-rose-700 border-rose-200"
-                        : "bg-slate-100 text-slate-700 border-slate-200"
+                        ? "bg-red-50 text-red-600 border-red-200"
+                        : "bg-slate-50 text-slate-700 border-slate-200"
                     }`}
                     data-testid={`staff-tomorrow-${i}`}
                   >
-                    {p.name}
+                    <span>{p.name}</span>
                     {p.workplace ? (
-                      <span className="ml-1 text-[10px] text-muted-foreground">
-                        ({p.workplace})
+                      <span className="text-[10px] sm:text-xs text-muted-foreground leading-tight">
+                        {p.workplace}
                       </span>
                     ) : null}
                   </Badge>
@@ -804,7 +804,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="md:hidden space-y-6">
+      <div className="md:hidden space-y-6 px-4">
         {renderHeroCard()}
         <Card
           className="border-none kabeg-shadow"

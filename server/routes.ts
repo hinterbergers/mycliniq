@@ -1018,6 +1018,18 @@ export async function registerRoutes(
             ),
           );
 
+        const dutyEmployeeIdsByDate = new Map<string, Set<number>>();
+        shiftRows.forEach((shift) => {
+          if (!shift.date || !shift.employeeId) return;
+          if (shift.serviceType === OVERDUTY_KEY) return;
+          const set = dutyEmployeeIdsByDate.get(shift.date) ?? new Set<number>();
+          set.add(shift.employeeId);
+          dutyEmployeeIdsByDate.set(shift.date, set);
+        });
+
+        const dutyEmployeeIdsForDate = (date: string) =>
+          dutyEmployeeIdsByDate.get(date) ?? new Set<number>();
+
         const userShifts = new Map<string, (typeof shiftRows)[0]>();
         shiftRows.forEach((shift) => {
           if (shift.employeeId === user.employeeId) {
@@ -1309,6 +1321,7 @@ export async function registerRoutes(
           absentIds: Set<number>,
         ): AttendanceMember[] => {
           const effectiveAssignments = buildEffectiveAssignmentsForMeta(meta);
+          const dutyIdsForDay = dutyEmployeeIdsForDate(meta.date);
 
           const seen = new Set<number>();
           const members: AttendanceMember[] = [];
@@ -1329,10 +1342,7 @@ export async function registerRoutes(
 
             const role = employeeData?.role ?? null;
 
-            // Duty NICHT über workplace bestimmen, sondern über roleLabel/roomName im Assignment
-            const roleKey = (assignment.roleLabel ?? "").trim().toLowerCase();
-            const roomKey = (assignment.roomName ?? "").trim().toLowerCase();
-            const isDuty = roleKey.includes("diensthab") || roomKey.includes("diensthab");
+            const isDuty = dutyIdsForDay.has(employeeId);
 
             const workplace = buildWeeklyPlanWorkplaceLabel({
               roomName: assignment.roomName,
