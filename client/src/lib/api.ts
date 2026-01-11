@@ -75,6 +75,7 @@ export type DashboardDay = {
   statusLabel: string | null;
   workplace: string | null;
   teammates: DashboardTeammate[];
+  absenceReason: string | null;
   ze?: DashboardZeInfo | null;
 };
 
@@ -82,6 +83,26 @@ export type DashboardResponse = {
   today: DashboardDay & { ze: DashboardZeInfo | null };
   birthday: null | { firstName: string | null; lastName: string | null };
   weekPreview: DashboardDay[];
+  attendanceWidget: DashboardAttendanceWidget | null;
+};
+
+export type DashboardAttendanceMember = {
+  employeeId: number;
+  firstName: string | null;
+  lastName: string | null;
+  workplace: string | null;
+};
+
+export type DashboardAttendanceWidget = {
+  today: {
+    date: string;
+    members: DashboardAttendanceMember[];
+    absentCount: number;
+  };
+  tomorrow: {
+    date: string | null;
+    members: DashboardAttendanceMember[];
+  };
 };
 
 export type MeResponse = {

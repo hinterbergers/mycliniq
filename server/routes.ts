@@ -1200,6 +1200,108 @@ export async function registerRoutes(
           }
           return null;
         };
+        const plannedAbsenceRowsForPreview = await db
+  .select({
+    employeeId: plannedAbsences.employeeId,
+    startDate: plannedAbsences.startDate,
+    endDate: plannedAbsences.endDate,
+    reason: plannedAbsences.reason,
+    status: plannedAbsences.status,
+  })
+  .from(plannedAbsences)
+  .where(
+    and(
+      ne(plannedAbsences.status, "Abgelehnt"),
+      lte(plannedAbsences.startDate, endDate),
+      gte(plannedAbsences.endDate, startDate),
+    ),
+  );
+
+const absentEmployeeIdsForDate = (date: string) => {
+  const set = new Set<number>();
+  plannedAbsenceRowsForPreview.forEach((row) => {
+    const employeeId = row.employeeId;
+    if (!employeeId) return;
+    const rowStart = String(row.startDate);
+    const rowEnd = String(row.endDate);
+    if (rowStart <= date && rowEnd >= date) set.add(employeeId);
+  });
+  return set;
+};
+
+type AttendanceMember = {
+  employeeId: number;
+  firstName: string | null;
+  lastName: string | null;
+  workplace: string | null;
+};
+
+const buildEffectiveAssignmentsForMeta = (meta: { date: string; weekKey: string; isoDay: number }) => {
+  const dayKey = `${meta.weekKey}-${meta.isoDay}`;
+  const assignmentsForDay = assignmentsByDayKey.get(dayKey) ?? [];
+  const overridesForDay = overridesByDate.get(meta.date) ?? [];
+
+  return assignmentsForDay.map((assignment) => {
+    const matchingOverride = overridesForDay.find(
+      (override) =>
+        override.roomId === assignment.roomId &&
+        override.originalEmployeeId === assignment.employeeId,
+    );
+
+    return {
+      ...assignment,
+      employeeId: matchingOverride ? matchingOverride.newEmployeeId ?? null : assignment.employeeId,
+    };
+  });
+};
+
+const buildAttendanceMembers = (
+  meta: { date: string; weekKey: string; isoDay: number },
+  absentIds: Set<number>,
+): AttendanceMember[] => {
+  const effectiveAssignments = buildEffectiveAssignmentsForMeta(meta);
+
+  const seen = new Set<number>();
+  const members: AttendanceMember[] = [];
+
+  for (const assignment of effectiveAssignments) {
+    const employeeId = assignment.employeeId ?? null;
+    if (!employeeId) continue;
+    if (absentIds.has(employeeId)) continue;
+    if (seen.has(employeeId)) continue;
+    seen.add(employeeId);
+
+    const employeeData = employeeNameMap.get(employeeId);
+    const firstName = employeeData?.firstName ?? normalizeName(assignment.firstName) ?? null;
+    const lastName = employeeData?.lastName ?? normalizeName(assignment.lastName) ?? null;
+    if (!firstName && !lastName) continue;
+
+    const workplace = buildWeeklyPlanWorkplaceLabel({
+      roomName: assignment.roomName,
+      roleLabel: assignment.roleLabel,
+    });
+
+    members.push({ employeeId, firstName, lastName, workplace });
+  }
+
+  members.sort((a, b) => {
+    const aWork = a.workplace ?? "";
+    const bWork = b.workplace ?? "";
+    const workCmp = aWork.localeCompare(bWork, "de");
+    if (workCmp !== 0) return workCmp;
+
+    const aLast = a.lastName ?? "";
+    const bLast = b.lastName ?? "";
+    const lastCmp = aLast.localeCompare(bLast, "de");
+    if (lastCmp !== 0) return lastCmp;
+
+    const aFirst = a.firstName ?? "";
+    const bFirst = b.firstName ?? "";
+    return aFirst.localeCompare(bFirst, "de");
+  });
+
+  return members;
+};
 
         const weekPreview = previewMeta.map(({ date, weekKey, isoDay }) => {
           const absenceReason = absenceReasonForDate(date);
@@ -1277,7 +1379,14 @@ export async function registerRoutes(
             absenceReason,
           };
         });
-
+        const todayMeta = previewMeta[0];
+        const tomorrowMeta = previewMeta[1];
+        
+        const todayAbsentIds = todayMeta ? absentEmployeeIdsForDate(todayMeta.date) : new Set<number>();
+        const tomorrowAbsentIds = tomorrowMeta ? absentEmployeeIdsForDate(tomorrowMeta.date) : new Set<number>();
+        
+        const attendanceTodayMembers = todayMeta ? buildAttendanceMembers(todayMeta, todayAbsentIds) : [];
+        const attendanceTomorrowMembers = tomorrowMeta ? buildAttendanceMembers(tomorrowMeta, tomorrowAbsentIds) : [];
         const todayEntry = weekPreview[0];
         let todayZe: { id: number; possible: true; accepted: boolean } | null =
           null;

@@ -124,21 +124,6 @@ const ABSENCE_KEYWORDS = [
 ];
 const SICK_KEYWORDS = ["krankenstand", "pflegeurlaub"];
 
-type PresencePerson = {
-  firstName: string | null;
-  lastName: string | null;
-  workplace: string | null;
-};
-
-type PresenceInfo = {
-  today?: PresencePerson[];
-  absentCountToday?: number;
-  tomorrow?: PresencePerson[];
-};
-
-type DashboardWithPresence = DashboardResponse & {
-  presence?: PresenceInfo;
-};
 
 const normalizeWorkplace = (value?: string | null) => {
   const trimmed = (value ?? "").trim();
@@ -146,17 +131,27 @@ const normalizeWorkplace = (value?: string | null) => {
   return trimmed;
 };
 
-// Fallback nur fuer Admins, bis das Backend die echten Presence-Daten liefert.
-const FALLBACK_PRESENT_STAFF = [
-  { name: "Dr. Hinterberger", workplace: "Kreißsaal" },
-  { name: "Dr. Wagner", workplace: "Gyn-Ambulanz" },
-  { name: "Dr. Brunner", workplace: "Station" },
-  { name: "Dr. Fischer", workplace: "OP 1" },
-  { name: "Hofer (TA)", workplace: "Kreißsaal" },
-];
+type AttendanceMember = {
+  employeeId: number;
+  firstName: string | null;
+  lastName: string | null;
+  workplace: string | null;
+};
+
+type AttendanceWidget = {
+  today: {
+    date: string;
+    members: AttendanceMember[];
+    absentCount: number;
+  };
+  tomorrow: {
+    date: string | null;
+    members: AttendanceMember[];
+  };
+};
 
 export default function Dashboard() {
-  const { employee, user, isAdmin } = useAuth();
+  const { employee, user } = useAuth();
   const [, setLocation] = useLocation();
 
   const firstName =
@@ -266,42 +261,34 @@ export default function Dashboard() {
     : null;
   const showZeBadge = Boolean(todayZe && !todayZe.accepted);
 
-  const presence = (dashboardData as DashboardWithPresence | null)?.presence;
+  const attendanceWidget = (dashboardData as any)?.attendanceWidget as
+    | AttendanceWidget
+    | undefined;
 
   const presentToday = useMemo(() => {
     const fromApi =
-      presence?.today?.map((p) => ({
-        name: buildFullName(p.firstName, p.lastName),
-        workplace: normalizeWorkplace(p.workplace),
-      })) ?? [];
-
-    const cleaned = fromApi.filter((p) => Boolean(p.name));
-    if (cleaned.length > 0) return cleaned;
-
-    return isAdmin
-      ? FALLBACK_PRESENT_STAFF.map((p) => ({
-          name: p.name,
-          workplace: normalizeWorkplace(p.workplace),
-        }))
-      : [];
-  }, [isAdmin, presence?.today]);
-
-  const absentCountToday =
-    typeof presence?.absentCountToday === "number"
-      ? presence.absentCountToday
-      : isAdmin
-        ? 3
-        : null;
-
-  const presentTomorrow = useMemo(() => {
-    const fromApi =
-      presence?.tomorrow?.map((p) => ({
+      attendanceWidget?.today?.members?.map((p) => ({
         name: buildFullName(p.firstName, p.lastName),
         workplace: normalizeWorkplace(p.workplace),
       })) ?? [];
 
     return fromApi.filter((p) => Boolean(p.name));
-  }, [presence?.tomorrow]);
+  }, [attendanceWidget?.today?.members]);
+
+  const absentCountToday =
+    typeof attendanceWidget?.today?.absentCount === "number"
+      ? attendanceWidget.today.absentCount
+      : null;
+
+  const presentTomorrow = useMemo(() => {
+    const fromApi =
+      attendanceWidget?.tomorrow?.members?.map((p) => ({
+        name: buildFullName(p.firstName, p.lastName),
+        workplace: normalizeWorkplace(p.workplace),
+      })) ?? [];
+
+    return fromApi.filter((p) => Boolean(p.name));
+  }, [attendanceWidget?.tomorrow?.members]);
 
   const handleAcceptZe = useCallback(async () => {
     if (!todayZe) return;
