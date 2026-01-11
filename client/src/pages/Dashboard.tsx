@@ -29,7 +29,11 @@ import {
   BookOpen,
   TrendingUp,
 } from "lucide-react";
-import { dashboardApi, type DashboardResponse } from "@/lib/api";
+import {
+  dashboardApi,
+  type DashboardAttendanceMember,
+  type DashboardResponse,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
@@ -138,39 +142,6 @@ const normalizeWorkplace = (value?: string | null) => {
   return trimmed;
 };
 
-type AttendanceMemberApi = {
-  employeeId: number;
-  firstName: string | null;
-  lastName: string | null;
-  workplace: string | null;
-  role?: string | null;
-  isDuty?: boolean;
-};
-
-type AttendanceMemberVM = {
-  employeeId: number;
-  firstName: string | null;
-  lastName: string | null;
-  name: string;
-  workplace: string | null;
-  role: string | null;
-  isDuty: boolean;
-  roleRank: number;
-};
-
-type AttendanceWidget = {
-  today: {
-    date: string;
-    members: AttendanceMemberApi[];
-    absentCount: number;
-  };
-  tomorrow: {
-    date: string | null;
-    members: AttendanceMemberApi[];
-    absentCount?: number;
-  };
-};
-
 const getRoleRank = (role?: string | null) => {
   const r = (role ?? "").toLowerCase();
   if (!r) return 99;
@@ -201,38 +172,28 @@ const getRoleRank = (role?: string | null) => {
   return 90;
 };
 
-const toAttendanceVm = (p: AttendanceMemberApi): AttendanceMemberVM | null => {
-  const name = buildFullName(p.firstName, p.lastName);
-  if (!name) return null;
+const sortAttendanceMembers = (
+  members: DashboardAttendanceMember[],
+): DashboardAttendanceMember[] => {
+  const sorted = [...members];
+  sorted.sort((a, b) => {
+    const rankA = getRoleRank(a.role);
+    const rankB = getRoleRank(b.role);
+    if (rankA !== rankB) return rankA - rankB;
 
-  const role = p.role ?? null;
-  return {
-    employeeId: p.employeeId,
-    firstName: p.firstName ?? null,
-    lastName: p.lastName ?? null,
-    name,
-    workplace: normalizeWorkplace(p.workplace),
-    role,
-    isDuty: Boolean(p.isDuty),
-    roleRank: getRoleRank(role),
-  };
-};
+    const aLast = (a.lastName ?? "").trim();
+    const bLast = (b.lastName ?? "").trim();
+    const lastCmp = aLast.localeCompare(bLast, "de");
+    if (lastCmp !== 0) return lastCmp;
 
-const compareAttendanceVm = (a: AttendanceMemberVM, b: AttendanceMemberVM) => {
-  if (a.roleRank !== b.roleRank) return a.roleRank - b.roleRank;
+    const aFirst = (a.firstName ?? "").trim();
+    const bFirst = (b.firstName ?? "").trim();
+    const firstCmp = aFirst.localeCompare(bFirst, "de");
+    if (firstCmp !== 0) return firstCmp;
 
-  // Wenn Rang gleich: alphabetisch (Nachname, Vorname)
-  const aLast = (a.lastName ?? "").trim();
-  const bLast = (b.lastName ?? "").trim();
-  const lastCmp = aLast.localeCompare(bLast, "de");
-  if (lastCmp !== 0) return lastCmp;
-
-  const aFirst = (a.firstName ?? "").trim();
-  const bFirst = (b.firstName ?? "").trim();
-  const firstCmp = aFirst.localeCompare(bFirst, "de");
-  if (firstCmp !== 0) return firstCmp;
-
-  return a.name.localeCompare(b.name, "de");
+    return 0;
+  });
+  return sorted;
 };
 
 export default function Dashboard() {
@@ -358,28 +319,19 @@ export default function Dashboard() {
     }
   };
 
-  const attendanceWidget = (dashboardData as any)?.attendanceWidget as
-    | AttendanceWidget
-    | null;
-  const presentToday = useMemo<AttendanceMemberVM[]>(() => {
-    const list = attendanceWidget?.today?.members ?? [];
-    const vms = list
-      .map((member) => toAttendanceVm(member))
-      .filter((entry): entry is AttendanceMemberVM => Boolean(entry));
-    vms.sort(compareAttendanceVm);
-    return vms;
-  }, [attendanceWidget?.today?.members]);
+  const attendanceWidget = dashboardData?.attendanceWidget ?? null;
+  const todayAttendance = attendanceWidget?.today ?? null;
+  const presentToday = useMemo<DashboardAttendanceMember[]>(() => {
+    const members = todayAttendance?.members ?? [];
+    return sortAttendanceMembers(members);
+  }, [todayAttendance?.members]);
   const absentCountToday =
-    typeof attendanceWidget?.today?.absentCount === "number"
-      ? attendanceWidget.today!.absentCount
+    typeof todayAttendance?.absentCount === "number"
+      ? todayAttendance.absentCount
       : null;
-  const presentTomorrow = useMemo<AttendanceMemberVM[]>(() => {
-    const list = attendanceWidget?.tomorrow?.members ?? [];
-    const vms = list
-      .map((member) => toAttendanceVm(member))
-      .filter((entry): entry is AttendanceMemberVM => Boolean(entry));
-    vms.sort(compareAttendanceVm);
-    return vms;
+  const presentTomorrow = useMemo<DashboardAttendanceMember[]>(() => {
+    const members = attendanceWidget?.tomorrow?.members ?? [];
+    return sortAttendanceMembers(members);
   }, [attendanceWidget?.tomorrow?.members]);
 
   const previewCards = useMemo<PreviewCard[]>(() => {
@@ -471,7 +423,11 @@ export default function Dashboard() {
         {presentToday.length > 0 ? (
           presentToday.map((p, i) => {
             const prev = i > 0 ? presentToday[i - 1] : null;
-            const showDivider = Boolean(prev && prev.roleRank !== p.roleRank);
+            const currentRank = getRoleRank(p.role);
+            const prevRank = prev ? getRoleRank(prev.role) : null;
+            const showDivider = prevRank !== null && prevRank !== currentRank;
+            const name = buildFullName(p.firstName, p.lastName);
+            const workplace = normalizeWorkplace(p.workplace);
 
             return (
               <Fragment key={`${p.employeeId}-${i}`}>
@@ -480,16 +436,16 @@ export default function Dashboard() {
                   variant="secondary"
                   className={`inline-flex flex-col items-start gap-0.5 rounded-md border px-3 py-1 text-[11px] sm:text-xs font-medium leading-tight ${
                     p.isDuty
-                      ? "bg-red-50 text-red-600 border-red-200"
+                      ? "bg-red-50 text-rose-700 border-red-200 font-semibold"
                       : "bg-slate-50 text-slate-700 border-slate-200"
                   }`}
                   data-testid={`staff-present-${i}`}
                 >
-                  <span>{p.name}</span>
-                  {p.workplace ? (
-                    <span className="text-[10px] sm:text-xs text-muted-foreground leading-tight">
-                      {p.workplace}
-                    </span>
+                  <div className="text-sm">{name || "Kolleg:in"}</div>
+                  {workplace ? (
+                    <div className="text-[10px] sm:text-xs text-muted-foreground leading-tight">
+                      {workplace}
+                    </div>
                   ) : null}
                 </Badge>
               </Fragment>
@@ -522,7 +478,11 @@ export default function Dashboard() {
           {presentTomorrow.length > 0 ? (
             presentTomorrow.map((p, i) => {
               const prev = i > 0 ? presentTomorrow[i - 1] : null;
-              const showDivider = Boolean(prev && prev.roleRank !== p.roleRank);
+              const currentRank = getRoleRank(p.role);
+              const prevRank = prev ? getRoleRank(prev.role) : null;
+              const showDivider = prevRank !== null && prevRank !== currentRank;
+              const name = buildFullName(p.firstName, p.lastName);
+              const workplace = normalizeWorkplace(p.workplace);
 
               return (
                 <Fragment key={`${p.employeeId}-${i}`}>
@@ -531,16 +491,16 @@ export default function Dashboard() {
                     variant="secondary"
                     className={`inline-flex flex-col items-start gap-0.5 rounded-md border px-3 py-1 text-[11px] sm:text-xs font-medium leading-tight ${
                       p.isDuty
-                        ? "bg-red-50 text-red-600 border-red-200"
+                        ? "bg-red-50 text-rose-700 border-red-200 font-semibold"
                         : "bg-slate-50 text-slate-700 border-slate-200"
                     }`}
                     data-testid={`staff-tomorrow-${i}`}
                   >
-                    <span>{p.name}</span>
-                    {p.workplace ? (
-                      <span className="text-[10px] sm:text-xs text-muted-foreground leading-tight">
-                        {p.workplace}
-                      </span>
+                    <div className="text-sm">{name || "Kolleg:in"}</div>
+                    {workplace ? (
+                      <div className="text-[10px] sm:text-xs text-muted-foreground leading-tight">
+                        {workplace}
+                      </div>
                     ) : null}
                   </Badge>
                 </Fragment>
@@ -779,9 +739,7 @@ export default function Dashboard() {
                 <Users className="w-5 h-5" />
                 Heute anwesend
               </CardTitle>
-              <CardDescription>
-                Team mit Funktion im Wochenplan (Arbeitsplatz in Klammer)
-              </CardDescription>
+              
             </CardHeader>
             {renderAttendanceCardContent()}
           </Card>

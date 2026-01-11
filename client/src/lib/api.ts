@@ -91,18 +91,18 @@ export type DashboardAttendanceMember = {
   firstName: string | null;
   lastName: string | null;
   workplace: string | null;
+  role: string | null;
+  isDuty: boolean;
+};
+
+export type DashboardAttendanceDay = {
+  members: DashboardAttendanceMember[];
+  absentCount: number;
 };
 
 export type DashboardAttendanceWidget = {
-  today: {
-    date: string;
-    members: DashboardAttendanceMember[];
-    absentCount: number;
-  };
-  tomorrow: {
-    date: string | null;
-    members: DashboardAttendanceMember[];
-  };
+  today: DashboardAttendanceDay;
+  tomorrow: DashboardAttendanceDay;
 };
 
 export type MeResponse = {
