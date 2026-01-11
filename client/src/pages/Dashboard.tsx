@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import {
   CalendarDays,
   FileText,
@@ -101,14 +102,6 @@ const DUMMY_POPULAR_SOPS = [
   },
 ];
 
-const DUMMY_PRESENT_STAFF = [
-  { name: "Dr. Hinterberger", area: "Kreißsaal" },
-  { name: "Dr. Wagner", area: "Gyn-Ambulanz" },
-  { name: "Dr. Brunner", area: "Station" },
-  { name: "Dr. Fischer", area: "OP 1" },
-  { name: "Hofer (TA)", area: "Kreißsaal" },
-];
-
 const buildFullName = (firstName?: string | null, lastName?: string | null) =>
   [firstName, lastName].filter(Boolean).join(" ").trim();
 
@@ -130,6 +123,37 @@ const ABSENCE_KEYWORDS = [
   "krankenstand",
 ];
 const SICK_KEYWORDS = ["krankenstand", "pflegeurlaub"];
+
+type PresencePerson = {
+  firstName: string | null;
+  lastName: string | null;
+  workplace: string | null;
+};
+
+type PresenceInfo = {
+  today?: PresencePerson[];
+  absentCountToday?: number;
+  tomorrow?: PresencePerson[];
+};
+
+type DashboardWithPresence = DashboardResponse & {
+  presence?: PresenceInfo;
+};
+
+const normalizeWorkplace = (value?: string | null) => {
+  const trimmed = (value ?? "").trim();
+  if (!trimmed || trimmed === "Diensthabende") return null;
+  return trimmed;
+};
+
+// Fallback nur fuer Admins, bis das Backend die echten Presence-Daten liefert.
+const FALLBACK_PRESENT_STAFF = [
+  { name: "Dr. Hinterberger", workplace: "Kreißsaal" },
+  { name: "Dr. Wagner", workplace: "Gyn-Ambulanz" },
+  { name: "Dr. Brunner", workplace: "Station" },
+  { name: "Dr. Fischer", workplace: "OP 1" },
+  { name: "Hofer (TA)", workplace: "Kreißsaal" },
+];
 
 export default function Dashboard() {
   const { employee, user, isAdmin } = useAuth();
@@ -242,6 +266,43 @@ export default function Dashboard() {
     : null;
   const showZeBadge = Boolean(todayZe && !todayZe.accepted);
 
+  const presence = (dashboardData as DashboardWithPresence | null)?.presence;
+
+  const presentToday = useMemo(() => {
+    const fromApi =
+      presence?.today?.map((p) => ({
+        name: buildFullName(p.firstName, p.lastName),
+        workplace: normalizeWorkplace(p.workplace),
+      })) ?? [];
+
+    const cleaned = fromApi.filter((p) => Boolean(p.name));
+    if (cleaned.length > 0) return cleaned;
+
+    return isAdmin
+      ? FALLBACK_PRESENT_STAFF.map((p) => ({
+          name: p.name,
+          workplace: normalizeWorkplace(p.workplace),
+        }))
+      : [];
+  }, [isAdmin, presence?.today]);
+
+  const absentCountToday =
+    typeof presence?.absentCountToday === "number"
+      ? presence.absentCountToday
+      : isAdmin
+        ? 3
+        : null;
+
+  const presentTomorrow = useMemo(() => {
+    const fromApi =
+      presence?.tomorrow?.map((p) => ({
+        name: buildFullName(p.firstName, p.lastName),
+        workplace: normalizeWorkplace(p.workplace),
+      })) ?? [];
+
+    return fromApi.filter((p) => Boolean(p.name));
+  }, [presence?.tomorrow]);
+
   const handleAcceptZe = useCallback(async () => {
     if (!todayZe) return;
     setIsAcceptingZe(true);
@@ -348,6 +409,84 @@ export default function Dashboard() {
               </div>
             )}
           </div>
+
+          <Card className="border-none kabeg-shadow">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Users className="w-5 h-5" />
+                Heute anwesend
+              </CardTitle>
+              <CardDescription>
+                Team mit Funktion im Wochenplan (Arbeitsplatz in Klammer)
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-wrap gap-2">
+                {presentToday.length > 0 ? (
+                  presentToday.map((p, i) => (
+                    <Badge
+                      key={`${p.name}-${i}`}
+                      variant="secondary"
+                      className="py-1.5"
+                      data-testid={`staff-present-${i}`}
+                    >
+                      {p.name}
+                      {p.workplace ? (
+                        <span className="text-muted-foreground ml-1">
+                          ({p.workplace})
+                        </span>
+                      ) : null}
+                    </Badge>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Keine Daten verfuegbar.
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Clock className="w-4 h-4" />
+                <span>
+                  {typeof absentCountToday === "number"
+                    ? `${absentCountToday} Abwesende heute`
+                    : "Abwesende heute: –"}
+                </span>
+              </div>
+
+              <Separator />
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <CalendarDays className="w-4 h-4 text-muted-foreground" />
+                  <p className="text-sm font-medium">Morgen Team</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {presentTomorrow.length > 0 ? (
+                    presentTomorrow.map((p, i) => (
+                      <Badge
+                        key={`${p.name}-${i}`}
+                        variant="secondary"
+                        className="py-1.5"
+                        data-testid={`staff-tomorrow-${i}`}
+                      >
+                        {p.name}
+                        {p.workplace ? (
+                          <span className="text-muted-foreground ml-1">
+                            ({p.workplace})
+                          </span>
+                        ) : null}
+                      </Badge>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Keine Daten verfuegbar.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Card className="border-none kabeg-shadow">
@@ -473,37 +612,6 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          {isAdmin && (
-            <Card className="border-none kabeg-shadow border-l-4 border-l-amber-400">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Users className="w-5 h-5 text-amber-600" />
-                  Heute anwesend
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-2 mb-4">
-                  {DUMMY_PRESENT_STAFF.map((staff, i) => (
-                    <Badge
-                      key={i}
-                      variant="secondary"
-                      className="py-1.5"
-                      data-testid={`staff-present-${i}`}
-                    >
-                      {staff.name}{" "}
-                      <span className="text-muted-foreground ml-1">
-                        ({staff.area})
-                      </span>
-                    </Badge>
-                  ))}
-                </div>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Clock className="w-4 h-4" />
-                  <span>3 Abwesenheiten heute</span>
-                </div>
-              </CardContent>
-            </Card>
-          )}
         </div>
 
         <div className="md:col-span-4 space-y-6">
