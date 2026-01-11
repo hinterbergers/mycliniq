@@ -196,6 +196,15 @@ const sortAttendanceMembers = (
   return sorted;
 };
 
+const STAFF_BADGE_BASE =
+  "inline-flex flex-col items-start gap-1 rounded-md border px-3 py-1.5 md:px-4 md:py-2 text-[11px] sm:text-xs font-medium leading-tight";
+const STAFF_BADGE_DUTY =
+  "bg-rose-50 text-rose-700 border-rose-200 font-semibold";
+const STAFF_BADGE_NORMAL = "bg-slate-50 text-slate-700 border-slate-200";
+const STAFF_NAME_CLASS = "text-sm";
+const STAFF_WORKPLACE_CLASS =
+  "text-[10px] sm:text-xs text-muted-foreground leading-tight";
+
 export default function Dashboard() {
   const { employee, user } = useAuth();
   const [, setLocation] = useLocation();
@@ -417,46 +426,47 @@ export default function Dashboard() {
     </div>
   );
 
+  const renderAttendanceBadges = (
+    members: DashboardAttendanceMember[],
+    testPrefix: string,
+  ) => (
+    <div className="flex flex-wrap gap-2">
+      {members.length > 0 ? (
+        members.map((p, i) => {
+          const prev = i > 0 ? members[i - 1] : null;
+          const currentRank = getRoleRank(p.role);
+          const prevRank = prev ? getRoleRank(prev.role) : null;
+          const showDivider = prevRank !== null && prevRank !== currentRank;
+          const name = buildFullName(p.firstName, p.lastName);
+          const workplace = normalizeWorkplace(p.workplace);
+
+          return (
+            <Fragment key={`${p.employeeId}-${i}`}>
+              {showDivider ? <Separator className="w-full my-1" /> : null}
+              <Badge
+                variant="secondary"
+                className={`${STAFF_BADGE_BASE} ${
+                  p.isDuty ? STAFF_BADGE_DUTY : STAFF_BADGE_NORMAL
+                }`}
+                data-testid={`${testPrefix}-${i}`}
+              >
+                <div className={STAFF_NAME_CLASS}>{name || "Kolleg:in"}</div>
+                {workplace ? (
+                  <div className={STAFF_WORKPLACE_CLASS}>{workplace}</div>
+                ) : null}
+              </Badge>
+            </Fragment>
+          );
+        })
+      ) : (
+        <p className="text-sm text-muted-foreground">Keine Daten verfuegbar.</p>
+      )}
+    </div>
+  );
+
   const renderAttendanceCardContent = () => (
     <div className="space-y-4 md:px-6 md:pb-6">
-      <div className="flex flex-wrap gap-2">
-        {presentToday.length > 0 ? (
-          presentToday.map((p, i) => {
-            const prev = i > 0 ? presentToday[i - 1] : null;
-            const currentRank = getRoleRank(p.role);
-            const prevRank = prev ? getRoleRank(prev.role) : null;
-            const showDivider = prevRank !== null && prevRank !== currentRank;
-            const name = buildFullName(p.firstName, p.lastName);
-            const workplace = normalizeWorkplace(p.workplace);
-
-            return (
-              <Fragment key={`${p.employeeId}-${i}`}>
-                {showDivider ? <Separator className="w-full my-1" /> : null}
-                <Badge
-                  variant="secondary"
-                  className={`inline-flex flex-col items-start gap-1 rounded-md border px-3 py-1.5 md:px-4 md:py-2 text-[11px] sm:text-xs font-medium leading-tight ${
-                    p.isDuty
-                      ? "bg-red-50 text-rose-700 border-red-200 font-semibold"
-                      : "bg-slate-50 text-slate-700 border-slate-200"
-                  }`}
-                  data-testid={`staff-present-${i}`}
-                >
-                  <div className="text-sm">{name || "Kolleg:in"}</div>
-                  {workplace ? (
-                    <div className="text-[10px] sm:text-xs text-muted-foreground leading-tight">
-                      {workplace}
-                    </div>
-                  ) : null}
-                </Badge>
-              </Fragment>
-            );
-          })
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            Keine Daten verfuegbar.
-          </p>
-        )}
-      </div>
+      {renderAttendanceBadges(presentToday, "staff-present")}
 
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Clock className="w-4 h-4" />
@@ -474,44 +484,7 @@ export default function Dashboard() {
           <CalendarDays className="w-4 h-4 text-muted-foreground" />
           <p className="text-sm font-medium">Team morgen</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {presentTomorrow.length > 0 ? (
-            presentTomorrow.map((p, i) => {
-              const prev = i > 0 ? presentTomorrow[i - 1] : null;
-              const currentRank = getRoleRank(p.role);
-              const prevRank = prev ? getRoleRank(prev.role) : null;
-              const showDivider = prevRank !== null && prevRank !== currentRank;
-              const name = buildFullName(p.firstName, p.lastName);
-              const workplace = normalizeWorkplace(p.workplace);
-
-              return (
-                <Fragment key={`${p.employeeId}-${i}`}>
-                  {showDivider ? <Separator className="w-full my-1" /> : null}
-                  <Badge
-                    variant="secondary"
-                    className={`inline-flex flex-col items-start gap-1 rounded-md border px-3 py-1.5 md:px-4 md:py-2 text-[11px] sm:text-xs font-medium leading-tight ${
-                      p.isDuty
-                        ? "bg-red-50 text-rose-700 border-red-200 font-semibold"
-                        : "bg-slate-50 text-slate-700 border-slate-200"
-                    }`}
-                    data-testid={`staff-tomorrow-${i}`}
-                  >
-                    <div className="text-sm">{name || "Kolleg:in"}</div>
-                    {workplace ? (
-                      <div className="text-[10px] sm:text-xs text-muted-foreground leading-tight">
-                        {workplace}
-                      </div>
-                    ) : null}
-                  </Badge>
-                </Fragment>
-              );
-            })
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Keine Daten verfuegbar.
-            </p>
-          )}
-        </div>
+        {renderAttendanceBadges(presentTomorrow, "staff-tomorrow")}
       </div>
     </div>
   );
