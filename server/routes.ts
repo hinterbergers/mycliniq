@@ -1154,9 +1154,9 @@ export async function registerRoutes(
         });
 
         const employeeMetaMap = new Map<
-+   number,
-+   { firstName: string | null; lastName: string | null; role: string | null }
-+ >();
+          number,
+          { firstName: string | null; lastName: string | null; role: string | null }
+           >();
 
         if (referencedEmployeeIds.size) {
           const employeeRows = await db
