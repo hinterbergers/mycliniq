@@ -740,7 +740,7 @@ export default function Dashboard() {
                 Heute anwesend
               </CardTitle>
             </CardHeader>
-            <CardContent className="pt-0">
+            <CardContent className="pt-0 px-4 pb-4 md:px-6 md:pb-6">
               {renderAttendanceCardContent()}
             </CardContent>
           </Card>
