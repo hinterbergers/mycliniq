@@ -340,21 +340,29 @@ export function registerServiceLineRoutes(router: Router) {
             if (
               !emp.shiftPreferences ||
               typeof emp.shiftPreferences !== "object"
-            )
+            ) {
               continue;
+            }
+
             const prefs = emp.shiftPreferences as {
               serviceTypeOverrides?: unknown;
             };
+
             const nextOverrides = replaceServiceTypeInArray(
               prefs.serviceTypeOverrides,
               existing.key,
               nextKey,
             );
-            if (!nextOverrides) continue;
+
+            if (!nextOverrides) {
+              continue;
+            }
+
             const updatedPrefs = {
               ...(emp.shiftPreferences as Record<string, unknown>),
               serviceTypeOverrides: nextOverrides,
             };
+
             await tx
               .update(employees)
               .set({ shiftPreferences: updatedPrefs, updatedAt: new Date() })
