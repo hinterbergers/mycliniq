@@ -418,7 +418,7 @@ export default function Dashboard() {
   );
 
   const renderAttendanceCardContent = () => (
-    <div className="space-y-4">
+    <div className="space-y-4 md:px-6 md:pb-6">
       <div className="flex flex-wrap gap-2">
         {presentToday.length > 0 ? (
           presentToday.map((p, i) => {
@@ -434,7 +434,7 @@ export default function Dashboard() {
                 {showDivider ? <Separator className="w-full my-1" /> : null}
                 <Badge
                   variant="secondary"
-                  className={`inline-flex flex-col items-start gap-0.5 rounded-md border px-3 py-1 text-[11px] sm:text-xs font-medium leading-tight ${
+                  className={`inline-flex flex-col items-start gap-1 rounded-md border px-3 py-1.5 md:px-4 md:py-2 text-[11px] sm:text-xs font-medium leading-tight ${
                     p.isDuty
                       ? "bg-red-50 text-rose-700 border-red-200 font-semibold"
                       : "bg-slate-50 text-slate-700 border-slate-200"
@@ -489,7 +489,7 @@ export default function Dashboard() {
                   {showDivider ? <Separator className="w-full my-1" /> : null}
                   <Badge
                     variant="secondary"
-                    className={`inline-flex flex-col items-start gap-0.5 rounded-md border px-3 py-1 text-[11px] sm:text-xs font-medium leading-tight ${
+                    className={`inline-flex flex-col items-start gap-1 rounded-md border px-3 py-1.5 md:px-4 md:py-2 text-[11px] sm:text-xs font-medium leading-tight ${
                       p.isDuty
                         ? "bg-red-50 text-rose-700 border-red-200 font-semibold"
                         : "bg-slate-50 text-slate-700 border-slate-200"
