@@ -18,3 +18,10 @@ vite.config.ts.*
 
 # local agent notes
 AGENTS.md
+
+.env
+.env.*
+*.swp
+*.swo
+.DS_Store
+ecosystem.config.cjs

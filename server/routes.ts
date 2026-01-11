@@ -1153,23 +1153,26 @@ export async function registerRoutes(
           }
         });
 
-        const employeeNameMap = new Map<
-          number,
-          { firstName: string | null; lastName: string | null }
-        >();
+        const employeeMetaMap = new Map<
++   number,
++   { firstName: string | null; lastName: string | null; role: string | null }
++ >();
+
         if (referencedEmployeeIds.size) {
           const employeeRows = await db
             .select({
               id: employees.id,
               firstName: employees.firstName,
               lastName: employees.lastName,
+              role: employees.role,
             })
             .from(employees)
             .where(inArray(employees.id, Array.from(referencedEmployeeIds)));
           employeeRows.forEach((employeeRow) => {
-            employeeNameMap.set(employeeRow.id, {
+              employeeMetaMap.set(employeeRow.id, {
               firstName: normalizeName(employeeRow.firstName),
               lastName: normalizeName(employeeRow.lastName),
+              role: employeeRow.role ?? null,
             });
           });
         }
@@ -1234,6 +1237,8 @@ export async function registerRoutes(
           firstName: string | null;
           lastName: string | null;
           workplace: string | null;
+          role: string | null;
+          isDuty: boolean;
         };
 
         const buildEffectiveAssignmentsForMeta = (meta: {
@@ -1261,6 +1266,33 @@ export async function registerRoutes(
           });
         };
 
+        const getRoleRank = (role?: string | null) => {
+          const r = (role ?? "").toLowerCase();
+        
+          if (!r) return 99;
+        
+          if (r.includes("primar")) return 0;
+          if (r.includes("1. ober") || r.includes("erster ober")) return 1;
+        
+          // OA + Facharzt in denselben Top-Block
+          if (
+            r.includes("oberarzt") ||
+            r.includes("oberärzt") ||
+            r.includes("facharzt") ||
+            r.includes("fachärzt")
+          )
+            return 2;
+        
+          if (r.includes("assistenz")) return 3;
+          if (r.includes("turnus")) return 4;
+          if (r.includes("kpj") || r.includes("student") || r.includes("famul")) return 5;
+        
+          // Sekretariat (falls es je drin wäre) ganz nach hinten
+          if (r.includes("sekret")) return 98;
+        
+          return 90;
+        };
+
         const buildAttendanceMembers = (
           meta: { date: string; weekKey: string; isoDay: number },
           absentIds: Set<number>,
@@ -1277,7 +1309,7 @@ export async function registerRoutes(
             if (seen.has(employeeId)) continue;
             seen.add(employeeId);
 
-            const employeeData = employeeNameMap.get(employeeId);
+            const employeeData = employeeMetaMap.get(employeeId);
             const firstName =
               employeeData?.firstName ??
               normalizeName(assignment.firstName) ??
@@ -1288,15 +1320,35 @@ export async function registerRoutes(
               null;
             if (!firstName && !lastName) continue;
 
+            const role = employeeData?.role ?? null;
+
+            // Duty NICHT über workplace bestimmen, sondern über roleLabel/roomName im Assignment
+            const roleKey = (assignment.roleLabel ?? "").trim().toLowerCase();
+            const roomKey = (assignment.roomName ?? "").trim().toLowerCase();
+            const isDuty =
+              roleKey === "diensthabende" || roomKey === "diensthabende";
+
             const workplace = buildWeeklyPlanWorkplaceLabel({
               roomName: assignment.roomName,
               roleLabel: assignment.roleLabel,
             });
 
-            members.push({ employeeId, firstName, lastName, workplace });
+            members.push({
+              employeeId,
+              firstName,
+              lastName,
+              workplace,
+              role,
+              isDuty,
+            });
           }
 
+          // Sortierung: zuerst Hierarchie, dann Arbeitsplatz, dann Name
           members.sort((a, b) => {
+            const aRank = getRoleRank(a.role);
+            const bRank = getRoleRank(b.role);
+            if (aRank !== bRank) return aRank - bRank;
+
             const aWork = a.workplace ?? "";
             const bWork = b.workplace ?? "";
             const workCmp = aWork.localeCompare(bWork, "de");
@@ -1365,7 +1417,7 @@ export async function registerRoutes(
                 if (seen.has(assignment.employeeId)) continue;
                 seen.add(assignment.employeeId);
 
-                const employeeData = employeeNameMap.get(assignment.employeeId);
+                const employeeData = employeeMetaMap.get(assignment.employeeId);
                 const firstName = employeeData?.firstName ?? null;
                 const lastName = employeeData?.lastName ?? null;
                 if (!firstName && !lastName) continue;
