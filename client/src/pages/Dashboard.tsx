@@ -418,7 +418,7 @@ export default function Dashboard() {
   );
 
   const renderAttendanceCardContent = () => (
-    <div className="space-y-4 md:px-6 md:pb-6">
+    <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
         {presentToday.length > 0 ? (
           presentToday.map((p, i) => {
@@ -739,9 +739,10 @@ export default function Dashboard() {
                 <Users className="w-5 h-5" />
                 Heute anwesend
               </CardTitle>
-              
             </CardHeader>
-            {renderAttendanceCardContent()}
+            <CardContent className="pt-0">
+              {renderAttendanceCardContent()}
+            </CardContent>
           </Card>
           {renderMiscWidgets()}
         </div>
