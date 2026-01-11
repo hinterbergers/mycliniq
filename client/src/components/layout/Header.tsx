@@ -7,6 +7,7 @@ import {
   Info,
   Trash2,
   Users,
+  Menu,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -53,7 +54,13 @@ const MONTH_NAMES = [
   "Dezember",
 ];
 
-export function Header({ title }: { title?: string }) {
+export function Header({
+  title,
+  onToggleMobileNav,
+}: {
+  title?: string;
+  onToggleMobileNav?: () => void;
+}) {
   const {
     employee,
     capabilities,
@@ -269,9 +276,23 @@ export function Header({ title }: { title?: string }) {
 
   return (
     <header className="h-16 kabeg-header sticky top-0 z-10 px-6 flex items-center justify-between shadow-sm">
-      <h2 className="text-xl font-semibold text-white tracking-tight">
-        {title}
-      </h2>
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="md:hidden rounded-full text-white/80 hover:text-white hover:bg-white/10"
+          onClick={onToggleMobileNav}
+          disabled={!onToggleMobileNav}
+          aria-label="Menü öffnen"
+          data-testid="button-mobile-menu"
+        >
+          <Menu className="w-5 h-5" />
+        </Button>
+        <h2 className="text-xl font-semibold text-white tracking-tight">
+          {title}
+        </h2>
+      </div>
 
       <div className="flex items-center gap-4">
         <div className="relative w-64 hidden md:block">
@@ -432,7 +453,7 @@ export function Header({ title }: { title?: string }) {
               <Button
                 variant="ghost"
                 size="sm"
-                className="hidden md:flex gap-2 text-white/80 hover:text-white hover:bg-white/10"
+                className="flex gap-2 text-white/80 hover:text-white hover:bg-white/10"
               >
                 <Users className="w-4 h-4" />
                 <span>{onlineCount}</span>

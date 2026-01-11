@@ -2,9 +2,7 @@ import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import {
-  LayoutDashboard,
   Users,
-  BookOpen,
   Settings,
   LogOut,
   Stethoscope,
@@ -14,8 +12,22 @@ import {
   Wrench,
   MessageCircle,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Search } from "lucide-react";
 
-export function Sidebar() {
+type SidebarVariant = "desktop" | "mobile";
+
+type SidebarProps = {
+  variant?: SidebarVariant;
+  onNavigate?: () => void;
+  className?: string;
+};
+
+export function Sidebar({
+  variant = "desktop",
+  onNavigate,
+  className,
+}: SidebarProps) {
   const [location, setLocation] = useLocation();
   const { employee, user, token, logout, isAdmin, isTechnicalAdmin } =
     useAuth();
@@ -42,16 +54,25 @@ export function Sidebar() {
   const handleLogout = async () => {
     await logout();
     setLocation("/login");
+    onNavigate?.();
   };
 
+  const containerClass =
+    variant === "desktop"
+      ? "w-64 h-screen sticky top-0 hidden md:flex"
+      : "w-full h-full";
+
   return (
-    <aside className="w-64 bg-sidebar flex flex-col h-screen sticky top-0">
+    <aside
+      className={cn("bg-sidebar flex flex-col", containerClass, className)}
+      data-variant={variant}
+    >
       <a
         href="/"
         onClick={(e) => {
           e.preventDefault();
-          window.history.pushState({}, "", "/");
-          window.dispatchEvent(new PopStateEvent("popstate"));
+          setLocation("/");
+          onNavigate?.();
         }}
         className="p-6 flex items-center gap-3 border-b border-sidebar-border hover:bg-white/5 transition-colors cursor-pointer"
         data-testid="link-home"
@@ -69,6 +90,21 @@ export function Sidebar() {
         </div>
       </a>
 
+      {variant === "mobile" && (
+        <div className="px-4 pb-4 border-b border-sidebar-border">
+          <label className="text-xs uppercase tracking-wide text-white/70 mb-1 block">
+            Suchen
+          </label>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/60" />
+            <Input
+              placeholder="Suchen..."
+              className="pl-10 bg-white/10 border-white/20 text-white placeholder:text-white/50 focus-visible:ring-white/30"
+              readOnly
+            />
+          </div>
+        </div>
+      )}
       <nav className="flex-1 px-3 py-4 space-y-1">
         {navItems
           .filter((item) => !item.adminOnly || isTechnicalAdmin)
@@ -82,8 +118,8 @@ export function Sidebar() {
                 href={item.href}
                 onClick={(e) => {
                   e.preventDefault();
-                  window.history.pushState({}, "", item.href);
-                  window.dispatchEvent(new PopStateEvent("popstate"));
+                  setLocation(item.href);
+                  onNavigate?.();
                 }}
                 className={cn(
                   "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
