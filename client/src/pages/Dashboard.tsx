@@ -311,6 +311,102 @@ export default function Dashboard() {
     };
   }, [fetchDashboard]);
 
+  const todayEntry = dashboardData?.today ?? null;
+  const birthdayEntry = dashboardData?.birthday ?? null;
+
+  const heroEmoji = dashboardError ? "⚠️" : todayEntry?.statusLabel ? "🩺" : "👋";
+  const heroMessage = dashboardError
+    ? dashboardError.startsWith("Fehler")
+      ? dashboardError
+      : `Fehler: ${dashboardError}`
+    : todayEntry?.statusLabel
+      ? `Heute: ${todayEntry.statusLabel}`
+      : "Willkommen zurück.";
+  const showTeammates =
+    !dashboardError && (todayEntry?.teammates?.length ?? 0) > 0;
+  const todayTeamNames = useMemo(
+    () =>
+      (todayEntry?.teammates ?? [])
+        .map((t) => buildFullName(t.firstName, t.lastName))
+        .filter(Boolean),
+    [todayEntry?.teammates],
+  );
+  const showZeBadge =
+    !dashboardError &&
+    Boolean(todayEntry?.ze?.possible) &&
+    !Boolean(todayEntry?.ze?.accepted) &&
+    !todayEntry?.absenceReason;
+  const handleAcceptZe = async () => {
+    const zeId = todayEntry?.ze?.id;
+    if (!zeId) return;
+    setIsAcceptingZe(true);
+    try {
+      await dashboardApi.acceptZeitausgleich(zeId);
+      toast({
+        title: "Zeitausgleich bestätigt",
+        description: "Der Platz wurde für dich reserviert.",
+      });
+      await refreshDashboard();
+    } catch (error: any) {
+      toast({
+        title: "Zeitausgleich konnte nicht bestätigt werden",
+        description: error?.message || "Bitte versuche es erneut.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAcceptingZe(false);
+    }
+  };
+
+  const attendanceWidget = (dashboardData as any)?.attendanceWidget as
+    | AttendanceWidget
+    | null;
+  const presentToday = useMemo<AttendanceMemberVM[]>(() => {
+    const list = attendanceWidget?.today?.members ?? [];
+    const vms = list
+      .map((member) => toAttendanceVm(member))
+      .filter((entry): entry is AttendanceMemberVM => Boolean(entry));
+    vms.sort(compareAttendanceVm);
+    return vms;
+  }, [attendanceWidget?.today?.members]);
+  const absentCountToday =
+    typeof attendanceWidget?.today?.absentCount === "number"
+      ? attendanceWidget.today!.absentCount
+      : null;
+  const presentTomorrow = useMemo<AttendanceMemberVM[]>(() => {
+    const list = attendanceWidget?.tomorrow?.members ?? [];
+    const vms = list
+      .map((member) => toAttendanceVm(member))
+      .filter((entry): entry is AttendanceMemberVM => Boolean(entry));
+    vms.sort(compareAttendanceVm);
+    return vms;
+  }, [attendanceWidget?.tomorrow?.members]);
+
+  const previewCards = useMemo<PreviewCard[]>(() => {
+    if (!dashboardData?.weekPreview) return [];
+    return dashboardData.weekPreview
+      .map((entry) => {
+        const iso = `${entry.date}T00:00:00`;
+        const dateInstance = new Date(iso);
+        if (Number.isNaN(dateInstance.getTime())) return null;
+        return {
+          date: entry.date,
+          statusLabel: entry.statusLabel ?? null,
+          workplace: entry.workplace ?? null,
+          teammateNames: (entry.teammates ?? [])
+            .map((mate) => buildFullName(mate.firstName, mate.lastName))
+            .filter(Boolean),
+          dayLabel: format(dateInstance, "EEE", { locale: de }),
+          dateLabel: format(dateInstance, "dd.MM.", { locale: de }),
+        };
+      })
+      .filter((card): card is PreviewCard => card !== null);
+  }, [dashboardData?.weekPreview]);
+
+  const birthdayName = birthdayEntry
+    ? buildFullName(birthdayEntry.firstName, birthdayEntry.lastName)
+    : null;
+
   const renderHeroCard = () => (
     <div className="bg-gradient-to-br from-primary to-primary/80 rounded-2xl p-8 text-primary-foreground shadow-lg shadow-primary/10">
       <div className="flex items-center justify-between mb-2">
@@ -382,18 +478,16 @@ export default function Dashboard() {
                 {showDivider ? <Separator className="w-full my-1" /> : null}
                 <Badge
                   variant="secondary"
-                  className={`inline-flex items-center rounded-md border px-3 py-1 text-xs sm:text-sm font-medium leading-none ${
+                  className={`inline-flex items-center rounded-md border px-3 py-1 text-[11px] sm:text-xs font-medium leading-none ${
                     p.isDuty
-                      ? "bg-red-50 text-red-700 border-red-200"
+                      ? "bg-rose-100 text-rose-700 border-rose-200"
                       : "bg-slate-100 text-slate-700 border-slate-200"
                   }`}
                   data-testid={`staff-present-${i}`}
                 >
                   {p.name}
                   {p.workplace ? (
-                    <span
-                      className="ml-1 text-xs text-muted-foreground"
-                    >
+                    <span className="ml-1 text-[10px] text-muted-foreground">
                       ({p.workplace})
                     </span>
                   ) : null}
@@ -435,16 +529,16 @@ export default function Dashboard() {
                   {showDivider ? <Separator className="w-full my-1" /> : null}
                   <Badge
                     variant="secondary"
-                    className={`inline-flex items-center rounded-md border px-3 py-1 text-xs sm:text-sm font-medium leading-none ${
+                    className={`inline-flex items-center rounded-md border px-3 py-1 text-[11px] sm:text-xs font-medium leading-none ${
                       p.isDuty
-                        ? "bg-red-50 text-red-700 border-red-200"
+                        ? "bg-rose-100 text-rose-700 border-rose-200"
                         : "bg-slate-100 text-slate-700 border-slate-200"
                     }`}
                     data-testid={`staff-tomorrow-${i}`}
                   >
                     {p.name}
                     {p.workplace ? (
-                      <span className="ml-1 text-xs text-muted-foreground">
+                      <span className="ml-1 text-[10px] text-muted-foreground">
                         ({p.workplace})
                       </span>
                     ) : null}
