@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Layout } from "@/components/layout/Layout";
 import {
   Card,
@@ -130,23 +130,101 @@ const normalizeWorkplace = (value?: string | null) => {
   return trimmed;
 };
 
-type AttendanceMember = {
+type AttendanceMemberApi = {
   employeeId: number;
   firstName: string | null;
   lastName: string | null;
   workplace: string | null;
+  role?: string | null;
+  isDuty?: boolean;
+};
+
+type AttendanceMemberVM = {
+  employeeId: number;
+  firstName: string | null;
+  lastName: string | null;
+  name: string;
+  workplace: string | null;
+  role: string | null;
+  isDuty: boolean;
+  roleRank: number;
 };
 
 type AttendanceWidget = {
   today: {
     date: string;
-    members: AttendanceMember[];
+    members: AttendanceMemberApi[];
     absentCount: number;
   };
   tomorrow: {
     date: string | null;
-    members: AttendanceMember[];
+    members: AttendanceMemberApi[];
+    absentCount?: number;
   };
+};
+
+const getRoleRank = (role?: string | null) => {
+  const r = (role ?? "").toLowerCase();
+  if (!r) return 99;
+
+  // Primar / Primaria
+  if (r.includes("primar")) return 0;
+
+  // 1. Oberarzt / Erster Oberarzt
+  if (r.includes("1. ober") || r.includes("erster ober")) return 1;
+
+  // OA + Facharzt in denselben Block
+  if (
+    r.includes("oberarzt") ||
+    r.includes("oberärzt") ||
+    r.includes("facharzt") ||
+    r.includes("fachärzt")
+  ) {
+    return 2;
+  }
+
+  if (r.includes("assistenz")) return 3;
+  if (r.includes("turnus")) return 4;
+  if (r.includes("kpj") || r.includes("student") || r.includes("famul")) return 5;
+
+  // Sekretariat (falls es je in der Liste auftaucht)
+  if (r.includes("sekret")) return 98;
+
+  return 90;
+};
+
+const toAttendanceVm = (p: AttendanceMemberApi): AttendanceMemberVM | null => {
+  const name = buildFullName(p.firstName, p.lastName);
+  if (!name) return null;
+
+  const role = p.role ?? null;
+  return {
+    employeeId: p.employeeId,
+    firstName: p.firstName ?? null,
+    lastName: p.lastName ?? null,
+    name,
+    workplace: normalizeWorkplace(p.workplace),
+    role,
+    isDuty: Boolean(p.isDuty),
+    roleRank: getRoleRank(role),
+  };
+};
+
+const compareAttendanceVm = (a: AttendanceMemberVM, b: AttendanceMemberVM) => {
+  if (a.roleRank !== b.roleRank) return a.roleRank - b.roleRank;
+
+  // Wenn Rang gleich: alphabetisch (Nachname, Vorname)
+  const aLast = (a.lastName ?? "").trim();
+  const bLast = (b.lastName ?? "").trim();
+  const lastCmp = aLast.localeCompare(bLast, "de");
+  if (lastCmp !== 0) return lastCmp;
+
+  const aFirst = (a.firstName ?? "").trim();
+  const bFirst = (b.firstName ?? "").trim();
+  const firstCmp = aFirst.localeCompare(bFirst, "de");
+  if (firstCmp !== 0) return firstCmp;
+
+  return a.name.localeCompare(b.name, "de");
 };
 
 export default function Dashboard() {
@@ -264,14 +342,12 @@ export default function Dashboard() {
     | AttendanceWidget
     | undefined;
 
-  const presentToday = useMemo(() => {
-    const fromApi =
-      attendanceWidget?.today?.members?.map((p) => ({
-        name: buildFullName(p.firstName, p.lastName),
-        workplace: normalizeWorkplace(p.workplace),
-      })) ?? [];
-
-    return fromApi.filter((p) => Boolean(p.name));
+  const presentToday = useMemo<AttendanceMemberVM[]>(() => {
+    const vms = (attendanceWidget?.today?.members ?? [])
+      .map((p) => toAttendanceVm(p))
+      .filter((p): p is AttendanceMemberVM => Boolean(p));
+    vms.sort(compareAttendanceVm);
+    return vms;
   }, [attendanceWidget?.today?.members]);
 
   const absentCountToday =
@@ -279,14 +355,12 @@ export default function Dashboard() {
       ? attendanceWidget.today.absentCount
       : null;
 
-  const presentTomorrow = useMemo(() => {
-    const fromApi =
-      attendanceWidget?.tomorrow?.members?.map((p) => ({
-        name: buildFullName(p.firstName, p.lastName),
-        workplace: normalizeWorkplace(p.workplace),
-      })) ?? [];
-
-    return fromApi.filter((p) => Boolean(p.name));
+  const presentTomorrow = useMemo<AttendanceMemberVM[]>(() => {
+    const vms = (attendanceWidget?.tomorrow?.members ?? [])
+      .map((p) => toAttendanceVm(p))
+      .filter((p): p is AttendanceMemberVM => Boolean(p));
+    vms.sort(compareAttendanceVm);
+    return vms;
   }, [attendanceWidget?.tomorrow?.members]);
 
   const handleAcceptZe = useCallback(async () => {
@@ -409,21 +483,32 @@ export default function Dashboard() {
             <CardContent className="space-y-4">
               <div className="flex flex-wrap gap-2">
                 {presentToday.length > 0 ? (
-                  presentToday.map((p, i) => (
-                    <Badge
-                      key={`${p.name}-${i}`}
-                      variant="secondary"
-                      className="py-1.5"
-                      data-testid={`staff-present-${i}`}
-                    >
-                      {p.name}
-                      {p.workplace ? (
-                        <span className="text-muted-foreground ml-1">
-                          ({p.workplace})
-                        </span>
-                      ) : null}
-                    </Badge>
-                  ))
+                  presentToday.map((p, i) => {
+                    const prev = i > 0 ? presentToday[i - 1] : null;
+                    const showDivider = Boolean(prev && prev.roleRank !== p.roleRank);
+
+                    return (
+                      <Fragment key={`${p.employeeId}-${i}`}>
+                        {showDivider ? <Separator className="w-full my-1" /> : null}
+                        <Badge
+                          variant="secondary"
+                          className={`text-xs py-1 px-2 leading-tight ${
+                            p.isDuty ? "bg-rose-600 text-white" : ""
+                          }`}
+                          data-testid={`staff-present-${i}`}
+                        >
+                          {p.name}
+                          {p.workplace ? (
+                            <span
+                              className={`ml-1 ${p.isDuty ? "text-white/80" : "text-muted-foreground"}`}
+                            >
+                              ({p.workplace})
+                            </span>
+                          ) : null}
+                        </Badge>
+                      </Fragment>
+                    );
+                  })
                 ) : (
                   <p className="text-sm text-muted-foreground">
                     Keine Daten verfuegbar.
@@ -449,21 +534,32 @@ export default function Dashboard() {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {presentTomorrow.length > 0 ? (
-                    presentTomorrow.map((p, i) => (
-                      <Badge
-                        key={`${p.name}-${i}`}
-                        variant="secondary"
-                        className="py-1.5"
-                        data-testid={`staff-tomorrow-${i}`}
-                      >
-                        {p.name}
-                        {p.workplace ? (
-                          <span className="text-muted-foreground ml-1">
-                            ({p.workplace})
-                          </span>
-                        ) : null}
-                      </Badge>
-                    ))
+                    presentTomorrow.map((p, i) => {
+                      const prev = i > 0 ? presentTomorrow[i - 1] : null;
+                      const showDivider = Boolean(prev && prev.roleRank !== p.roleRank);
+
+                      return (
+                        <Fragment key={`${p.employeeId}-${i}`}>
+                          {showDivider ? <Separator className="w-full my-1" /> : null}
+                          <Badge
+                            variant="secondary"
+                            className={`text-xs py-1 px-2 leading-tight ${
+                              p.isDuty ? "bg-rose-600 text-white" : ""
+                            }`}
+                            data-testid={`staff-tomorrow-${i}`}
+                          >
+                            {p.name}
+                            {p.workplace ? (
+                              <span
+                                className={`ml-1 ${p.isDuty ? "text-white/80" : "text-muted-foreground"}`}
+                              >
+                                ({p.workplace})
+                              </span>
+                            ) : null}
+                          </Badge>
+                        </Fragment>
+                      );
+                    })
                   ) : (
                     <p className="text-sm text-muted-foreground">
                       Keine Daten verfuegbar.

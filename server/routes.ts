@@ -1268,28 +1268,39 @@ export async function registerRoutes(
 
         const getRoleRank = (role?: string | null) => {
           const r = (role ?? "").toLowerCase();
-        
           if (!r) return 99;
-        
+
+          // Top: Primar/Primaria
           if (r.includes("primar")) return 0;
-          if (r.includes("1. ober") || r.includes("erster ober")) return 1;
-        
-          // OA + Facharzt in denselben Top-Block
+
+          // 1. OA
+          if (r.includes("1.") && r.includes("ober")) return 1;
+          if (r.includes("erster") && r.includes("ober")) return 1;
+
+          // OA / Facharzt (gemeinsamer Block)
           if (
             r.includes("oberarzt") ||
             r.includes("oberärzt") ||
             r.includes("facharzt") ||
-            r.includes("fachärzt")
+            r.includes("fachärzt") ||
+            r.includes("funktionsober") ||
+            r.includes("ausbildungsober")
           )
             return 2;
-        
+
+          // Assistenz
           if (r.includes("assistenz")) return 3;
+
+          // Turnus
           if (r.includes("turnus")) return 4;
-          if (r.includes("kpj") || r.includes("student") || r.includes("famul")) return 5;
-        
+
+          // KPJ / Student / Famulatur
+          if (r.includes("kpj") || r.includes("student") || r.includes("famul"))
+            return 5;
+
           // Sekretariat (falls es je drin wäre) ganz nach hinten
           if (r.includes("sekret")) return 98;
-        
+
           return 90;
         };
 
@@ -1311,13 +1322,9 @@ export async function registerRoutes(
 
             const employeeData = employeeMetaMap.get(employeeId);
             const firstName =
-              employeeData?.firstName ??
-              normalizeName(assignment.firstName) ??
-              null;
+              employeeData?.firstName ?? normalizeName(assignment.firstName) ?? null;
             const lastName =
-              employeeData?.lastName ??
-              normalizeName(assignment.lastName) ??
-              null;
+              employeeData?.lastName ?? normalizeName(assignment.lastName) ?? null;
             if (!firstName && !lastName) continue;
 
             const role = employeeData?.role ?? null;
@@ -1325,34 +1332,21 @@ export async function registerRoutes(
             // Duty NICHT über workplace bestimmen, sondern über roleLabel/roomName im Assignment
             const roleKey = (assignment.roleLabel ?? "").trim().toLowerCase();
             const roomKey = (assignment.roomName ?? "").trim().toLowerCase();
-            const isDuty =
-              roleKey === "diensthabende" || roomKey === "diensthabende";
+            const isDuty = roleKey.includes("diensthab") || roomKey.includes("diensthab");
 
             const workplace = buildWeeklyPlanWorkplaceLabel({
               roomName: assignment.roomName,
               roleLabel: assignment.roleLabel,
             });
 
-            members.push({
-              employeeId,
-              firstName,
-              lastName,
-              workplace,
-              role,
-              isDuty,
-            });
+            members.push({ employeeId, firstName, lastName, workplace, role, isDuty });
           }
 
-          // Sortierung: zuerst Hierarchie, dann Arbeitsplatz, dann Name
+          // Sortierung: zuerst Hierarchie, dann alphabetisch (wenn Rang gleich)
           members.sort((a, b) => {
             const aRank = getRoleRank(a.role);
             const bRank = getRoleRank(b.role);
             if (aRank !== bRank) return aRank - bRank;
-
-            const aWork = a.workplace ?? "";
-            const bWork = b.workplace ?? "";
-            const workCmp = aWork.localeCompare(bWork, "de");
-            if (workCmp !== 0) return workCmp;
 
             const aLast = a.lastName ?? "";
             const bLast = b.lastName ?? "";
@@ -1361,7 +1355,13 @@ export async function registerRoutes(
 
             const aFirst = a.firstName ?? "";
             const bFirst = b.firstName ?? "";
-            return aFirst.localeCompare(bFirst, "de");
+            const firstCmp = aFirst.localeCompare(bFirst, "de");
+            if (firstCmp !== 0) return firstCmp;
+
+            // (optional stabil) Arbeitsplatz als letzter Tie-Breaker
+            const aWork = a.workplace ?? "";
+            const bWork = b.workplace ?? "";
+            return aWork.localeCompare(bWork, "de");
           });
 
           return members;
