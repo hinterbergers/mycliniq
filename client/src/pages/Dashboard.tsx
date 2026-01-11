@@ -1,4 +1,12 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type TouchEvent,
+} from "react";
 import { Layout } from "@/components/layout/Layout";
 import {
   Card,
@@ -244,6 +252,8 @@ export default function Dashboard() {
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(true);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [isAcceptingZe, setIsAcceptingZe] = useState(false);
+  const [mobilePanel, setMobilePanel] = useState<"week" | "team">("week");
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
   const { toast } = useToast();
 
   const fetchDashboard = useCallback(() => dashboardApi.get(), []);
@@ -259,6 +269,23 @@ export default function Dashboard() {
       setIsLoadingDashboard(false);
     }
   }, [fetchDashboard]);
+
+  const handleTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+    const touch = event.touches[0];
+    if (!touch) return;
+    touchStart.current = { x: touch.clientX, y: touch.clientY };
+  };
+
+  const handleTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
+    const touch = event.changedTouches[0];
+    if (!touchStart.current || !touch) return;
+    const dx = touch.clientX - touchStart.current.x;
+    const dy = touch.clientY - touchStart.current.y;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+      setMobilePanel(dx < 0 ? "team" : "week");
+    }
+    touchStart.current = null;
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -284,192 +311,374 @@ export default function Dashboard() {
     };
   }, [fetchDashboard]);
 
-  const todayEntry = dashboardData?.today;
-  const todayZe = todayEntry?.ze;
-  const todayTeamNames = (todayEntry?.teammates ?? [])
-    .map((mate) => buildFullName(mate.firstName, mate.lastName))
-    .filter(Boolean);
-  const holidayToday = getAustrianHoliday(new Date());
-  const statusLabel = todayEntry?.statusLabel ?? "";
-  const normalizedStatus = statusLabel.toLowerCase();
-  const hasEntry = Boolean(statusLabel || todayEntry?.workplace);
-  const isAbsenceLabel = ABSENCE_KEYWORDS.some((keyword) =>
-    normalizedStatus.includes(keyword),
+  const renderHeroCard = () => (
+    <div className="bg-gradient-to-br from-primary to-primary/80 rounded-2xl p-8 text-primary-foreground shadow-lg shadow-primary/10">
+      <div className="flex items-center justify-between mb-2">
+        <h2
+          className="text-3xl font-bold text-white"
+          data-testid="text-greeting"
+        >
+          {greeting} {firstName}
+        </h2>
+        <Badge
+          variant="outline"
+          className="text-primary-foreground border-primary-foreground/30 bg-primary-foreground/10"
+        >
+          KABEG Klinikum Klagenfurt
+        </Badge>
+      </div>
+      <p className="text-primary-foreground/80 max-w-xl text-lg flex items-center gap-2">
+        <span className="text-2xl">{heroEmoji}</span>
+        <span>{heroMessage}</span>
+      </p>
+      {showTeammates && (
+        <p className="text-sm text-primary-foreground/70 mt-1">
+          Mit: {todayTeamNames.join(", ")}
+        </p>
+      )}
+      <div className="mt-6 flex gap-3">
+        <Button
+          variant="secondary"
+          className="text-primary font-medium shadow-none border-0"
+          onClick={() => setLocation("/dienstplaene")}
+          data-testid="button-to-roster"
+        >
+          Zum Dienstplan
+        </Button>
+        <Button
+          variant="outline"
+          className="bg-transparent border-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"
+          onClick={() => setLocation("/dienstwuensche")}
+          data-testid="button-request-vacation"
+        >
+          Dienstwünsche
+        </Button>
+      </div>
+      {showZeBadge && (
+        <div className="mt-4">
+          <button
+            type="button"
+            className="inline-flex items-center justify-center rounded-full bg-rose-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-rose-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-200 disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={handleAcceptZe}
+            disabled={isAcceptingZe}
+          >
+            Zeitausgleich möglich
+          </button>
+        </div>
+      )}
+    </div>
   );
-  const isSickLabel = SICK_KEYWORDS.some((keyword) =>
-    normalizedStatus.includes(keyword),
+
+  const renderAttendanceCardContent = () => (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2">
+        {presentToday.length > 0 ? (
+          presentToday.map((p, i) => {
+            const prev = i > 0 ? presentToday[i - 1] : null;
+            const showDivider = Boolean(prev && prev.roleRank !== p.roleRank);
+
+            return (
+              <Fragment key={`${p.employeeId}-${i}`}>
+                {showDivider ? <Separator className="w-full my-1" /> : null}
+                <Badge
+                  variant="secondary"
+                  className={`inline-flex items-center rounded-md border px-3 py-1 text-xs sm:text-sm font-medium leading-none ${
+                    p.isDuty
+                      ? "bg-red-50 text-red-700 border-red-200"
+                      : "bg-slate-100 text-slate-700 border-slate-200"
+                  }`}
+                  data-testid={`staff-present-${i}`}
+                >
+                  {p.name}
+                  {p.workplace ? (
+                    <span
+                      className="ml-1 text-xs text-muted-foreground"
+                    >
+                      ({p.workplace})
+                    </span>
+                  ) : null}
+                </Badge>
+              </Fragment>
+            );
+          })
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Keine Daten verfuegbar.
+          </p>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Clock className="w-4 h-4" />
+        <span>
+          {typeof absentCountToday === "number"
+            ? `${absentCountToday} Abwesende heute`
+            : "Abwesende heute: –"}
+        </span>
+      </div>
+
+      <Separator />
+
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <CalendarDays className="w-4 h-4 text-muted-foreground" />
+          <p className="text-sm font-medium">Team morgen</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {presentTomorrow.length > 0 ? (
+            presentTomorrow.map((p, i) => {
+              const prev = i > 0 ? presentTomorrow[i - 1] : null;
+              const showDivider = Boolean(prev && prev.roleRank !== p.roleRank);
+
+              return (
+                <Fragment key={`${p.employeeId}-${i}`}>
+                  {showDivider ? <Separator className="w-full my-1" /> : null}
+                  <Badge
+                    variant="secondary"
+                    className={`inline-flex items-center rounded-md border px-3 py-1 text-xs sm:text-sm font-medium leading-none ${
+                      p.isDuty
+                        ? "bg-red-50 text-red-700 border-red-200"
+                        : "bg-slate-100 text-slate-700 border-slate-200"
+                    }`}
+                    data-testid={`staff-tomorrow-${i}`}
+                  >
+                    {p.name}
+                    {p.workplace ? (
+                      <span className="ml-1 text-xs text-muted-foreground">
+                        ({p.workplace})
+                      </span>
+                    ) : null}
+                  </Badge>
+                </Fragment>
+              );
+            })
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Keine Daten verfuegbar.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
   );
 
-  let heroIcon = "🗓️";
-  let heroText = "Heute kein Eintrag";
-  if (!hasEntry || holidayToday) {
-    heroIcon = "🏝️";
-    heroText = holidayToday?.name ?? "Heute kein Eintrag";
-  } else if (isSickLabel) {
-    heroIcon = "🤒";
-    heroText = statusLabel || "Krankenstand";
-  } else if (isAbsenceLabel) {
-    heroIcon = "🏝️";
-    heroText = statusLabel || "Abwesenheit";
-  } else {
-    heroIcon = "🗓️";
-    heroText = statusLabel
-      ? `${statusLabel}${todayEntry?.workplace ? ` · ${todayEntry.workplace}` : ""}`
-      : todayEntry?.workplace || "Heute kein Eintrag";
-  }
+  const renderWeekPreviewCardContent = () => (
+    <div className="space-y-4">
+      {isLoadingDashboard ? (
+        <p className="text-sm text-muted-foreground">
+          Wochenvorschau wird geladen…
+        </p>
+      ) : dashboardError ? (
+        <p className="text-sm text-destructive">Fehler: {dashboardError}</p>
+      ) : previewCards.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Keine Einsätze für die Vorschau verfügbar.
+        </p>
+      ) : (
+        previewCards.map((item, i) => {
+          const badgeText = getDutyBadgeText(item.statusLabel);
 
-  const heroMessage = dashboardError
-    ? dashboardError.startsWith("Fehler")
-      ? dashboardError
-      : `Fehler: ${dashboardError}`
-    : isLoadingDashboard
-      ? "Dienst wird geladen…"
-      : heroText;
-  const heroEmoji = dashboardError ? "⚠️" : heroIcon;
-  const showTeammates =
-    !dashboardError &&
-    !isLoadingDashboard &&
-    heroIcon === "🗓️" &&
-    todayTeamNames.length > 0;
+          const normalizedStatus = (item.statusLabel ?? "").toLowerCase();
+          const isAbsence = ABSENCE_KEYWORDS.some((k) =>
+            normalizedStatus.includes(k),
+          );
 
-  const birthdayEntry = dashboardData?.birthday;
-  const birthdayName = birthdayEntry
-    ? buildFullName(birthdayEntry.firstName, birthdayEntry.lastName)
-    : null;
-  const showZeBadge = Boolean(todayZe && !todayZe.accepted);
+          const line2Raw = isAbsence
+            ? item.statusLabel ?? ""
+            : item.workplace ?? "";
 
-  const attendanceWidget = (dashboardData as any)?.attendanceWidget as
-    | AttendanceWidget
-    | undefined;
+          const line2 =
+            line2Raw && line2Raw !== "Diensthabende" ? line2Raw : "";
 
-  const presentToday = useMemo<AttendanceMemberVM[]>(() => {
-    const vms = (attendanceWidget?.today?.members ?? [])
-      .map((p) => toAttendanceVm(p))
-      .filter((p): p is AttendanceMemberVM => Boolean(p));
-    vms.sort(compareAttendanceVm);
-    return vms;
-  }, [attendanceWidget?.today?.members]);
+          return (
+            <div
+              key={`${item.date}-${i}`}
+              className={`p-3 rounded-lg border ${
+                i === 0 ? "bg-primary/5 border-primary/20" : "border-border"
+              }`}
+              data-testid={`schedule-day-${i}`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-medium text-sm">
+                  {item.dayLabel}{" "}
+                  <span className="text-muted-foreground">
+                    – {item.dateLabel}
+                  </span>
+                </span>
 
-  const absentCountToday =
-    typeof attendanceWidget?.today?.absentCount === "number"
-      ? attendanceWidget.today.absentCount
-      : null;
+                {badgeText ? <Badge>{badgeText}</Badge> : null}
+              </div>
 
-  const presentTomorrow = useMemo<AttendanceMemberVM[]>(() => {
-    const vms = (attendanceWidget?.tomorrow?.members ?? [])
-      .map((p) => toAttendanceVm(p))
-      .filter((p): p is AttendanceMemberVM => Boolean(p));
-    vms.sort(compareAttendanceVm);
-    return vms;
-  }, [attendanceWidget?.tomorrow?.members]);
+              {line2 ? (
+                <p className="text-xs text-muted-foreground mb-1">{line2}</p>
+              ) : null}
 
-  const handleAcceptZe = useCallback(async () => {
-    if (!todayZe) return;
-    setIsAcceptingZe(true);
-    try {
-      await dashboardApi.acceptZeitausgleich(todayZe.id);
-      toast({
-        title: "Zeitausgleich bestätigt",
-        description: "Der Platz wurde für dich reserviert.",
-      });
-      await refreshDashboard();
-    } catch (error: any) {
-      toast({
-        title: "Zeitausgleich konnte nicht bestätigt werden",
-        description: error?.message || "Bitte versuche es erneut.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsAcceptingZe(false);
-    }
-  }, [refreshDashboard, toast, todayZe]);
+              {item.teammateNames.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Mit: {item.teammateNames.join(", ")}
+                </p>
+              )}
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
 
-  const previewCards = useMemo<PreviewCard[]>(() => {
-    if (!dashboardData?.weekPreview) return [];
-    return dashboardData.weekPreview
-      .map((entry): PreviewCard | null => {
-        const iso = `${entry.date}T00:00:00`;
-        const dateInstance = new Date(iso);
-        if (Number.isNaN(dateInstance.getTime())) {
-          return null;
-        }
-        if (isWeekendDate(dateInstance) && !entry.statusLabel) {
-          return null;
-        }
-        return {
-          date: entry.date,
-          statusLabel: entry.statusLabel,
-          workplace: entry.workplace,
-          teammateNames: entry.teammates
-            .map((mate) => buildFullName(mate.firstName, mate.lastName))
-            .filter(Boolean),
-          dayLabel: format(dateInstance, "EEEE", { locale: de }),
-          dateLabel: format(dateInstance, "dd. MMM", { locale: de }),
-        };
-      })
-      .filter((card): card is PreviewCard => card !== null);
-  }, [dashboardData?.weekPreview]);
+  const renderMiscWidgets = () => (
+    <>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Card className="border-none kabeg-shadow">
+          <CardContent className="p-4 flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+              <BookOpen className="w-6 h-6 text-primary" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground font-medium">
+                Neue SOPs
+              </p>
+              <p className="text-2xl font-bold text-foreground">–</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-none kabeg-shadow">
+          <CardContent className="p-4 flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center">
+              <Star className="w-6 h-6 text-amber-600" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground font-medium">
+                Meine Favoriten
+              </p>
+              <p className="text-2xl font-bold text-foreground">–</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
+      <Card className="border-none kabeg-shadow">
+        <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardTitle className="text-lg">Neue Dokumente</CardTitle>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            onClick={() => setLocation("/wissen")}
+          >
+            Alle anzeigen
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div>
+              <h4 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
+                <TrendingUp className="w-4 h-4" />
+                Neu hinzugefügt
+              </h4>
+              <div className="space-y-2">
+                {DUMMY_NEW_SOPS.map((sop) => (
+                  <div
+                    key={sop.id}
+                    className="flex items-center justify-between p-3 rounded-lg hover:bg-secondary/50 transition-colors border border-transparent hover:border-border group cursor-pointer"
+                    data-testid={`sop-new-${sop.id}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                        <FileText className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-medium text-foreground text-sm">
+                          {sop.title}
+                        </h4>
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] px-1.5 py-0"
+                          >
+                            {sop.category}
+                          </Badge>
+                          <span className="text-[10px] text-muted-foreground">
+                            {sop.date}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <h4 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
+                <Star className="w-4 h-4" />
+                Meist genutzt
+              </h4>
+              <div className="space-y-2">
+                {DUMMY_POPULAR_SOPS.map((sop) => (
+                  <div
+                    key={sop.id}
+                    className="flex items-center justify-between p-3 rounded-lg hover:bg-secondary/50 transition-colors border border-transparent hover:border-border group cursor-pointer"
+                    data-testid={`sop-popular-${sop.id}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600 group-hover:bg-amber-500 group-hover:text-white transition-colors">
+                        <FileText className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-medium text-foreground text-sm">
+                          {sop.title}
+                        </h4>
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] px-1.5 py-0"
+                          >
+                            {sop.category}
+                          </Badge>
+                          <span className="text-[10px] text-muted-foreground">
+                            {sop.views} Aufrufe
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-amber-600 transition-colors" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </>
+  );
+
+  const renderBirthdayCard = () =>
+    birthdayName ? (
+      <Card className="border-none kabeg-shadow bg-gradient-to-br from-pink-50 to-orange-50">
+        <CardContent className="p-4 flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-pink-100 flex items-center justify-center">
+            <Cake className="w-6 h-6 text-pink-600" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-foreground">
+              Heute hat Geburtstag:
+            </p>
+            <p
+              className="text-base font-bold text-pink-700"
+              data-testid="text-birthday"
+            >
+              {birthdayName}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    ) : null;
   return (
     <Layout title="Dashboard">
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+      <div className="hidden md:grid grid-cols-1 md:grid-cols-12 gap-6">
         <div className="md:col-span-8 space-y-6">
-          <div className="bg-gradient-to-br from-primary to-primary/80 rounded-2xl p-8 text-primary-foreground shadow-lg shadow-primary/10">
-            <div className="flex items-center justify-between mb-2">
-              <h2
-                className="text-3xl font-bold text-white"
-                data-testid="text-greeting"
-              >
-                {greeting} {firstName}
-              </h2>
-              <Badge
-                variant="outline"
-                className="text-primary-foreground border-primary-foreground/30 bg-primary-foreground/10"
-              >
-                KABEG Klinikum Klagenfurt
-              </Badge>
-            </div>
-            <p className="text-primary-foreground/80 max-w-xl text-lg flex items-center gap-2">
-              <span className="text-2xl">{heroEmoji}</span>
-              <span>{heroMessage}</span>
-            </p>
-            {showTeammates && (
-              <p className="text-sm text-primary-foreground/70 mt-1">
-                Mit: {todayTeamNames.join(", ")}
-              </p>
-            )}
-            <div className="mt-6 flex gap-3">
-              <Button
-                variant="secondary"
-                className="text-primary font-medium shadow-none border-0"
-                onClick={() => setLocation("/dienstplaene")}
-                data-testid="button-to-roster"
-              >
-                Zum Dienstplan
-              </Button>
-              <Button
-                variant="outline"
-                className="bg-transparent border-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"
-                onClick={() => setLocation("/dienstwuensche")}
-                data-testid="button-request-vacation"
-              >
-                Dienstwünsche
-              </Button>
-            </div>
-            {showZeBadge && (
-              <div className="mt-4">
-                <button
-                  type="button"
-                  className="inline-flex items-center justify-center rounded-full bg-rose-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-rose-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-200 disabled:cursor-not-allowed disabled:opacity-60"
-                  onClick={handleAcceptZe}
-                  disabled={isAcceptingZe}
-                >
-                  Zeitausgleich möglich
-                </button>
-              </div>
-            )}
-          </div>
-
+          {renderHeroCard()}
           <Card className="border-none kabeg-shadow">
             <CardHeader className="pb-2">
               <CardTitle className="text-lg flex items-center gap-2">
@@ -480,243 +689,12 @@ export default function Dashboard() {
                 Team mit Funktion im Wochenplan (Arbeitsplatz in Klammer)
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-wrap gap-2">
-                {presentToday.length > 0 ? (
-                  presentToday.map((p, i) => {
-                    const prev = i > 0 ? presentToday[i - 1] : null;
-                    const showDivider = Boolean(prev && prev.roleRank !== p.roleRank);
-
-                    return (
-                      <Fragment key={`${p.employeeId}-${i}`}>
-                        {showDivider ? <Separator className="w-full my-1" /> : null}
-                        <Badge
-                          variant="secondary"
-                          className={`text-xs py-1 px-2 leading-tight ${
-                            p.isDuty ? "bg-rose-600 text-white" : ""
-                          }`}
-                          data-testid={`staff-present-${i}`}
-                        >
-                          {p.name}
-                          {p.workplace ? (
-                            <span
-                              className={`ml-1 ${p.isDuty ? "text-white/80" : "text-muted-foreground"}`}
-                            >
-                              ({p.workplace})
-                            </span>
-                          ) : null}
-                        </Badge>
-                      </Fragment>
-                    );
-                  })
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    Keine Daten verfuegbar.
-                  </p>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Clock className="w-4 h-4" />
-                <span>
-                  {typeof absentCountToday === "number"
-                    ? `${absentCountToday} Abwesende heute`
-                    : "Abwesende heute: –"}
-                </span>
-              </div>
-
-              <Separator />
-
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <CalendarDays className="w-4 h-4 text-muted-foreground" />
-                  <p className="text-sm font-medium">Team morgen</p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {presentTomorrow.length > 0 ? (
-                    presentTomorrow.map((p, i) => {
-                      const prev = i > 0 ? presentTomorrow[i - 1] : null;
-                      const showDivider = Boolean(prev && prev.roleRank !== p.roleRank);
-
-                      return (
-                        <Fragment key={`${p.employeeId}-${i}`}>
-                          {showDivider ? <Separator className="w-full my-1" /> : null}
-                          <Badge
-                            variant="secondary"
-                            className={`text-xs py-1 px-2 leading-tight ${
-                              p.isDuty ? "bg-rose-600 text-white" : ""
-                            }`}
-                            data-testid={`staff-tomorrow-${i}`}
-                          >
-                            {p.name}
-                            {p.workplace ? (
-                              <span
-                                className={`ml-1 ${p.isDuty ? "text-white/80" : "text-muted-foreground"}`}
-                              >
-                                ({p.workplace})
-                              </span>
-                            ) : null}
-                          </Badge>
-                        </Fragment>
-                      );
-                    })
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      Keine Daten verfuegbar.
-                    </p>
-                  )}
-                </div>
-              </div>
-            </CardContent>
+            {renderAttendanceCardContent()}
           </Card>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Card className="border-none kabeg-shadow">
-              <CardContent className="p-4 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                  <BookOpen className="w-6 h-6 text-primary" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground font-medium">
-                    Neue SOPs
-                  </p>
-                  <p className="text-2xl font-bold text-foreground">–</p>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="border-none kabeg-shadow">
-              <CardContent className="p-4 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center">
-                  <Star className="w-6 h-6 text-amber-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground font-medium">
-                    Meine Favoriten
-                  </p>
-                  <p className="text-2xl font-bold text-foreground">–</p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card className="border-none kabeg-shadow">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-lg">Neue Dokumente</CardTitle>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground"
-                onClick={() => setLocation("/wissen")}
-              >
-                Alle anzeigen
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div>
-                  <h4 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4" />
-                    Neu hinzugefügt
-                  </h4>
-                  <div className="space-y-2">
-                    {DUMMY_NEW_SOPS.map((sop) => (
-                      <div
-                        key={sop.id}
-                        className="flex items-center justify-between p-3 rounded-lg hover:bg-secondary/50 transition-colors border border-transparent hover:border-border group cursor-pointer"
-                        data-testid={`sop-new-${sop.id}`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
-                            <FileText className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <h4 className="font-medium text-foreground text-sm">
-                              {sop.title}
-                            </h4>
-                            <div className="flex items-center gap-2">
-                              <Badge
-                                variant="outline"
-                                className="text-[10px] px-1.5 py-0"
-                              >
-                                {sop.category}
-                              </Badge>
-                              <span className="text-[10px] text-muted-foreground">
-                                {sop.date}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
-                    <Star className="w-4 h-4" />
-                    Meist genutzt
-                  </h4>
-                  <div className="space-y-2">
-                    {DUMMY_POPULAR_SOPS.map((sop) => (
-                      <div
-                        key={sop.id}
-                        className="flex items-center justify-between p-3 rounded-lg hover:bg-secondary/50 transition-colors border border-transparent hover:border-border group cursor-pointer"
-                        data-testid={`sop-popular-${sop.id}`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600 group-hover:bg-amber-500 group-hover:text-white transition-colors">
-                            <FileText className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <h4 className="font-medium text-foreground text-sm">
-                              {sop.title}
-                            </h4>
-                            <div className="flex items-center gap-2">
-                              <Badge
-                                variant="outline"
-                                className="text-[10px] px-1.5 py-0"
-                              >
-                                {sop.category}
-                              </Badge>
-                              <span className="text-[10px] text-muted-foreground">
-                                {sop.views} Aufrufe
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-amber-600 transition-colors" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          {renderMiscWidgets()}
         </div>
-
         <div className="md:col-span-4 space-y-6">
-          {birthdayName && (
-            <Card className="border-none kabeg-shadow bg-gradient-to-br from-pink-50 to-orange-50">
-              <CardContent className="p-4 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-pink-100 flex items-center justify-center">
-                  <Cake className="w-6 h-6 text-pink-600" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-foreground">
-                    Heute hat Geburtstag:
-                  </p>
-                  <p
-                    className="text-base font-bold text-pink-700"
-                    data-testid="text-birthday"
-                  >
-                    {birthdayName}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
+          {renderBirthdayCard()}
           <Card className="border-none kabeg-shadow flex flex-col">
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
@@ -726,82 +704,49 @@ export default function Dashboard() {
               <CardDescription>Deine nächsten Einsätze</CardDescription>
             </CardHeader>
             <CardContent className="flex-1">
-              <div className="space-y-4">
-                {isLoadingDashboard ? (
-                  <p className="text-sm text-muted-foreground">
-                    Wochenvorschau wird geladen…
-                  </p>
-                ) : dashboardError ? (
-                  <p className="text-sm text-destructive">
-                    Fehler: {dashboardError}
-                  </p>
-                ) : previewCards.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    Keine Einsätze für die Vorschau verfügbar.
-                  </p>
-                ) : (
-                  previewCards.map((item, i) => {
-                    const badgeText = getDutyBadgeText(item.statusLabel); // null => kein Badge
-
-                    // Zeile 2: Abwesenheit bevorzugen, sonst workplace
-                    const normalizedStatus = (
-                      item.statusLabel ?? ""
-                    ).toLowerCase();
-                    const isAbsence = ABSENCE_KEYWORDS.some((k) =>
-                      normalizedStatus.includes(k),
-                    );
-
-                    const line2Raw = isAbsence
-                      ? (item.statusLabel ?? "")
-                      : (item.workplace ?? "");
-
-                    // "Diensthabende" ausblenden, keine Platzhalter
-                    const line2 =
-                      line2Raw && line2Raw !== "Diensthabende" ? line2Raw : "";
-
-                    return (
-                      <div
-                        key={`${item.date}-${i}`}
-                        className={`p-3 rounded-lg border ${
-                          i === 0
-                            ? "bg-primary/5 border-primary/20"
-                            : "border-border"
-                        }`}
-                        data-testid={`schedule-day-${i}`}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-medium text-sm">
-                            {item.dayLabel}{" "}
-                            <span className="text-muted-foreground">
-                              – {item.dateLabel}
-                            </span>
-                          </span>
-
-                          {/* Badge nur, wenn Dienst vorhanden */}
-                          {badgeText ? <Badge>{badgeText}</Badge> : null}
-                        </div>
-
-                        {/* Zeile 2 ohne "Bereich:" und ohne "-" */}
-                        {line2 ? (
-                          <p className="text-xs text-muted-foreground mb-1">
-                            {line2}
-                          </p>
-                        ) : null}
-
-                        {/* Zeile 3 nur wenn teammates vorhanden */}
-                        {item.teammateNames.length > 0 && (
-                          <p className="text-xs text-muted-foreground">
-                            Mit: {item.teammateNames.join(", ")}
-                          </p>
-                        )}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
+              {renderWeekPreviewCardContent()}
             </CardContent>
           </Card>
         </div>
+      </div>
+
+      <div className="md:hidden space-y-6">
+        {renderHeroCard()}
+        <Card
+          className="border-none kabeg-shadow"
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+        >
+          <CardContent className="pb-2">
+            <div className="flex gap-2">
+              <Button
+                variant={mobilePanel === "week" ? "secondary" : "ghost"}
+                size="sm"
+                className="px-3 py-1 text-xs"
+                onClick={() => setMobilePanel("week")}
+                aria-pressed={mobilePanel === "week"}
+              >
+                Woche
+              </Button>
+              <Button
+                variant={mobilePanel === "team" ? "secondary" : "ghost"}
+                size="sm"
+                className="px-3 py-1 text-xs"
+                onClick={() => setMobilePanel("team")}
+                aria-pressed={mobilePanel === "team"}
+              >
+                Heute/Morgen
+              </Button>
+            </div>
+          </CardContent>
+          <CardContent className="pt-0">
+            {mobilePanel === "week"
+              ? renderWeekPreviewCardContent()
+              : renderAttendanceCardContent()}
+          </CardContent>
+        </Card>
+        {renderBirthdayCard()}
+        {renderMiscWidgets()}
       </div>
     </Layout>
   );
