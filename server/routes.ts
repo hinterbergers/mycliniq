@@ -1621,7 +1621,28 @@ export async function registerRoutes(
             });
           }
 
-          const rows = await db
+          // Planned absences (Urlaub, Zeitausgleich, Ruhezeit, Fortbildung, ...)
+          const plannedRows = await db
+            .select({
+              startDate: plannedAbsences.startDate,
+              endDate: plannedAbsences.endDate,
+              reason: plannedAbsences.reason,
+              firstName: employees.firstName,
+              lastName: employees.lastName,
+            })
+            .from(plannedAbsences)
+            .innerJoin(employees, eq(plannedAbsences.employeeId, employees.id))
+            .where(
+              and(
+                eq(employees.departmentId, departmentId),
+                ne(plannedAbsences.status, "Abgelehnt"),
+                gte(plannedAbsences.endDate, from),
+                lte(plannedAbsences.startDate, to),
+              ),
+            );
+
+          // Recorded absences (optional) – e.g. Krankenstand, if those are stored in `absences`
+          const recordedRows = await db
             .select({
               startDate: absences.startDate,
               endDate: absences.endDate,
@@ -1638,6 +1659,8 @@ export async function registerRoutes(
                 lte(absences.startDate, to),
               ),
             );
+
+          const rows = [...plannedRows, ...recordedRows];
 
           const fromDateObj = parseIsoDateUtc(from);
           const toDateObj = parseIsoDateUtc(to);
