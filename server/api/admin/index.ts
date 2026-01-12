@@ -8,7 +8,6 @@ import {
   permissions,
   userPermissions,
   userDashboardWidgets,
-  users,
 } from "@shared/schema";
 import {
   authenticate,
@@ -543,27 +542,41 @@ export function registerAdminRoutes(app: Express): void {
     requireTechnicalAdmin,
     async (req, res) => {
       try {
-        const userId = req.params.id;
+        const employeeId = parseInt(req.params.id);
+        if (isNaN(employeeId)) {
+          return res
+            .status(400)
+            .json({ success: false, error: "Ungültige Benutzer-ID" });
+        }
+
         const departmentIdParam = req.query.departmentId;
-        const departmentId =
-          typeof departmentIdParam === "string" &&
-          /^\d+$/.test(departmentIdParam)
+        const departmentIdFromQuery =
+          typeof departmentIdParam === "string" && /^\d+$/.test(departmentIdParam)
             ? Number(departmentIdParam)
-            : req.user?.departmentId ?? null;
+            : null;
 
-        const [user] = await db
-          .select()
-          .from(users)
-          .where(eq(users.id, userId));
+        const [employee] = await db
+          .select({
+            id: employees.id,
+            userId: employees.userId,
+            departmentId: employees.departmentId,
+          })
+          .from(employees)
+          .where(eq(employees.id, employeeId))
+          .limit(1);
 
-        if (!user) {
+        if (!employee) {
           return res
             .status(404)
             .json({ success: false, error: "Benutzer nicht gefunden" });
         }
 
+        const resolvedUserId = employee.userId ? Number(employee.userId) : employee.id;
+        const departmentId =
+          departmentIdFromQuery ?? employee.departmentId ?? req.user?.departmentId ?? null;
+
         const enabledWidgets = await getUserDashboardWidgets(
-          userId,
+          resolvedUserId,
           departmentId,
         );
         res.json({ success: true, data: { enabledWidgets } });
@@ -586,31 +599,46 @@ export function registerAdminRoutes(app: Express): void {
     requireTechnicalAdmin,
     async (req, res) => {
       try {
-        const userId = req.params.id;
-        const departmentIdRaw = req.body?.departmentId;
-        const departmentId =
-          typeof departmentIdRaw === "number"
-            ? departmentIdRaw
-            : null;
-        const enabledWidgets = sanitizeWidgetArray(req.body?.enabledWidgets);
+        const employeeId = parseInt(req.params.id);
+        if (isNaN(employeeId)) {
+          return res
+            .status(400)
+            .json({ success: false, error: "Ungültige Benutzer-ID" });
+        }
 
-        const [user] = await db
-          .select()
-          .from(users)
-          .where(eq(users.id, userId));
+        const [employee] = await db
+          .select({
+            id: employees.id,
+            userId: employees.userId,
+            departmentId: employees.departmentId,
+          })
+          .from(employees)
+          .where(eq(employees.id, employeeId))
+          .limit(1);
 
-        if (!user) {
+        if (!employee) {
           return res
             .status(404)
             .json({ success: false, error: "Benutzer nicht gefunden" });
         }
+
+        const resolvedUserId = employee.userId ? Number(employee.userId) : employee.id;
+        const normalizedUserId = String(resolvedUserId);
+
+        const departmentIdRaw = req.body?.departmentId;
+        const departmentId =
+          typeof departmentIdRaw === "number"
+            ? departmentIdRaw
+            : employee.departmentId ?? null;
+
+        const enabledWidgets = sanitizeWidgetArray(req.body?.enabledWidgets);
 
         const existingRow = await db
           .select()
           .from(userDashboardWidgets)
           .where(
             and(
-              eq(userDashboardWidgets.userId, userId),
+              eq(userDashboardWidgets.userId, normalizedUserId),
               departmentId !== null
                 ? eq(userDashboardWidgets.departmentId, departmentId)
                 : isNull(userDashboardWidgets.departmentId),
@@ -627,7 +655,7 @@ export function registerAdminRoutes(app: Express): void {
             })
             .where(
               and(
-                eq(userDashboardWidgets.userId, userId),
+                eq(userDashboardWidgets.userId, normalizedUserId),
                 departmentId !== null
                   ? eq(userDashboardWidgets.departmentId, departmentId)
                   : isNull(userDashboardWidgets.departmentId),
@@ -635,7 +663,7 @@ export function registerAdminRoutes(app: Express): void {
             );
         } else {
           await db.insert(userDashboardWidgets).values({
-            userId,
+            userId: normalizedUserId,
             departmentId,
             enabledWidgets,
           });
