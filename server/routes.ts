@@ -1011,7 +1011,7 @@ export async function registerRoutes(
       async (req: Request, res: Response) => {
       try {
         const user = req.user!;
-        const todayVienna = VIENNA_DATE_FORMAT.format(new Date());
+        const todayVienna = formatDate(new Date()); // YYYY-MM-DD
         const previewDates = buildPreviewDateRange(
           todayVienna,
           DASHBOARD_PREVIEW_DAYS,
@@ -1641,24 +1641,46 @@ export async function registerRoutes(
               ),
             );
 
-          // Recorded absences (optional) – e.g. Krankenstand, if those are stored in `absences`
-          const recordedRows = await db
-            .select({
-              startDate: absences.startDate,
-              endDate: absences.endDate,
-              reason: absences.reason,
-              firstName: employees.firstName,
-              lastName: employees.lastName,
-            })
-            .from(absences)
-            .innerJoin(employees, eq(absences.employeeId, employees.id))
-            .where(
-              and(
-                eq(employees.departmentId, departmentId),
-                gte(absences.endDate, from),
-                lte(absences.startDate, to),
-              ),
-            );
+         // Planned absences (Urlaub, Zeitausgleich, Ruhezeit, Fortbildung, ...)
+const plannedRows = await db
+  .select({
+    startDate: plannedAbsences.startDate,
+    endDate: plannedAbsences.endDate,
+    reason: plannedAbsences.reason,
+    firstName: employees.firstName,
+    lastName: employees.lastName,
+  })
+  .from(plannedAbsences)
+  .innerJoin(employees, eq(plannedAbsences.employeeId, employees.id))
+  .where(
+    and(
+      eq(employees.departmentId, departmentId),
+      ne(plannedAbsences.status, "Abgelehnt"),
+      gte(plannedAbsences.endDate, from),
+      lte(plannedAbsences.startDate, to),
+    ),
+  );
+
+// Recorded absences (optional) – e.g. Krankenstand
+const recordedRows = await db
+  .select({
+    startDate: absences.startDate,
+    endDate: absences.endDate,
+    reason: absences.reason,
+    firstName: employees.firstName,
+    lastName: employees.lastName,
+  })
+  .from(absences)
+  .innerJoin(employees, eq(absences.employeeId, employees.id))
+  .where(
+    and(
+      eq(employees.departmentId, departmentId),
+      gte(absences.endDate, from),
+      lte(absences.startDate, to),
+    ),
+  );
+
+const rows = [...plannedRows, ...recordedRows];
 
           const rows = [...plannedRows, ...recordedRows];
 
