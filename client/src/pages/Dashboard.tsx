@@ -222,7 +222,7 @@ const STAFF_WORKPLACE_CLASS =
   "text-[10px] sm:text-xs text-muted-foreground leading-tight";
 
 export default function Dashboard() {
-  const { employee, user, can } = useAuth();
+  const { employee, user, can, token } = useAuth();
   const [, setLocation] = useLocation();
 
   const firstName =
@@ -245,6 +245,36 @@ export default function Dashboard() {
     useState<DashboardAbsencesResponse | null>(null);
   const [absencesLoading, setAbsencesLoading] = useState(false);
   const [absencesError, setAbsencesError] = useState<string | null>(null);
+  const [enabledWidgetsOverride, setEnabledWidgetsOverride] = useState<string[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    fetch("/api/me", {
+      headers,
+      credentials: "include",
+    })
+      .then(async (res) => {
+        if (!res.ok) return null;
+        return (await res.json()) as any;
+      })
+      .then((json) => {
+        if (cancelled) return;
+        const enabled = json?.data?.enabledWidgets;
+        if (Array.isArray(enabled)) {
+          setEnabledWidgetsOverride(enabled);
+        }
+      })
+      .catch(() => {
+        // ignore: dashboard will fall back to defaults
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   const fetchDashboard = useCallback(() => dashboardApi.get(), []);
   const refreshDashboard = useCallback(async () => {
@@ -389,7 +419,10 @@ export default function Dashboard() {
     : null;
 
   const enabledWidgetKeys = useMemo<Set<DashboardWidgetKey>>(() => {
-    const configured = dashboardData?.enabledWidgets ?? [];
+    const configured =
+      (dashboardData?.enabledWidgets && dashboardData.enabledWidgets.length > 0)
+        ? dashboardData.enabledWidgets
+        : (enabledWidgetsOverride ?? []);
     if (Array.isArray(configured) && configured.length > 0) {
       const normalized = configured.filter((value): value is DashboardWidgetKey =>
         DASHBOARD_WIDGETS.some((widget) => widget.key === value),
@@ -399,7 +432,7 @@ export default function Dashboard() {
       }
     }
     return new Set(DEFAULT_ENABLED_WIDGETS);
-  }, [dashboardData?.enabledWidgets]);
+  }, [dashboardData?.enabledWidgets, enabledWidgetsOverride]);
 
   const isWidgetEnabled = useCallback(
     (key: DashboardWidgetKey) => enabledWidgetKeys.has(key),
@@ -408,6 +441,22 @@ export default function Dashboard() {
 
   const weekPreviewEnabled = isWidgetEnabled("week_preview");
   const absencesEnabled = isWidgetEnabled("absences");
+  const attendanceEnabled = isWidgetEnabled("attendance");
+  const birthdayEnabled = isWidgetEnabled("birthday");
+  const documentsEnabled = isWidgetEnabled("documents");
+  const sopsEnabled = isWidgetEnabled("sops_new");
+  const favoritesEnabled = isWidgetEnabled("favorites");
+
+  const mobilePanelEnabled = weekPreviewEnabled || attendanceEnabled;
+
+  useEffect(() => {
+    // Keep mobile panel in a valid state if one tab is disabled
+    if (!weekPreviewEnabled && attendanceEnabled) {
+      setMobilePanel("team");
+    } else if (weekPreviewEnabled && !attendanceEnabled) {
+      setMobilePanel("week");
+    }
+  }, [weekPreviewEnabled, attendanceEnabled]);
 
   useEffect(() => {
     if (!absencesEnabled) {
@@ -700,136 +749,149 @@ export default function Dashboard() {
     </Card>
   );
 
-  const renderMiscWidgets = () => (
-    <>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Card className="border-none kabeg-shadow">
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-              <BookOpen className="w-6 h-6 text-primary" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground font-medium">
-                Neue SOPs
-              </p>
-              <p className="text-2xl font-bold text-foreground">–</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-none kabeg-shadow">
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center">
-              <Star className="w-6 h-6 text-amber-600" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground font-medium">
-                Meine Favoriten
-              </p>
-              <p className="text-2xl font-bold text-foreground">–</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+  const renderMiscWidgets = () => {
+    if (!documentsEnabled && !sopsEnabled && !favoritesEnabled) return null;
 
-      <Card className="border-none kabeg-shadow">
-        <CardHeader className="flex flex-row items-center justify-between pb-2">
-          <CardTitle className="text-lg">Neue Dokumente</CardTitle>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground"
-            onClick={() => setLocation("/wissen")}
-          >
-            Alle anzeigen
-          </Button>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div>
-              <h4 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
-                <TrendingUp className="w-4 h-4" />
-                Neu hinzugefügt
-              </h4>
-              <div className="space-y-2">
-                {DUMMY_NEW_SOPS.map((sop) => (
-                  <div
-                    key={sop.id}
-                    className="flex items-center justify-between p-3 rounded-lg hover:bg-secondary/50 transition-colors border border-transparent hover:border-border group cursor-pointer"
-                    data-testid={`sop-new-${sop.id}`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
-                        <FileText className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="font-medium text-foreground text-sm">
-                          {sop.title}
-                        </h4>
-                        <div className="flex items-center gap-2">
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] px-1.5 py-0"
-                          >
-                            {sop.category}
-                          </Badge>
-                          <span className="text-[10px] text-muted-foreground">
-                            {sop.date}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+    return (
+      <>
+        {(sopsEnabled || favoritesEnabled) && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {sopsEnabled && (
+              <Card className="border-none kabeg-shadow">
+                <CardContent className="p-4 flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                    <BookOpen className="w-6 h-6 text-primary" />
                   </div>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <h4 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
-                <Star className="w-4 h-4" />
-                Meist genutzt
-              </h4>
-              <div className="space-y-2">
-                {DUMMY_POPULAR_SOPS.map((sop) => (
-                  <div
-                    key={sop.id}
-                    className="flex items-center justify-between p-3 rounded-lg hover:bg-secondary/50 transition-colors border border-transparent hover:border-border group cursor-pointer"
-                    data-testid={`sop-popular-${sop.id}`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600 group-hover:bg-amber-500 group-hover:text-white transition-colors">
-                        <FileText className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="font-medium text-foreground text-sm">
-                          {sop.title}
-                        </h4>
-                        <div className="flex items-center gap-2">
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] px-1.5 py-0"
-                          >
-                            {sop.category}
-                          </Badge>
-                          <span className="text-[10px] text-muted-foreground">
-                            {sop.views} Aufrufe
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-amber-600 transition-colors" />
+                  <div>
+                    <p className="text-sm text-muted-foreground font-medium">
+                      Neue SOPs
+                    </p>
+                    <p className="text-2xl font-bold text-foreground">–</p>
                   </div>
-                ))}
-              </div>
-            </div>
+                </CardContent>
+              </Card>
+            )}
+            {favoritesEnabled && (
+              <Card className="border-none kabeg-shadow">
+                <CardContent className="p-4 flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center">
+                    <Star className="w-6 h-6 text-amber-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground font-medium">
+                      Meine Favoriten
+                    </p>
+                    <p className="text-2xl font-bold text-foreground">–</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
-        </CardContent>
-      </Card>
-    </>
-  );
+        )}
 
-  const renderBirthdayCard = () =>
-    birthdayName ? (
+        {documentsEnabled && (
+          <Card className="border-none kabeg-shadow">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-lg">Neue Dokumente</CardTitle>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground"
+                onClick={() => setLocation("/wissen")}
+              >
+                Alle anzeigen
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                  <h4 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4" />
+                    Neu hinzugefügt
+                  </h4>
+                  <div className="space-y-2">
+                    {DUMMY_NEW_SOPS.map((sop) => (
+                      <div
+                        key={sop.id}
+                        className="flex items-center justify-between p-3 rounded-lg hover:bg-secondary/50 transition-colors border border-transparent hover:border-border group cursor-pointer"
+                        data-testid={`sop-new-${sop.id}`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                            <FileText className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="font-medium text-foreground text-sm">
+                              {sop.title}
+                            </h4>
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] px-1.5 py-0"
+                              >
+                                {sop.category}
+                              </Badge>
+                              <span className="text-[10px] text-muted-foreground">
+                                {sop.date}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
+                    <Star className="w-4 h-4" />
+                    Meist genutzt
+                  </h4>
+                  <div className="space-y-2">
+                    {DUMMY_POPULAR_SOPS.map((sop) => (
+                      <div
+                        key={sop.id}
+                        className="flex items-center justify-between p-3 rounded-lg hover:bg-secondary/50 transition-colors border border-transparent hover:border-border group cursor-pointer"
+                        data-testid={`sop-popular-${sop.id}`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600 group-hover:bg-amber-500 group-hover:text-white transition-colors">
+                            <FileText className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="font-medium text-foreground text-sm">
+                              {sop.title}
+                            </h4>
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] px-1.5 py-0"
+                              >
+                                {sop.category}
+                              </Badge>
+                              <span className="text-[10px] text-muted-foreground">
+                                {sop.views} Aufrufe
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-amber-600 transition-colors" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </>
+    );
+  };
+
+  const renderBirthdayCard = () => {
+    if (!birthdayEnabled) return null;
+    return birthdayName ? (
       <Card className="border-none kabeg-shadow bg-gradient-to-br from-pink-50 to-orange-50">
         <CardContent className="p-4 flex items-center gap-4">
           <div className="w-12 h-12 rounded-xl bg-pink-100 flex items-center justify-center">
@@ -849,28 +911,31 @@ export default function Dashboard() {
         </CardContent>
       </Card>
     ) : null;
+  };
   return (
     <Layout title="Dashboard">
       <div className="hidden md:grid grid-cols-1 md:grid-cols-12 gap-6">
         <div className="md:col-span-8 space-y-6">
           {renderHeroCard()}
-          <Card className="border-none kabeg-shadow">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Users className="w-5 h-5" />
-                Heute anwesend
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0 px-4 pb-4 md:px-6 md:pb-6">
-              {renderAttendanceCardContent()}
-            </CardContent>
-          </Card>
+          {attendanceEnabled && (
+            <Card className="border-none kabeg-shadow">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Users className="w-5 h-5" />
+                  Heute anwesend
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4 md:px-6 md:pb-6">
+                {renderAttendanceCardContent()}
+              </CardContent>
+            </Card>
+          )}
           {renderMiscWidgets()}
         </div>
-      <div className="md:col-span-4 space-y-6">
-        {renderBirthdayCard()}
-        {weekPreviewEnabled && (
-          <Card className="border-none kabeg-shadow flex flex-col">
+        <div className="md:col-span-4 space-y-6">
+          {renderBirthdayCard()}
+          {weekPreviewEnabled && (
+            <Card className="border-none kabeg-shadow flex flex-col">
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
                   <CalendarDays className="w-5 h-5" />
@@ -881,49 +946,53 @@ export default function Dashboard() {
               <CardContent className="flex-1">
                 {renderWeekPreviewCardContent()}
               </CardContent>
-          </Card>
-        )}
-        {absencesEnabled && renderAbsencesCard()}
-      </div>
+            </Card>
+          )}
+          {absencesEnabled && renderAbsencesCard()}
+        </div>
       </div>
 
       <div className="md:hidden space-y-6 px-4">
         {renderHeroCard()}
-        <Card
-          className="border-none kabeg-shadow"
-          onTouchStart={handleTouchStart}
-          onTouchEnd={handleTouchEnd}
-        >
-          <CardContent className="pb-2">
-            <div className="flex gap-2">
-              {weekPreviewEnabled && (
-                <Button
-                  variant={mobilePanel === "week" ? "secondary" : "ghost"}
-                  size="sm"
-                  className="px-3 py-1 text-xs"
-                  onClick={() => setMobilePanel("week")}
-                  aria-pressed={mobilePanel === "week"}
-                >
-                  Woche
-                </Button>
-              )}
-              <Button
-                variant={mobilePanel === "team" ? "secondary" : "ghost"}
-                size="sm"
-                className="px-3 py-1 text-xs"
-                onClick={() => setMobilePanel("team")}
-                aria-pressed={mobilePanel === "team"}
-              >
-                Heute/Morgen
-              </Button>
-            </div>
-          </CardContent>
-          <CardContent className="pt-0">
-            {(weekPreviewEnabled && mobilePanel === "week"
-              ? renderWeekPreviewCardContent()
-              : renderAttendanceCardContent())}
-          </CardContent>
-        </Card>
+        {mobilePanelEnabled && (
+          <Card
+            className="border-none kabeg-shadow"
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+          >
+            <CardContent className="pb-2">
+              <div className="flex gap-2">
+                {weekPreviewEnabled && (
+                  <Button
+                    variant={mobilePanel === "week" ? "secondary" : "ghost"}
+                    size="sm"
+                    className="px-3 py-1 text-xs"
+                    onClick={() => setMobilePanel("week")}
+                    aria-pressed={mobilePanel === "week"}
+                  >
+                    Woche
+                  </Button>
+                )}
+                {attendanceEnabled && (
+                  <Button
+                    variant={mobilePanel === "team" ? "secondary" : "ghost"}
+                    size="sm"
+                    className="px-3 py-1 text-xs"
+                    onClick={() => setMobilePanel("team")}
+                    aria-pressed={mobilePanel === "team"}
+                  >
+                    Heute/Morgen
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+            <CardContent className="pt-0">
+              {(weekPreviewEnabled && mobilePanel === "week"
+                ? renderWeekPreviewCardContent()
+                : renderAttendanceCardContent())}
+            </CardContent>
+          </Card>
+        )}
         {renderBirthdayCard()}
         {absencesEnabled && renderAbsencesCard()}
         {renderMiscWidgets()}
