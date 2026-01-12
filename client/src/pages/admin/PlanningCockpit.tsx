@@ -104,15 +104,6 @@ export default function PlanningCockpit() {
       bg: "bg-indigo-50",
       requiredAnyCaps: ["departments.manage"],
     },
-    {
-      title: "Widgets bearbeiten",
-      description: "Dashboard-Widgets pro Benutzer ein-/ausblenden.",
-      icon: Building2,
-      action: () => setLocation("/admin/widgets"),
-      color: "text-cyan-600",
-      bg: "bg-cyan-50",
-      requiredAnyCaps: ["widgets.manage"],
-    },
   ];
 
   const visibleModules = isSuperuser
