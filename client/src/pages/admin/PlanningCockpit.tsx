@@ -16,6 +16,7 @@ import {
   Briefcase,
   Building,
   CalendarDays,
+  SlidersHorizontal,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
@@ -93,6 +94,8 @@ export default function PlanningCockpit() {
       description: "Dashboard-Widgets pro Benutzer ein-/ausblenden",
       icon: SlidersHorizontal,
       action: () => setLocation("/admin/widgets"),
+      color: "text-cyan-600",
+      bg: "bg-cyan-50",
       requiredAnyCaps: ["widgets.manage"],
     },
     {

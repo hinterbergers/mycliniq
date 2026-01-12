@@ -28,8 +28,10 @@ export default function WidgetManagement() {
 
   const hasAccess = isSuperuser || can("widgets.manage");
 
-  const authHeaders = useMemo(() => {
-    return token ? { Authorization: `Bearer ${token}` } : {};
+  const authHeaders = useMemo((): Record<string, string> => {
+    const h: Record<string, string> = {};
+    if (token) h.Authorization = `Bearer ${token}`;
+    return h;
   }, [token]);
 
   useEffect(() => {
@@ -149,7 +151,7 @@ export default function WidgetManagement() {
     setEnabledWidgets([]);
   };
 
-  const configurableWidgets = DASHBOARD_WIDGETS.filter((w) => w.key !== "hero");
+  const configurableWidgets = DASHBOARD_WIDGETS;
 
   if (!hasAccess) {
     return (
