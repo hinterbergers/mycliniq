@@ -1,12 +1,14 @@
 import { Router } from "express";
 import type { Express } from "express";
-import { db, eq, and, inArray } from "../../lib/db";
+import { db, eq, and, inArray, isNull } from "../../lib/db";
 import {
   clinics,
   departments,
   employees,
   permissions,
   userPermissions,
+  userDashboardWidgets,
+  users,
 } from "@shared/schema";
 import {
   authenticate,
@@ -73,7 +75,53 @@ const DEFAULT_PERMISSION_CATALOG = [
     label: "Kann Ausbildungsplan bearbeiten",
     scope: "department",
   },
+  {
+    key: "widgets.manage",
+    label: "Kann Dashboard-Widgets verwalten",
+    scope: "department",
+  },
 ];
+
+const sanitizeWidgetArray = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
+};
+
+async function getUserDashboardWidgets(
+  userId: string | number | null | undefined,
+  departmentId: number | null,
+): Promise<string[]> {
+  if (!userId) return [];
+  const normalizedUserId = String(userId);
+
+  if (departmentId !== null) {
+    const [row] = await db
+      .select({ enabledWidgets: userDashboardWidgets.enabledWidgets })
+      .from(userDashboardWidgets)
+      .where(
+        and(
+          eq(userDashboardWidgets.userId, normalizedUserId),
+          eq(userDashboardWidgets.departmentId, departmentId),
+        ),
+      )
+      .limit(1);
+    if (row) {
+      return sanitizeWidgetArray(row.enabledWidgets);
+    }
+  }
+
+  const [globalRow] = await db
+    .select({ enabledWidgets: userDashboardWidgets.enabledWidgets })
+    .from(userDashboardWidgets)
+    .where(
+      and(
+        eq(userDashboardWidgets.userId, normalizedUserId),
+        isNull(userDashboardWidgets.departmentId),
+      ),
+    )
+    .limit(1);
+  return sanitizeWidgetArray(globalRow?.enabledWidgets);
+}
 
 async function ensurePermissionCatalog(): Promise<void> {
   const existing = await db
@@ -189,6 +237,10 @@ export function registerAdminRoutes(app: Express): void {
               }
             : null,
           capabilities: req.user.capabilities,
+          enabledWidgets: await getUserDashboardWidgets(
+            req.user.id,
+            req.user.departmentId ?? null,
+          ),
         },
       });
     } catch (error) {
@@ -480,6 +532,124 @@ export function registerAdminRoutes(app: Express): void {
         res.status(500).json({
           success: false,
           error: "Fehler beim Aktualisieren der Berechtigungen",
+        });
+      }
+    },
+  );
+
+  // GET /api/admin/users/:id/widgets - Dashboard widgets for user
+  router.get(
+    "/users/:id/widgets",
+    requireTechnicalAdmin,
+    async (req, res) => {
+      try {
+        const userId = req.params.id;
+        const departmentIdParam = req.query.departmentId;
+        const departmentId =
+          typeof departmentIdParam === "string" &&
+          /^\d+$/.test(departmentIdParam)
+            ? Number(departmentIdParam)
+            : req.user?.departmentId ?? null;
+
+        const [user] = await db
+          .select()
+          .from(users)
+          .where(eq(users.id, userId));
+
+        if (!user) {
+          return res
+            .status(404)
+            .json({ success: false, error: "Benutzer nicht gefunden" });
+        }
+
+        const enabledWidgets = await getUserDashboardWidgets(
+          userId,
+          departmentId,
+        );
+        res.json({ success: true, data: { enabledWidgets } });
+      } catch (error) {
+        console.error(
+          "[API] Error in GET /api/admin/users/:id/widgets:",
+          error,
+        );
+        res.status(500).json({
+          success: false,
+          error: "Fehler beim Abrufen der Widget-Einstellungen",
+        });
+      }
+    },
+  );
+
+  // TODO: Replace requireTechnicalAdmin guard with widgets.manage capability when authorization is capability-driven.
+  router.put(
+    "/users/:id/widgets",
+    requireTechnicalAdmin,
+    async (req, res) => {
+      try {
+        const userId = req.params.id;
+        const departmentIdRaw = req.body?.departmentId;
+        const departmentId =
+          typeof departmentIdRaw === "number"
+            ? departmentIdRaw
+            : null;
+        const enabledWidgets = sanitizeWidgetArray(req.body?.enabledWidgets);
+
+        const [user] = await db
+          .select()
+          .from(users)
+          .where(eq(users.id, userId));
+
+        if (!user) {
+          return res
+            .status(404)
+            .json({ success: false, error: "Benutzer nicht gefunden" });
+        }
+
+        const existingRow = await db
+          .select()
+          .from(userDashboardWidgets)
+          .where(
+            and(
+              eq(userDashboardWidgets.userId, userId),
+              departmentId !== null
+                ? eq(userDashboardWidgets.departmentId, departmentId)
+                : isNull(userDashboardWidgets.departmentId),
+            ),
+          )
+          .limit(1);
+
+        if (existingRow.length) {
+          await db
+            .update(userDashboardWidgets)
+            .set({
+              enabledWidgets,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(userDashboardWidgets.userId, userId),
+                departmentId !== null
+                  ? eq(userDashboardWidgets.departmentId, departmentId)
+                  : isNull(userDashboardWidgets.departmentId),
+              ),
+            );
+        } else {
+          await db.insert(userDashboardWidgets).values({
+            userId,
+            departmentId,
+            enabledWidgets,
+          });
+        }
+
+        res.json({ success: true, data: { enabledWidgets } });
+      } catch (error) {
+        console.error(
+          "[API] Error in PUT /api/admin/users/:id/widgets:",
+          error,
+        );
+        res.status(500).json({
+          success: false,
+          error: "Fehler beim Speichern der Widget-Einstellungen",
         });
       }
     },

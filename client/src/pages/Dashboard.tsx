@@ -40,6 +40,11 @@ import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { getAustrianHoliday } from "@/lib/holidays";
 import { useToast } from "@/hooks/use-toast";
+import {
+  DEFAULT_ENABLED_WIDGETS,
+  DASHBOARD_WIDGETS,
+  type DashboardWidgetKey,
+} from "@/lib/dashboard-widgets";
 
 const DUTY_ABBREVIATIONS: Record<string, string> = {
   "gynaekologie (oa)": "Gyn",
@@ -367,6 +372,26 @@ export default function Dashboard() {
   const birthdayName = birthdayEntry
     ? buildFullName(birthdayEntry.firstName, birthdayEntry.lastName)
     : null;
+
+  const enabledWidgetKeys = useMemo<Set<DashboardWidgetKey>>(() => {
+    const configured = dashboardData?.enabledWidgets ?? [];
+    if (Array.isArray(configured) && configured.length > 0) {
+      const normalized = configured.filter((value): value is DashboardWidgetKey =>
+        DASHBOARD_WIDGETS.some((widget) => widget.key === value),
+      );
+      if (normalized.length) {
+        return new Set(normalized);
+      }
+    }
+    return new Set(DEFAULT_ENABLED_WIDGETS);
+  }, [dashboardData?.enabledWidgets]);
+
+  const isWidgetEnabled = useCallback(
+    (key: DashboardWidgetKey) => enabledWidgetKeys.has(key),
+    [enabledWidgetKeys],
+  );
+
+  const weekPreviewEnabled = isWidgetEnabled("week_preview");
 
   const renderHeroCard = () => (
     <div className="bg-gradient-to-br from-primary to-primary/80 rounded-2xl p-8 text-primary-foreground shadow-lg shadow-primary/10">
@@ -721,18 +746,20 @@ export default function Dashboard() {
         </div>
         <div className="md:col-span-4 space-y-6">
           {renderBirthdayCard()}
-          <Card className="border-none kabeg-shadow flex flex-col">
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <CalendarDays className="w-5 h-5" />
-                Wochenvorschau
-              </CardTitle>
-              <CardDescription>Deine nächsten Einsätze</CardDescription>
-            </CardHeader>
-            <CardContent className="flex-1">
-              {renderWeekPreviewCardContent()}
-            </CardContent>
-          </Card>
+          {weekPreviewEnabled && (
+            <Card className="border-none kabeg-shadow flex flex-col">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <CalendarDays className="w-5 h-5" />
+                  Wochenvorschau
+                </CardTitle>
+                <CardDescription>Deine nächsten Einsätze</CardDescription>
+              </CardHeader>
+              <CardContent className="flex-1">
+                {renderWeekPreviewCardContent()}
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
 
@@ -745,15 +772,17 @@ export default function Dashboard() {
         >
           <CardContent className="pb-2">
             <div className="flex gap-2">
-              <Button
-                variant={mobilePanel === "week" ? "secondary" : "ghost"}
-                size="sm"
-                className="px-3 py-1 text-xs"
-                onClick={() => setMobilePanel("week")}
-                aria-pressed={mobilePanel === "week"}
-              >
-                Woche
-              </Button>
+              {weekPreviewEnabled && (
+                <Button
+                  variant={mobilePanel === "week" ? "secondary" : "ghost"}
+                  size="sm"
+                  className="px-3 py-1 text-xs"
+                  onClick={() => setMobilePanel("week")}
+                  aria-pressed={mobilePanel === "week"}
+                >
+                  Woche
+                </Button>
+              )}
               <Button
                 variant={mobilePanel === "team" ? "secondary" : "ghost"}
                 size="sm"
@@ -766,9 +795,9 @@ export default function Dashboard() {
             </div>
           </CardContent>
           <CardContent className="pt-0">
-            {mobilePanel === "week"
+            {(weekPreviewEnabled && mobilePanel === "week"
               ? renderWeekPreviewCardContent()
-              : renderAttendanceCardContent()}
+              : renderAttendanceCardContent())}
           </CardContent>
         </Card>
         {renderBirthdayCard()}

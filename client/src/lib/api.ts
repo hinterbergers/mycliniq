@@ -49,6 +49,9 @@ import type {
   Message,
 } from "@shared/schema";
 import { readAuthToken } from "./authToken";
+import {
+  type DashboardWidgetKey,
+} from "@/lib/dashboard-widgets";
 
 const API_BASE = "/api";
 
@@ -84,6 +87,7 @@ export type DashboardResponse = {
   birthday: null | { firstName: string | null; lastName: string | null };
   weekPreview: DashboardDay[];
   attendanceWidget: DashboardAttendanceWidget | null;
+  enabledWidgets?: DashboardWidgetKey[];
 };
 
 export type DashboardAttendanceMember = {

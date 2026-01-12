@@ -400,6 +400,39 @@ export const insertUserPermissionSchema = createInsertSchema(
 export type InsertUserPermission = z.infer<typeof insertUserPermissionSchema>;
 export type UserPermission = typeof userPermissions.$inferSelect;
 
+export const userDashboardWidgets = pgTable(
+  "user_dashboard_widgets",
+  {
+    userId: varchar("user_id")
+      .references(() => users.id)
+      .notNull(),
+  departmentId: integer("department_id")
+    .references(() => departments.id),
+    enabledWidgets: jsonb("enabled_widgets").default(sql`'[]'::jsonb`).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("user_dashboard_widgets_user_department_idx").on(
+      table.userId,
+      table.departmentId,
+    ),
+    index("user_dashboard_widgets_user_id_idx").on(table.userId),
+  ],
+);
+
+export const insertUserDashboardWidgetSchema = createInsertSchema(
+  userDashboardWidgets,
+).omit({
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertUserDashboardWidget = z.infer<
+  typeof insertUserDashboardWidgetSchema
+>;
+export type UserDashboardWidget = typeof userDashboardWidgets.$inferSelect;
+
 // User sessions for "stay logged in" functionality
 export const sessions = pgTable("sessions", {
   id: varchar("id")
