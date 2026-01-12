@@ -89,6 +89,13 @@ export default function PlanningCockpit() {
       ],
     },
     {
+      title: "Widgets bearbeiten",
+      description: "Dashboard-Widgets pro Benutzer ein-/ausblenden",
+      icon: SlidersHorizontal,
+      action: () => setLocation("/admin/widgets"),
+      requiredAnyCaps: ["widgets.manage"],
+    },
+    {
       title: "Abteilungs-Einstellungen",
       description: "Abteilungs-Informationen, Zeitzone und Logo verwalten.",
       icon: Building,
