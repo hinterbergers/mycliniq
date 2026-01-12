@@ -237,7 +237,7 @@ export function registerAdminRoutes(app: Express): void {
             : null,
           capabilities: req.user.capabilities,
           enabledWidgets: await getUserDashboardWidgets(
-            req.user.id,
+            req.user.employeeId,
             req.user.departmentId ?? null,
           ),
         },
@@ -558,7 +558,6 @@ export function registerAdminRoutes(app: Express): void {
         const [employee] = await db
           .select({
             id: employees.id,
-            userId: employees.userId,
             departmentId: employees.departmentId,
           })
           .from(employees)
@@ -571,12 +570,12 @@ export function registerAdminRoutes(app: Express): void {
             .json({ success: false, error: "Benutzer nicht gefunden" });
         }
 
-        const resolvedUserId = employee.userId ? Number(employee.userId) : employee.id;
+        const widgetUserId = String(employee.id);
         const departmentId =
           departmentIdFromQuery ?? employee.departmentId ?? req.user?.departmentId ?? null;
 
         const enabledWidgets = await getUserDashboardWidgets(
-          resolvedUserId,
+          widgetUserId,
           departmentId,
         );
         res.json({ success: true, data: { enabledWidgets } });
@@ -609,7 +608,6 @@ export function registerAdminRoutes(app: Express): void {
         const [employee] = await db
           .select({
             id: employees.id,
-            userId: employees.userId,
             departmentId: employees.departmentId,
           })
           .from(employees)
@@ -622,8 +620,7 @@ export function registerAdminRoutes(app: Express): void {
             .json({ success: false, error: "Benutzer nicht gefunden" });
         }
 
-        const resolvedUserId = employee.userId ? Number(employee.userId) : employee.id;
-        const normalizedUserId = String(resolvedUserId);
+        const widgetUserId = String(employee.id);
 
         const departmentIdRaw = req.body?.departmentId;
         const departmentId =
@@ -638,7 +635,7 @@ export function registerAdminRoutes(app: Express): void {
           .from(userDashboardWidgets)
           .where(
             and(
-              eq(userDashboardWidgets.userId, normalizedUserId),
+              eq(userDashboardWidgets.userId, widgetUserId),
               departmentId !== null
                 ? eq(userDashboardWidgets.departmentId, departmentId)
                 : isNull(userDashboardWidgets.departmentId),
@@ -655,7 +652,7 @@ export function registerAdminRoutes(app: Express): void {
             })
             .where(
               and(
-                eq(userDashboardWidgets.userId, normalizedUserId),
+                eq(userDashboardWidgets.userId, widgetUserId),
                 departmentId !== null
                   ? eq(userDashboardWidgets.departmentId, departmentId)
                   : isNull(userDashboardWidgets.departmentId),
@@ -663,7 +660,7 @@ export function registerAdminRoutes(app: Express): void {
             );
         } else {
           await db.insert(userDashboardWidgets).values({
-            userId: normalizedUserId,
+            userId: widgetUserId,
             departmentId,
             enabledWidgets,
           });
