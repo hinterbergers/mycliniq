@@ -36,7 +36,7 @@ import {
   type DashboardAttendanceMember,
   type DashboardResponse,
 } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
+import { getAuthToken, useAuth } from "@/lib/auth";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
@@ -241,7 +241,8 @@ export default function Dashboard() {
     let cancelled = false;
 
     const headers: Record<string, string> = {};
-    if (token) headers.Authorization = `Bearer ${token}`;
+    const authToken = token ?? getAuthToken();
+    if (authToken) headers.Authorization = `Bearer ${authToken}`;
 
     fetch("/api/me", {
       headers,
