@@ -18,9 +18,11 @@ import {
   CalendarDays,
 } from "lucide-react";
 import { useLocation } from "wouter";
+import { useAuth } from "@/lib/auth";
 
 export default function PlanningCockpit() {
   const [, setLocation] = useLocation();
+  const { canAny, isSuperuser } = useAuth();
 
   const modules = [
     {
@@ -30,6 +32,7 @@ export default function PlanningCockpit() {
       action: () => setLocation("/admin/roster"),
       color: "text-primary",
       bg: "bg-primary/10",
+      requiredAnyCaps: ["dutyplan.edit", "dutyplan.publish"],
     },
     {
       title: "Wochenplan-Editor",
@@ -38,6 +41,7 @@ export default function PlanningCockpit() {
       action: () => setLocation("/admin/weekly"),
       color: "text-primary",
       bg: "bg-primary/10",
+      requiredAnyCaps: ["weeklyplan.edit", "dutyplan.edit"],
     },
     {
       title: "Urlaubsplan-Editor",
@@ -46,6 +50,11 @@ export default function PlanningCockpit() {
       action: () => setLocation("/admin/urlaubsplan"),
       color: "text-amber-600",
       bg: "bg-amber-50",
+      requiredAnyCaps: [
+        "vacation.approve",
+        "vacation.lock",
+        "absence.create",
+      ],
     },
     {
       title: "Mitarbeiter & Kompetenzen",
@@ -54,6 +63,7 @@ export default function PlanningCockpit() {
       action: () => setLocation("/admin/employees"),
       color: "text-blue-600",
       bg: "bg-blue-50",
+      requiredAnyCaps: ["users.manage"],
     },
     {
       title: "Arbeitsplätze & Räume",
@@ -62,6 +72,7 @@ export default function PlanningCockpit() {
       action: () => setLocation("/admin/resources"),
       color: "text-emerald-600",
       bg: "bg-emerald-50",
+      requiredAnyCaps: ["resources.manage"],
     },
     {
       title: "SOPs und Projekte verwalten",
@@ -70,16 +81,31 @@ export default function PlanningCockpit() {
       action: () => setLocation("/admin/projects"),
       color: "text-amber-600",
       bg: "bg-amber-50",
+      requiredAnyCaps: [
+        "sop.manage",
+        "sop.publish",
+        "project.manage",
+        "project.delete",
+      ],
     },
     {
-      title: "Klinik-Einstellungen",
+      title: "Abteilungs-Einstellungen",
       description: "Klinik-Informationen, Zeitzone und Logo verwalten.",
       icon: Building,
       action: () => setLocation("/admin/clinic"),
       color: "text-indigo-600",
       bg: "bg-indigo-50",
+      requiredAnyCaps: ["departments.manage"],
     },
   ];
+
+  const visibleModules = isSuperuser
+    ? modules
+    : modules.filter((module) =>
+        (module.requiredAnyCaps ?? []).length === 0
+          ? true
+          : canAny(module.requiredAnyCaps),
+      );
 
   return (
     <Layout title="Planungs-Cockpit (Sekretariat)">
@@ -94,7 +120,7 @@ export default function PlanningCockpit() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {modules.map((module, i) => (
+          {visibleModules.map((module, i) => (
             <Card
               key={i}
               className="border-none kabeg-shadow hover:shadow-md transition-all cursor-pointer group"

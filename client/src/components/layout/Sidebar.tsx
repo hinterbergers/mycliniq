@@ -29,8 +29,35 @@ export function Sidebar({
   className,
 }: SidebarProps) {
   const [location, setLocation] = useLocation();
-  const { employee, user, token, logout, isAdmin, isTechnicalAdmin } =
-    useAuth();
+  const {
+    employee,
+    user,
+    token,
+    logout,
+    isAdmin,
+    isTechnicalAdmin,
+    canAny,
+    isSuperuser,
+  } = useAuth();
+
+  const adminCaps = [
+    "dutyplan.edit",
+    "dutyplan.publish",
+    "weeklyplan.edit",
+    "vacation.approve",
+    "vacation.lock",
+    "absence.create",
+    "users.manage",
+    "users.permissions.manage",
+    "resources.manage",
+    "sop.manage",
+    "sop.publish",
+    "project.manage",
+    "project.delete",
+    "departments.manage",
+  ];
+
+  const hasAdminAccess = isSuperuser || canAny(adminCaps);
 
   const navItems = [
     { href: "/dienstplaene", label: "Dienstpläne", icon: CalendarDays },
@@ -107,7 +134,9 @@ export function Sidebar({
       )}
       <nav className="flex-1 px-3 py-4 space-y-1">
         {navItems
-          .filter((item) => !item.adminOnly || isTechnicalAdmin)
+          .filter((item) =>
+            item.adminOnly ? hasAdminAccess : true,
+          )
           .map((item) => {
             const isActive =
               location === item.href ||

@@ -354,9 +354,11 @@ export default function Settings() {
     isAdmin,
     isTechnicalAdmin,
     capabilities,
+    can,
+    isSuperuser,
   } = useAuth();
 
-  const APP_ROLE_OPTIONS: Employee["appRole"][] = ["Admin", "Editor", "User"];
+  const APP_ROLE_OPTIONS: Employee["appRole"][] = ["Admin", "User"];
 
   const PERMISSION_FALLBACK = [
     { key: "users.manage", label: "Kann Benutzer anlegen / verwalten" },
@@ -396,6 +398,7 @@ export default function Settings() {
     currentUser?.appRole === "Admin" ||
     currentUser?.role === "Primararzt" ||
     currentUser?.role === "1. Oberarzt";
+  const canManagePermissions = isSuperuser || can("users.permissions.manage");
 
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
@@ -1555,7 +1558,11 @@ export default function Settings() {
                 Langzeit-Abwesenheit
               </TabsTrigger>
             )}
-            <TabsTrigger value="permissions">Berechtigungen</TabsTrigger>
+            {canManagePermissions && (
+              <TabsTrigger value="permissions">
+                Berechtigungen verwalten
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="profile" className="space-y-4">
@@ -2740,89 +2747,87 @@ export default function Settings() {
             </TabsContent>
           )}
 
-          <TabsContent value="permissions" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Berechtigungen</CardTitle>
-                <CardDescription>
-                  {isTechnicalAdmin
-                    ? "Berechtigungen für diesen Benutzer verwalten"
-                    : "Ihre Berechtigungen (nur lesbar)"}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between rounded-lg border border-border p-4">
-                  <div>
-                    <Label>Kann Überdienst machen</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Nur Mitarbeiter mit dieser Freigabe können im Überdienst
-                      eingetragen werden.
-                    </p>
+          {canManagePermissions && (
+            <TabsContent value="permissions" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Berechtigungen</CardTitle>
+                  <CardDescription>Berechtigungen verwalten</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center justify-between rounded-lg border border-border p-4">
+                    <div>
+                      <Label>Kann Überdienst machen</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Nur Mitarbeiter mit dieser Freigabe können im Überdienst
+                        eingetragen werden.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={canOverduty}
+                      onCheckedChange={(checked) =>
+                        setCanOverduty(Boolean(checked))
+                      }
+                      disabled={!canEditRoleAndCompetencies}
+                    />
                   </div>
-                  <Switch
-                    checked={canOverduty}
-                    onCheckedChange={(checked) =>
-                      setCanOverduty(Boolean(checked))
-                    }
-                    disabled={!canEditRoleAndCompetencies}
-                  />
-                </div>
-                {loadingPermissions ? (
-                  <div className="flex items-center justify-center py-8 text-muted-foreground">
-                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                    Berechtigungen werden geladen...
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {permissionOptions.map((perm) => (
-                      <div
-                        key={perm.key}
-                        className="flex items-center justify-between rounded-lg border border-border p-3"
-                      >
-                        <Label
-                          htmlFor={`perm-${perm.key}`}
-                          className="text-sm font-normal flex-1"
+                  {loadingPermissions ? (
+                    <div className="flex items-center justify-center py-8 text-muted-foreground">
+                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                      Berechtigungen werden geladen...
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {permissionOptions.map((perm) => (
+                        <div
+                          key={perm.key}
+                          className="flex items-center justify-between rounded-lg border border-border p-3"
                         >
-                          {perm.label}
-                        </Label>
-                        <Switch
-                          id={`perm-${perm.key}`}
-                          checked={selectedPermissions.includes(perm.key)}
-                          onCheckedChange={(checked) =>
-                            updatePermission(perm.key, Boolean(checked))
-                          }
-                          disabled={!isTechnicalAdmin}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {isTechnicalAdmin && (
-                  <div className="pt-2">
-                    <Button
-                      onClick={handleSavePermissions}
-                      disabled={savingPermissions}
-                    >
-                      {savingPermissions && (
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      )}
-                      Speichern
-                    </Button>
-                  </div>
-                )}
-                {canEditRoleAndCompetencies && (
-                  <div className="pt-2">
-                    <Button onClick={handleSave} disabled={saving}>
-                      {saving && (
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      )}
-                      Überdienst speichern
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
+                          <Label
+                            htmlFor={`perm-${perm.key}`}
+                            className="text-sm font-normal flex-1"
+                          >
+                            {perm.label}
+                          </Label>
+                          <Switch
+                            id={`perm-${perm.key}`}
+                            checked={selectedPermissions.includes(perm.key)}
+                            onCheckedChange={(checked) =>
+                              updatePermission(perm.key, Boolean(checked))
+                            }
+                            disabled={!canManagePermissions}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {canManagePermissions && (
+                    <div className="pt-2">
+                      <Button
+                        onClick={handleSavePermissions}
+                        disabled={savingPermissions}
+                      >
+                        {savingPermissions && (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        )}
+                        Speichern
+                      </Button>
+                    </div>
+                  )}
+                  {canEditRoleAndCompetencies && (
+                    <div className="pt-2">
+                      <Button onClick={handleSave} disabled={saving}>
+                        {saving && (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        )}
+                        Überdienst speichern
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
         </Tabs>
       </div>
     </Layout>

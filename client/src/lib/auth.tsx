@@ -28,6 +28,12 @@ export interface UserData {
   isAdmin: boolean;
 }
 
+const CAPABILITY_ALIASES: Record<string, string[]> = {
+  "project.manage": ["project.manage", "perm.project_manage"],
+  "project.delete": ["project.delete", "perm.project_delete"],
+  "sop.publish": ["sop.publish", "perm.sop_publish"],
+};
+
 export interface MeData {
   user: UserData;
   department?: any;
@@ -60,6 +66,9 @@ export interface AuthContextType {
   setViewAsUser: (value: boolean) => void;
 
   capabilities: string[];
+  can: (capability: string) => boolean;
+  canAny: (caps: string[]) => boolean;
+  isSuperuser: boolean;
 
   login: (
     email: string,
@@ -150,6 +159,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const effectiveCapabilities = useMemo(
     () => (viewAsUser ? [] : capabilities),
     [capabilities, viewAsUser],
+  );
+  const isSuperuser = useMemo(() => {
+    if (!user) return false;
+    if (user.isAdmin) return true;
+    return user.systemRole !== "employee";
+  }, [user]);
+
+  const can = useCallback(
+    (capability: string) => {
+      const targets = CAPABILITY_ALIASES[capability] ?? [capability];
+      return targets.some((key) => effectiveCapabilities.includes(key));
+    },
+    [effectiveCapabilities],
+  );
+
+  const canAny = useCallback(
+    (caps: string[]) => caps.some((cap) => can(cap)),
+    [can],
   );
 
   const setViewAsUser = useCallback(
@@ -427,6 +454,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       viewAsUser,
       setViewAsUser,
       capabilities: effectiveCapabilities,
+      can,
+      canAny,
+      isSuperuser,
       login,
       logout,
       refreshAuth,
