@@ -1641,46 +1641,26 @@ export async function registerRoutes(
               ),
             );
 
-         // Planned absences (Urlaub, Zeitausgleich, Ruhezeit, Fortbildung, ...)
-const plannedRows = await db
-  .select({
-    startDate: plannedAbsences.startDate,
-    endDate: plannedAbsences.endDate,
-    reason: plannedAbsences.reason,
-    firstName: employees.firstName,
-    lastName: employees.lastName,
-  })
-  .from(plannedAbsences)
-  .innerJoin(employees, eq(plannedAbsences.employeeId, employees.id))
-  .where(
-    and(
-      eq(employees.departmentId, departmentId),
-      ne(plannedAbsences.status, "Abgelehnt"),
-      gte(plannedAbsences.endDate, from),
-      lte(plannedAbsences.startDate, to),
-    ),
-  );
+          // Recorded absences (optional) – e.g. Krankenstand
+          const recordedRows = await db
+            .select({
+              startDate: absences.startDate,
+              endDate: absences.endDate,
+              reason: absences.reason,
+              firstName: employees.firstName,
+              lastName: employees.lastName,
+            })
+            .from(absences)
+            .innerJoin(employees, eq(absences.employeeId, employees.id))
+            .where(
+              and(
+                eq(employees.departmentId, departmentId),
+                gte(absences.endDate, from),
+                lte(absences.startDate, to),
+              ),
+            );
 
-// Recorded absences (optional) – e.g. Krankenstand
-const recordedRows = await db
-  .select({
-    startDate: absences.startDate,
-    endDate: absences.endDate,
-    reason: absences.reason,
-    firstName: employees.firstName,
-    lastName: employees.lastName,
-  })
-  .from(absences)
-  .innerJoin(employees, eq(absences.employeeId, employees.id))
-  .where(
-    and(
-      eq(employees.departmentId, departmentId),
-      gte(absences.endDate, from),
-      lte(absences.startDate, to),
-    ),
-  );
-
-const rows = [...plannedRows, ...recordedRows];
+          const rows = [...plannedRows, ...recordedRows];
 
           const rows = [...plannedRows, ...recordedRows];
 
