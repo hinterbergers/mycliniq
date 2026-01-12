@@ -54,6 +54,20 @@ const MONTH_NAMES = [
   "Dezember",
 ];
 
+function formatOnlineUserDisplayName(user: { name?: string | null; lastName?: string | null }) {
+  const name = (user.name ?? "").trim();
+  const last = (user.lastName ?? "").trim();
+
+  if (!name && !last) return "–";
+  if (!name) return last;
+  if (!last) return name;
+
+  const tokens = name.toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.includes(last.toLowerCase())) return name;
+
+  return `${name} ${last}`.trim();
+}
+
 export function Header({
   title,
   onToggleMobileNav,
@@ -273,10 +287,18 @@ export function Header({
   ).length;
   const hasNotification = notifications.length > 0 || unreadSystemCount > 0;
   const onlineCount = onlineUsers.length;
+  const formatOnlineUserDisplayName = (user: OnlineUser) => {
+    const first = (user.name ?? "").trim();
+    const last = (user.lastName ?? "").trim();
+    if (!first && !last) return "Unbekannt";
+    if (!last) return first;
+    if (first.endsWith(last)) return first;
+    return `${first} ${last}`;
+  };
 
   return (
     <header className="h-16 kabeg-header sticky top-0 z-10 px-6 flex items-center justify-between shadow-sm">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 min-w-0">
         <Button
           type="button"
           variant="ghost"
@@ -289,12 +311,12 @@ export function Header({
         >
           <Menu className="w-5 h-5" />
         </Button>
-        <h2 className="text-xl font-semibold text-white tracking-tight">
+        <h2 className="text-xl font-semibold text-white tracking-tight truncate">
           {title}
         </h2>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-4 shrink-0">
         <div className="relative w-64 hidden md:block">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-white/60" />
           <Input
@@ -471,7 +493,7 @@ export function Header({
                 <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
                   {onlineUsers.map((user) => (
                     <p key={user.id} className="text-sm">
-                      {user.name} {user.lastName}
+                      {formatOnlineUserDisplayName(user)}
                     </p>
                   ))}
                 </div>
