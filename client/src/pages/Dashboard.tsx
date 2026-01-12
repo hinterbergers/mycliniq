@@ -142,15 +142,6 @@ const ABSENCE_KEYWORDS = [
   "krankenstand",
 ];
 const SICK_KEYWORDS = ["krankenstand", "pflegeurlaub"];
-const ABSENCE_SORT_ORDER = [
-  "Krankenstand",
-  "Urlaub",
-  "Fortbildung",
-  "Zeitausgleich",
-  "Ruhezeit",
-  "Pflegeurlaub",
-  "Sonstiges",
-];
 
 const normalizeWorkplace = (value?: string | null) => {
   const trimmed = (value ?? "").trim();
@@ -492,17 +483,14 @@ export default function Dashboard() {
     };
   }, [absencesEnabled]);
 
-  const sortedAbsenceItems = useMemo(() => {
-    const items = absencesData?.items ?? [];
-    const normalized = [...items];
-    return normalized.sort((a, b) => {
-      const rankA = ABSENCE_SORT_ORDER.indexOf(a.type);
-      const rankB = ABSENCE_SORT_ORDER.indexOf(b.type);
-      const orderA = rankA >= 0 ? rankA : ABSENCE_SORT_ORDER.length;
-      const orderB = rankB >= 0 ? rankB : ABSENCE_SORT_ORDER.length;
-      return orderA - orderB;
-    });
-  }, [absencesData?.items]);
+  const absenceDays = useMemo(
+    () => absencesData?.days ?? [],
+    [absencesData?.days],
+  );
+  const hasAbsenceEntries = useMemo(
+    () => absenceDays.some((day) => day.types.length > 0),
+    [absenceDays],
+  );
 
   const renderHeroCard = () => (
     <div className="bg-gradient-to-br from-primary to-primary/80 rounded-2xl p-8 text-primary-foreground shadow-lg shadow-primary/10">
@@ -636,7 +624,7 @@ export default function Dashboard() {
     if (absencesError) {
       return <p className="text-sm text-destructive">{absencesError}</p>;
     }
-    if (sortedAbsenceItems.length === 0) {
+    if (!hasAbsenceEntries) {
       return (
         <p className="text-sm text-muted-foreground">
           Keine Abwesenheiten im Zeitraum.
@@ -646,14 +634,35 @@ export default function Dashboard() {
 
     return (
       <div className="space-y-4">
-        {sortedAbsenceItems.map((item) => (
-          <div key={item.type} className="space-y-1">
-            <p className="text-sm font-semibold text-foreground">{item.type}</p>
-            <p className="text-xs text-muted-foreground leading-snug">
-              {item.names.join(", ")}
-            </p>
-          </div>
-        ))}
+        {absenceDays
+          .filter((day) => day.types.length > 0)
+          .map((day) => {
+            const dateLabel = format(
+              new Date(`${day.date}T00:00:00`),
+              "EEEE, dd.MM.",
+              { locale: de },
+            );
+
+            return (
+              <div key={day.date} className="space-y-2">
+                <p className="text-sm font-semibold text-foreground">
+                  {dateLabel}
+                </p>
+                <div className="space-y-2">
+                  {day.types.map((type) => (
+                    <div key={type.type} className="space-y-1">
+                      <p className="text-xs font-semibold text-muted-foreground">
+                        {type.type}
+                      </p>
+                      <p className="text-xs text-muted-foreground leading-snug">
+                        {type.names.join(", ")}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
       </div>
     );
   };
