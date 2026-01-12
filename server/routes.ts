@@ -1662,8 +1662,6 @@ export async function registerRoutes(
 
           const rows = [...plannedRows, ...recordedRows];
 
-          const rows = [...plannedRows, ...recordedRows];
-
           const fromDateObj = parseIsoDateUtc(from);
           const toDateObj = parseIsoDateUtc(to);
           const rangeEndDate =
