@@ -90,7 +90,7 @@ export default function PlanningCockpit() {
     },
     {
       title: "Abteilungs-Einstellungen",
-      description: "Klinik-Informationen, Zeitzone und Logo verwalten.",
+      description: "Abteilungs-Informationen, Zeitzone und Logo verwalten.",
       icon: Building,
       action: () => setLocation("/admin/clinic"),
       color: "text-indigo-600",
@@ -107,6 +107,10 @@ export default function PlanningCockpit() {
           : canAny(module.requiredAnyCaps),
       );
 
+  const canCreateAbsence = isSuperuser || canAny(["absence.create"]);
+  const canManageResources = isSuperuser || canAny(["resources.manage"]);
+  const canManageUsers = isSuperuser || canAny(["users.manage"]);
+
   return (
     <Layout title="Planungs-Cockpit (Sekretariat)">
       <div className="max-w-5xl mx-auto space-y-8">
@@ -120,12 +124,25 @@ export default function PlanningCockpit() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {visibleModules.map((module, i) => (
+          {visibleModules.length === 0 && (
             <Card
-              key={i}
+              className="md:col-span-2 border-dashed bg-secondary/20"
+              data-testid="card-module-empty"
+            >
+              <CardContent className="p-6">
+                <h3 className="font-semibold text-lg">Keine Verwaltungsrechte</h3>
+                <p className="text-muted-foreground text-sm mt-1">
+                  Du hast aktuell keine Verwaltungsrechte. Bitte wende dich an die Administration.
+                </p>
+              </CardContent>
+            </Card>
+          )}
+          {visibleModules.map((module) => (
+            <Card
+              key={module.title}
               className="border-none kabeg-shadow hover:shadow-md transition-all cursor-pointer group"
               onClick={module.action}
-              data-testid={`card-module-${i}`}
+              data-testid={`card-module-${module.title}`}
             >
               <CardContent className="p-6 flex items-start gap-4">
                 <div
@@ -158,32 +175,38 @@ export default function PlanningCockpit() {
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-3">
-              <Button
-                variant="outline"
-                className="bg-background border-dashed border-border"
-                onClick={() => console.log("Krankmeldung erfassen clicked")}
-                data-testid="button-sick-report"
-              >
-                + Krankmeldung erfassen
-              </Button>
-              <Button
-                variant="outline"
-                className="bg-background border-dashed border-border"
-                onClick={() =>
-                  console.log("Arbeitsplatz kurzfristig sperren clicked")
-                }
-                data-testid="button-lock-room"
-              >
-                + Arbeitsplatz kurzfristig sperren
-              </Button>
-              <Button
-                variant="outline"
-                className="bg-background border-dashed border-border"
-                onClick={() => console.log("User neu anlegen clicked")}
-                data-testid="button-new-user"
-              >
-                + User neu anlegen
-              </Button>
+              {canCreateAbsence && (
+                <Button
+                  variant="outline"
+                  className="bg-background border-dashed border-border"
+                  onClick={() => console.log("Krankmeldung erfassen clicked")}
+                  data-testid="button-sick-report"
+                >
+                  + Krankmeldung erfassen
+                </Button>
+              )}
+              {canManageResources && (
+                <Button
+                  variant="outline"
+                  className="bg-background border-dashed border-border"
+                  onClick={() =>
+                    console.log("Arbeitsplatz kurzfristig sperren clicked")
+                  }
+                  data-testid="button-lock-room"
+                >
+                  + Arbeitsplatz kurzfristig sperren
+                </Button>
+              )}
+              {canManageUsers && (
+                <Button
+                  variant="outline"
+                  className="bg-background border-dashed border-border"
+                  onClick={() => console.log("User neu anlegen clicked")}
+                  data-testid="button-new-user"
+                >
+                  + User neu anlegen
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
