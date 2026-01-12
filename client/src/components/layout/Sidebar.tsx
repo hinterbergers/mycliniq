@@ -34,7 +34,6 @@ export function Sidebar({
     user,
     token,
     logout,
-    isAdmin,
     canAny,
     isSuperuser,
   } = useAuth();
@@ -56,14 +55,9 @@ export function Sidebar({
     "departments.manage",
   ];
 
-  // Show Verwaltung for full admins/technical admins even if capabilities are not (yet) assigned.
-  // Capabilities remain the primary gating for non-admin users.
-  const hasAdminAccess =
-    isSuperuser ||
-    isAdmin ||
-    user?.isAdmin === true ||
-    user?.appRole === "Admin" ||
-    canAny(adminCaps);
+  // “Verwaltung” is shown if the user is a superuser (admin/technical admin)
+  // OR has at least one admin capability.
+  const hasAdminAccess = isSuperuser || canAny(adminCaps);
 
   const navItems = [
     { href: "/dienstplaene", label: "Dienstpläne", icon: CalendarDays },
