@@ -28,6 +28,7 @@ import {
   insertLongTermShiftWishSchema,
   insertLongTermAbsenceSchema,
   plannedAbsences,
+  absences,
   employees,
   shiftSwapRequests,
   sessions,
@@ -198,6 +199,46 @@ const formatDate = (date: Date) => {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+};
+
+const formatDisplayName = (firstName?: string | null, lastName?: string | null) => {
+  const parts = [firstName, lastName]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+  return parts.join(" ").trim();
+};
+
+const addDaysToIso = (iso: string, delta: number) => {
+  const base = parseIsoDateUtc(iso);
+  base.setUTCDate(base.getUTCDate() + delta);
+  return formatDateUtc(base);
+};
+
+const parseIsoDateParam = (value: unknown): string | null => {
+  if (typeof value !== "string") return null;
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+};
+
+const ABSENCE_TYPE_ORDER = [
+  "Krankenstand",
+  "Urlaub",
+  "Fortbildung",
+  "Zeitausgleich",
+  "Ruhezeit",
+  "Pflegeurlaub",
+  "Sonstiges",
+];
+
+const normalizeAbsenceType = (reason?: string | null) => {
+  if (!reason) return "Sonstiges";
+  const normalized = reason.trim().toLowerCase();
+  if (normalized.includes("kranken")) return "Krankenstand";
+  if (normalized.includes("pflegeurlaub")) return "Pflegeurlaub";
+  if (normalized.includes("urlaub")) return "Urlaub";
+  if (normalized.includes("fortbildung")) return "Fortbildung";
+  if (normalized.includes("zeitausgleich")) return "Zeitausgleich";
+  if (normalized.includes("ruhe")) return "Ruhezeit";
+  return "Sonstiges";
 };
 
 const countInclusiveDays = (start: Date, end: Date) => {
@@ -981,10 +1022,10 @@ export async function registerRoutes(
     },
   );
 
-  app.get(
-    "/api/dashboard",
-    requireAuth,
-    async (req: Request, res: Response) => {
+    app.get(
+      "/api/dashboard",
+      requireAuth,
+      async (req: Request, res: Response) => {
       try {
         const user = req.user!;
         const todayVienna = VIENNA_DATE_FORMAT.format(new Date());
@@ -1556,29 +1597,105 @@ export async function registerRoutes(
             }
           : null;
 
-        res.json({
-          today: {
-            date: todayEntry.date,
-            statusLabel: todayEntry.statusLabel,
-            workplace: todayEntry.workplace,
-            teammates: todayEntry.teammates,
-            absenceReason: todayEntry.absenceReason ?? null,
-            ze: todayZe,
-          },
-          birthday,
-          weekPreview,
-          attendanceWidget,
-        });
-      } catch (error) {
-        console.error("[Dashboard] Error:", error);
-        res.status(500).json({ error: "Fehler beim Laden des Dashboards" });
-      }
-    },
-  );
+          res.json({
+            today: {
+              date: todayEntry.date,
+              statusLabel: todayEntry.statusLabel,
+              workplace: todayEntry.workplace,
+              teammates: todayEntry.teammates,
+              absenceReason: todayEntry.absenceReason ?? null,
+              ze: todayZe,
+            },
+            birthday,
+            weekPreview,
+            attendanceWidget,
+          });
+        } catch (error) {
+          console.error("[Dashboard] Error:", error);
+          res.status(500).json({ error: "Fehler beim Laden des Dashboards" });
+        }
+      },
+    );
 
-  app.post(
-    "/api/zeitausgleich/:id/accept",
-    requireAuth,
+    app.get(
+      "/api/dashboard/absences",
+      requireAuth,
+      async (req: Request, res: Response) => {
+        try {
+          const user = req.user!;
+          const todayVienna = VIENNA_DATE_FORMAT.format(new Date());
+          const fromParam = parseIsoDateParam(req.query.from);
+          const toParam = parseIsoDateParam(req.query.to);
+          const from = fromParam ?? todayVienna;
+          const to =
+            toParam ?? addDaysToIso(todayVienna, DASHBOARD_PREVIEW_DAYS - 1);
+          const departmentId = user.departmentId;
+
+          if (!departmentId) {
+            return res.json({
+              success: true,
+              data: { from, to, items: [] },
+            });
+          }
+
+          const rows = await db
+            .select({
+              reason: absences.reason,
+              firstName: employees.firstName,
+              lastName: employees.lastName,
+            })
+            .from(absences)
+            .innerJoin(employees, eq(absences.employeeId, employees.id))
+            .where(
+              and(
+                eq(employees.departmentId, departmentId),
+                gte(absences.endDate, from),
+                lte(absences.startDate, to),
+              ),
+            );
+
+          const grouped = new Map<string, Set<string>>();
+          rows.forEach((row) => {
+            const type = normalizeAbsenceType(row.reason);
+            const name = formatDisplayName(row.firstName, row.lastName);
+            if (!name) return;
+            const bucket = grouped.get(type) ?? new Set<string>();
+            bucket.add(name);
+            grouped.set(type, bucket);
+          });
+
+          const items = Array.from(grouped.entries())
+            .map(([type, names]) => ({
+              type,
+              names: Array.from(names).sort((a, b) =>
+                a.localeCompare(b, "de"),
+              ),
+            }))
+            .sort((a, b) => {
+              const rankA = ABSENCE_TYPE_ORDER.indexOf(a.type);
+              const rankB = ABSENCE_TYPE_ORDER.indexOf(b.type);
+              const orderA = rankA >= 0 ? rankA : ABSENCE_TYPE_ORDER.length;
+              const orderB = rankB >= 0 ? rankB : ABSENCE_TYPE_ORDER.length;
+              return orderA - orderB;
+            });
+
+          res.json({
+            success: true,
+            data: { from, to, items },
+          });
+        } catch (error) {
+          console.error("[Dashboard] Absences error:", error);
+          res.status(500).json({
+            success: false,
+            error: "Fehler beim Laden der Abwesenheiten",
+          });
+        }
+      },
+    );
+
+    app.post(
+      "/api/zeitausgleich/:id/accept",
+      requireAuth,
     async (req: Request, res: Response) => {
       try {
         const zeId = Number(req.params.id);

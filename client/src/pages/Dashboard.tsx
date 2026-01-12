@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
   CalendarDays,
+  CalendarClock,
   FileText,
   ArrowRight,
   Star,
@@ -31,6 +32,7 @@ import {
 } from "lucide-react";
 import {
   dashboardApi,
+  type DashboardAbsencesResponse,
   type DashboardAttendanceMember,
   type DashboardResponse,
 } from "@/lib/api";
@@ -140,6 +142,15 @@ const ABSENCE_KEYWORDS = [
   "krankenstand",
 ];
 const SICK_KEYWORDS = ["krankenstand", "pflegeurlaub"];
+const ABSENCE_SORT_ORDER = [
+  "Krankenstand",
+  "Urlaub",
+  "Fortbildung",
+  "Zeitausgleich",
+  "Ruhezeit",
+  "Pflegeurlaub",
+  "Sonstiges",
+];
 
 const normalizeWorkplace = (value?: string | null) => {
   const trimmed = (value ?? "").trim();
@@ -211,7 +222,7 @@ const STAFF_WORKPLACE_CLASS =
   "text-[10px] sm:text-xs text-muted-foreground leading-tight";
 
 export default function Dashboard() {
-  const { employee, user } = useAuth();
+  const { employee, user, can } = useAuth();
   const [, setLocation] = useLocation();
 
   const firstName =
@@ -230,6 +241,10 @@ export default function Dashboard() {
   const [mobilePanel, setMobilePanel] = useState<"week" | "team">("week");
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const { toast } = useToast();
+  const [absencesData, setAbsencesData] =
+    useState<DashboardAbsencesResponse | null>(null);
+  const [absencesLoading, setAbsencesLoading] = useState(false);
+  const [absencesError, setAbsencesError] = useState<string | null>(null);
 
   const fetchDashboard = useCallback(() => dashboardApi.get(), []);
   const refreshDashboard = useCallback(async () => {
@@ -392,6 +407,53 @@ export default function Dashboard() {
   );
 
   const weekPreviewEnabled = isWidgetEnabled("week_preview");
+  const absencesEnabled = isWidgetEnabled("absences");
+
+  useEffect(() => {
+    if (!absencesEnabled) {
+      setAbsencesData(null);
+      setAbsencesError(null);
+      setAbsencesLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setAbsencesLoading(true);
+    setAbsencesError(null);
+
+    void dashboardApi
+      .getAbsences()
+      .then((data) => {
+        if (cancelled) return;
+        setAbsencesData(data);
+      })
+      .catch((error: Error) => {
+        if (cancelled) return;
+        setAbsencesError(
+          error.message || "Fehler beim Laden der Abwesenheiten",
+        );
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setAbsencesLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [absencesEnabled]);
+
+  const sortedAbsenceItems = useMemo(() => {
+    const items = absencesData?.items ?? [];
+    const normalized = [...items];
+    return normalized.sort((a, b) => {
+      const rankA = ABSENCE_SORT_ORDER.indexOf(a.type);
+      const rankB = ABSENCE_SORT_ORDER.indexOf(b.type);
+      const orderA = rankA >= 0 ? rankA : ABSENCE_SORT_ORDER.length;
+      const orderB = rankB >= 0 ? rankB : ABSENCE_SORT_ORDER.length;
+      return orderA - orderB;
+    });
+  }, [absencesData?.items]);
 
   const renderHeroCard = () => (
     <div className="bg-gradient-to-br from-primary to-primary/80 rounded-2xl p-8 text-primary-foreground shadow-lg shadow-primary/10">
@@ -514,6 +576,39 @@ export default function Dashboard() {
     </div>
   );
 
+  const renderAbsencesCardContent = () => {
+    if (absencesLoading) {
+      return (
+        <p className="text-sm text-muted-foreground">
+          Abwesenheiten werden geladen…
+        </p>
+      );
+    }
+    if (absencesError) {
+      return <p className="text-sm text-destructive">{absencesError}</p>;
+    }
+    if (sortedAbsenceItems.length === 0) {
+      return (
+        <p className="text-sm text-muted-foreground">
+          Keine Abwesenheiten im Zeitraum.
+        </p>
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        {sortedAbsenceItems.map((item) => (
+          <div key={item.type} className="space-y-1">
+            <p className="text-sm font-semibold text-foreground">{item.type}</p>
+            <p className="text-xs text-muted-foreground leading-snug">
+              {item.names.join(", ")}
+            </p>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   const renderWeekPreviewCardContent = () => (
     <div className="space-y-4">
       {isLoadingDashboard ? (
@@ -575,6 +670,34 @@ export default function Dashboard() {
         })
       )}
     </div>
+  );
+
+  const canCreateAbsence = can("absence.create");
+  const renderAbsencesCard = () => (
+    <Card className="border-none kabeg-shadow flex flex-col">
+      <CardHeader className="flex items-start justify-between gap-4">
+        <div>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <CalendarClock className="w-5 h-5" />
+            Abwesenheiten
+          </CardTitle>
+          <CardDescription>Nächste 7 Tage</CardDescription>
+        </div>
+        {canCreateAbsence && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-sm"
+            onClick={() => setLocation("/admin/urlaubsplan")}
+          >
+            Abwesenheit eintragen
+          </Button>
+        )}
+      </CardHeader>
+      <CardContent className="flex-1 pt-0">
+        {renderAbsencesCardContent()}
+      </CardContent>
+    </Card>
   );
 
   const renderMiscWidgets = () => (
@@ -744,10 +867,10 @@ export default function Dashboard() {
           </Card>
           {renderMiscWidgets()}
         </div>
-        <div className="md:col-span-4 space-y-6">
-          {renderBirthdayCard()}
-          {weekPreviewEnabled && (
-            <Card className="border-none kabeg-shadow flex flex-col">
+      <div className="md:col-span-4 space-y-6">
+        {renderBirthdayCard()}
+        {weekPreviewEnabled && (
+          <Card className="border-none kabeg-shadow flex flex-col">
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
                   <CalendarDays className="w-5 h-5" />
@@ -758,9 +881,10 @@ export default function Dashboard() {
               <CardContent className="flex-1">
                 {renderWeekPreviewCardContent()}
               </CardContent>
-            </Card>
-          )}
-        </div>
+          </Card>
+        )}
+        {absencesEnabled && renderAbsencesCard()}
+      </div>
       </div>
 
       <div className="md:hidden space-y-6 px-4">
@@ -801,6 +925,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
         {renderBirthdayCard()}
+        {absencesEnabled && renderAbsencesCard()}
         {renderMiscWidgets()}
       </div>
     </Layout>

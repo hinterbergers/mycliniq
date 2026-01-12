@@ -109,6 +109,17 @@ export type DashboardAttendanceWidget = {
   tomorrow: DashboardAttendanceDay;
 };
 
+export type DashboardAbsenceItem = {
+  type: string;
+  names: string[];
+};
+
+export type DashboardAbsencesResponse = {
+  from: string;
+  to: string;
+  items: DashboardAbsenceItem[];
+};
+
 export type MeResponse = {
   user?: {
     id: number;
@@ -187,6 +198,10 @@ export const dashboardApi = {
       throw new Error(`Fehler beim Laden (Status ${response.status})`);
     }
     return handleResponse<DashboardResponse>(response);
+  },
+  getAbsences: async (): Promise<DashboardAbsencesResponse> => {
+    const response = await apiFetch(`${API_BASE}/dashboard/absences`);
+    return handleResponse<DashboardAbsencesResponse>(response);
   },
   acceptZeitausgleich: async (
     id: number,
