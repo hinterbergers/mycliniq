@@ -3,7 +3,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
@@ -18,7 +17,7 @@ type AdminUser = {
 };
 
 export default function WidgetManagement() {
-  const { can, isSuperuser } = useAuth();
+  const { can, isSuperuser, token } = useAuth();
   const { toast } = useToast();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
@@ -29,10 +28,18 @@ export default function WidgetManagement() {
 
   const hasAccess = isSuperuser || can("widgets.manage");
 
+  const authHeaders = useMemo(() => {
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }, [token]);
+
   useEffect(() => {
     const loadUsers = async () => {
       try {
-        const res = await fetch("/api/admin/users");
+        const res = await fetch("/api/admin/users", {
+          headers: {
+            ...authHeaders,
+          },
+        });
         if (!res.ok) throw new Error("Fehler beim Laden der Benutzer");
         const body = await res.json();
         setUsers(
@@ -61,13 +68,17 @@ export default function WidgetManagement() {
       }
     };
     void loadUsers();
-  }, [toast]);
+  }, [toast, authHeaders]);
 
   const fetchWidgetsForUser = useMemo(
     () => async (userId: number) => {
       setLoadingWidgets(true);
       try {
-        const res = await fetch(`/api/admin/users/${userId}/widgets`);
+        const res = await fetch(`/api/admin/users/${userId}/widgets`, {
+          headers: {
+            ...authHeaders,
+          },
+        });
         if (!res.ok) {
           if (res.status === 404) {
             toast({
@@ -94,7 +105,7 @@ export default function WidgetManagement() {
         setLoadingWidgets(false);
       }
     },
-    [toast],
+    [toast, authHeaders],
   );
 
   useEffect(() => {
@@ -104,6 +115,7 @@ export default function WidgetManagement() {
   }, [selectedUserId, fetchWidgetsForUser]);
 
   const handleToggleWidget = (key: string) => {
+    if (!selectedUserId) return;
     setEnabledWidgets((prev) =>
       prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key],
     );
@@ -115,7 +127,7 @@ export default function WidgetManagement() {
     try {
       const res = await fetch(`/api/admin/users/${selectedUserId}/widgets`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({ enabledWidgets }),
       });
       if (!res.ok) throw new Error("Speichern fehlgeschlagen");
@@ -136,6 +148,8 @@ export default function WidgetManagement() {
   const handleReset = () => {
     setEnabledWidgets([]);
   };
+
+  const configurableWidgets = DASHBOARD_WIDGETS.filter((w) => w.key !== "hero");
 
   if (!hasAccess) {
     return (
@@ -170,6 +184,7 @@ export default function WidgetManagement() {
                     event.target.value ? Number(event.target.value) : null,
                   )
                 }
+                disabled={loadingUsers || saving}
               >
                 <option value="">Auswählen</option>
                 {users.map((user) => (
@@ -178,6 +193,11 @@ export default function WidgetManagement() {
                   </option>
                 ))}
               </select>
+              {loadingUsers && (
+                <p className="text-sm text-muted-foreground">
+                  Benutzer werden geladen…
+                </p>
+              )}
             </div>
 
             <Separator />
@@ -188,7 +208,7 @@ export default function WidgetManagement() {
               </p>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {DASHBOARD_WIDGETS.map((widget) => (
+                {configurableWidgets.map((widget) => (
                   <label
                     key={widget.key}
                     className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 cursor-pointer"
