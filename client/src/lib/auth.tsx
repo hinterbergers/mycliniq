@@ -32,6 +32,8 @@ const CAPABILITY_ALIASES: Record<string, string[]> = {
   "project.manage": ["project.manage", "perm.project_manage"],
   "project.delete": ["project.delete", "perm.project_delete"],
   "sop.publish": ["sop.publish", "perm.sop_publish"],
+  "sop.manage": ["sop.manage", "perm.sop_manage"],
+  "message_group.manage": ["message_group.manage", "perm.message_group_manage"],
 };
 
 export interface MeData {
@@ -81,7 +83,7 @@ export interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-const ADMIN_ROLES = ["Primararzt", "1. Oberarzt", "Sekretariat"] as const;
+// const ADMIN_ROLES = ["Primararzt", "1. Oberarzt", "Sekretariat"] as const;
 const VIEW_AS_USER_KEY = "cliniq_view_as_user";
 
 // Legacy helper used by some admin pages
@@ -125,20 +127,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isAuthenticated = useMemo(() => !!token && !!user, [token, user]);
 
   const isAdminActual = useMemo(() => {
-    // primär aus user
     if (user?.isAdmin) return true;
-
-    // fallback: aus employee.role (falls vorhanden)
-    if (employee) {
-      const role = (employee as any).role;
-      if (employee.isAdmin) return true;
-      if (
-        typeof role === "string" &&
-        (ADMIN_ROLES as readonly string[]).includes(role)
-      )
-        return true;
-    }
-    return false;
+    // Fallback for older responses where user may be missing; no title-based logic.
+    return !!employee?.isAdmin;
   }, [user, employee]);
 
   const isTechnicalAdminActual = useMemo(() => {
@@ -162,16 +153,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
   const isSuperuser = useMemo(() => {
     if (!user) return false;
-    if (user.isAdmin) return true;
-    return user.systemRole !== "employee";
-  }, [user]);
+    const actual = user.isAdmin || user.systemRole !== "employee";
+    return actual && !viewAsUser;
+  }, [user, viewAsUser]);
 
   const can = useCallback(
     (capability: string) => {
+      if (isSuperuser) return true;
       const targets = CAPABILITY_ALIASES[capability] ?? [capability];
       return targets.some((key) => effectiveCapabilities.includes(key));
     },
-    [effectiveCapabilities],
+    [effectiveCapabilities, isSuperuser],
   );
 
   const canAny = useCallback(
@@ -474,6 +466,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       viewAsUser,
       setViewAsUser,
       effectiveCapabilities,
+      can,
+      canAny,
+      isSuperuser,
       login,
       logout,
       refreshAuth,

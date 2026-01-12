@@ -77,48 +77,85 @@ async function getAuthUserByEmployeeId(
       return null;
     }
 
+    // Resolve numeric userId (permissions are stored by userId, not employeeId)
+    const userId = employee.userId ? parseInt(employee.userId) : employee.id;
+
     // Get department and clinic info
     let departmentId: number | undefined;
     let clinicId: number | undefined;
 
     if (employee.departmentId) {
       departmentId = employee.departmentId;
+    } else {
+      // Fallback: infer departmentId from any stored permissions (department-scoped)
+      const [permDept] = await db
+        .select({ departmentId: userPermissions.departmentId })
+        .from(userPermissions)
+        .where(eq(userPermissions.userId, userId))
+        .limit(1);
+      if (permDept?.departmentId) {
+        departmentId = permDept.departmentId;
+      }
+    }
+
+    if (departmentId) {
       const [department] = await db
         .select()
         .from(departments)
-        .where(eq(departments.id, employee.departmentId));
+        .where(eq(departments.id, departmentId));
 
       if (department) {
         clinicId = department.clinicId;
       }
     }
 
-    // Get user capabilities for current department
+    // Get user capabilities (DB-backed permissions). If departmentId is missing,
+    // fall back to all permissions for the user.
     let capabilities: string[] = [];
-    if (departmentId) {
-      const userPerms = await db
-        .select({
-          key: permissions.key,
-        })
-        .from(userPermissions)
-        .innerJoin(
-          permissions,
-          eq(userPermissions.permissionId, permissions.id),
-        )
-        .where(
-          and(
-            eq(userPermissions.userId, employeeId),
-            eq(userPermissions.departmentId, departmentId),
-          ),
-        );
+    const userPerms = await db
+      .select({
+        key: permissions.key,
+        departmentId: userPermissions.departmentId,
+      })
+      .from(userPermissions)
+      .innerJoin(permissions, eq(userPermissions.permissionId, permissions.id))
+      .where(
+        departmentId
+          ? and(
+              eq(userPermissions.userId, userId),
+              eq(userPermissions.departmentId, departmentId),
+            )
+          : eq(userPermissions.userId, userId),
+      );
 
-      capabilities = userPerms.map((p) => p.key);
+    // If we had no departmentId but permissions exist, pick the first as default
+    if (!departmentId && userPerms[0]?.departmentId) {
+      departmentId = userPerms[0].departmentId;
+      const [department] = await db
+        .select()
+        .from(departments)
+        .where(eq(departments.id, departmentId));
+      if (department) {
+        clinicId = department.clinicId;
+      }
     }
 
+    capabilities = userPerms.map((p) => p.key);
+
     const capabilityAliases: Record<string, string[]> = {
+      // SOP
       "sop.approve": ["perm.sop_manage", "perm.sop_publish"],
+      "perm.sop_manage": ["sop.approve", "sop.manage"],
+      "perm.sop_publish": ["sop.approve", "sop.publish"],
+
+      // Projects
       "project.close": ["perm.project_manage"],
+      "perm.project_manage": ["project.close", "project.manage"],
       "project.delete": ["perm.project_delete"],
+      "perm.project_delete": ["project.delete"],
+
+      // Message groups
+      "perm.message_group_manage": ["message_group.manage"],
     };
     if (capabilities.length) {
       const expanded = new Set(capabilities);
@@ -140,7 +177,7 @@ async function getAuthUserByEmployeeId(
     const isTechnicalAdmin = systemRole !== "employee";
 
     return {
-      id: employee.userId ? parseInt(employee.userId) : employee.id,
+      id: userId,
       employeeId: employee.id,
       appRole: employee.appRole as "Admin" | "Editor" | "User",
       systemRole,
