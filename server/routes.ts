@@ -48,6 +48,11 @@ import { registerModularApiRoutes } from "./api";
 import { employeeDoesShifts, OVERDUTY_KEY } from "@shared/shiftTypes";
 import { requireAuth } from "./api/middleware/auth";
 import { getWeek, getWeekYear } from "date-fns";
+import {
+  type AbsenceCategory,
+  mapAbsenceCategory,
+  ABSENCE_CATEGORY_ORDER,
+} from "./lib/absence-categories";
 
 const rosterShifts = rosterShiftsTable;
 
@@ -217,28 +222,6 @@ const addDaysToIso = (iso: string, delta: number) => {
 const parseIsoDateParam = (value: unknown): string | null => {
   if (typeof value !== "string") return null;
   return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
-};
-
-const ABSENCE_TYPE_ORDER = [
-  "Krankenstand",
-  "Urlaub",
-  "Fortbildung",
-  "Zeitausgleich",
-  "Ruhezeit",
-  "Pflegeurlaub",
-  "Sonstiges",
-];
-
-const normalizeAbsenceType = (reason?: string | null) => {
-  if (!reason) return "Sonstiges";
-  const normalized = reason.trim().toLowerCase();
-  if (normalized.includes("kranken")) return "Krankenstand";
-  if (normalized.includes("pflegeurlaub")) return "Pflegeurlaub";
-  if (normalized.includes("urlaub")) return "Urlaub";
-  if (normalized.includes("fortbildung")) return "Fortbildung";
-  if (normalized.includes("zeitausgleich")) return "Zeitausgleich";
-  if (normalized.includes("ruhe")) return "Ruhezeit";
-  return "Sonstiges";
 };
 
 const countInclusiveDays = (start: Date, end: Date) => {
@@ -1634,12 +1617,14 @@ export async function registerRoutes(
           if (!departmentId) {
             return res.json({
               success: true,
-              data: { from, to, items: [] },
+              data: { from, to, days: [] },
             });
           }
 
           const rows = await db
             .select({
+              startDate: absences.startDate,
+              endDate: absences.endDate,
               reason: absences.reason,
               firstName: employees.firstName,
               lastName: employees.lastName,
@@ -1654,34 +1639,97 @@ export async function registerRoutes(
               ),
             );
 
-          const grouped = new Map<string, Set<string>>();
+          const fromDateObj = parseIsoDateUtc(from);
+          const toDateObj = parseIsoDateUtc(to);
+          const rangeEndDate =
+            toDateObj < fromDateObj ? fromDateObj : toDateObj;
+          const adjustedTo = toDateObj < fromDateObj ? from : to;
+          const totalDays =
+            Math.floor(
+              (rangeEndDate.getTime() - fromDateObj.getTime()) / DAY_MS,
+            ) + 1;
+          const dayCount = Math.max(totalDays, 1);
+          const dayRange = buildPreviewDateRange(from, dayCount);
+
+          const dayMap = new Map<
+            string,
+            Map<AbsenceCategory, Set<string>>
+          >();
+
           rows.forEach((row) => {
-            const type = normalizeAbsenceType(row.reason);
             const name = formatDisplayName(row.firstName, row.lastName);
             if (!name) return;
-            const bucket = grouped.get(type) ?? new Set<string>();
-            bucket.add(name);
-            grouped.set(type, bucket);
+
+            const type = mapAbsenceCategory(row.reason);
+            const entryStart = parseIsoDateUtc(
+              typeof row.startDate === "string"
+                ? row.startDate
+                : formatDate(row.startDate),
+            );
+            const entryEnd = parseIsoDateUtc(
+              typeof row.endDate === "string"
+                ? row.endDate
+                : formatDate(row.endDate),
+            );
+
+            if (entryEnd < fromDateObj || entryStart > rangeEndDate) {
+              return;
+            }
+
+            const iterationStart =
+              entryStart < fromDateObj
+                ? new Date(fromDateObj)
+                : new Date(entryStart);
+            const iterationEnd =
+              entryEnd > rangeEndDate
+                ? new Date(rangeEndDate)
+                : new Date(entryEnd);
+
+            const cursor = new Date(iterationStart);
+            while (cursor <= iterationEnd) {
+              const dateKey = formatDateUtc(cursor);
+              const typeMap = dayMap.get(dateKey) ?? new Map();
+              const nameSet = typeMap.get(type) ?? new Set<string>();
+              nameSet.add(name);
+              typeMap.set(type, nameSet);
+              dayMap.set(dateKey, typeMap);
+              cursor.setUTCDate(cursor.getUTCDate() + 1);
+            }
           });
 
-          const items = Array.from(grouped.entries())
-            .map(([type, names]) => ({
-              type,
-              names: Array.from(names).sort((a, b) =>
-                a.localeCompare(b, "de"),
-              ),
-            }))
-            .sort((a, b) => {
-              const rankA = ABSENCE_TYPE_ORDER.indexOf(a.type);
-              const rankB = ABSENCE_TYPE_ORDER.indexOf(b.type);
-              const orderA = rankA >= 0 ? rankA : ABSENCE_TYPE_ORDER.length;
-              const orderB = rankB >= 0 ? rankB : ABSENCE_TYPE_ORDER.length;
-              return orderA - orderB;
-            });
+          const days = dayRange.map((date) => {
+            const typeMap = dayMap.get(date);
+            if (!typeMap) {
+              return { date, types: [] };
+            }
+
+            const types = Array.from(typeMap.entries())
+              .map(([type, names]) => ({
+                type,
+                names: Array.from(names).sort((a, b) =>
+                  a.localeCompare(b, "de"),
+                ),
+              }))
+              .sort((a, b) => {
+                const rankA = ABSENCE_CATEGORY_ORDER.indexOf(
+                  a.type as AbsenceCategory,
+                );
+                const rankB = ABSENCE_CATEGORY_ORDER.indexOf(
+                  b.type as AbsenceCategory,
+                );
+                const orderA =
+                  rankA >= 0 ? rankA : ABSENCE_CATEGORY_ORDER.length;
+                const orderB =
+                  rankB >= 0 ? rankB : ABSENCE_CATEGORY_ORDER.length;
+                return orderA - orderB;
+              });
+
+            return { date, types };
+          });
 
           res.json({
             success: true,
-            data: { from, to, items },
+            data: { from, to: adjustedTo, days },
           });
         } catch (error) {
           console.error("[Dashboard] Absences error:", error);

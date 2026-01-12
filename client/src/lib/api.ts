@@ -114,10 +114,15 @@ export type DashboardAbsenceItem = {
   names: string[];
 };
 
+export type DashboardAbsenceDay = {
+  date: string;
+  types: DashboardAbsenceItem[];
+};
+
 export type DashboardAbsencesResponse = {
   from: string;
   to: string;
-  items: DashboardAbsenceItem[];
+  days: DashboardAbsenceDay[];
 };
 
 export type MeResponse = {
