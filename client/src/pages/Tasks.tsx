@@ -26,6 +26,7 @@ import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Plus, Pencil, ListCheck, CheckCircle } from "lucide-react";
 import type { Employee } from "@shared/schema";
+import { useAuth } from "@/lib/auth";
 
 const VIEW_OPTIONS: Array<{
   value: "my" | "team" | "responsibilities";
@@ -62,6 +63,8 @@ const TYPE_BADGE_STYLES: Record<TaskType, string> = {
 
 export default function Tasks() {
   const { toast } = useToast();
+  const { can } = useAuth();
+  const canManageTasks = can("project.manage");
   const [view, setView] = useState<"my" | "team" | "responsibilities">("my");
   const [statusFilter, setStatusFilter] = useState<TaskLifecycleStatus | "all">(
     "all",
@@ -587,7 +590,7 @@ export default function Tasks() {
                   >
                     Zur Freigabe einreichen
                   </Button>
-                ) : (
+                ) : canManageTasks ? (
                   <>
                     <Button
                       variant="outline"
@@ -606,6 +609,10 @@ export default function Tasks() {
                       Als erledigt markieren
                     </Button>
                   </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Wird zur Freigabe eingereicht.
+                  </p>
                 )}
               </div>
             )}
