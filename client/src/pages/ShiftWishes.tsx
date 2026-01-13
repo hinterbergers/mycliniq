@@ -50,6 +50,7 @@ import {
   Trash2,
   Loader2,
   Info,
+  Pencil,
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -299,6 +300,31 @@ export default function ShiftWishes() {
     }
   };
 
+  const handleReopen = async () => {
+    if (!wish?.id) return;
+
+    try {
+      setSaving(true);
+      const updated = await shiftWishesApi.reopen(wish.id);
+      setWish(updated);
+
+      toast({
+        title: "Bearbeitung aktiviert",
+        description: "Ihr Wunsch ist wieder im Entwurfsstatus und kann bearbeitet werden",
+      });
+
+      loadData();
+    } catch (error) {
+      toast({
+        title: "Fehler",
+        description: "Bearbeiten fehlgeschlagen",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleAddAbsence = async () => {
     if (!currentUser || !planningMonth || !newAbsenceStart || !newAbsenceEnd)
       return;
@@ -521,10 +547,25 @@ export default function ShiftWishes() {
 
           <div className="flex items-center gap-4">
             {isSubmitted ? (
-              <Badge variant="default" className="gap-1 bg-green-600">
-                <CheckCircle className="w-3 h-3" />
-                Eingereicht
-              </Badge>
+              <>
+                <Badge variant="default" className="gap-1 bg-green-600">
+                  <CheckCircle className="w-3 h-3" />
+                  Eingereicht
+                </Badge>
+                <Button
+                  variant="outline"
+                  onClick={handleReopen}
+                  disabled={saving}
+                  data-testid="button-reopen"
+                >
+                  {saving ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Pencil className="w-4 h-4 mr-2" />
+                  )}
+                  Bearbeiten
+                </Button>
+              </>
             ) : (
               <Badge variant="secondary" className="gap-1">
                 <Clock className="w-3 h-3" />

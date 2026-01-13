@@ -1820,6 +1820,13 @@ export const shiftWishesApi = {
     return handleResponse<ShiftWish>(response);
   },
 
+  reopen: async (id: number): Promise<ShiftWish> => {
+    const response = await apiFetch(`${API_BASE}/shift-wishes/${id}/reopen`, {
+      method: "POST",
+    });
+    return handleResponse<ShiftWish>(response);
+  },
+
   delete: async (id: number): Promise<void> => {
     const response = await apiFetch(`${API_BASE}/shift-wishes/${id}`, {
       method: "DELETE",

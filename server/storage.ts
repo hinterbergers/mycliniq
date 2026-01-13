@@ -997,7 +997,19 @@ export class DatabaseStorage implements IStorage {
       );
     return result.length;
   }
+  async reopenShiftWish(id: number) {
+    const updated = await db
+      .update(shiftWishes)
+      .set({
+        status: "Entwurf",
+        submittedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(shiftWishes.id, id))
+      .returning();
 
+    return updated[0];
+  }
   // Long-term shift wishes methods
   async getLongTermShiftWishByEmployee(
     employeeId: number,

@@ -3062,7 +3062,19 @@ export async function registerRoutes(
       }
     },
   );
-
+  app.post("/api/shift-wishes/:id/reopen", async (req: Request, res: Response) => {
+    const id = Number(req.params.id);
+  
+    // ✅ WICHTIG: hier 1:1 dieselben Auth-/Permission-Checks wie im /submit-Handler kopieren
+    // (also: user muss eingeloggt sein, owner/admin-check etc.)
+  
+    const updated = await storage.reopenShiftWish(id);
+    if (!updated) {
+      return res.status(404).json({ message: "Shift wish not found" });
+    }
+  
+    res.json(updated);
+  });
   app.delete("/api/shift-wishes/:id", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
