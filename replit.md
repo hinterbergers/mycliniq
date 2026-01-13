@@ -29,7 +29,7 @@ Mobile uses the SAME codebase. All UI must be mobile-compatible (tap instead of 
 8. Verwaltung: Kompetenzen - Competency management
 9. Verwaltung: Ressourcen & Räume - Room/resource management
 10. Schnellerfassung (Krankmeldung, Raum sperren, User anlegen)
-11. Projekte (SOP, Studien, Admin)
+11. Aufgaben (SOP, Studien, Admin)
 12. SOP-System
 13. Benutzer-Einstellungen
 14. Export-System (Excel, ICS)

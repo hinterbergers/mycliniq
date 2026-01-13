@@ -56,12 +56,12 @@ const DEFAULT_PERMISSION_CATALOG = [
   },
   {
     key: "perm.project_manage",
-    label: "Kann Projekte verwalten",
+    label: "Kann Aufgaben verwalten",
     scope: "department",
   },
   {
     key: "perm.project_delete",
-    label: "Kann Projekte loeschen",
+    label: "Kann Aufgaben loeschen",
     scope: "department",
   },
   {

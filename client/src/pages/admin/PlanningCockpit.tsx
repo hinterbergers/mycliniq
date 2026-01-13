@@ -76,8 +76,8 @@ export default function PlanningCockpit() {
       requiredAnyCaps: ["resources.manage"],
     },
     {
-      title: "SOPs und Projekte verwalten",
-      description: "SOPs, Projekte und Freigaben zentral steuern.",
+      title: "SOPs und Aufgaben verwalten",
+      description: "SOPs, Aufgaben und Freigaben zentral steuern.",
       icon: Briefcase,
       action: () => setLocation("/admin/projects"),
       color: "text-amber-600",

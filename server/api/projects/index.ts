@@ -344,7 +344,7 @@ export function registerProjectRoutes(router: Router) {
         .where(eq(projectInitiatives.id, projectId));
 
       if (!project || project.deletedAt) {
-        return notFound(res, "Projekt");
+        return notFound(res, "Aufgabe");
       }
 
       const member = await isMember(projectId, req.user.employeeId);
@@ -449,7 +449,7 @@ export function registerProjectRoutes(router: Router) {
 
       if (finalStatus === "proposed") {
         await notifyPermissionGroup(req.user.departmentId, PROJECT_MANAGE_CAP, {
-          title: "Neues Projekt vorgeschlagen",
+          title: "Neue Aufgabe vorgeschlagen",
           message: `${req.user.name} ${req.user.lastName} hat \"${title}\" vorgeschlagen.`,
           link: `/admin/projects?project=${project.id}`,
           metadata: { projectId: project.id },
@@ -476,7 +476,7 @@ export function registerProjectRoutes(router: Router) {
         .from(projectInitiatives)
         .where(eq(projectInitiatives.id, projectId));
       if (!existing || existing.deletedAt) {
-        return notFound(res, "Projekt");
+        return notFound(res, "Aufgabe");
       }
       const memberRole = await getMemberRole(projectId, req.user.employeeId);
       const ownerId = existing.ownerId || existing.createdById;
@@ -532,7 +532,7 @@ export function registerProjectRoutes(router: Router) {
         .from(projectInitiatives)
         .where(eq(projectInitiatives.id, projectId));
       if (!existing || existing.deletedAt) {
-        return notFound(res, "Projekt");
+        return notFound(res, "Aufgabe");
       }
       await db
         .delete(projectMembers)
@@ -564,14 +564,14 @@ export function registerProjectRoutes(router: Router) {
         .select()
         .from(projectInitiatives)
         .where(eq(projectInitiatives.id, projectId));
-      if (!existing || existing.deletedAt) return notFound(res, "Projekt");
+      if (!existing || existing.deletedAt) return notFound(res, "Aufgabe");
       const [updated] = await db
         .update(projectInitiatives)
         .set({ status: "active", updatedAt: new Date() })
         .where(eq(projectInitiatives.id, projectId))
         .returning();
       await notifyProjectOwners(projectId, {
-        title: "Projekt angenommen",
+        title: "Aufgabe angenommen",
         message: `\"${existing.title}\" wurde zur Bearbeitung angenommen.`,
         link: `/admin/projects?project=${projectId}`,
       });
@@ -599,7 +599,7 @@ export function registerProjectRoutes(router: Router) {
         .select()
         .from(projectInitiatives)
         .where(eq(projectInitiatives.id, projectId));
-      if (!existing || existing.deletedAt) return notFound(res, "Projekt");
+      if (!existing || existing.deletedAt) return notFound(res, "Aufgabe");
 
       const [updated] = await db
         .update(projectInitiatives)
@@ -612,7 +612,7 @@ export function registerProjectRoutes(router: Router) {
         .returning();
 
       await notifyProjectOwners(projectId, {
-        title: "Projekt abgelehnt",
+        title: "Aufgabe abgelehnt",
         message: `\"${existing.title}\" wurde abgelehnt: ${req.body.reason}`,
         link: `/admin/projects`,
       });
@@ -635,7 +635,7 @@ export function registerProjectRoutes(router: Router) {
         .select()
         .from(projectInitiatives)
         .where(eq(projectInitiatives.id, projectId));
-      if (!existing || existing.deletedAt) return notFound(res, "Projekt");
+      if (!existing || existing.deletedAt) return notFound(res, "Aufgabe");
       const [updated] = await db
         .update(projectInitiatives)
         .set({ status: "done", updatedAt: new Date() })
@@ -664,7 +664,7 @@ export function registerProjectRoutes(router: Router) {
         .select()
         .from(projectInitiatives)
         .where(eq(projectInitiatives.id, projectId));
-      if (!existing || existing.deletedAt) return notFound(res, "Projekt");
+      if (!existing || existing.deletedAt) return notFound(res, "Aufgabe");
 
       const [updated] = await db
         .update(projectInitiatives)

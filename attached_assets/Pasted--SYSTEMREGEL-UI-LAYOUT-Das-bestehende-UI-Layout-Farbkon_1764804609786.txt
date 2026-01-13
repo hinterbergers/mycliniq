@@ -71,7 +71,7 @@ Capacitor-Pflichtregeln
 	7.	Verwaltung: Mitarbeiter & Kompetenzen
 	8.	Verwaltung: Ressourcen & Räume
 	9.	Schnellerfassung
-	10.	Projekte & Aufgaben
+	10.	Aufgaben
 	11.	SOP-System
 	12.	Benutzer-Einstellungen
 	13.	Export (Excel)
@@ -81,7 +81,7 @@ Capacitor-Pflichtregeln
 	17.	zentraler KI-Regelsatz
 	18.	plattformübergreifender Build
 	19.	MyCliniQ Naming
-	20.	Projekt-Integrität
+	20.	Aufgaben-Integrität
 
 Alle Module müssen kompatibel, konsistent und miteinander synchronisiert bleiben.
 
@@ -284,9 +284,9 @@ Passwort: wilkommen123
 
 ⸻
 
-🔷 11. PROJEKTE
+🔷 11. Aufgaben
 
-Projekt enthält:
+Aufgabe enthält:
 	•	Kategorie (SOP, Studie, Admin …)
 	•	Verantwortlicher
 	•	Mitwirkende
@@ -295,7 +295,7 @@ Projekt enthält:
 	•	Kommentare
 	•	Fälligkeitsdatum
 
-Workflow SOP-Projekt:
+Workflow SOP-Aufgabe:
 Erstellt → Bearbeitung → OA-Review → Primar-Freigabe → SOP veröffentlicht
 
 Export:
@@ -364,7 +364,7 @@ Alle folgenden Listen müssen nach Excel exportierbar sein:
 	•	Räume & Ressourcen
 	•	Kompetenzenliste
 	•	SOP-Liste
-	•	Projekte
+	•	Aufgaben
 
 Format .xlsx.
 
@@ -398,7 +398,7 @@ Typen:
 	•	Planänderung
 	•	Urlaubsstatus
 	•	Dienstanfragen
-	•	Projektupdates
+	•	Aufgabeupdates
 	•	neue SOP
 	•	Geburtstage
 
@@ -415,7 +415,7 @@ Jede Änderung wird protokolliert:
 	•	Räume
 	•	Mitarbeiter
 	•	SOPs
-	•	Projekte
+	•	Aufgaben
 
 ⸻
 
@@ -428,7 +428,7 @@ Jede Änderung wird protokolliert:
 
 ⸻
 
-🔷 20. PROJEKT-INTEGRITÄT
+🔷 20. AUFGABEN-INTEGRITÄT
 
 Ghostwriter/Replit muss immer sicherstellen, dass:
 	•	keine bestehenden Komponenten beschädigt werden

@@ -115,7 +115,7 @@ export function registerModularApiRoutes(app: Express): void {
   registerVacationRuleRoutes(vacationRulesRouter);
   app.use("/api/vacation-rules", vacationRulesRouter);
 
-  // Projects API (Projekte)
+  // Projects API (Aufgaben)
   // TODO: Check project membership for access
   // TODO: Add requireAdmin for DELETE
   const projectsRouter = Router();

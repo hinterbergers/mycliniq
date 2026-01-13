@@ -372,8 +372,8 @@ export default function Settings() {
     { key: "absence.create", label: "Kann Abwesenheiten eintragen" },
     { key: "perm.sop_manage", label: "Kann SOPs verwalten" },
     { key: "perm.sop_publish", label: "Kann SOPs freigeben" },
-    { key: "perm.project_manage", label: "Kann Projekte verwalten" },
-    { key: "perm.project_delete", label: "Kann Projekte loeschen" },
+    { key: "perm.project_manage", label: "Kann Aufgaben verwalten" },
+    { key: "perm.project_delete", label: "Kann Aufgaben loeschen" },
     { key: "perm.message_group_manage", label: "Kann Gruppen verwalten" },
     { key: "training.edit", label: "Kann Ausbildungsplan bearbeiten" },
   ];

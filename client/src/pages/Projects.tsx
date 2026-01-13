@@ -81,7 +81,7 @@ export default function Projects() {
       } catch (error) {
         toast({
           title: "Fehler",
-          description: "Projekte konnten nicht geladen werden",
+          description: "Aufgaben konnten nicht geladen werden",
           variant: "destructive",
         });
       } finally {
@@ -118,7 +118,7 @@ export default function Projects() {
     } catch (error) {
       toast({
         title: "Fehler",
-        description: "Projekt konnte nicht geladen werden",
+        description: "Aufgaben konnte nicht geladen werden",
         variant: "destructive",
       });
       setDetailOpen(false);
@@ -141,7 +141,7 @@ export default function Projects() {
     if (!title) {
       toast({
         title: "Titel fehlt",
-        description: "Bitte einen Projekttitel angeben.",
+        description: "Bitte einen Aufgabentitel angeben.",
       });
       return;
     }
@@ -164,14 +164,14 @@ export default function Projects() {
         createdById: employee.id,
       });
       toast({
-        title: "Projekt vorgeschlagen",
+        title: "Aufgaben vorgeschlagen",
         description: "Der Vorschlag wurde zur Freigabe eingereicht.",
       });
       setEditorOpen(false);
     } catch (error) {
       toast({
         title: "Fehler",
-        description: "Projekt konnte nicht angelegt werden",
+        description: "Aufgabe konnte nicht angelegt werden",
         variant: "destructive",
       });
     } finally {
@@ -180,14 +180,14 @@ export default function Projects() {
   };
 
   return (
-    <Layout title="Projekte">
+    <Layout title="Aufgaben">
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex flex-col gap-3">
           <h2 className="text-2xl font-semibold tracking-tight">
-            Abgeschlossene Projekte
+            Abgeschlossene Aufgaben
           </h2>
           <p className="text-muted-foreground max-w-2xl">
-            Freigegebene Projekte und SOP-Umsetzungen zur Information der
+            Freigegebene Aufgaben und SOP-Umsetzungen zur Information der
             Abteilung.
           </p>
         </div>
@@ -196,7 +196,7 @@ export default function Projects() {
           <div className="relative w-full max-w-md">
             <Search className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Projekte durchsuchen..."
+              placeholder="Aufgaben durchsuchen..."
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
               className="pl-9"
@@ -216,18 +216,18 @@ export default function Projects() {
           </div>
           <Button onClick={openEditor}>
             <Plus className="w-4 h-4 mr-2" />
-            Projekt vorschlagen
+            Aufgabe vorschlagen
           </Button>
         </div>
 
         {loading && (
-          <p className="text-sm text-muted-foreground">Lade Projekte...</p>
+          <p className="text-sm text-muted-foreground">Lade Aufgabe...</p>
         )}
 
         {!loading && filteredProjects.length === 0 && (
           <Card className="border border-dashed">
             <CardContent className="p-6 text-sm text-muted-foreground">
-              Keine abgeschlossenen Projekte gefunden.
+              Keine abgeschlossenen Aufgaben gefunden.
             </CardContent>
           </Card>
         )}
@@ -269,7 +269,7 @@ export default function Projects() {
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>Projekt Details</DialogTitle>
+            <DialogTitle>Aufgaben Details</DialogTitle>
           </DialogHeader>
           {detailLoading && (
             <p className="text-sm text-muted-foreground">Lade...</p>
@@ -323,7 +323,7 @@ export default function Projects() {
       <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
         <DialogContent className="max-w-[95vw] w-[95vw] h-[90vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>Projekt vorschlagen</DialogTitle>
+            <DialogTitle>Aufgaben vorschlagen</DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-auto space-y-4 pr-2">
             <div className="space-y-2">
@@ -336,7 +336,7 @@ export default function Projects() {
                     title: event.target.value,
                   }))
                 }
-                placeholder="Projekt-Titel"
+                placeholder="Aufgaben-Titel"
               />
             </div>
             <div className="space-y-2 max-w-sm">
@@ -370,7 +370,7 @@ export default function Projects() {
                   setEditorForm((prev) => ({ ...prev, description: value }))
                 }
                 height={420}
-                placeholder="Projektbeschreibung..."
+                placeholder="Aufgabenbeschreibung..."
               />
             </div>
           </div>

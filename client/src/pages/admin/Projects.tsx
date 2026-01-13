@@ -566,7 +566,7 @@ export default function AdminProjects() {
     } catch (error) {
       toast({
         title: "Fehler",
-        description: "Projekt konnte nicht gespeichert werden",
+        description: "Aufgabe konnte nicht gespeichert werden",
         variant: "destructive",
       });
     }
@@ -854,12 +854,12 @@ export default function AdminProjects() {
   const deleteProject = async (id: number) => {
     try {
       await projectApi.delete(id);
-      toast({ title: "Projekt geloescht" });
+      toast({ title: "Aufgabe geloescht" });
       await loadData();
     } catch (error) {
       toast({
         title: "Fehler",
-        description: "Projekt konnte nicht geloescht werden",
+        description: "Aufgabe konnte nicht geloescht werden",
         variant: "destructive",
       });
     }
@@ -1141,11 +1141,11 @@ export default function AdminProjects() {
       : EMPTY_SOP_SECTIONS;
 
   return (
-    <Layout title="SOPs & Projekte verwalten">
+    <Layout title="SOPs & Aufgaben verwalten">
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex flex-col gap-2">
           <h2 className="text-2xl font-semibold tracking-tight">
-            SOPs & Projekte verwalten
+            SOPs & Aufgaben verwalten
           </h2>
           <p className="text-muted-foreground text-sm">
             Vorschlaege pruefen, Mitarbeitende zuordnen und Freigaben steuern.
@@ -1155,7 +1155,7 @@ export default function AdminProjects() {
         <Tabs defaultValue="sops">
           <TabsList>
             <TabsTrigger value="sops">SOPs</TabsTrigger>
-            <TabsTrigger value="projects">Projekte</TabsTrigger>
+            <TabsTrigger value="projects">Aufgaben</TabsTrigger>
           </TabsList>
 
           <TabsContent value="sops" className="space-y-6">
@@ -1200,7 +1200,7 @@ export default function AdminProjects() {
           <TabsContent value="projects" className="space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <Input
-                placeholder="Projekt suchen..."
+                placeholder="Aufgabe suchen..."
                 value={projectSearch}
                 onChange={(event) => setProjectSearch(event.target.value)}
                 className="max-w-sm"
@@ -1208,13 +1208,13 @@ export default function AdminProjects() {
               {canManageProjects && (
                 <Button onClick={() => openProjectEditor()}>
                   <Plus className="w-4 h-4 mr-2" />
-                  Neues Projekt
+                  Neue Aufgabe
                 </Button>
               )}
             </div>
 
             {loading && (
-              <p className="text-sm text-muted-foreground">Lade Projekte...</p>
+              <p className="text-sm text-muted-foreground">Lade Aufgaben...</p>
             )}
             {!loading &&
               projectSections.map((section) => {
@@ -1367,7 +1367,7 @@ export default function AdminProjects() {
         <DialogContent className="max-w-[95vw] w-[95vw] h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>
-              {editingProject ? "Projekt bearbeiten" : "Neues Projekt"}
+              {editingProject ? "Aufgabe bearbeiten" : "Neue Aufgabe"}
             </DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto pr-2 space-y-4">

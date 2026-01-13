@@ -62,7 +62,7 @@ export function Sidebar({
   const navItems = [
     { href: "/dienstplaene", label: "Dienstpläne", icon: CalendarDays },
     { href: "/wissen", label: "SOPs", icon: FileText },
-    { href: "/projekte", label: "Projekte", icon: Briefcase },
+    { href: "/projekte", label: "Aufgaben", icon: Briefcase },
     { href: "/tools", label: "Tools", icon: Wrench },
     { href: "/nachrichten", label: "Nachrichten", icon: MessageCircle },
     { href: "/admin", label: "Verwaltung", icon: Users, adminOnly: true },

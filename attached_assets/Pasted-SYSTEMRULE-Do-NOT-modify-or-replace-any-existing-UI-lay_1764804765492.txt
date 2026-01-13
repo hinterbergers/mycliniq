@@ -39,7 +39,7 @@ MODULE OVERVIEW (MUST BE IMPLEMENTED & MAINTAINED):
 8. Verwaltung: Kompetenzen  
 9. Verwaltung: Ressourcen & Räume  
 10. Schnellerfassung (Krankmeldung, Raum sperren, User anlegen)  
-11. Projekte (SOP, Studien, Admin…)  
+11. Aufgaben (SOP, Studien, Admin…)  
 12. SOP-System  
 13. Benutzer-Einstellungen  
 14. Export-System (Excel, ICS)  
@@ -225,7 +225,7 @@ vorname.nachname@kabeg.at
 password: wilkommen123
 
 =================================
-PROJEKTE
+Aufgaben
 =================================
 Project fields:
 - Category (editable list: SOP, Studie, Admin, ...)
@@ -295,7 +295,7 @@ All of the following MUST export to .xlsx:
 - Räume
 - Kompetenzen
 - SOP metadata
-- Projektliste
+- Aufgabeliste
 
 =================================
 ICS CALENDAR SUBSCRIPTIONS (MANDATORY)
@@ -335,7 +335,7 @@ Log every change to:
 - Tagesplan
 - Mitarbeiter
 - Räume
-- Projekte
+- Aufgaben
 - SOPs
 
 =================================

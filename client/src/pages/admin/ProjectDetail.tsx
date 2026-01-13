@@ -165,7 +165,7 @@ export default function ProjectDetail() {
     } catch (error) {
       toast({
         title: "Fehler",
-        description: "Projektdaten konnten nicht geladen werden",
+        description: "Aufgabendaten konnten nicht geladen werden",
         variant: "destructive",
       });
     } finally {
@@ -336,7 +336,7 @@ export default function ProjectDetail() {
 
   if (loading) {
     return (
-      <Layout title="Projekt">
+      <Layout title="Aufgabe">
         <div className="flex items-center justify-center h-64">
           <div className="text-muted-foreground">Wird geladen...</div>
         </div>
@@ -346,11 +346,11 @@ export default function ProjectDetail() {
 
   if (!project) {
     return (
-      <Layout title="Projekt nicht gefunden">
+      <Layout title="Aufgabe nicht gefunden">
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-16">
             <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">Projekt nicht gefunden</h3>
+            <h3 className="text-lg font-medium mb-2">Aufgabe nicht gefunden</h3>
             <Button onClick={() => setLocation("/projekte")}>
               <ArrowLeft className="w-4 h-4 mr-2" /> Zurück zur Übersicht
             </Button>

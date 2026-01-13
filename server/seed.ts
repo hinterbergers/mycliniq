@@ -209,12 +209,12 @@ async function seed() {
       },
       {
         key: "perm.project_manage",
-        label: "Kann Projekte verwalten",
+        label: "Kann Aufgaben verwalten",
         scope: "department",
       },
       {
         key: "perm.project_delete",
-        label: "Kann Projekte loeschen",
+        label: "Kann Aufgaben loeschen",
         scope: "department",
       },
       {
@@ -361,7 +361,7 @@ async function seed() {
       const [proposedProject] = await db
         .insert(projectInitiatives)
         .values({
-          title: "Projektvorschlag: SOP Digitale Kurve",
+          title: "Aufgabenvorschlag: SOP Digitale Kurve",
           description:
             "Erstellung einer SOP fuer die digitale Geburtsdokumentation.",
           category: "SOP",
@@ -410,8 +410,8 @@ async function seed() {
       await db.insert(notifications).values({
         recipientId: ownerId,
         type: "system",
-        title: "Willkommen bei SOPs & Projekten",
-        message: "Neue SOPs und Projekte warten auf Ihre Freigabe.",
+        title: "Willkommen bei SOPs & Aufgabenn",
+        message: "Neue SOPs und Aufgaben warten auf Ihre Freigabe.",
         link: "/nachrichten",
       });
       console.log("✓ Seeded notifications");

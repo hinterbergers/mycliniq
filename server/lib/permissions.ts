@@ -270,7 +270,7 @@ export function requireProjectMember(getProjectId: (req: Request) => number) {
     if (!isMember) {
       res.status(403).json({
         success: false,
-        error: "Sie sind kein Mitglied dieses Projekts",
+        error: "Sie sind kein Mitglied diese Aufgabe",
       });
       return;
     }
