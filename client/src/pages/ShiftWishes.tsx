@@ -218,6 +218,7 @@ export default function ShiftWishes() {
     : false;
   const isSubmitted = wish?.status === "Eingereicht";
 
+
   const normalizeDayKeys = (
     values: unknown,
     year: number,
@@ -279,25 +280,26 @@ export default function ShiftWishes() {
   );
 
   const absenceKeySet = useMemo(() => {
-    const keys = new Set<string>();
-    if (!monthAnchor) return keys;
-
+    const set = new Set<string>();
+    if (!monthAnchor) return set;
+  
     absences.forEach((absence) => {
       const start = toValidDate(absence.startDate);
       const end = toValidDate(absence.endDate);
       if (!start || !end) return;
-
-      const interval = start.getTime() <= end.getTime()
-        ? { start, end }
-        : { start: end, end: start };
-
+  
+      const interval =
+        start.getTime() <= end.getTime()
+          ? { start, end }
+          : { start: end, end: start };
+  
       eachDayOfInterval(interval).forEach((day) => {
         if (!isSameMonth(day, monthAnchor)) return;
-        keys.add(keyFromDate(day));
+        set.add(keyFromDate(day));
       });
     });
-
-    return keys;
+  
+    return set;
   }, [absences, monthAnchor]);
 
   const effectiveBlockedKeySet = useMemo(() => {
