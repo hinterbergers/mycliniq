@@ -1154,6 +1154,109 @@ export const projectApi = {
   },
 };
 
+export type TaskLifecycleStatus = "NOT_STARTED" | "IN_PROGRESS" | "SUBMITTED" | "DONE";
+export type TaskType = "ONE_OFF" | "RESPONSIBILITY";
+
+export type TaskItem = {
+  id: number;
+  title: string;
+  description: string | null;
+  status: TaskLifecycleStatus;
+  type: TaskType;
+  assignedToId: number | null;
+  dueDate: string | null;
+  parentId: number | null;
+  sopId: number | null;
+  createdById: number;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  assignedTo: { id: number; name?: string | null; lastName?: string | null } | null;
+  subtaskTotal?: number;
+  subtaskDone?: number;
+};
+
+export type TaskCreatePayload = {
+  title: string;
+  description?: string | null;
+  assignedToId?: number | null;
+  dueDate?: string | null;
+  parentId?: number | null;
+  sopId?: number | null;
+  type?: TaskType;
+};
+
+export type TaskUpdatePayload = Partial<{
+  title: string;
+  description: string | null;
+  status: TaskLifecycleStatus;
+  type: TaskType;
+  assignedToId: number | null;
+  dueDate: string | null;
+  sopId: number | null;
+}>;
+
+type TaskListOptions = {
+  view?: "my" | "team" | "responsibilities";
+  assignedToId?: number;
+  status?: TaskLifecycleStatus;
+  type?: TaskType;
+  sopId?: number;
+  parentId?: number;
+  q?: string;
+};
+
+const buildTaskQuery = (params?: TaskListOptions): string => {
+  if (!params) return "";
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      search.set(key, String(value));
+    }
+  });
+  return search.toString() ? `?${search.toString()}` : "";
+};
+
+export const tasksApi = {
+  list: async (params?: TaskListOptions): Promise<TaskItem[]> => {
+    const response = await apiFetch(`${API_BASE}/tasks${buildTaskQuery(params)}`);
+    return handleResponse<TaskItem[]>(response);
+  },
+
+  getById: async (id: number): Promise<TaskItem> => {
+    const response = await apiFetch(`${API_BASE}/tasks/${id}`);
+    return handleResponse<TaskItem>(response);
+  },
+
+  create: async (data: TaskCreatePayload): Promise<TaskItem> => {
+    const response = await apiFetch(`${API_BASE}/tasks`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return handleResponse<TaskItem>(response);
+  },
+
+  update: async (id: number, data: TaskUpdatePayload): Promise<TaskItem> => {
+    const response = await apiFetch(`${API_BASE}/tasks/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+    return handleResponse<TaskItem>(response);
+  },
+
+  createSubtask: async (parentId: number, data: TaskCreatePayload) => {
+    const response = await apiFetch(`${API_BASE}/tasks/${parentId}/subtasks`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return handleResponse<TaskItem>(response);
+  },
+  getSubtasks: async (parentId: number): Promise<TaskItem[]> => {
+    const response = await apiFetch(`${API_BASE}/tasks/${parentId}/subtasks`);
+    return handleResponse<TaskItem[]>(response);
+  },
+};
+
 export type SopMemberInfo = {
   employeeId: number;
   role: "read" | "edit";

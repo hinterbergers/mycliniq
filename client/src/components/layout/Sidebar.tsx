@@ -11,6 +11,7 @@ import {
   Briefcase,
   Wrench,
   MessageCircle,
+  ListCheck,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Search } from "lucide-react";
@@ -62,7 +63,8 @@ export function Sidebar({
   const navItems = [
     { href: "/dienstplaene", label: "Dienstpläne", icon: CalendarDays },
     { href: "/wissen", label: "SOPs", icon: FileText },
-    { href: "/projekte", label: "Aufgaben", icon: Briefcase },
+    { href: "/aufgaben", label: "Aufgaben", icon: ListCheck },
+    { href: "/projekte", label: "Projekte (legacy)", icon: Briefcase },
     { href: "/tools", label: "Tools", icon: Wrench },
     { href: "/nachrichten", label: "Nachrichten", icon: MessageCircle },
     { href: "/admin", label: "Verwaltung", icon: Users, adminOnly: true },

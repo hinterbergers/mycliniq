@@ -22,6 +22,7 @@ import { registerSopRoutes } from "./sops";
 import { registerToolRoutes } from "./tools";
 import { registerNotificationRoutes } from "./notifications";
 import { registerMessageRoutes } from "./messages";
+import { registerTaskRoutes } from "./tasks";
 
 /**
  * Register all modular API routes
@@ -138,6 +139,11 @@ export function registerModularApiRoutes(app: Express): void {
   const messagesRouter = Router();
   registerMessageRoutes(messagesRouter);
   app.use("/api/messages", messagesRouter);
+
+  // Tasks API (Aufgaben)
+  const tasksRouter = Router();
+  registerTaskRoutes(tasksRouter);
+  app.use("/api/tasks", tasksRouter);
 
   // Tools API
   const toolsRouter = Router();

@@ -24,6 +24,7 @@ import WidgetManagement from "@/pages/admin/WidgetManagement";
 import Tools from "@/pages/Tools";
 import Messages from "@/pages/Messages";
 import NotFound from "@/pages/not-found";
+import Tasks from "@/pages/Tasks";
 import { Loader2 } from "lucide-react";
 
 function ProtectedRoute({
@@ -64,6 +65,9 @@ function Router() {
       </Route>
       <Route path="/wissen">
         {() => <ProtectedRoute component={Guidelines} />}
+      </Route>
+      <Route path="/aufgaben">
+        {() => <ProtectedRoute component={Tasks} />}
       </Route>
       <Route path="/projekte">
         {() => <ProtectedRoute component={Projects} />}

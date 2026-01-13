@@ -1158,6 +1158,15 @@ export const taskStatusEnum = pgEnum("task_status", [
   "Veröffentlicht",
 ]);
 
+export const taskLifecycleStatusEnum = pgEnum("task_lifecycle_status", [
+  "NOT_STARTED",
+  "IN_PROGRESS",
+  "SUBMITTED",
+  "DONE",
+]);
+
+export const taskTypeEnum = pgEnum("task_type", ["ONE_OFF", "RESPONSIBILITY"]);
+
 export const documentStatusEnum = pgEnum("document_status", [
   "Entwurf",
   "In Bearbeitung",
@@ -1448,6 +1457,38 @@ export const insertProjectTaskSchema = createInsertSchema(projectTasks).omit({
 
 export type InsertProjectTask = z.infer<typeof insertProjectTaskSchema>;
 export type ProjectTask = typeof projectTasks.$inferSelect;
+
+// Global Tasks table for responsibilities and repeatable work items
+export const tasks = pgTable("tasks", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description"),
+  status: taskLifecycleStatusEnum("status").notNull().default("NOT_STARTED"),
+  type: taskTypeEnum("type").notNull().default("ONE_OFF"),
+  assignedToId: integer("assigned_to_id").references(() => employees.id),
+  dueDate: date("due_date"),
+  parentId: integer("parent_id"),
+  sopId: integer("sop_id").references(() => sops.id),
+  createdById: integer("created_by_id")
+    .references(() => employees.id)
+    .notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  updatedById: integer("updated_by_id").references(() => employees.id),
+  completedAt: timestamp("completed_at"),
+  deletedAt: timestamp("deleted_at"),
+});
+
+export const insertTaskSchema = createInsertSchema(tasks).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  completedAt: true,
+  deletedAt: true,
+});
+
+export type InsertTask = z.infer<typeof insertTaskSchema>;
+export type Task = typeof tasks.$inferSelect;
 
 // Project Documents table
 export const projectDocuments = pgTable("project_documents", {
