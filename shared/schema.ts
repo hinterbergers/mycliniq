@@ -4,6 +4,7 @@ import {
   text,
   varchar,
   serial,
+  bigserial,
   integer,
   date,
   timestamp,
@@ -403,17 +404,18 @@ export type UserPermission = typeof userPermissions.$inferSelect;
 export const userDashboardWidgets = pgTable(
   "user_dashboard_widgets",
   {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+
     userId: varchar("user_id")
       .references(() => users.id)
       .notNull(),
-  departmentId: integer("department_id")
-    .references(() => departments.id),
+    departmentId: integer("department_id").references(() => departments.id),
     enabledWidgets: jsonb("enabled_widgets").default(sql`'[]'::jsonb`).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex("user_dashboard_widgets_user_department_idx").on(
+    index("idx_user_dashboard_widgets_user_dept").on(
       table.userId,
       table.departmentId,
     ),
