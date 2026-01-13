@@ -1077,28 +1077,34 @@ export default function RosterPlan() {
     }
   };
 
-  const handleAutoGenerate = async () => {
+  const handleAutoGenerate = async (): Promise<boolean> => {
     setIsGenerating(true);
+    let ok = false;
     toast({
       title: "KI-Generierung",
       description: "Dienstplan wird automatisch erstellt...",
     });
-
+  
     try {
       const year = currentDate.getFullYear();
       const month = currentDate.getMonth() + 1;
-
+  
       const result = await rosterApi.generate(year, month, { rules: aiRules });
-
+  
       if (result.success) {
         setGeneratedShifts(result.shifts);
         setGenerationReasoning(result.reasoning);
         setGenerationWarnings(result.warnings);
+  
+        // ✅ close rules dialog and show preview
+        setRulesDialogOpen(false);
         setGenerationDialogOpen(true);
+  
         toast({
           title: "Generierung erfolgreich",
           description: `${result.generatedShifts} Dienste wurden erstellt`,
         });
+        ok = true;
       }
     } catch (error: any) {
       console.error("Generation failed:", error);
@@ -1110,6 +1116,12 @@ export default function RosterPlan() {
     } finally {
       setIsGenerating(false);
     }
+  
+    return ok;
+  };
+
+  const handleGenerateFromRules = async () => {
+    await handleAutoGenerate(); // bleibt offen, schließt bei Erfolg in handleAutoGenerate
   };
 
   const handleApplyGenerated = async () => {
@@ -1418,12 +1430,12 @@ export default function RosterPlan() {
                 {manualEditMode
                   ? "Manuelle Eingabe aktiv"
                   : "Manuell bearbeiten"}
-              </Button>
+           </Button>
             )}
             {canEdit && (
               <Button
                 className="gap-2"
-                onClick={handleAutoGenerate}
+                onClick={() => setRulesDialogOpen(true)}
                 disabled={isGenerating}
                 data-testid="button-auto-generate"
               >
@@ -1432,17 +1444,7 @@ export default function RosterPlan() {
                 ) : (
                   <Sparkles className="w-4 h-4" />
                 )}
-                Auto-Generieren
-              </Button>
-            )}
-            {canEdit && (
-              <Button
-                variant="outline"
-                className="gap-2"
-                onClick={() => setRulesDialogOpen(true)}
-              >
-                <Brain className="w-4 h-4" />
-                KI-Regelwerk
+                KI generieren
               </Button>
             )}
             {canEdit && planStatus === "Entwurf" && (
