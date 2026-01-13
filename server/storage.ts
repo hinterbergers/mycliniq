@@ -966,6 +966,7 @@ export class DatabaseStorage implements IStorage {
         : null,
       avoidServiceTypes: wish.avoidServiceTypes ? wish.avoidServiceTypes : null,
       avoidWeekdays: wish.avoidWeekdays ? wish.avoidWeekdays : null,
+      maxShiftsPerWeek: wish.maxShiftsPerWeek ?? null,
       maxShiftsPerMonth: wish.maxShiftsPerMonth ?? null,
       maxWeekendShifts: wish.maxWeekendShifts ?? null,
     };

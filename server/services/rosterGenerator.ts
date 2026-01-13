@@ -166,8 +166,16 @@ export async function generateRosterPlan(
   const toIsoDateList = (daysList: unknown): string[] => {
     if (!Array.isArray(daysList)) return [];
     return daysList
-      .filter((day): day is number => Number.isInteger(day))
-      .map((day) => format(new Date(year, month - 1, day), "yyyy-MM-dd"));
+      .map((day) => {
+        if (typeof day === "string" && /^\d{4}-\d{2}-\d{2}$/.test(day)) {
+          return day;
+        }
+        if (typeof day === "number" && Number.isInteger(day)) {
+          return format(new Date(year, month - 1, day), "yyyy-MM-dd");
+        }
+        return null;
+      })
+      .filter((value): value is string => Boolean(value));
   };
 
   const toWeekdayList = (values: unknown): string[] => {

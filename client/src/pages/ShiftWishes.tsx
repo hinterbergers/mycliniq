@@ -47,6 +47,7 @@ import {
   Clock,
   AlertCircle,
   Plus,
+  Minus,
   Trash2,
   Loader2,
   Info,
@@ -119,8 +120,8 @@ export default function ShiftWishes() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [serviceLines, setServiceLines] = useState<ServiceLine[]>([]);
 
-  const [weekendWishDays, setWeekendWishDays] = useState<number[]>([]);
-  const [avoidDays, setAvoidDays] = useState<number[]>([]);
+  const [preferredShiftDays, setPreferredShiftDays] = useState<string[]>([]);
+  const [avoidShiftDays, setAvoidShiftDays] = useState<string[]>([]);
   const [avoidWeekdays, setAvoidWeekdays] = useState<number[]>([]);
   const [maxShiftsPerWeek, setMaxShiftsPerWeek] = useState<
     number | undefined
@@ -154,6 +155,95 @@ export default function ShiftWishes() {
     ? employeeDoesShifts(currentUser, serviceLineMeta)
     : false;
   const isSubmitted = wish?.status === "Eingereicht";
+
+  const normalizeDayKeys = (
+    values: unknown,
+    year: number,
+    month: number,
+  ) => {
+    if (!Array.isArray(values)) return [];
+    const keys = values
+      .map((value) => {
+        if (typeof value === "string") return value;
+        if (typeof value === "number" && Number.isInteger(value)) {
+          return format(new Date(year, month - 1, value), "yyyy-MM-dd");
+        }
+        return null;
+      })
+      .filter((value): value is string => Boolean(value));
+    return Array.from(new Set(keys));
+  };
+
+  const applyWishDayStates = (
+    wishData: ShiftWish | null,
+    year: number,
+    month: number,
+  ) => {
+    if (!wishData) {
+      setPreferredShiftDays([]);
+      setAvoidShiftDays([]);
+      return;
+    }
+
+    setPreferredShiftDays(
+      normalizeDayKeys(wishData.preferredShiftDays, year, month),
+    );
+    setAvoidShiftDays(
+      normalizeDayKeys(wishData.avoidShiftDays, year, month),
+    );
+  };
+
+  type DayState = "neutral" | "wish" | "blocked";
+
+  const getState = (key: string): DayState => {
+    if (avoidShiftDays.includes(key)) return "blocked";
+    if (preferredShiftDays.includes(key)) return "wish";
+    return "neutral";
+  };
+
+  const setState = (key: string, nextState: DayState) => {
+    if (isSubmitted) return;
+
+    setPreferredShiftDays((current) => {
+      const next = new Set(current);
+      if (nextState === "wish") {
+        next.add(key);
+      } else {
+        next.delete(key);
+      }
+      return Array.from(next);
+    });
+
+    setAvoidShiftDays((current) => {
+      const next = new Set(current);
+      if (nextState === "blocked") {
+        next.add(key);
+      } else {
+        next.delete(key);
+      }
+      return Array.from(next);
+    });
+  };
+
+  const toggleWish = (key: string) => {
+    if (isSubmitted) return;
+    setState(key, getState(key) === "wish" ? "neutral" : "wish");
+  };
+
+  const toggleBlocked = (key: string) => {
+    if (isSubmitted) return;
+    setState(key, getState(key) === "blocked" ? "neutral" : "blocked");
+  };
+
+  const isWeekendKey = (key: string) => {
+    const date = new Date(key);
+    if (Number.isNaN(date.getTime())) return false;
+    const day = date.getDay();
+    return day === 0 || day === 6;
+  };
+
+  const weekendWishCount = preferredShiftDays.filter(isWeekendKey).length;
+  const weekendBlockedCount = avoidShiftDays.filter(isWeekendKey).length;
 
   useEffect(() => {
     loadData();
@@ -189,21 +279,26 @@ export default function ShiftWishes() {
           ),
         ]);
 
+        setWish(wishData);
         if (wishData) {
-          const weekendOnly = (wishData.preferredShiftDays || []).filter(
-            (day) => {
-              const date = new Date(monthData.year, monthData.month - 1, day);
-              return isWeekend(date);
-            },
+          applyWishDayStates(
+            wishData,
+            monthData.year,
+            monthData.month,
           );
-          setWish(wishData);
-          setWeekendWishDays(weekendOnly);
-          setAvoidDays(wishData.avoidShiftDays || []);
           setAvoidWeekdays(wishData.avoidWeekdays || []);
           setMaxShiftsPerWeek(wishData.maxShiftsPerWeek || undefined);
           setMaxShiftsPerMonth(wishData.maxShiftsPerMonth || undefined);
           setMaxWeekendShifts(wishData.maxWeekendShifts || undefined);
           setNotes(wishData.notes || "");
+        } else {
+          setPreferredShiftDays([]);
+          setAvoidShiftDays([]);
+          setAvoidWeekdays([]);
+          setMaxShiftsPerWeek(undefined);
+          setMaxShiftsPerMonth(undefined);
+          setMaxWeekendShifts(undefined);
+          setNotes("");
         }
 
         setAbsences(absenceData);
@@ -232,12 +327,22 @@ export default function ShiftWishes() {
 
     try {
       setSaving(true);
+      const normalizedAvoidShiftDays = Array.from(new Set(avoidShiftDays));
+      const avoidSet = new Set(normalizedAvoidShiftDays);
+      const normalizedPreferredShiftDays = Array.from(
+        new Set(
+          preferredShiftDays.filter((key) => !avoidSet.has(key)),
+        ),
+      );
+      setAvoidShiftDays(normalizedAvoidShiftDays);
+      setPreferredShiftDays(normalizedPreferredShiftDays);
+
       const wishData = {
         employeeId: currentUser.id,
         year: planningMonth.year,
         month: planningMonth.month,
-        preferredShiftDays: weekendWishDays,
-        avoidShiftDays: avoidDays,
+        preferredShiftDays: normalizedPreferredShiftDays,
+        avoidShiftDays: normalizedAvoidShiftDays,
         avoidWeekdays: avoidWeekdays,
         maxShiftsPerWeek:
           typeof maxShiftsPerWeek === "number" ? maxShiftsPerWeek : null,
@@ -251,9 +356,23 @@ export default function ShiftWishes() {
       if (wish) {
         const updated = await shiftWishesApi.update(wish.id, wishData);
         setWish(updated);
+        if (planningMonth) {
+          applyWishDayStates(
+            updated,
+            planningMonth.year,
+            planningMonth.month,
+          );
+        }
       } else {
         const created = await shiftWishesApi.create(wishData);
         setWish(created);
+        if (planningMonth) {
+          applyWishDayStates(
+            created,
+            planningMonth.year,
+            planningMonth.month,
+          );
+        }
       }
 
       toast({
@@ -388,33 +507,6 @@ export default function ShiftWishes() {
     }
   };
 
-  const toggleAvoidDay = (day: number) => {
-    if (isSubmitted) return;
-    if (avoidDays.includes(day)) {
-      setAvoidDays(avoidDays.filter((d) => d !== day));
-      return;
-    }
-    setAvoidDays([...avoidDays, day]);
-    if (weekendWishDays.includes(day)) {
-      setWeekendWishDays(weekendWishDays.filter((d) => d !== day));
-    }
-  };
-
-  const toggleWeekendWishDay = (day: number) => {
-    if (isSubmitted) return;
-    if (!planningMonth) return;
-    const date = new Date(planningMonth.year, planningMonth.month - 1, day);
-    if (!isWeekend(date)) return;
-    if (weekendWishDays.includes(day)) {
-      setWeekendWishDays(weekendWishDays.filter((d) => d !== day));
-      return;
-    }
-    setWeekendWishDays([...weekendWishDays, day]);
-    if (avoidDays.includes(day)) {
-      setAvoidDays(avoidDays.filter((d) => d !== day));
-    }
-  };
-
   const toggleWeekday = (weekday: number) => {
     if (isSubmitted) return;
     if (avoidWeekdays.includes(weekday)) {
@@ -424,28 +516,19 @@ export default function ShiftWishes() {
     }
   };
 
-  const renderCalendarDays = (
-    selectedDays: number[],
-    onToggle: (day: number) => void,
-    options: {
-      selectedClass: string;
-      weekendOnly?: boolean;
-      testIdPrefix: string;
-    },
-  ) => {
+  const renderCalendarDays = () => {
     if (!planningMonth) return null;
 
     const year = planningMonth.year;
-    const month = planningMonth.month - 1;
-    const daysInMonth = getDaysInMonth(new Date(year, month));
-    const firstDayOfMonth = startOfMonth(new Date(year, month));
+    const monthIndex = planningMonth.month - 1;
+    const daysInMonth = getDaysInMonth(new Date(year, monthIndex));
+    const firstDayOfMonth = startOfMonth(new Date(year, monthIndex));
     const startDayOfWeek = getDay(firstDayOfMonth);
 
-    const days = [];
-
+    const cells = [];
     const weekdayHeaders = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
-    for (let i = 0; i < 7; i++) {
-      days.push(
+    for (let i = 0; i < 7; i += 1) {
+      cells.push(
         <div
           key={`header-${i}`}
           className="text-center font-medium text-sm text-muted-foreground py-2"
@@ -456,38 +539,61 @@ export default function ShiftWishes() {
     }
 
     const offset = startDayOfWeek === 0 ? 6 : startDayOfWeek - 1;
-    for (let i = 0; i < offset; i++) {
-      days.push(<div key={`empty-${i}`} className="p-2" />);
+    for (let i = 0; i < offset; i += 1) {
+      cells.push(<div key={`empty-${i}`} className="p-2" />);
     }
 
-    for (let day = 1; day <= daysInMonth; day++) {
-      const date = new Date(year, month, day);
-      const isWeekendDay = getDay(date) === 0 || getDay(date) === 6;
-      const isSelectable = options.weekendOnly ? isWeekendDay : true;
-      const isSelected = selectedDays.includes(day);
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      const date = new Date(year, monthIndex, day);
+      const dayKey = format(date, "yyyy-MM-dd");
+      const state = getState(dayKey);
+      const isWeekendDay = isWeekend(date);
 
-      days.push(
+      const stateClasses =
+        state === "blocked"
+          ? "border-red-500 bg-red-100 text-red-800"
+          : state === "wish"
+            ? "border-blue-500 bg-blue-100 text-blue-800"
+            : "border-gray-200 bg-white text-gray-900";
+
+      cells.push(
         <div
           key={day}
-          data-testid={`${options.testIdPrefix}-day-${day}`}
-          className={`
-            p-2 text-center rounded-md border transition-colors
-            ${isSelected ? options.selectedClass : "border-gray-200 hover:bg-gray-100"}
-            ${isWeekendDay ? "font-semibold" : ""}
-            ${!isSelectable ? "text-muted-foreground opacity-50 cursor-not-allowed" : "cursor-pointer"}
-            ${isSubmitted ? "cursor-not-allowed opacity-75" : ""}
-          `}
-          onClick={() => {
-            if (isSubmitted || !isSelectable) return;
-            onToggle(day);
-          }}
+          data-testid={`calendar-day-${day}`}
+          className={`p-2 rounded-md border transition-colors min-h-[74px] flex flex-col justify-between ${stateClasses}`}
+          title={`Tag ${day} - ${state === "blocked" ? "Nicht möglich" : state === "wish" ? "Dienstwunsch" : "Neutral"}`}
         >
-          {day}
+          <div className={`flex items-center justify-between ${isWeekendDay ? "font-semibold" : ""}`}>
+            <span className="text-lg font-medium">{day}</span>
+            {isWeekendDay ? (
+              <span className="text-xs text-muted-foreground">WE</span>
+            ) : null}
+          </div>
+          <div className="flex items-center justify-between gap-3 mt-2 text-xs">
+            <button
+              type="button"
+              className="flex items-center justify-center w-6 h-6 rounded-full border border-blue-200 bg-white text-blue-600 transition hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={() => toggleWish(dayKey)}
+              disabled={isSubmitted}
+              data-testid={`calendar-wish-toggle-${day}`}
+            >
+              <Plus className="w-3 h-3" />
+            </button>
+            <button
+              type="button"
+              className="flex items-center justify-center w-6 h-6 rounded-full border border-red-200 bg-white text-red-600 transition hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={() => toggleBlocked(dayKey)}
+              disabled={isSubmitted}
+              data-testid={`calendar-block-toggle-${day}`}
+            >
+              <Minus className="w-3 h-3" />
+            </button>
+          </div>
         </div>,
       );
     }
 
-    return days;
+    return cells;
   };
 
   if (loading) {
@@ -599,65 +705,46 @@ export default function ShiftWishes() {
           </TabsList>
 
           <TabsContent value="wishes" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <CalendarIcon className="w-5 h-5" />
-                  Nicht mögliche Tage
-                </CardTitle>
-                <CardDescription>
-                  Klicken Sie auf Tage, an denen Sie keinen Dienst machen
-                  können.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-7 gap-1">
-                  {renderCalendarDays(avoidDays, toggleAvoidDay, {
-                    selectedClass: "bg-red-100 border-red-500 text-red-800",
-                    testIdPrefix: "avoid",
-                  })}
-                </div>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CalendarIcon className="w-5 h-5" />
+                Dienstwünsche &amp; Sperren
+              </CardTitle>
+              <CardDescription>
+                Markieren Sie Tage mit Wunsch (+) oder mit Sperre (-).
+                Nicht mögliche Tage haben Vorrang vor Wünschen, beide
+                Zustände können sich nicht demselben Tag überschneiden.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-7 gap-1">
+                {renderCalendarDays()}
+              </div>
 
-                <div className="flex gap-6 mt-4 text-sm">
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded bg-red-100 border border-red-500" />
-                    <span>Nicht möglich</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded bg-white border border-gray-200" />
-                    <span>Neutral</span>
-                  </div>
+              <div className="flex flex-wrap gap-6 mt-4 text-sm">
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded bg-blue-100 border border-blue-500" />
+                  <span>Wunsch (+)</span>
                 </div>
-              </CardContent>
-            </Card>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded bg-red-100 border border-red-500" />
+                  <span>Nicht möglich (-)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded bg-white border border-gray-200" />
+                  <span>Neutral</span>
+                </div>
+              </div>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Wochenendwünsche</CardTitle>
-                <CardDescription>
-                  Wählen Sie gewünschte Wochenenddienste (nur Sa/So).
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-7 gap-1">
-                  {renderCalendarDays(weekendWishDays, toggleWeekendWishDay, {
-                    selectedClass: "bg-blue-100 border-blue-500 text-blue-800",
-                    weekendOnly: true,
-                    testIdPrefix: "weekend",
-                  })}
-                </div>
-                <div className="flex gap-6 mt-4 text-sm">
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded bg-blue-100 border border-blue-500" />
-                    <span>Gewünscht</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded bg-white border border-gray-200" />
-                    <span>Neutral</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4 text-sm">
+                <span>Wünsche: {preferredShiftDays.length}</span>
+                <span>Nicht möglich: {avoidShiftDays.length}</span>
+                <span>Wochenend-Wünsche: {weekendWishCount}w</span>
+                <span>Wochenend-Sperren: {weekendBlockedCount}w</span>
+              </div>
+            </CardContent>
+          </Card>
 
             <Card>
               <CardHeader>
@@ -697,7 +784,9 @@ export default function ShiftWishes() {
                 </div>
 
                 <div>
-                  <Label htmlFor="maxShifts">Maximale Dienste pro Woche</Label>
+                  <Label>
+                    Max. Dienste pro Woche (1–3)
+                  </Label>
                   <Select
                     value={
                       typeof maxShiftsPerWeek === "number"
@@ -715,12 +804,13 @@ export default function ShiftWishes() {
                       className="w-48"
                       data-testid="select-max-shifts"
                     >
-                      <SelectValue placeholder="Keine Einschränkung" />
+                      <SelectValue placeholder="Keine Angabe" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">Keine Einschränkung</SelectItem>
+                      <SelectItem value="none">Keine Angabe</SelectItem>
                       <SelectItem value="1">1 Dienst</SelectItem>
                       <SelectItem value="2">2 Dienste</SelectItem>
+                      <SelectItem value="3">3 Dienste</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1034,7 +1124,7 @@ export default function ShiftWishes() {
                       <TableRow>
                         <TableHead>Mitarbeiter</TableHead>
                         <TableHead>Status</TableHead>
-                        <TableHead>Wochenendwünsche</TableHead>
+                        <TableHead>Dienstwünsche</TableHead>
                         <TableHead>Nicht mögliche Tage</TableHead>
                         <TableHead>Eingereicht am</TableHead>
                       </TableRow>

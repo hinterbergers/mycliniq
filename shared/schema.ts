@@ -1765,11 +1765,13 @@ export const shiftWishes = pgTable("shift_wishes", {
   year: integer("year").notNull(),
   month: integer("month").notNull(),
   status: wishStatusEnum("status").notNull().default("Entwurf"),
-  preferredShiftDays: jsonb("preferred_shift_days").$type<number[]>(),
-  avoidShiftDays: jsonb("avoid_shift_days").$type<number[]>(),
+  preferredShiftDays: jsonb("preferred_shift_days").$type<string[]>(),
+  avoidShiftDays: jsonb("avoid_shift_days").$type<string[]>(),
   preferredServiceTypes: jsonb("preferred_service_types").$type<string[]>(),
   avoidServiceTypes: jsonb("avoid_service_types").$type<string[]>(),
   avoidWeekdays: jsonb("avoid_weekdays").$type<number[]>(),
+  // Ensure the column exists in environments without rolling migrations
+  // ALTER TABLE shift_wishes ADD COLUMN IF NOT EXISTS max_shifts_per_week integer;
   maxShiftsPerWeek: integer("max_shifts_per_week"),
   maxShiftsPerMonth: integer("max_shifts_per_month"),
   maxWeekendShifts: integer("max_weekend_shifts"),
