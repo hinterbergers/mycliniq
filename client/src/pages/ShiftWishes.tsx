@@ -81,7 +81,6 @@ import {
   isAfter,
   addDays,
   isSameDay,
-  parseISO,
 } from "date-fns";
 import { de } from "date-fns/locale";
 import { employeeDoesShifts } from "@shared/shiftTypes";
@@ -265,6 +264,22 @@ export default function ShiftWishes() {
 
   const keyFromDate = (date: Date) => format(date, "yyyy-MM-dd");
 
+  const toValidDate = (value: unknown) => {
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? null : value;
+    }
+    const d = new Date(String(value));
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+
+  const monthAnchor = useMemo(
+    () =>
+      planningMonth
+        ? startOfMonth(new Date(planningMonth.year, planningMonth.month - 1, 1))
+        : null,
+    [planningMonth?.year, planningMonth?.month],
+  );
+
   const holidaySet = useMemo(
     () => (planningMonth ? austrianHolidayKeys(planningMonth.year) : new Set<string>()),
     [planningMonth?.year],
@@ -275,9 +290,15 @@ export default function ShiftWishes() {
     if (!monthAnchor) return map;
 
     absences.forEach((absence) => {
-      const start = parseISO(absence.startDate);
-      const end = parseISO(absence.endDate);
-      eachDayOfInterval({ start, end }).forEach((day) => {
+      const start = toValidDate(absence.startDate);
+      const end = toValidDate(absence.endDate);
+      if (!start || !end) return;
+
+      const interval = start.getTime() <= end.getTime()
+        ? { start, end }
+        : { start: end, end: start };
+
+      eachDayOfInterval(interval).forEach((day) => {
         if (!isSameMonth(day, monthAnchor)) return;
         const key = keyFromDate(day);
         if (!map.has(key)) {
@@ -333,9 +354,6 @@ export default function ShiftWishes() {
     setRange(value);
   };
 
-  const monthAnchor = planningMonth
-    ? startOfMonth(new Date(planningMonth.year, planningMonth.month - 1, 1))
-    : null;
 
   const applyRange = (kind: "wish" | "blocked" | "neutral") => {
     if (!planningMonth || !range?.from) return;
@@ -403,9 +421,15 @@ export default function ShiftWishes() {
     const overrideSet = new Set(wishDayKeys);
 
     for (const absence of absences) {
-      const start = parseISO(absence.startDate);
-      const end = parseISO(absence.endDate);
-      const allDays = eachDayOfInterval({ start, end }).filter((d) =>
+      const start = toValidDate(absence.startDate);
+      const end = toValidDate(absence.endDate);
+      if (!start || !end) continue;
+
+      const interval = start.getTime() <= end.getTime()
+        ? { start, end }
+        : { start: end, end: start };
+
+      const allDays = eachDayOfInterval(interval).filter((d) =>
         isSameMonth(d, monthAnchor),
       );
 
@@ -467,8 +491,9 @@ export default function ShiftWishes() {
   const weekendBlockedCount = avoidShiftDays.filter(isWeekendKey).length;
 
   useEffect(() => {
+    if (!currentUser) return;
     loadData();
-  }, [currentUser, canViewAll]);
+  }, [currentUser?.id, canViewAll]);
 
   useEffect(() => {
     setRange(undefined);
