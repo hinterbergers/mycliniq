@@ -81,17 +81,10 @@ import {
   isAfter,
   addDays,
   isSameDay,
+  endOfMonth,
 } from "date-fns";
 import { de } from "date-fns/locale";
 import { employeeDoesShifts } from "@shared/shiftTypes";
-import type { DateRange } from "react-day-picker";
-
-const CALENDAR_MODIFIER_CLASSES = {
-  wish: "bg-blue-100 text-blue-900 hover:bg-blue-200",
-  blocked: "bg-red-100 text-red-900 hover:bg-red-200",
-  absence: "bg-red-100 text-red-900 hover:bg-red-200",
-  special: "bg-yellow-50 text-yellow-900 hover:bg-yellow-100",
-} as const;
 
 const ABSENCE_REASONS = [
   { value: "Urlaub", label: "Urlaub" },
@@ -112,6 +105,8 @@ const MONTH_NAMES = [
   "November",
   "Dezember",
 ];
+
+const WEEKDAY_LABELS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 
 // --- Austrian holiday helpers ---
 const dayKey = (d: Date) => format(d, "yyyy-MM-dd");
@@ -180,8 +175,6 @@ export default function ShiftWishes() {
   const [allWishes, setAllWishes] = useState<ShiftWish[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [serviceLines, setServiceLines] = useState<ServiceLine[]>([]);
-  const [range, setRange] = useState<DateRange | undefined>(undefined);
-
   const [preferredShiftDays, setPreferredShiftDays] = useState<string[]>([]);
   const [avoidShiftDays, setAvoidShiftDays] = useState<string[]>([]);
   const [avoidWeekdays, setAvoidWeekdays] = useState<number[]>([]);
@@ -285,9 +278,9 @@ export default function ShiftWishes() {
     [planningMonth?.year],
   );
 
-  const absenceDayMap = useMemo(() => {
-    const map = new Map<string, string>();
-    if (!monthAnchor) return map;
+  const absenceKeySet = useMemo(() => {
+    const keys = new Set<string>();
+    if (!monthAnchor) return keys;
 
     absences.forEach((absence) => {
       const start = toValidDate(absence.startDate);
@@ -300,95 +293,97 @@ export default function ShiftWishes() {
 
       eachDayOfInterval(interval).forEach((day) => {
         if (!isSameMonth(day, monthAnchor)) return;
-        const key = keyFromDate(day);
-        if (!map.has(key)) {
-          map.set(key, absence.reason);
-        }
+        keys.add(keyFromDate(day));
       });
     });
 
-    return map;
+    return keys;
   }, [absences, monthAnchor]);
 
-  const absenceKeySet = useMemo(() => new Set(absenceDayMap.keys()), [absenceDayMap]);
-
-  const effectiveWishKeySet = useMemo(() => {
-    const avoidSet = new Set(avoidShiftDays);
-    return new Set(preferredShiftDays.filter((k) => !avoidSet.has(k)));
-  }, [avoidShiftDays, preferredShiftDays]);
-
-  const rangeModifiers = useMemo(() => {
-    const wishSet = new Set(preferredShiftDays);
-    const blockedSet = new Set(avoidShiftDays);
-
-    return {
-      wish: (date: Date) => {
-        const key = keyFromDate(date);
-        return !blockedSet.has(key) && wishSet.has(key);
-      },
-      blocked: (date: Date) => blockedSet.has(keyFromDate(date)),
-      absence: (date: Date) => {
-        const key = keyFromDate(date);
-        return absenceKeySet.has(key) && !effectiveWishKeySet.has(key);
-      },
-      special: (date: Date) => {
-        const key = keyFromDate(date);
-        if (!isSameMonth(date, monthAnchor ?? date)) return false;
-        if (absenceKeySet.has(key)) return false;
-        if (blockedSet.has(key)) return false;
-        if (effectiveWishKeySet.has(key)) return false;
-        return isWeekend(date) || holidaySet.has(key);
-      },
-    };
-  }, [
-    absenceKeySet,
-    avoidShiftDays,
-    effectiveWishKeySet,
-    holidaySet,
-    monthAnchor,
-    preferredShiftDays,
-  ]);
-
-  const handleRangeSelect = (value: DateRange | undefined) => {
-    if (isSubmitted) return;
-    setRange(value);
-  };
-
-
-  const applyRange = (kind: "wish" | "blocked" | "neutral") => {
-    if (!planningMonth || !range?.from) return;
-    const from = range.from;
-    const to = range.to ?? range.from;
-    if (!monthAnchor) return;
-    const days = eachDayOfInterval({ start: from, end: to }).filter((day) =>
-      isSameMonth(day, monthAnchor),
-    );
-
-    const wishSet = new Set(preferredShiftDays);
-    const avoidSet = new Set(avoidShiftDays);
-
-    days.forEach((day) => {
-      const key = keyFromDate(day);
-      if (kind === "wish") {
-        wishSet.add(key);
-        avoidSet.delete(key);
-      } else if (kind === "blocked") {
-        avoidSet.add(key);
-        wishSet.delete(key);
-      } else {
-        wishSet.delete(key);
-        avoidSet.delete(key);
+  const effectiveBlockedKeySet = useMemo(() => {
+    const set = new Set<string>(avoidShiftDays);
+    absenceKeySet.forEach((key) => {
+      if (!preferredShiftDays.includes(key)) {
+        set.add(key);
       }
     });
+    return set;
+  }, [absenceKeySet, avoidShiftDays, preferredShiftDays]);
 
-    avoidSet.forEach((key) => {
+  const getState = (key: string) => {
+    const isWish = preferredShiftDays.includes(key);
+    const isAvoid = avoidShiftDays.includes(key);
+    const isBlockedByAbsence = absenceKeySet.has(key) && !isWish;
+    if (isAvoid || isBlockedByAbsence) return "blocked";
+    if (isWish) return "wish";
+    return "neutral";
+  };
+
+  const setDayState = (
+    key: string,
+    nextState: "wish" | "blocked" | "neutral",
+  ) => {
+    const wishSet = new Set(preferredShiftDays);
+    const avoidSet = new Set(avoidShiftDays);
+
+    if (nextState === "wish") {
+      wishSet.add(key);
+      avoidSet.delete(key);
+    } else if (nextState === "blocked") {
+      avoidSet.add(key);
       wishSet.delete(key);
+    } else {
+      wishSet.delete(key);
+      avoidSet.delete(key);
+    }
+
+    avoidSet.forEach((blockKey) => {
+      if (wishSet.has(blockKey)) {
+        wishSet.delete(blockKey);
+      }
     });
 
     setPreferredShiftDays(Array.from(wishSet));
     setAvoidShiftDays(Array.from(avoidSet));
-    setRange(undefined);
   };
+
+  const toggleWish = (key: string) => {
+    if (isSubmitted || saving) return;
+    const current = getState(key);
+    const nextState = current === "wish" ? "neutral" : "wish";
+    setDayState(key, nextState);
+  };
+
+  const toggleBlocked = (key: string) => {
+    if (isSubmitted || saving) return;
+    const current = getState(key);
+    const nextState = current === "blocked" ? "neutral" : "blocked";
+    setDayState(key, nextState);
+  };
+
+  const monthWeeks = useMemo(() => {
+    if (!monthAnchor) return [];
+    const start = monthAnchor;
+    const end = endOfMonth(monthAnchor);
+    const days = eachDayOfInterval({ start, end });
+    const weeks: Array<(Date | null)[]> = [];
+    let currentWeek = Array(7).fill(null);
+
+    days.forEach((day) => {
+      const index = (day.getDay() + 6) % 7;
+      currentWeek[index] = day;
+      if (index === 6) {
+        weeks.push(currentWeek);
+        currentWeek = Array(7).fill(null);
+      }
+    });
+
+    if (currentWeek.some((value) => value !== null)) {
+      weeks.push(currentWeek);
+    }
+
+    return weeks;
+  }, [monthAnchor]);
 
   // --- Absence interruption helpers ---
   const splitIntoRanges = (dates: Date[]) => {
@@ -488,16 +483,14 @@ export default function ShiftWishes() {
   };
 
   const weekendWishCount = preferredShiftDays.filter(isWeekendKey).length;
-  const weekendBlockedCount = avoidShiftDays.filter(isWeekendKey).length;
+  const weekendBlockedCount =
+    Array.from(effectiveBlockedKeySet).filter(isWeekendKey).length;
+  const effectiveBlockedCount = effectiveBlockedKeySet.size;
 
   useEffect(() => {
     if (!currentUser) return;
     loadData();
   }, [currentUser?.id, canViewAll]);
-
-  useEffect(() => {
-    setRange(undefined);
-  }, [planningMonth?.year, planningMonth?.month]);
 
   const loadData = async () => {
     if (!currentUser) return;
@@ -899,110 +892,100 @@ export default function ShiftWishes() {
                   Dienstwünsche &amp; Sperren
                 </CardTitle>
                 <CardDescription>
-                  Wählen Sie einen Zeitraum im aktuellen Monat und markieren
-                  Sie ihn als Wunsch, nicht möglich oder neutral.
-                  Nicht mögliche Tage haben Vorrang vor Wünschen.
+                  Markieren Sie einzelne Tage im aktuellen Monat als Wunsch (+)
+                  oder Nicht möglich (–). Abwesenheiten werden automatisch
+                  gesperrt, Wünsche übersteuern sie.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {planningMonth && monthAnchor ? (
-                  <Calendar
-                    mode="range"
-                    selected={range}
-                    onSelect={handleRangeSelect}
-                    month={monthAnchor}
-                    fromMonth={monthAnchor}
-                    toMonth={monthAnchor}
-                    numberOfMonths={1}
-                    showOutsideDays={false}
-                    modifiers={rangeModifiers}
-                    modifiersClassNames={CALENDAR_MODIFIER_CLASSES}
-                    components={{
-                      DayButton: (props: any) => {
-                        const date: Date | undefined = props?.day?.date ?? props?.date;
-                        const key = date ? keyFromDate(date) : "";
-                        const absenceLabel = key ? absenceDayMap.get(key) : undefined;
-                        const showAbsence = Boolean(absenceLabel) && key && !effectiveWishKeySet.has(key);
+                {monthAnchor ? (
+                  <>
+                    <div className="grid grid-cols-7 gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      {WEEKDAY_LABELS.map((label) => (
+                        <div key={label} className="text-center">
+                          {label}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-7 gap-2">
+                      {monthWeeks.map((week, weekIndex) =>
+                        week.map((day, dayIndex) => {
+                          const slotKey = `${weekIndex}-${dayIndex}`;
+                          if (!day) {
+                            return (
+                              <div
+                                key={`empty-${slotKey}`}
+                                className="h-20 rounded-md border border-transparent"
+                                aria-hidden
+                              />
+                            );
+                          }
+                          const key = keyFromDate(day);
+                          const state = getState(key);
+                          const weekendOrHoliday =
+                            isWeekend(day) || holidaySet.has(key);
+                          const highlightWeekend =
+                            state === "neutral" && weekendOrHoliday;
+                          let stateClasses =
+                            "bg-white border border-border text-muted-foreground";
+                          if (state === "wish") {
+                            stateClasses =
+                              "bg-blue-50 border-blue-200 text-blue-900";
+                          } else if (state === "blocked") {
+                            stateClasses =
+                              "bg-red-50 border-red-200 text-red-900";
+                          } else if (highlightWeekend) {
+                            stateClasses =
+                              "bg-yellow-50 border-yellow-300 text-yellow-900";
+                          }
+                          const formattedDate = format(day, "dd.MM.yyyy", {
+                            locale: de,
+                          });
 
-                        const { children, className, ...rest } = props;
-
-                        return (
-                          <button
-                            {...rest}
-                            className={`relative w-full h-full ${className ?? ""}`}
-                            type={rest.type ?? "button"}
-                          >
-                            <span className="absolute inset-0 flex items-center justify-center text-sm font-medium">
-                              {date ? date.getDate() : children}
-                            </span>
-                            {showAbsence ? (
-                              <span className="absolute right-1 top-1 text-[10px] font-semibold text-red-700">
-                                {absenceLabel}
-                              </span>
-                            ) : null}
-                          </button>
-                        );
-                      },
-                    }}
-                    locale={de}
-                  />
+                          return (
+                            <div
+                              key={key}
+                              className={`relative flex min-h-[80px] flex-col items-center justify-center rounded-md border px-1 pb-10 pt-3 text-center text-sm font-semibold transition ${stateClasses}`}
+                            >
+                              <div className="text-lg font-semibold">
+                                {day.getDate()}
+                              </div>
+                              <div className="absolute inset-x-2 bottom-1 flex items-center justify-between">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleWish(key)}
+                                  disabled={isSubmitted || saving}
+                                  className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-blue-200 bg-white/80 text-[10px] text-blue-500 transition disabled:cursor-not-allowed disabled:opacity-40"
+                                  aria-label={`Wunsch für ${formattedDate}`}
+                                >
+                                  <Plus className="w-3 h-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleBlocked(key)}
+                                  disabled={isSubmitted || saving}
+                                  className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-red-200 bg-white/80 text-[10px] text-red-500 transition disabled:cursor-not-allowed disabled:opacity-40"
+                                  aria-label={`Nicht möglich für ${formattedDate}`}
+                                >
+                                  <Minus className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        }),
+                      )}
+                    </div>
+                  </>
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    Kalender steht erst nach Auswahl eines Planungsmonats zur Verfügung.
+                    Kalender steht erst nach Auswahl eines Planungsmonats zur
+                    Verfügung.
                   </p>
-                )}
-
-                {range?.from && (
-                  <div className="space-y-2">
-                    <p className="text-sm leading-snug text-muted-foreground">
-                      Auswahl:{" "}
-                      <span className="font-medium">
-                        {format(range.from, "dd.MM.yyyy", { locale: de })}
-                      </span>{" "}
-                      –{" "}
-                      <span className="font-medium">
-                        {format(range.to ?? range.from, "dd.MM.yyyy", {
-                          locale: de,
-                        })}
-                      </span>
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => applyRange("wish")}
-                        disabled={isSubmitted}
-                        data-testid="button-apply-wish-range"
-                      >
-                        <Plus className="w-3 h-3 mr-1" />
-                        Als Wunsch markieren (+)
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => applyRange("blocked")}
-                        disabled={isSubmitted}
-                        data-testid="button-apply-blocked-range"
-                      >
-                        <Minus className="w-3 h-3 mr-1" />
-                        Als Nicht möglich markieren (–)
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => applyRange("neutral")}
-                        disabled={isSubmitted}
-                        data-testid="button-apply-neutral-range"
-                      >
-                        Neutralisieren
-                      </Button>
-                    </div>
-                  </div>
                 )}
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm text-muted-foreground">
                   <span>Wünsche: {preferredShiftDays.length}</span>
-                  <span>Nicht möglich: {avoidShiftDays.length}</span>
+                  <span>Nicht möglich: {effectiveBlockedCount}</span>
                   <span>Wochenend-Wünsche: {weekendWishCount}w</span>
                   <span>Wochenend-Sperren: {weekendBlockedCount}w</span>
                 </div>
