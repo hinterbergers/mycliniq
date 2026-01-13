@@ -71,7 +71,6 @@ import {
   dutyPlansApi,
   rosterSettingsApi,
   serviceLinesApi,
-  shiftWishesApi,
   type NextPlanningMonth,
   type PlannedAbsenceAdmin,
 } from "@/lib/api";
@@ -81,7 +80,6 @@ import type {
   LongTermAbsence,
   DutyPlan,
   ServiceLine,
-  ShiftWish,
 } from "@shared/schema";
 import {
   format,
@@ -91,7 +89,6 @@ import {
   endOfMonth,
   eachDayOfInterval,
   isWeekend,
-  differenceInCalendarDays,
 } from "date-fns";
 import { de } from "date-fns/locale";
 import { useAuth } from "@/lib/auth";
@@ -304,20 +301,6 @@ const getLastNameFromText = (value?: string | null) => {
   return parts[parts.length - 1] || value;
 };
 
-const normalizeWishDayKeys = (values: unknown, year: number, month: number) => {
-  if (!Array.isArray(values)) return [] as string[];
-  const keys = values
-    .map((value) => {
-      if (typeof value === "string") return value;
-      if (typeof value === "number" && Number.isInteger(value)) {
-        return format(new Date(year, month - 1, value), "yyyy-MM-dd");
-      }
-      return null;
-    })
-    .filter((v): v is string => Boolean(v));
-  return Array.from(new Set(keys));
-};
-
 export default function RosterPlan() {
   const {
     employee: currentUser,
@@ -345,26 +328,6 @@ export default function RosterPlan() {
   const [generatedShifts, setGeneratedShifts] = useState<GeneratedShift[]>([]);
   const [generationReasoning, setGenerationReasoning] = useState("");
   const [generationWarnings, setGenerationWarnings] = useState<string[]>([]);
-  const [generationWishReport, setGenerationWishReport] = useState<
-    Array<{
-      employeeId: number;
-      employeeName: string;
-      assigned: number;
-      wishHit: number;
-      wishTotal: number;
-      avoidViolations: number;
-      absenceViolations: number;
-      consecutiveViolations: number;
-      wishPct: number | null;
-      score: number;
-      traffic: "green" | "yellow" | "red";
-    }>
-  >([]);
-  useEffect(() => {
-    if (!generationDialogOpen) {
-      setGenerationWishReport([]);
-    }
-  }, [generationDialogOpen]);
   const [isApplying, setIsApplying] = useState(false);
   const [manualEditMode, setManualEditMode] = useState(false);
   const [savingCellKey, setSavingCellKey] = useState<string | null>(null);
@@ -1114,9 +1077,8 @@ export default function RosterPlan() {
     }
   };
 
-  const handleAutoGenerate = async (): Promise<boolean> => {
+  const handleAutoGenerate = async () => {
     setIsGenerating(true);
-    let ok = false;
     toast({
       title: "KI-Generierung",
       description: "Dienstplan wird automatisch erstellt...",
@@ -1132,160 +1094,11 @@ export default function RosterPlan() {
         setGeneratedShifts(result.shifts);
         setGenerationReasoning(result.reasoning);
         setGenerationWarnings(result.warnings);
-
-        // --- Wish/conflict evaluation ---
-        let monthWishes: ShiftWish[] = [];
-        try {
-          monthWishes = await shiftWishesApi.getByMonth(year, month);
-        } catch {
-          monthWishes = [];
-        }
-
-        const wishByEmployeeId = new Map<
-          number,
-          { preferred: Set<string>; avoid: Set<string> }
-        >();
-        monthWishes.forEach((w) => {
-          const preferred = new Set(
-            normalizeWishDayKeys((w as any).preferredShiftDays, year, month),
-          );
-          const avoid = new Set(
-            normalizeWishDayKeys((w as any).avoidShiftDays, year, month),
-          );
-          wishByEmployeeId.set(w.employeeId, { preferred, avoid });
-        });
-
-        const assignmentsByEmployee = new Map<number, string[]>();
-        (result.shifts as any[]).forEach((s) => {
-          if (!s?.employeeId || !s?.date) return;
-          const list = assignmentsByEmployee.get(s.employeeId) ?? [];
-          list.push(s.date);
-          assignmentsByEmployee.set(s.employeeId, list);
-        });
-
-        // Build report for all employees who do shifts OR have wishes OR received assignments
-        const employeeIds = new Set<number>();
-        employees
-          .filter((e) => employeeDoesShifts(e, serviceLineMeta))
-          .forEach((e) => employeeIds.add(e.id));
-        wishByEmployeeId.forEach((_v, id) => employeeIds.add(id));
-        assignmentsByEmployee.forEach((_v, id) => employeeIds.add(id));
-
-        const reportRows: Array<{
-          employeeId: number;
-          employeeName: string;
-          assigned: number;
-          wishHit: number;
-          wishTotal: number;
-          avoidViolations: number;
-          absenceViolations: number;
-          consecutiveViolations: number;
-          wishPct: number | null;
-          score: number;
-          traffic: "green" | "yellow" | "red";
-        }> = [];
-
-        employeeIds.forEach((employeeId) => {
-          const dates = assignmentsByEmployee.get(employeeId) ?? [];
-          const uniqueDates = Array.from(new Set(dates)).sort();
-          const wishSets =
-            wishByEmployeeId.get(employeeId) ??
-            ({ preferred: new Set<string>(), avoid: new Set<string>() } as const);
-
-          const employee = getEmployeeById(employeeId);
-          const employeeName = employee?.name ?? resolveEmployeeLastName(employeeId);
-
-          let wishHit = 0;
-          let avoidViolations = 0;
-          let absenceViolations = 0;
-
-          uniqueDates.forEach((dateStr) => {
-            if (wishSets.preferred.has(dateStr)) wishHit += 1;
-            if (wishSets.avoid.has(dateStr)) avoidViolations += 1;
-
-            const planned = activePlannedAbsences.some(
-              (a) =>
-                a.employeeId === employeeId &&
-                a.startDate <= dateStr &&
-                a.endDate >= dateStr,
-            );
-            const longTerm = longTermAbsences.some(
-              (a) =>
-                a.employeeId === employeeId &&
-                a.status === "Genehmigt" &&
-                a.startDate <= dateStr &&
-                a.endDate >= dateStr,
-            );
-            const legacy = employee ? isLegacyInactiveOnDate(employee, dateStr) : false;
-
-            if (planned || longTerm || legacy) absenceViolations += 1;
-          });
-
-          let consecutiveViolations = 0;
-          for (let i = 1; i < uniqueDates.length; i++) {
-            const prev = new Date(`${uniqueDates[i - 1]}T00:00:00`);
-            const cur = new Date(`${uniqueDates[i]}T00:00:00`);
-            if (differenceInCalendarDays(cur, prev) === 1) consecutiveViolations += 1;
-          }
-
-          const wishPct = wishSets.preferred.size > 0
-            ? Math.round((wishHit / wishSets.preferred.size) * 100)
-            : null;
-
-          // Score: 0..100 (higher is better)
-          const conflictPenalty =
-            avoidViolations * 20 +
-            absenceViolations * 30 +
-            consecutiveViolations * 25;
-
-          const satisfactionBonus = wishPct === null
-            ? 10
-            : Math.round((wishPct / 100) * 20);
-
-          const rawScore = 100 - conflictPenalty + satisfactionBonus;
-          const score = Math.max(0, Math.min(100, rawScore));
-
-          const traffic: "green" | "yellow" | "red" =
-            score >= 80 && avoidViolations === 0 && absenceViolations === 0
-              ? "green"
-              : score >= 55 && absenceViolations === 0
-                ? "yellow"
-                : "red";
-
-          reportRows.push({
-            employeeId,
-            employeeName,
-            assigned: uniqueDates.length,
-            wishHit,
-            wishTotal: wishSets.preferred.size,
-            avoidViolations,
-            absenceViolations,
-            consecutiveViolations,
-            wishPct,
-            score,
-            traffic,
-          });
-        });
-
-        reportRows.sort((a, b) => {
-          if (a.score !== b.score) return a.score - b.score; // worst first
-          const aConf = a.avoidViolations + a.absenceViolations * 2 + a.consecutiveViolations * 2;
-          const bConf = b.avoidViolations + b.absenceViolations * 2 + b.consecutiveViolations * 2;
-          if (bConf !== aConf) return bConf - aConf;
-          return a.employeeName.localeCompare(b.employeeName);
-        });
-
-        setGenerationWishReport(reportRows);
-
-        // Close rules dialog and show generated plan preview
-        setRulesDialogOpen(false);
         setGenerationDialogOpen(true);
-
         toast({
           title: "Generierung erfolgreich",
           description: `${result.generatedShifts} Dienste wurden erstellt`,
         });
-        ok = true;
       }
     } catch (error: any) {
       console.error("Generation failed:", error);
@@ -1296,14 +1109,6 @@ export default function RosterPlan() {
       });
     } finally {
       setIsGenerating(false);
-    }
-    return ok;
-  };
-
-  const handleGenerateFromRules = async () => {
-    const ok = await handleAutoGenerate();
-    if (ok) {
-      setRulesDialogOpen(false);
     }
   };
 
@@ -1618,7 +1423,7 @@ export default function RosterPlan() {
             {canEdit && (
               <Button
                 className="gap-2"
-                onClick={() => setRulesDialogOpen(true)}
+                onClick={handleAutoGenerate}
                 disabled={isGenerating}
                 data-testid="button-auto-generate"
               >
@@ -1627,7 +1432,17 @@ export default function RosterPlan() {
                 ) : (
                   <Sparkles className="w-4 h-4" />
                 )}
-                KI generieren
+                Auto-Generieren
+              </Button>
+            )}
+            {canEdit && (
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => setRulesDialogOpen(true)}
+              >
+                <Brain className="w-4 h-4" />
+                KI-Regelwerk
               </Button>
             )}
             {canEdit && planStatus === "Entwurf" && (
@@ -2128,13 +1943,7 @@ export default function RosterPlan() {
         </Card>
 
         {/* KI-Regelwerk Dialog */}
-        <Dialog
-          open={rulesDialogOpen}
-          onOpenChange={(open) => {
-            if (isGenerating) return;
-            setRulesDialogOpen(open);
-          }}
-        >
+        <Dialog open={rulesDialogOpen} onOpenChange={setRulesDialogOpen}>
           <DialogContent className="max-w-3xl">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
@@ -2148,15 +1957,6 @@ export default function RosterPlan() {
                 zu verschieben.
               </DialogDescription>
             </DialogHeader>
-
-            {isGenerating ? (
-              <Alert className="bg-primary/5 border-primary/20">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <AlertDescription>
-                  KI generiert gerade den Dienstplan – bitte das Fenster nicht schließen.
-                </AlertDescription>
-              </Alert>
-            ) : null}
 
             <Tabs defaultValue="hard" className="space-y-4">
               <TabsList>
@@ -2263,32 +2063,10 @@ export default function RosterPlan() {
               <Button
                 variant="ghost"
                 onClick={() => setAiRules(DEFAULT_AI_RULES)}
-                disabled={isGenerating}
               >
                 Reset
               </Button>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setRulesDialogOpen(false)}
-                  disabled={isGenerating}
-                >
-                  Schließen
-                </Button>
-                <Button
-                  onClick={handleGenerateFromRules}
-                  disabled={isGenerating}
-                  className="gap-2"
-                  data-testid="button-generate-from-rules"
-                >
-                  {isGenerating ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Sparkles className="w-4 h-4" />
-                  )}
-                  Generieren
-                </Button>
-              </div>
+              <Button onClick={() => setRulesDialogOpen(false)}>Schließen</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -2334,95 +2112,74 @@ export default function RosterPlan() {
                 </Alert>
               )}
 
-              {/* Wish/Conflict Report */}
-              {generationWishReport.length > 0 ? (
-                <div className="border rounded-lg">
-                  <div className="p-3 bg-muted/30 border-b space-y-1">
-                    <div className="flex justify-between items-center">
-                      <span className="font-medium">Wunsch-Auswertung</span>
-                      <Badge variant="secondary">{generationWishReport.length} Mitarbeiter</Badge>
-                    </div>
-                    {(() => {
-                      const count = generationWishReport.length;
-                      if (!count) return null;
-                      const avg = Math.round(generationWishReport.reduce((acc, r) => acc + r.score, 0) / count);
-                      const avoidSum = generationWishReport.reduce((acc, r) => acc + r.avoidViolations, 0);
-                      const absSum = generationWishReport.reduce((acc, r) => acc + r.absenceViolations, 0);
-                      const consSum = generationWishReport.reduce((acc, r) => acc + r.consecutiveViolations, 0);
-                      const pctValues = generationWishReport.map((r) => r.wishPct).filter((v): v is number => v !== null);
-                      const avgWish = pctValues.length ? Math.round(pctValues.reduce((a, b) => a + b, 0) / pctValues.length) : null;
-                      return (
-                        <div className="text-xs text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
-                          <span>Ø Score: <span className="font-medium text-foreground">{avg}</span></span>
-                          {avgWish !== null ? (
-                            <span>Ø Wunsch-Treffer: <span className="font-medium text-foreground">{avgWish}%</span></span>
-                          ) : null}
-                          <span>Konflikte: Wunsch <span className="font-medium text-foreground">{avoidSum}</span></span>
-                          <span>Abw. <span className="font-medium text-foreground">{absSum}</span></span>
-                          <span>2 Tage <span className="font-medium text-foreground">{consSum}</span></span>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                  <ScrollArea className="h-[220px]">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Mitarbeiter</TableHead>
-                          <TableHead className="text-center">Score</TableHead>
-                          <TableHead className="text-center">Dienste</TableHead>
-                          <TableHead className="text-center">Wünsche</TableHead>
-                          <TableHead className="text-center">Treffer</TableHead>
-                          <TableHead className="text-center">Konflikt (Wunsch)</TableHead>
-                          <TableHead className="text-center">Konflikt (Abw.)</TableHead>
-                          <TableHead className="text-center">2 Tage</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {generationWishReport.map((row) => (
-                          <TableRow key={row.employeeId}>
-                            <TableCell className="font-medium">{row.employeeName}</TableCell>
-                            <TableCell className="text-center">
-                              <Badge
-                                className={
-                                  row.traffic === "green"
-                                    ? "bg-green-600"
-                                    : row.traffic === "yellow"
-                                      ? "bg-amber-600"
-                                      : "bg-red-600"
-                                }
-                              >
-                                {row.score}
+              {/* Generated Shifts Preview */}
+              <div className="border rounded-lg">
+                <div className="p-3 bg-muted/30 border-b flex justify-between items-center">
+                  <span className="font-medium">Generierte Dienste</span>
+                  <Badge variant="secondary">
+                    {generatedShifts.length} Dienste
+                  </Badge>
+                </div>
+                <ScrollArea className="h-[300px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Datum</TableHead>
+                        <TableHead>Dienst</TableHead>
+                        <TableHead>Mitarbeiter</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {generatedShifts.map((shift, i) => {
+                        const line = serviceLineLookup.get(shift.serviceType);
+                        const label = line?.label || shift.serviceType;
+                        const badgeClass =
+                          line?.style.cell ||
+                          "bg-slate-100 text-slate-700 border-slate-200";
+                        return (
+                          <TableRow key={i}>
+                            <TableCell className="font-mono text-sm">
+                              {shift.date}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={badgeClass}>
+                                {label}
                               </Badge>
                             </TableCell>
-                            <TableCell className="text-center">{row.assigned}</TableCell>
-                            <TableCell className="text-center">{row.wishTotal}</TableCell>
-                            <TableCell className="text-center">{row.wishHit}</TableCell>
-                            <TableCell className="text-center">
-                              {row.avoidViolations > 0 ? (
-                                <Badge className="bg-red-600">{row.avoidViolations}</Badge>
-                              ) : (
-                                <Badge variant="outline">0</Badge>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {row.absenceViolations > 0 ? (
-                                <Badge className="bg-red-600">{row.absenceViolations}</Badge>
-                              ) : (
-                                <Badge variant="outline">0</Badge>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {row.consecutiveViolations > 0 ? (
-                                <Badge className="bg-amber-600">{row.consecutiveViolations}</Badge>
-                              ) : (
-                                <Badge variant="outline">0</Badge>
-                              )}
-                            </TableCell>
+                            <TableCell>{shift.employeeName}</TableCell>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </ScrollArea>
-                </div>
-              ) : null}
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setGenerationDialogOpen(false)}
+              >
+                Abbrechen
+              </Button>
+              <Button
+                onClick={handleApplyGenerated}
+                disabled={isApplying || generatedShifts.length === 0}
+                className="gap-2"
+                data-testid="button-apply-generated"
+              >
+                {isApplying ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4" />
+                )}
+                Plan übernehmen
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </Layout>
+  );
+}
