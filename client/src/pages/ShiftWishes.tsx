@@ -71,14 +71,20 @@ import type {
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 import {
+  eachDayOfInterval,
   format,
-  getDaysInMonth,
-  startOfMonth,
-  getDay,
+  isSameMonth,
   isWeekend,
+  startOfMonth,
 } from "date-fns";
 import { de } from "date-fns/locale";
 import { employeeDoesShifts } from "@shared/shiftTypes";
+import type { DateRange } from "react-day-picker";
+
+const CALENDAR_MODIFIER_CLASSES = {
+  wish: "bg-blue-100 text-blue-900 hover:bg-blue-200",
+  blocked: "bg-red-100 text-red-900 hover:bg-red-200",
+} as const;
 
 const ABSENCE_REASONS = [
   { value: "Urlaub", label: "Urlaub" },
@@ -119,6 +125,7 @@ export default function ShiftWishes() {
   const [allWishes, setAllWishes] = useState<ShiftWish[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [serviceLines, setServiceLines] = useState<ServiceLine[]>([]);
+  const [range, setRange] = useState<DateRange | undefined>(undefined);
 
   const [preferredShiftDays, setPreferredShiftDays] = useState<string[]>([]);
   const [avoidShiftDays, setAvoidShiftDays] = useState<string[]>([]);
@@ -193,46 +200,62 @@ export default function ShiftWishes() {
     );
   };
 
-  type DayState = "neutral" | "wish" | "blocked";
+  const keyFromDate = (date: Date) => format(date, "yyyy-MM-dd");
 
-  const getState = (key: string): DayState => {
-    if (avoidShiftDays.includes(key)) return "blocked";
-    if (preferredShiftDays.includes(key)) return "wish";
-    return "neutral";
+  const rangeModifiers = useMemo(() => {
+    const wishSet = new Set(preferredShiftDays);
+    const blockedSet = new Set(avoidShiftDays);
+    return {
+      wish: (date: Date) => {
+        const key = keyFromDate(date);
+        return !blockedSet.has(key) && wishSet.has(key);
+      },
+      blocked: (date: Date) => blockedSet.has(keyFromDate(date)),
+    };
+  }, [avoidShiftDays, preferredShiftDays]);
+
+  const handleRangeSelect = (value: DateRange | undefined) => {
+    if (isSubmitted) return;
+    setRange(value);
   };
 
-  const setState = (key: string, nextState: DayState) => {
-    if (isSubmitted) return;
+  const monthAnchor = planningMonth
+    ? startOfMonth(new Date(planningMonth.year, planningMonth.month - 1, 1))
+    : null;
 
-    setPreferredShiftDays((current) => {
-      const next = new Set(current);
-      if (nextState === "wish") {
-        next.add(key);
+  const applyRange = (kind: "wish" | "blocked" | "neutral") => {
+    if (!planningMonth || !range?.from) return;
+    const from = range.from;
+    const to = range.to ?? range.from;
+    if (!monthAnchor) return;
+    const days = eachDayOfInterval({ start: from, end: to }).filter((day) =>
+      isSameMonth(day, monthAnchor),
+    );
+
+    const wishSet = new Set(preferredShiftDays);
+    const avoidSet = new Set(avoidShiftDays);
+
+    days.forEach((day) => {
+      const key = keyFromDate(day);
+      if (kind === "wish") {
+        wishSet.add(key);
+        avoidSet.delete(key);
+      } else if (kind === "blocked") {
+        avoidSet.add(key);
+        wishSet.delete(key);
       } else {
-        next.delete(key);
+        wishSet.delete(key);
+        avoidSet.delete(key);
       }
-      return Array.from(next);
     });
 
-    setAvoidShiftDays((current) => {
-      const next = new Set(current);
-      if (nextState === "blocked") {
-        next.add(key);
-      } else {
-        next.delete(key);
-      }
-      return Array.from(next);
+    avoidSet.forEach((key) => {
+      wishSet.delete(key);
     });
-  };
 
-  const toggleWish = (key: string) => {
-    if (isSubmitted) return;
-    setState(key, getState(key) === "wish" ? "neutral" : "wish");
-  };
-
-  const toggleBlocked = (key: string) => {
-    if (isSubmitted) return;
-    setState(key, getState(key) === "blocked" ? "neutral" : "blocked");
+    setPreferredShiftDays(Array.from(wishSet));
+    setAvoidShiftDays(Array.from(avoidSet));
+    setRange(undefined);
   };
 
   const isWeekendKey = (key: string) => {
@@ -248,6 +271,10 @@ export default function ShiftWishes() {
   useEffect(() => {
     loadData();
   }, [currentUser, canViewAll]);
+
+  useEffect(() => {
+    setRange(undefined);
+  }, [planningMonth?.year, planningMonth?.month]);
 
   const loadData = async () => {
     if (!currentUser) return;
@@ -516,86 +543,6 @@ export default function ShiftWishes() {
     }
   };
 
-  const renderCalendarDays = () => {
-    if (!planningMonth) return null;
-
-    const year = planningMonth.year;
-    const monthIndex = planningMonth.month - 1;
-    const daysInMonth = getDaysInMonth(new Date(year, monthIndex));
-    const firstDayOfMonth = startOfMonth(new Date(year, monthIndex));
-    const startDayOfWeek = getDay(firstDayOfMonth);
-
-    const cells = [];
-    const weekdayHeaders = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
-    for (let i = 0; i < 7; i += 1) {
-      cells.push(
-        <div
-          key={`header-${i}`}
-          className="text-center font-medium text-sm text-muted-foreground py-2"
-        >
-          {weekdayHeaders[i]}
-        </div>,
-      );
-    }
-
-    const offset = startDayOfWeek === 0 ? 6 : startDayOfWeek - 1;
-    for (let i = 0; i < offset; i += 1) {
-      cells.push(<div key={`empty-${i}`} className="p-2" />);
-    }
-
-    for (let day = 1; day <= daysInMonth; day += 1) {
-      const date = new Date(year, monthIndex, day);
-      const dayKey = format(date, "yyyy-MM-dd");
-      const state = getState(dayKey);
-      const isWeekendDay = isWeekend(date);
-
-      const stateClasses =
-        state === "blocked"
-          ? "border-red-500 bg-red-100 text-red-800"
-          : state === "wish"
-            ? "border-blue-500 bg-blue-100 text-blue-800"
-            : "border-gray-200 bg-white text-gray-900";
-
-      cells.push(
-        <div
-          key={day}
-          data-testid={`calendar-day-${day}`}
-          className={`p-2 rounded-md border transition-colors min-h-[74px] flex flex-col justify-between ${stateClasses}`}
-          title={`Tag ${day} - ${state === "blocked" ? "Nicht möglich" : state === "wish" ? "Dienstwunsch" : "Neutral"}`}
-        >
-          <div className={`flex items-center justify-between ${isWeekendDay ? "font-semibold" : ""}`}>
-            <span className="text-lg font-medium">{day}</span>
-            {isWeekendDay ? (
-              <span className="text-xs text-muted-foreground">WE</span>
-            ) : null}
-          </div>
-          <div className="flex items-center justify-between gap-3 mt-2 text-xs">
-            <button
-              type="button"
-              className="flex items-center justify-center w-6 h-6 rounded-full border border-blue-200 bg-white text-blue-600 transition hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
-              onClick={() => toggleWish(dayKey)}
-              disabled={isSubmitted}
-              data-testid={`calendar-wish-toggle-${day}`}
-            >
-              <Plus className="w-3 h-3" />
-            </button>
-            <button
-              type="button"
-              className="flex items-center justify-center w-6 h-6 rounded-full border border-red-200 bg-white text-red-600 transition hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
-              onClick={() => toggleBlocked(dayKey)}
-              disabled={isSubmitted}
-              data-testid={`calendar-block-toggle-${day}`}
-            >
-              <Minus className="w-3 h-3" />
-            </button>
-          </div>
-        </div>,
-      );
-    }
-
-    return cells;
-  };
-
   if (loading) {
     return (
       <Layout>
@@ -705,46 +652,95 @@ export default function ShiftWishes() {
           </TabsList>
 
           <TabsContent value="wishes" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <CalendarIcon className="w-5 h-5" />
-                Dienstwünsche &amp; Sperren
-              </CardTitle>
-              <CardDescription>
-                Markieren Sie Tage mit Wunsch (+) oder mit Sperre (-).
-                Nicht mögliche Tage haben Vorrang vor Wünschen, beide
-                Zustände können sich nicht demselben Tag überschneiden.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-7 gap-1">
-                {renderCalendarDays()}
-              </div>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <CalendarIcon className="w-5 h-5" />
+                  Dienstwünsche &amp; Sperren
+                </CardTitle>
+                <CardDescription>
+                  Wählen Sie einen Zeitraum im aktuellen Monat und markieren
+                  Sie ihn als Wunsch, nicht möglich oder neutral.
+                  Nicht mögliche Tage haben Vorrang vor Wünschen.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {planningMonth && monthAnchor ? (
+                  <Calendar
+                    mode="range"
+                    selected={range}
+                    onSelect={handleRangeSelect}
+                    month={monthAnchor}
+                    fromMonth={monthAnchor}
+                    toMonth={monthAnchor}
+                    numberOfMonths={1}
+                    showOutsideDays={false}
+                    modifiers={rangeModifiers}
+                    modifiersClassNames={CALENDAR_MODIFIER_CLASSES}
+                    locale={de}
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Kalender steht erst nach Auswahl eines Planungsmonats zur Verfügung.
+                  </p>
+                )}
 
-              <div className="flex flex-wrap gap-6 mt-4 text-sm">
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded bg-blue-100 border border-blue-500" />
-                  <span>Wunsch (+)</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded bg-red-100 border border-red-500" />
-                  <span>Nicht möglich (-)</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded bg-white border border-gray-200" />
-                  <span>Neutral</span>
-                </div>
-              </div>
+                {range?.from && (
+                  <div className="space-y-2">
+                    <p className="text-sm leading-snug text-muted-foreground">
+                      Auswahl:{" "}
+                      <span className="font-medium">
+                        {format(range.from, "dd.MM.yyyy", { locale: de })}
+                      </span>{" "}
+                      –{" "}
+                      <span className="font-medium">
+                        {format(range.to ?? range.from, "dd.MM.yyyy", {
+                          locale: de,
+                        })}
+                      </span>
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => applyRange("wish")}
+                        disabled={isSubmitted}
+                        data-testid="button-apply-wish-range"
+                      >
+                        <Plus className="w-3 h-3 mr-1" />
+                        Als Wunsch markieren (+)
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => applyRange("blocked")}
+                        disabled={isSubmitted}
+                        data-testid="button-apply-blocked-range"
+                      >
+                        <Minus className="w-3 h-3 mr-1" />
+                        Als Nicht möglich markieren (–)
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => applyRange("neutral")}
+                        disabled={isSubmitted}
+                        data-testid="button-apply-neutral-range"
+                      >
+                        Neutralisieren
+                      </Button>
+                    </div>
+                  </div>
+                )}
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4 text-sm">
-                <span>Wünsche: {preferredShiftDays.length}</span>
-                <span>Nicht möglich: {avoidShiftDays.length}</span>
-                <span>Wochenend-Wünsche: {weekendWishCount}w</span>
-                <span>Wochenend-Sperren: {weekendBlockedCount}w</span>
-              </div>
-            </CardContent>
-          </Card>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm text-muted-foreground">
+                  <span>Wünsche: {preferredShiftDays.length}</span>
+                  <span>Nicht möglich: {avoidShiftDays.length}</span>
+                  <span>Wochenend-Wünsche: {weekendWishCount}w</span>
+                  <span>Wochenend-Sperren: {weekendBlockedCount}w</span>
+                </div>
+              </CardContent>
+            </Card>
 
             <Card>
               <CardHeader>
