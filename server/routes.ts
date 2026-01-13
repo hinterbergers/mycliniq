@@ -2995,13 +2995,17 @@ export async function registerRoutes(
   );
 
   // Shift Wishes routes
-  app.get("/api/shift-wishes", async (req: Request, res: Response) => {
+  app.get("/api/shift-wishes", requireAuth, async (req: Request, res: Response) => {
     try {
       const { year, month, employeeId } = req.query;
 
       if (employeeId && year && month) {
+        const targetId = parseInt(employeeId as string);
+        if (!req.user?.isAdmin && req.user?.appRole !== "Admin" && req.user?.employeeId !== targetId) {
+          return res.status(403).json({ error: "Zugriff nur auf eigene Daten erlaubt" });
+        }
         const wish = await storage.getShiftWishByEmployeeAndMonth(
-          parseInt(employeeId as string),
+          targetId,
           parseInt(year as string),
           parseInt(month as string),
         );
@@ -3009,6 +3013,9 @@ export async function registerRoutes(
       }
 
       if (year && month) {
+        if (!canViewPlanningData(req)) {
+          return res.status(403).json({ error: "Keine Berechtigung" });
+        }
         const wishes = await storage.getShiftWishesByMonth(
           parseInt(year as string),
           parseInt(month as string),
@@ -3022,22 +3029,57 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/shift-wishes", async (req: Request, res: Response) => {
+  app.post("/api/shift-wishes", requireAuth, async (req: Request, res: Response) => {
     try {
-      const wish = await storage.createShiftWish(req.body);
+      const payload = req.body as any;
+      const currentEmployeeId = req.user?.employeeId;
+      const isAdmin = Boolean(req.user?.isAdmin || req.user?.appRole === "Admin");
+
+      if (!isAdmin && currentEmployeeId && payload?.employeeId !== currentEmployeeId) {
+        return res.status(403).json({ error: "Zugriff nur auf eigene Daten erlaubt" });
+      }
+
+      // Force draft fields on create (server is source of truth)
+      const wish = await storage.createShiftWish({
+        ...payload,
+        status: "Entwurf",
+        submittedAt: null,
+      });
+
       res.status(201).json(wish);
     } catch (error) {
       res.status(500).json({ error: "Failed to create shift wish" });
     }
   });
 
-  app.patch("/api/shift-wishes/:id", async (req: Request, res: Response) => {
+  app.patch("/api/shift-wishes/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
-      const wish = await storage.updateShiftWish(id, req.body);
+      const existing = await storage.getShiftWish(id);
+      if (!existing) {
+        return res.status(404).json({ error: "Shift wish not found" });
+      }
+
+      const currentEmployeeId = req.user?.employeeId;
+      const isAdmin = Boolean(req.user?.isAdmin || req.user?.appRole === "Admin");
+      if (!isAdmin && existing.employeeId !== currentEmployeeId) {
+        return res.status(403).json({ error: "Keine Berechtigung" });
+      }
+
+      if (existing.status === "Eingereicht") {
+        return res.status(400).json({ error: "Eingereichte Wünsche können nicht bearbeitet werden" });
+      }
+
+      const payload = { ...(req.body as any) };
+      delete payload.status;
+      delete payload.submittedAt;
+      delete payload.employeeId;
+
+      const wish = await storage.updateShiftWish(id, payload);
       if (!wish) {
         return res.status(404).json({ error: "Shift wish not found" });
       }
+
       res.json(wish);
     } catch (error) {
       res.status(500).json({ error: "Failed to update shift wish" });
@@ -3046,9 +3088,25 @@ export async function registerRoutes(
 
   app.post(
     "/api/shift-wishes/:id/submit",
+    requireAuth,
     async (req: Request, res: Response) => {
       try {
         const id = parseInt(req.params.id);
+        const existing = await storage.getShiftWish(id);
+        if (!existing) {
+          return res.status(404).json({ error: "Shift wish not found" });
+        }
+
+        const currentEmployeeId = req.user?.employeeId;
+        const isAdmin = Boolean(req.user?.isAdmin || req.user?.appRole === "Admin");
+        if (!isAdmin && existing.employeeId !== currentEmployeeId) {
+          return res.status(403).json({ error: "Keine Berechtigung" });
+        }
+
+        if (existing.status === "Eingereicht") {
+          return res.status(400).json({ error: "Wunsch ist bereits eingereicht" });
+        }
+
         const wish = await storage.updateShiftWish(id, {
           status: "Eingereicht",
           submittedAt: new Date(),
@@ -3062,22 +3120,68 @@ export async function registerRoutes(
       }
     },
   );
-  app.post("/api/shift-wishes/:id/reopen", async (req: Request, res: Response) => {
-    const id = Number(req.params.id);
-  
-    // ✅ WICHTIG: hier 1:1 dieselben Auth-/Permission-Checks wie im /submit-Handler kopieren
-    // (also: user muss eingeloggt sein, owner/admin-check etc.)
-  
-    const updated = await storage.reopenShiftWish(id);
-    if (!updated) {
-      return res.status(404).json({ message: "Shift wish not found" });
-    }
-  
-    res.json(updated);
-  });
-  app.delete("/api/shift-wishes/:id", async (req: Request, res: Response) => {
+  app.post(
+    "/api/shift-wishes/:id/reopen",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const id = Number(req.params.id);
+        if (Number.isNaN(id)) {
+          return res.status(400).json({ error: "Invalid shift wish id" });
+        }
+
+        const wish = await storage.getShiftWish(id);
+        if (!wish) {
+          return res.status(404).json({ error: "Shift wish not found" });
+        }
+
+        const currentEmployeeId = req.user?.employeeId;
+        if (!currentEmployeeId) {
+          return res.status(401).json({ error: "Nicht authentifiziert" });
+        }
+
+        const isAdmin = Boolean(req.user?.isAdmin || req.user?.appRole === "Admin");
+        if (!isAdmin && wish.employeeId !== currentEmployeeId) {
+          return res.status(403).json({ error: "Keine Berechtigung" });
+        }
+
+        if (wish.status !== "Eingereicht") {
+          return res.status(400).json({ error: "Nur eingereichte Wünsche können wieder geöffnet werden" });
+        }
+
+        const updatedWish = await storage.updateShiftWish(id, {
+          status: "Entwurf",
+          submittedAt: null,
+        });
+
+        if (!updatedWish) {
+          return res.status(404).json({ error: "Shift wish not found" });
+        }
+
+        res.json(updatedWish);
+      } catch (error) {
+        console.error("Reopen shift wish error:", error);
+        res.status(500).json({ error: "Bearbeiten fehlgeschlagen" });
+      }
+    },
+  );
+  app.delete("/api/shift-wishes/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
+      const existing = await storage.getShiftWish(id);
+      if (!existing) {
+        return res.status(404).json({ error: "Shift wish not found" });
+      }
+
+      const currentEmployeeId = req.user?.employeeId;
+      const isAdmin = Boolean(req.user?.isAdmin || req.user?.appRole === "Admin");
+      if (!isAdmin && existing.employeeId !== currentEmployeeId) {
+        return res.status(403).json({ error: "Keine Berechtigung" });
+      }
+
+      if (existing.status === "Eingereicht") {
+        return res.status(400).json({ error: "Eingereichte Wünsche können nicht gelöscht werden" });
+      }
       await storage.deleteShiftWish(id);
       res.status(204).send();
     } catch (error) {
