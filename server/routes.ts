@@ -909,7 +909,7 @@ export async function registerRoutes(
   // AI Roster Generation
   app.post("/api/roster/generate", async (req: Request, res: Response) => {
     try {
-      const { year, month } = req.body;
+      const { year, month, rules } = req.body;
 
       if (!year || !month) {
         return res
@@ -949,6 +949,7 @@ export async function registerRoutes(
         longTermWishes,
         longTermAbsences,
         serviceLineMeta,
+        rules,
       );
 
       res.json({

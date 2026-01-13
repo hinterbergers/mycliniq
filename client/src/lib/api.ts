@@ -338,6 +338,19 @@ export const employeeApi = {
 };
 
 // Roster API
+type AiRuleWeightsPayload = {
+  weekendFairness: number;
+  preferenceSatisfaction: number;
+  minimizeConflicts: number;
+};
+
+type AiRulesPayload = {
+  version?: number;
+  hard: string;
+  soft: string;
+  weights: AiRuleWeightsPayload;
+};
+
 export const rosterApi = {
   getByMonth: async (year: number, month: number): Promise<RosterShift[]> => {
     const response = await apiFetch(`${API_BASE}/roster/${year}/${month}`);
@@ -404,6 +417,7 @@ export const rosterApi = {
   generate: async (
     year: number,
     month: number,
+    options?: { rules?: AiRulesPayload },
   ): Promise<{
     success: boolean;
     generatedShifts: number;
@@ -419,7 +433,7 @@ export const rosterApi = {
     const response = await apiFetch(`${API_BASE}/roster/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ year, month }),
+      body: JSON.stringify({ year, month, ...(options ?? {}) }),
     });
     return handleResponse(response);
   },

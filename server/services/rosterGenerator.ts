@@ -64,6 +64,19 @@ interface GenerationResult {
   warnings: string[];
 }
 
+interface AiRuleWeights {
+  weekendFairness?: number;
+  preferenceSatisfaction?: number;
+  minimizeConflicts?: number;
+}
+
+interface AiRules {
+  version?: number;
+  hard?: string;
+  soft?: string;
+  weights?: AiRuleWeights;
+}
+
 function toDate(value?: string | Date | null): Date | null {
   if (!value) return null;
   if (value instanceof Date) return value;
@@ -122,6 +135,7 @@ export async function generateRosterPlan(
   longTermWishes: LongTermShiftWish[] = [],
   longTermAbsences: LongTermAbsence[] = [],
   serviceLines: ServiceLineMeta[] = [],
+  rules?: AiRules,
 ): Promise<GenerationResult> {
   const startDate = startOfMonth(new Date(year, month - 1));
   const endDate = endOfMonth(new Date(year, month - 1));
@@ -252,6 +266,32 @@ export async function generateRosterPlan(
     ? serviceLines.map((line) => `- ${line.key}: ${line.label}`).join("\n")
     : `- gyn (Gynäkologie-Dienst)\n- kreiszimmer (Kreißzimmer)\n- turnus (Turnus)`;
 
+  const clampWeight = (value?: number) =>
+    typeof value === "number" && !Number.isNaN(value)
+      ? Math.max(0, Math.min(10, value))
+      : 0;
+
+  const normalizedRules = {
+    hard: rules?.hard?.trim() ?? "",
+    soft: rules?.soft?.trim() ?? "",
+    weights: {
+      weekendFairness: clampWeight(rules?.weights?.weekendFairness),
+      preferenceSatisfaction: clampWeight(
+        rules?.weights?.preferenceSatisfaction,
+      ),
+      minimizeConflicts: clampWeight(rules?.weights?.minimizeConflicts),
+    },
+  };
+
+  const rulesSection = `## KI-Regelwerk
+### HARD RULES
+${normalizedRules.hard || "- Keine harten Regeln definiert -"}
+### SOFT RULES
+${normalizedRules.soft || "- Keine weichen Regeln definiert -"}
+### WEIGHTS
+${JSON.stringify(normalizedRules.weights, null, 2)}
+`;
+
   const prompt = `Du bist ein Dienstplan-Experte für eine gynäkologische Abteilung eines Krankenhauses.
 
 Erstelle einen optimalen Dienstplan für ${format(startDate, "MMMM yyyy")}.
@@ -295,7 +335,8 @@ Antworte mit folgendem JSON-Format:
   ],
   "reasoning": "Kurze Erklärung der Planungsentscheidungen",
   "warnings": ["Liste von Warnungen oder Konflikten"]
-}`;
+}`
+  + rulesSection;
 
   try {
     const response = await getOpenAIClient().chat.completions.create({
