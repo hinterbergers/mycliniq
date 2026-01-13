@@ -240,6 +240,7 @@ export interface IStorage {
     year: number,
     month: number,
   ): Promise<ShiftWish | undefined>;
+  getShiftWish(id: number): Promise<ShiftWish | undefined>;
   createShiftWish(wish: InsertShiftWish): Promise<ShiftWish>;
   updateShiftWish(
     id: number,
@@ -942,6 +943,15 @@ export class DatabaseStorage implements IStorage {
         ),
       );
     return result[0];
+  }
+  async getShiftWish(id: number) {
+    const [wish] = await db
+      .select()
+      .from(shiftWishes)
+      .where(eq(shiftWishes.id, id))
+      .limit(1);
+
+    return wish;
   }
 
   async createShiftWish(wish: InsertShiftWish): Promise<ShiftWish> {
