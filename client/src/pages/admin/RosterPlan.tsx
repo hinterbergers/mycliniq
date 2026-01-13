@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Tooltip,
   TooltipContent,
@@ -199,6 +200,40 @@ const MONTH_NAMES = [
   "Dezember",
 ];
 
+const RULES_STORAGE_KEY = "mycliniq.roster.aiRules.v1";
+
+type AiRuleWeights = {
+  weekendFairness: number;
+  preferenceSatisfaction: number;
+  minimizeConflicts: number;
+};
+
+type AiRules = {
+  version: number;
+  hard: string;
+  soft: string;
+  weights: AiRuleWeights;
+};
+
+const DEFAULT_AI_RULES: AiRules = {
+  version: 1,
+  hard: `# Hard Rules (MUSS)
+- Wenn Primarius einen Wunsch einträgt, ist er fix.
+- Keine zwei Dienste an aufeinanderfolgenden Kalendertagen pro Person.
+`,
+  soft: `# Soft Rules (SOLL)
+- Wochenenden fair verteilen (rolling).
+- Möglichst keine 2 Wochenenden in Serie.
+`,
+  weights: {
+    weekendFairness: 7,
+    preferenceSatisfaction: 7,
+    minimizeConflicts: 10,
+  },
+};
+
+const clampWeight = (value: number) => Math.max(0, Math.min(10, value));
+
 const ROLE_SORT_ORDER: Record<string, number> = {
   Primararzt: 1,
   "1. Oberarzt": 2,
@@ -322,8 +357,59 @@ export default function RosterPlan() {
     reason: ABSENCE_REASONS[0],
     notes: "",
   });
+  const [rulesDialogOpen, setRulesDialogOpen] = useState(false);
+  const [aiRules, setAiRules] = useState<AiRules>(DEFAULT_AI_RULES);
   const planStatus = dutyPlan?.status ?? "Entwurf";
   const planStatusLabel = PLAN_STATUS_LABELS[planStatus];
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem(RULES_STORAGE_KEY);
+    if (!stored) return;
+    try {
+      const parsed = JSON.parse(stored);
+      if (!parsed || typeof parsed !== "object") return;
+      const weights = parsed.weights ?? {};
+      setAiRules({
+        version:
+          typeof parsed.version === "number"
+            ? parsed.version
+            : DEFAULT_AI_RULES.version,
+        hard:
+          typeof parsed.hard === "string"
+            ? parsed.hard
+            : DEFAULT_AI_RULES.hard,
+        soft:
+          typeof parsed.soft === "string"
+            ? parsed.soft
+            : DEFAULT_AI_RULES.soft,
+        weights: {
+          weekendFairness: clampWeight(
+            typeof weights.weekendFairness === "number"
+              ? weights.weekendFairness
+              : DEFAULT_AI_RULES.weights.weekendFairness,
+          ),
+          preferenceSatisfaction: clampWeight(
+            typeof weights.preferenceSatisfaction === "number"
+              ? weights.preferenceSatisfaction
+              : DEFAULT_AI_RULES.weights.preferenceSatisfaction,
+          ),
+          minimizeConflicts: clampWeight(
+            typeof weights.minimizeConflicts === "number"
+              ? weights.minimizeConflicts
+              : DEFAULT_AI_RULES.weights.minimizeConflicts,
+          ),
+        },
+      });
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(RULES_STORAGE_KEY, JSON.stringify(aiRules));
+  }, [aiRules]);
 
   const serviceLineDisplay = useMemo(() => {
     const lines: ServiceLineConfig[] = (
@@ -1002,7 +1088,7 @@ export default function RosterPlan() {
       const year = currentDate.getFullYear();
       const month = currentDate.getMonth() + 1;
 
-      const result = await rosterApi.generate(year, month);
+      const result = await rosterApi.generate(year, month, { rules: aiRules });
 
       if (result.success) {
         setGeneratedShifts(result.shifts);
@@ -1347,6 +1433,16 @@ export default function RosterPlan() {
                   <Sparkles className="w-4 h-4" />
                 )}
                 Auto-Generieren
+              </Button>
+            )}
+            {canEdit && (
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => setRulesDialogOpen(true)}
+              >
+                <Brain className="w-4 h-4" />
+                KI-Regelwerk
               </Button>
             )}
             {canEdit && planStatus === "Entwurf" && (
@@ -1845,6 +1941,135 @@ export default function RosterPlan() {
             </div>
           </CardContent>
         </Card>
+
+        {/* KI-Regelwerk Dialog */}
+        <Dialog open={rulesDialogOpen} onOpenChange={setRulesDialogOpen}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Brain className="w-5 h-5 text-primary" />
+                KI-Regelwerk
+              </DialogTitle>
+              <DialogDescription>
+                Legen Sie Vorgaben für die automatische Generierung fest. Harte
+                Regeln dürfen nicht verletzt werden, weiche Regeln dienen als
+                Optimierungsziele. Passen Sie die Gewichtung an, um Prioritäten
+                zu verschieben.
+              </DialogDescription>
+            </DialogHeader>
+
+            <Tabs defaultValue="hard" className="space-y-4">
+              <TabsList>
+                <TabsTrigger value="hard">Hard (MUSS)</TabsTrigger>
+                <TabsTrigger value="soft">Soft (SOLL)</TabsTrigger>
+                <TabsTrigger value="weights">Gewichte</TabsTrigger>
+              </TabsList>
+              <TabsContent value="hard">
+                <Textarea
+                  value={aiRules.hard}
+                  onChange={(event) =>
+                    setAiRules((prev) => ({ ...prev, hard: event.target.value }))
+                  }
+                  rows={10}
+                  className="font-mono text-sm"
+                />
+              </TabsContent>
+              <TabsContent value="soft">
+                <Textarea
+                  value={aiRules.soft}
+                  onChange={(event) =>
+                    setAiRules((prev) => ({ ...prev, soft: event.target.value }))
+                  }
+                  rows={10}
+                  className="font-mono text-sm"
+                />
+              </TabsContent>
+              <TabsContent value="weights">
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs uppercase tracking-wide">
+                      Wochenenden fair verteilen
+                    </Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={10}
+                      value={aiRules.weights.weekendFairness}
+                      onChange={(event) =>
+                        setAiRules((prev) => ({
+                          ...prev,
+                          weights: {
+                            ...prev.weights,
+                            weekendFairness: clampWeight(
+                              Number(event.target.value) || 0,
+                            ),
+                          },
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs uppercase tracking-wide">
+                      Wünsche erfüllen
+                    </Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={10}
+                      value={aiRules.weights.preferenceSatisfaction}
+                      onChange={(event) =>
+                        setAiRules((prev) => ({
+                          ...prev,
+                          weights: {
+                            ...prev.weights,
+                            preferenceSatisfaction: clampWeight(
+                              Number(event.target.value) || 0,
+                            ),
+                          },
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs uppercase tracking-wide">
+                      Konflikte minimieren
+                    </Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={10}
+                      value={aiRules.weights.minimizeConflicts}
+                      onChange={(event) =>
+                        setAiRules((prev) => ({
+                          ...prev,
+                          weights: {
+                            ...prev.weights,
+                            minimizeConflicts: clampWeight(
+                              Number(event.target.value) || 0,
+                            ),
+                          },
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Werte 0–10: Je höher, desto wichtiger für die KI.
+                </p>
+              </TabsContent>
+            </Tabs>
+
+            <DialogFooter className="flex items-center justify-between">
+              <Button
+                variant="ghost"
+                onClick={() => setAiRules(DEFAULT_AI_RULES)}
+              >
+                Reset
+              </Button>
+              <Button onClick={() => setRulesDialogOpen(false)}>Schließen</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* AI Generation Results Dialog */}
         <Dialog
