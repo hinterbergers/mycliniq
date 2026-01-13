@@ -76,6 +76,12 @@ import {
   isSameMonth,
   isWeekend,
   startOfMonth,
+  startOfDay,
+  isBefore,
+  isAfter,
+  addDays,
+  isSameDay,
+  parseISO,
 } from "date-fns";
 import { de } from "date-fns/locale";
 import { employeeDoesShifts } from "@shared/shiftTypes";
@@ -84,6 +90,8 @@ import type { DateRange } from "react-day-picker";
 const CALENDAR_MODIFIER_CLASSES = {
   wish: "bg-blue-100 text-blue-900 hover:bg-blue-200",
   blocked: "bg-red-100 text-red-900 hover:bg-red-200",
+  absence: "bg-red-100 text-red-900 hover:bg-red-200",
+  special: "bg-yellow-50 text-yellow-900 hover:bg-yellow-100",
 } as const;
 
 const ABSENCE_REASONS = [
@@ -105,6 +113,54 @@ const MONTH_NAMES = [
   "November",
   "Dezember",
 ];
+
+// --- Austrian holiday helpers ---
+const dayKey = (d: Date) => format(d, "yyyy-MM-dd");
+
+// Anonymous Gregorian algorithm
+const easterSunday = (year: number) => {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31); // 3=March, 4=April
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(year, month - 1, day);
+};
+
+const austrianHolidayKeys = (year: number) => {
+  const keys = new Set<string>();
+  const add = (d: Date) => keys.add(dayKey(d));
+  const fixed = (m: number, dd: number) => add(new Date(year, m - 1, dd));
+
+  // Fixed-date public holidays (AT)
+  fixed(1, 1); // Neujahr
+  fixed(1, 6); // Heilige Drei Könige
+  fixed(5, 1); // Staatsfeiertag
+  fixed(8, 15); // Mariä Himmelfahrt
+  fixed(10, 26); // Nationalfeiertag
+  fixed(11, 1); // Allerheiligen
+  fixed(12, 8); // Mariä Empfängnis
+  fixed(12, 25); // Christtag
+  fixed(12, 26); // Stefanitag
+
+  // Movable holidays based on Easter
+  const easter = easterSunday(year);
+  add(addDays(easter, 1)); // Ostermontag
+  add(addDays(easter, 39)); // Christi Himmelfahrt
+  add(addDays(easter, 50)); // Pfingstmontag
+  add(addDays(easter, 60)); // Fronleichnam
+
+  return keys;
+};
 
 export default function ShiftWishes() {
   const {
@@ -142,6 +198,13 @@ export default function ShiftWishes() {
   const [notes, setNotes] = useState("");
 
   const [absenceDialogOpen, setAbsenceDialogOpen] = useState(false);
+  const [deleteAbsenceOpen, setDeleteAbsenceOpen] = useState(false);
+  const [deleteAbsenceId, setDeleteAbsenceId] = useState<number | null>(null);
+
+  const absenceToDelete = useMemo(
+    () => absences.find((a) => a.id === deleteAbsenceId) ?? null,
+    [absences, deleteAbsenceId],
+  );
   const [newAbsenceStart, setNewAbsenceStart] = useState<Date | undefined>();
   const [newAbsenceEnd, setNewAbsenceEnd] = useState<Date | undefined>();
   const [newAbsenceReason, setNewAbsenceReason] = useState<string>("Urlaub");
@@ -202,17 +265,68 @@ export default function ShiftWishes() {
 
   const keyFromDate = (date: Date) => format(date, "yyyy-MM-dd");
 
+  const holidaySet = useMemo(
+    () => (planningMonth ? austrianHolidayKeys(planningMonth.year) : new Set<string>()),
+    [planningMonth?.year],
+  );
+
+  const absenceDayMap = useMemo(() => {
+    const map = new Map<string, string>();
+    if (!monthAnchor) return map;
+
+    absences.forEach((absence) => {
+      const start = parseISO(absence.startDate);
+      const end = parseISO(absence.endDate);
+      eachDayOfInterval({ start, end }).forEach((day) => {
+        if (!isSameMonth(day, monthAnchor)) return;
+        const key = keyFromDate(day);
+        if (!map.has(key)) {
+          map.set(key, absence.reason);
+        }
+      });
+    });
+
+    return map;
+  }, [absences, monthAnchor]);
+
+  const absenceKeySet = useMemo(() => new Set(absenceDayMap.keys()), [absenceDayMap]);
+
+  const effectiveWishKeySet = useMemo(() => {
+    const avoidSet = new Set(avoidShiftDays);
+    return new Set(preferredShiftDays.filter((k) => !avoidSet.has(k)));
+  }, [avoidShiftDays, preferredShiftDays]);
+
   const rangeModifiers = useMemo(() => {
     const wishSet = new Set(preferredShiftDays);
     const blockedSet = new Set(avoidShiftDays);
+
     return {
       wish: (date: Date) => {
         const key = keyFromDate(date);
         return !blockedSet.has(key) && wishSet.has(key);
       },
       blocked: (date: Date) => blockedSet.has(keyFromDate(date)),
+      absence: (date: Date) => {
+        const key = keyFromDate(date);
+        return absenceKeySet.has(key) && !effectiveWishKeySet.has(key);
+      },
+      special: (date: Date) => {
+        const key = keyFromDate(date);
+        if (!isSameMonth(date, monthAnchor ?? date)) return false;
+        if (absenceKeySet.has(key)) return false;
+        if (blockedSet.has(key)) return false;
+        if (effectiveWishKeySet.has(key)) return false;
+        return isWeekend(date) || holidaySet.has(key);
+      },
     };
-  }, [avoidShiftDays, preferredShiftDays]);
+  }, [
+    absenceKeySet,
+    avoidShiftDays,
+    effectiveWishKeySet,
+    holidaySet,
+    monthAnchor,
+    preferredShiftDays,
+  ]);
 
   const handleRangeSelect = (value: DateRange | undefined) => {
     if (isSubmitted) return;
@@ -258,11 +372,95 @@ export default function ShiftWishes() {
     setRange(undefined);
   };
 
+  // --- Absence interruption helpers ---
+  const splitIntoRanges = (dates: Date[]) => {
+    if (!dates.length) return [] as Array<{ start: Date; end: Date }>;
+    const sorted = [...dates].sort((a, b) => a.getTime() - b.getTime());
+    const ranges: Array<{ start: Date; end: Date }> = [];
+
+    let start = sorted[0];
+    let prev = sorted[0];
+
+    for (let i = 1; i < sorted.length; i++) {
+      const cur = sorted[i];
+      if (isSameDay(cur, addDays(prev, 1))) {
+        prev = cur;
+        continue;
+      }
+      ranges.push({ start, end: prev });
+      start = cur;
+      prev = cur;
+    }
+
+    ranges.push({ start, end: prev });
+    return ranges;
+  };
+
+  const interruptAbsencesForWishDays = async (wishDayKeys: string[]) => {
+    if (!currentUser || !planningMonth || !monthAnchor) return;
+    if (!wishDayKeys.length) return;
+
+    const overrideSet = new Set(wishDayKeys);
+
+    for (const absence of absences) {
+      const start = parseISO(absence.startDate);
+      const end = parseISO(absence.endDate);
+      const allDays = eachDayOfInterval({ start, end }).filter((d) =>
+        isSameMonth(d, monthAnchor),
+      );
+
+      const affected = allDays.some((d) => overrideSet.has(keyFromDate(d)));
+      if (!affected) continue;
+
+      const remainingDays = allDays.filter((d) => !overrideSet.has(keyFromDate(d)));
+
+      // delete original
+      await plannedAbsencesApi.delete(absence.id);
+
+      // recreate remaining segments
+      const segments = splitIntoRanges(remainingDays);
+      for (const seg of segments) {
+        await plannedAbsencesApi.create({
+          employeeId: currentUser.id,
+          year: planningMonth.year,
+          month: planningMonth.month,
+          startDate: format(seg.start, "yyyy-MM-dd"),
+          endDate: format(seg.end, "yyyy-MM-dd"),
+          reason: absence.reason as any,
+          notes: (absence as any).notes ?? null,
+        });
+      }
+    }
+
+    const absenceData = await plannedAbsencesApi.getByEmployeeAndMonth(
+      currentUser.id,
+      planningMonth.year,
+      planningMonth.month,
+    );
+    setAbsences(absenceData);
+  };
+
   const isWeekendKey = (key: string) => {
     const date = new Date(key);
     if (Number.isNaN(date.getTime())) return false;
     const day = date.getDay();
     return day === 0 || day === 6;
+  };
+
+  const getAbsenceStatus = (absence: PlannedAbsence) => {
+    const today = startOfDay(new Date());
+    const start = startOfDay(new Date(absence.startDate));
+    const end = startOfDay(new Date(absence.endDate));
+
+    if (isBefore(end, today)) {
+      return { label: "Vergangen", variant: "outline" as const };
+    }
+
+    if (isAfter(start, today)) {
+      return { label: "Geplant", variant: "secondary" as const };
+    }
+
+    return { label: "Läuft", variant: "default" as const };
   };
 
   const weekendWishCount = preferredShiftDays.filter(isWeekendKey).length;
@@ -402,6 +600,20 @@ export default function ShiftWishes() {
         }
       }
 
+      // --- Interrupt absences for wish days overlapping ---
+      const overriddenAbsenceDays = normalizedPreferredShiftDays.filter((k) => absenceKeySet.has(k));
+      if (overriddenAbsenceDays.length) {
+        try {
+          await interruptAbsencesForWishDays(overriddenAbsenceDays);
+        } catch (e) {
+          toast({
+            title: "Hinweis",
+            description: "Wunsch gespeichert, aber Abwesenheit konnte nicht automatisch unterbrochen werden",
+            variant: "destructive",
+          });
+        }
+      }
+
       toast({
         title: "Gespeichert",
         description: "Ihre Wünsche wurden gespeichert",
@@ -518,6 +730,7 @@ export default function ShiftWishes() {
 
   const handleDeleteAbsence = async (id: number) => {
     try {
+      setSaving(true);
       await plannedAbsencesApi.delete(id);
       setAbsences((prev) => prev.filter((a) => a.id !== id));
 
@@ -531,6 +744,8 @@ export default function ShiftWishes() {
         description: "Löschen fehlgeschlagen",
         variant: "destructive",
       });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -568,7 +783,7 @@ export default function ShiftWishes() {
     );
   }
 
-  if (!doesShifts) {
+  if (!doesShifts && !canViewAll) {
     return (
       <Layout>
         <div className="p-6">
@@ -677,6 +892,25 @@ export default function ShiftWishes() {
                     showOutsideDays={false}
                     modifiers={rangeModifiers}
                     modifiersClassNames={CALENDAR_MODIFIER_CLASSES}
+                    components={{
+                      DayContent: (props: any) => {
+                        const date: Date = props.date;
+                        const key = keyFromDate(date);
+                        const absenceLabel = absenceDayMap.get(key);
+                        const showAbsence = Boolean(absenceLabel) && !effectiveWishKeySet.has(key);
+
+                        return (
+                          <div className="relative w-full h-full flex items-center justify-center">
+                            <span className="text-sm font-medium">{date.getDate()}</span>
+                            {showAbsence ? (
+                              <span className="absolute right-1 top-1 text-[10px] font-semibold text-red-700">
+                                {absenceLabel}
+                              </span>
+                            ) : null}
+                          </div>
+                        );
+                      },
+                    }}
                     locale={de}
                   />
                 ) : (
@@ -1026,8 +1260,9 @@ export default function ShiftWishes() {
                       <TableRow>
                         <TableHead>Zeitraum</TableHead>
                         <TableHead>Grund</TableHead>
+                        <TableHead>Status</TableHead>
                         <TableHead>Anmerkungen</TableHead>
-                        <TableHead className="w-16"></TableHead>
+                        <TableHead className="w-24"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1048,6 +1283,12 @@ export default function ShiftWishes() {
                           <TableCell>
                             <Badge variant="outline">{absence.reason}</Badge>
                           </TableCell>
+                          <TableCell>
+                            {(() => {
+                              const s = getAbsenceStatus(absence);
+                              return <Badge variant={s.variant}>{s.label}</Badge>;
+                            })()}
+                          </TableCell>
                           <TableCell className="text-muted-foreground">
                             {absence.notes || "-"}
                           </TableCell>
@@ -1055,8 +1296,12 @@ export default function ShiftWishes() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => handleDeleteAbsence(absence.id)}
+                              onClick={() => {
+                                setDeleteAbsenceId(absence.id);
+                                setDeleteAbsenceOpen(true);
+                              }}
                               data-testid={`button-delete-absence-${absence.id}`}
+                              aria-label="Abwesenheit löschen"
                             >
                               <Trash2 className="w-4 h-4 text-red-500" />
                             </Button>
@@ -1066,6 +1311,55 @@ export default function ShiftWishes() {
                     </TableBody>
                   </Table>
                 )}
+                <Dialog open={deleteAbsenceOpen} onOpenChange={setDeleteAbsenceOpen}>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Abwesenheit wirklich löschen?</DialogTitle>
+                    </DialogHeader>
+
+                    <div className="space-y-2 text-sm">
+                      <p>Diese Aktion kann nicht rückgängig gemacht werden.</p>
+                      {absenceToDelete ? (
+                        <div className="rounded-md border p-3 bg-muted/30">
+                          <div>
+                            <span className="font-medium">Zeitraum:</span>{" "}
+                            {format(new Date(absenceToDelete.startDate), "dd.MM.yyyy", { locale: de })} - {format(new Date(absenceToDelete.endDate), "dd.MM.yyyy", { locale: de })}
+                          </div>
+                          <div>
+                            <span className="font-medium">Grund:</span> {absenceToDelete.reason}
+                          </div>
+                          {absenceToDelete.notes ? (
+                            <div>
+                              <span className="font-medium">Notiz:</span> {absenceToDelete.notes}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <DialogFooter>
+                      <DialogClose asChild>
+                        <Button variant="outline" disabled={saving}>
+                          Abbrechen
+                        </Button>
+                      </DialogClose>
+                      <Button
+                        variant="destructive"
+                        disabled={saving || !deleteAbsenceId}
+                        onClick={async () => {
+                          if (!deleteAbsenceId) return;
+                          await handleDeleteAbsence(deleteAbsenceId);
+                          setDeleteAbsenceOpen(false);
+                          setDeleteAbsenceId(null);
+                        }}
+                        data-testid="button-confirm-delete-absence"
+                      >
+                        {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                        Wirklich löschen
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
               </CardContent>
             </Card>
           </TabsContent>
