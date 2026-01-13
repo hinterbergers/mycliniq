@@ -1945,7 +1945,13 @@ export default function RosterPlan() {
         </Card>
 
         {/* KI-Regelwerk Dialog */}
-        <Dialog open={rulesDialogOpen} onOpenChange={setRulesDialogOpen}>
+        <Dialog
+          open={rulesDialogOpen}
+          onOpenChange={(open) => {
+            if (isGenerating) return;
+            setRulesDialogOpen(open);
+          }}
+        >
           <DialogContent className="max-w-3xl">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
@@ -1959,6 +1965,15 @@ export default function RosterPlan() {
                 zu verschieben.
               </DialogDescription>
             </DialogHeader>
+
+            {isGenerating ? (
+              <Alert className="bg-primary/5 border-primary/20">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <AlertDescription>
+                  KI generiert gerade den Dienstplan – bitte das Fenster nicht schließen.
+                </AlertDescription>
+              </Alert>
+            ) : null}
 
             <Tabs defaultValue="hard" className="space-y-4">
               <TabsList>
@@ -2065,10 +2080,32 @@ export default function RosterPlan() {
               <Button
                 variant="ghost"
                 onClick={() => setAiRules(DEFAULT_AI_RULES)}
+                disabled={isGenerating}
               >
                 Reset
               </Button>
-              <Button onClick={() => setRulesDialogOpen(false)}>Schließen</Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setRulesDialogOpen(false)}
+                  disabled={isGenerating}
+                >
+                  Schließen
+                </Button>
+                <Button
+                  onClick={handleGenerateFromRules}
+                  disabled={isGenerating}
+                  className="gap-2"
+                  data-testid="button-generate-from-rules"
+                >
+                  {isGenerating ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-4 h-4" />
+                  )}
+                  Generieren
+                </Button>
+              </div>
             </DialogFooter>
           </DialogContent>
         </Dialog>
