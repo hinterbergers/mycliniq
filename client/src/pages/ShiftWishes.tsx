@@ -918,21 +918,29 @@ export default function ShiftWishes() {
                     modifiers={rangeModifiers}
                     modifiersClassNames={CALENDAR_MODIFIER_CLASSES}
                     components={{
-                      DayContent: (props: any) => {
-                        const date: Date = props.date;
-                        const key = keyFromDate(date);
-                        const absenceLabel = absenceDayMap.get(key);
-                        const showAbsence = Boolean(absenceLabel) && !effectiveWishKeySet.has(key);
+                      DayButton: (props: any) => {
+                        const date: Date | undefined = props?.day?.date ?? props?.date;
+                        const key = date ? keyFromDate(date) : "";
+                        const absenceLabel = key ? absenceDayMap.get(key) : undefined;
+                        const showAbsence = Boolean(absenceLabel) && key && !effectiveWishKeySet.has(key);
+
+                        const { children, className, ...rest } = props;
 
                         return (
-                          <div className="relative w-full h-full flex items-center justify-center">
-                            <span className="text-sm font-medium">{date.getDate()}</span>
+                          <button
+                            {...rest}
+                            className={`relative w-full h-full ${className ?? ""}`}
+                            type={rest.type ?? "button"}
+                          >
+                            <span className="absolute inset-0 flex items-center justify-center text-sm font-medium">
+                              {date ? date.getDate() : children}
+                            </span>
                             {showAbsence ? (
                               <span className="absolute right-1 top-1 text-[10px] font-semibold text-red-700">
                                 {absenceLabel}
                               </span>
                             ) : null}
-                          </div>
+                          </button>
                         );
                       },
                     }}
