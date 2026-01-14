@@ -1,6 +1,6 @@
 import type { Router } from "express";
 import { z } from "zod";
-import { db, eq, and, isNull, inArray, desc, sql } from "../../lib/db";
+import { db, eq, and, isNull, inArray, desc, sql, or } from "../../lib/db";
 import {
   ok,
   created,
@@ -25,7 +25,8 @@ const numericIdString = (label: string) =>
 type WhereClause =
   | ReturnType<typeof eq>
   | ReturnType<typeof isNull>
-  | ReturnType<typeof sql>;
+  | ReturnType<typeof sql>
+  | ReturnType<typeof or>;
 
 const listQuerySchema = z.object({
   view: z.enum(["my", "team", "responsibilities"]).optional(),
@@ -129,6 +130,8 @@ export function registerTaskRoutes(router: Router) {
         return notFound(res, "Aufgabe");
       }
 
+      const currentEmployeeId = req.user.employeeId;
+
       const whereClauses: WhereClause[] = [isNull(tasks.deletedAt)];
 
       if (assignedToId) {
@@ -158,8 +161,14 @@ export function registerTaskRoutes(router: Router) {
         );
       }
 
-      if (view === "my") {
-        whereClauses.push(eq(tasks.assignedToId, req.user.employeeId));
+      const isMyView = view === "my" || !view;
+      if (isMyView) {
+        whereClauses.push(
+          or(
+            eq(tasks.assignedToId, currentEmployeeId),
+            eq(tasks.createdById, currentEmployeeId),
+          ),
+        );
       }
 
       if (view === "responsibilities") {
@@ -210,6 +219,7 @@ export function registerTaskRoutes(router: Router) {
       const rows = await finalQuery.orderBy(desc(tasks.createdAt));
 
       const result = rows.map((row) => mapTaskRow(row));
+      res.setHeader("Cache-Control", "no-store");
 
       return ok(res, result);
     }),
