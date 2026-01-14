@@ -126,6 +126,13 @@ export function registerTaskRoutes(router: Router) {
       const parentId = query.parentId;
       const q = query.q;
 
+      // Prevent ETag/304 caching for this API endpoint (Safari devtools + rapid UI testing)
+      res.set("Cache-Control", "no-store");
+      res.set("Pragma", "no-cache");
+      res.set("Expires", "0");
+      // Ensure Express does not generate an ETag which can trigger 304 responses
+      res.set("ETag", "");
+
       if (!req.user) {
         return notFound(res, "Aufgabe");
       }
@@ -224,8 +231,6 @@ export function registerTaskRoutes(router: Router) {
       const rows = await finalQuery.orderBy(desc(tasks.createdAt));
 
       const result = rows.map((row) => mapTaskRow(row));
-      res.set("Cache-Control", "no-store");
-
       return ok(res, result);
     }),
   );
