@@ -37,6 +37,19 @@ import type { Employee } from "@shared/schema";
 import { useAuth } from "@/lib/auth";
 import { SubtaskList } from "@/components/tasks/SubtaskList";
 
+const createErrorToast = (
+  toastFn: ReturnType<typeof useToast>["toast"],
+  error: any,
+  fallback: string,
+) => {
+  const isForbidden = (error as any)?.status === 403;
+  toastFn({
+    title: isForbidden ? "Keine Berechtigung" : "Fehler",
+    description: error?.message || fallback,
+    variant: "destructive",
+  });
+};
+
 const VIEW_OPTIONS: Array<{
   value: "my" | "team" | "responsibilities";
   label: string;
@@ -274,12 +287,11 @@ export default function Tasks() {
       });
       setIsEditing(false);
     } catch (error: any) {
-      toast({
-        title: "Fehler",
-        description:
-          error?.message || "Aufgabe konnte nicht gespeichert werden.",
-        variant: "destructive",
-      });
+      createErrorToast(
+        toast,
+        error,
+        "Aufgabe konnte nicht gespeichert werden.",
+      );
     } finally {
       setSaving(false);
     }
@@ -408,12 +420,11 @@ export default function Tasks() {
         await loadTaskDetail(selectedTask.id);
       }
     } catch (error: any) {
-      toast({
-        title: "Fehler",
-        description:
-          error?.message || "Unteraufgabe konnte nicht aktualisiert werden.",
-        variant: "destructive",
-      });
+      createErrorToast(
+        toast,
+        error,
+        "Unteraufgabe konnte nicht aktualisiert werden.",
+      );
     } finally {
       setUpdatingSubtaskId(null);
     }
@@ -438,13 +449,11 @@ export default function Tasks() {
         description: "Elternaufgabe wurde als DONE markiert.",
       });
     } catch (error: any) {
-      toast({
-        title: "Fehler",
-        description:
-          error?.message ||
-          "Elternaufgabe konnte nicht als abgeschlossen markiert werden.",
-        variant: "destructive",
-      });
+      createErrorToast(
+        toast,
+        error,
+        "Elternaufgabe konnte nicht als abgeschlossen markiert werden.",
+      );
     } finally {
       setParentCompleting(false);
     }
@@ -465,12 +474,11 @@ export default function Tasks() {
         description: toastMessage,
       });
     } catch (error: any) {
-      toast({
-        title: "Fehler",
-        description:
-          error?.message || "Status konnte nicht geändert werden.",
-        variant: "destructive",
-      });
+      createErrorToast(
+        toast,
+        error,
+        "Status konnte nicht geändert werden.",
+      );
     } finally {
       setWorkflowLoading(false);
     }

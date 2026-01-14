@@ -173,13 +173,18 @@ async function handleResponse<T>(response: Response): Promise<T> {
 
   if (!response.ok) {
     const message = body?.error || body?.message || "Request failed";
-    throw new Error(message);
+    const error = new Error(message);
+    (error as any).status = response.status;
+    throw error;
   }
 
   if (body && typeof body === "object" && "success" in body) {
     const envelope = body as ApiEnvelope<T>;
     if (!envelope.success) {
-      throw new Error(envelope.error || envelope.message || "Request failed");
+      const message = envelope.error || envelope.message || "Request failed";
+      const error = new Error(message);
+      (error as any).status = response.status;
+      throw error;
     }
     if (typeof envelope.data !== "undefined") {
       return envelope.data;

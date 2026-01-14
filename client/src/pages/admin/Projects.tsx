@@ -74,6 +74,19 @@ import {
   type SopSections,
 } from "@/lib/sopTemplates";
 
+const createErrorToast = (
+  toastFn: ReturnType<typeof useToast>["toast"],
+  error: any,
+  fallback: string,
+) => {
+  const isForbidden = (error as any)?.status === 403;
+  toastFn({
+    title: isForbidden ? "Keine Berechtigung" : "Fehler",
+    description: error?.message || fallback,
+    variant: "destructive",
+  });
+};
+
 const SOP_CATEGORIES = ["SOP", "Dienstanweisung", "Aufklärungen"] as const;
 const ALLOWED_SOP_CATEGORIES = new Set(SOP_CATEGORIES);
 const PROJECT_CATEGORIES = [
@@ -455,12 +468,11 @@ export default function AdminProjects() {
       await loadTaskDetail(selectedTask.id);
       await loadTaskSubtasks(selectedTask.id);
     } catch (error: any) {
-      toast({
-        title: "Fehler",
-        description:
-          error?.message || "Status konnte nicht geändert werden.",
-        variant: "destructive",
-      });
+      createErrorToast(
+        toast,
+        error,
+        "Status konnte nicht geändert werden.",
+      );
     } finally {
       setWorkflowLoading(false);
     }
@@ -479,12 +491,11 @@ export default function AdminProjects() {
       await loadTaskDetail(selectedTask.id);
       await loadTaskSubtasks(selectedTask.id);
     } catch (error: any) {
-      toast({
-        title: "Fehler",
-        description:
-          error?.message || "Zuständigkeit konnte nicht geändert werden.",
-        variant: "destructive",
-      });
+      createErrorToast(
+        toast,
+        error,
+        "Zuständigkeit konnte nicht geändert werden.",
+      );
     } finally {
       setWorkflowLoading(false);
     }
@@ -528,11 +539,11 @@ export default function AdminProjects() {
       await fetchAdminTasks();
       setSelectedTaskId(created.id);
     } catch (error: any) {
-      toast({
-        title: "Fehler",
-        description: error?.message || "Aufgabe konnte nicht erstellt werden.",
-        variant: "destructive",
-      });
+      createErrorToast(
+        toast,
+        error,
+        "Aufgabe konnte nicht erstellt werden.",
+      );
     } finally {
       setCreatingTask(false);
     }
