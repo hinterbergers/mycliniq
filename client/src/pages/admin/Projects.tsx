@@ -303,6 +303,14 @@ export default function AdminProjects() {
   const [workflowLoading, setWorkflowLoading] = useState(false);
   const [taskDetailLoading, setTaskDetailLoading] = useState(false);
   const [taskSubtasksLoading, setTaskSubtasksLoading] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    title: "",
+    description: "",
+    dueDate: "",
+    assignedToId: "",
+  });
+  const [creatingTask, setCreatingTask] = useState(false);
 
   const canManageSops =
     isAdmin ||
@@ -354,6 +362,13 @@ export default function AdminProjects() {
       ? formatEmployeeName(employee.name, employee.lastName)
       : `ID ${employeeId}`;
   };
+
+  const assignedOptions = useMemo(() => {
+    return employees.map((emp) => ({
+      value: String(emp.id),
+      label: formatEmployeeName(emp.name, emp.lastName),
+    }));
+  }, [employees]);
 
   const fetchAdminTasks = useCallback(async () => {
     setTasksLoading(true);
@@ -447,6 +462,79 @@ export default function AdminProjects() {
       });
     } finally {
       setWorkflowLoading(false);
+    }
+  };
+
+  const handleAssignmentChange = async (id: number | null) => {
+    if (!selectedTask || !canManageProjects) return;
+    setWorkflowLoading(true);
+    try {
+      await tasksApi.update(selectedTask.id, { assignedToId: id });
+      toast({
+        title: "Erfolgreich",
+        description: "Zuständigkeit wurde aktualisiert.",
+      });
+      await fetchAdminTasks();
+      await loadTaskDetail(selectedTask.id);
+      await loadTaskSubtasks(selectedTask.id);
+    } catch (error: any) {
+      toast({
+        title: "Fehler",
+        description:
+          error?.message || "Zuständigkeit konnte nicht geändert werden.",
+        variant: "destructive",
+      });
+    } finally {
+      setWorkflowLoading(false);
+    }
+  };
+
+  const resetCreateForm = () => {
+    setCreateForm({
+      title: "",
+      description: "",
+      dueDate: "",
+      assignedToId: "",
+    });
+  };
+
+  const handleCreateTask = async () => {
+    if (!createForm.title.trim()) {
+      toast({
+        title: "Titel fehlt",
+        description: "Bitte gib einen Titel für die Aufgabe ein.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setCreatingTask(true);
+    try {
+      const payload = {
+        title: createForm.title.trim(),
+        description: createForm.description.trim() || null,
+        dueDate: createForm.dueDate || null,
+        assignedToId:
+          canManageProjects && createForm.assignedToId
+            ? Number(createForm.assignedToId)
+            : null,
+      };
+      const created = await tasksApi.create(payload);
+      toast({
+        title: "Aufgabe erstellt",
+        description: "Die neue Aufgabe ist nun in der Queue.",
+      });
+      resetCreateForm();
+      setCreateDialogOpen(false);
+      await fetchAdminTasks();
+      setSelectedTaskId(created.id);
+    } catch (error: any) {
+      toast({
+        title: "Fehler",
+        description: error?.message || "Aufgabe konnte nicht erstellt werden.",
+        variant: "destructive",
+      });
+    } finally {
+      setCreatingTask(false);
     }
   };
 
@@ -1212,16 +1300,26 @@ export default function AdminProjects() {
           </TabsContent>
 
           <TabsContent value="projects" className="space-y-6">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold">Aufgaben-Queue</p>
-                <p className="text-xs text-muted-foreground">
-                  Sicht: Team · Status: Eingereichte Aufgaben
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <BookOpen className="w-4 h-4 text-muted-foreground" />
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold">Aufgaben-Queue</p>
+              <p className="text-xs text-muted-foreground">
+                Sicht: Team · Status: Eingereichte Aufgaben
+              </p>
+            </div>
+            {canManageProjects && (
+              <Button
+                size="sm"
+                onClick={() => setCreateDialogOpen(true)}
+                className="gap-1"
+              >
+                <Plus className="w-3 h-3" />
+                Aufgabe erstellen
+              </Button>
+            )}
+            <div className="flex items-center gap-2">
+              <BookOpen className="w-4 h-4 text-muted-foreground" />
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
                   <span>{adminTasks.length}</span> Aufgaben
                 </p>
               </div>
@@ -1246,6 +1344,7 @@ export default function AdminProjects() {
                       <TableHead>Titel</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Typ</TableHead>
+                      <TableHead>Zugewiesen an</TableHead>
                       <TableHead>Erstellt von</TableHead>
                       <TableHead>Erstellt am</TableHead>
                     </TableRow>
@@ -1255,29 +1354,34 @@ export default function AdminProjects() {
                       const isActive = selectedTaskId === task.id;
                       const creatorName = resolveEmployeeName(task.createdById);
                       return (
-                        <TableRow
-                          key={task.id}
-                          className={`hover:cursor-pointer ${
-                            isActive ? "bg-primary/10" : ""
-                          }`}
-                          onClick={() => setSelectedTaskId(task.id)}
-                        >
-                          <TableCell className="w-[40%]">
-                            <span className="font-medium">{task.title}</span>
-                          </TableCell>
-                          <TableCell>
-                            <Badge className={TASK_STATUS_BADGE_STYLES[task.status]}>
-                              {TASK_STATUS_LABELS[task.status]}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge className={TASK_TYPE_BADGE_STYLES[task.type]}>
-                              {TASK_TYPE_LABELS[task.type]}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{creatorName}</TableCell>
-                          <TableCell>{formatDate(task.createdAt)}</TableCell>
-                        </TableRow>
+                          <TableRow
+                            key={task.id}
+                            className={`hover:cursor-pointer ${
+                              isActive ? "bg-primary/10" : ""
+                            }`}
+                            onClick={() => setSelectedTaskId(task.id)}
+                          >
+                            <TableCell className="w-[40%]">
+                              <span className="font-medium">{task.title}</span>
+                            </TableCell>
+                            <TableCell>
+                              <Badge className={TASK_STATUS_BADGE_STYLES[task.status]}>
+                                {TASK_STATUS_LABELS[task.status]}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge className={TASK_TYPE_BADGE_STYLES[task.type]}>
+                                {TASK_TYPE_LABELS[task.type]}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {task.assignedTo
+                                ? `${task.assignedTo.name} ${task.assignedTo.lastName}`.trim()
+                                : "—"}
+                            </TableCell>
+                            <TableCell>{creatorName}</TableCell>
+                            <TableCell>{formatDate(task.createdAt)}</TableCell>
+                          </TableRow>
                       );
                     })}
                   </TableBody>
@@ -1370,11 +1474,42 @@ export default function AdminProjects() {
                           <p className="text-xs uppercase tracking-wide text-muted-foreground">
                             Verantwortlich
                           </p>
-                          <p>
-                            {selectedTask.assignedTo
-                              ? `${selectedTask.assignedTo.name} ${selectedTask.assignedTo.lastName}`
-                              : "Unassigned"}
-                          </p>
+                          {canManageProjects ? (
+                            <Select
+                              value={
+                                selectedTask.assignedToId
+                                  ? String(selectedTask.assignedToId)
+                                  : ""
+                              }
+                              onValueChange={(value) =>
+                                handleAssignmentChange(
+                                  value ? Number(value) : null,
+                                )
+                              }
+                              disabled={workflowLoading}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Unassigned" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="">Unassigned</SelectItem>
+                                {assignedOptions.map((option) => (
+                                  <SelectItem
+                                    key={option.value}
+                                    value={option.value}
+                                  >
+                                    {option.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <p>
+                              {selectedTask.assignedTo
+                                ? `${selectedTask.assignedTo.name} ${selectedTask.assignedTo.lastName}`
+                                : "Unassigned"}
+                            </p>
+                          )}
                         </div>
                         <div>
                           <p className="text-xs uppercase tracking-wide text-muted-foreground">
@@ -1406,6 +1541,113 @@ export default function AdminProjects() {
           </TabsContent>
         </Tabs>
       </div>
+
+      <Dialog open={createDialogOpen} onOpenChange={(open) => {
+        if (!open) resetCreateForm();
+        setCreateDialogOpen(open);
+      }}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Aufgabe erstellen</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                Titel
+              </p>
+              <Input
+                value={createForm.title}
+                onChange={(event) =>
+                  setCreateForm((prev) => ({
+                    ...prev,
+                    title: event.target.value,
+                  }))
+                }
+                placeholder="Titel der Aufgabe"
+                required
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                Beschreibung
+              </p>
+              <Textarea
+                value={createForm.description}
+                onChange={(event) =>
+                  setCreateForm((prev) => ({
+                    ...prev,
+                    description: event.target.value,
+                  }))
+                }
+                rows={4}
+                placeholder="Optional: Markdown"
+              />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                Zuständig
+              </p>
+              <Select
+                value={createForm.assignedToId}
+                onValueChange={(value) =>
+                  setCreateForm((prev) => ({
+                    ...prev,
+                    assignedToId: value,
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Unassigned" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Unassigned</SelectItem>
+                  {assignedOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                Fälligkeitsdatum
+              </p>
+              <Input
+                type="date"
+                value={createForm.dueDate}
+                onChange={(event) =>
+                  setCreateForm((prev) => ({
+                    ...prev,
+                    dueDate: event.target.value,
+                  }))
+                }
+              />
+            </div>
+          </div>
+          <DialogFooter className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                resetCreateForm();
+                setCreateDialogOpen(false);
+              }}
+              disabled={creatingTask}
+            >
+              Abbrechen
+            </Button>
+            <Button onClick={handleCreateTask} disabled={creatingTask}>
+              {creatingTask ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Plus className="w-4 h-4" />
+              )}
+              Aufgabe erstellen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={sopEditorOpen} onOpenChange={setSopEditorOpen}>
         <DialogContent className="max-w-[95vw] w-[95vw] h-[90vh] flex flex-col">

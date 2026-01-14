@@ -1,4 +1,4 @@
-import type { Router } from "express";
+import type { Router, Request } from "express";
 import { z } from "zod";
 import { db, eq, and, isNull, inArray, desc, sql, or } from "../../lib/db";
 import {
@@ -14,10 +14,18 @@ import {
   idParamSchema,
 } from "../../lib/validate";
 import { tasks, employees } from "@shared/schema";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, hasCapability, isTechnicalAdmin } from "../middleware/auth";
 
 const TASK_STATUS_VALUES = ["NOT_STARTED", "IN_PROGRESS", "SUBMITTED", "DONE"] as const;
 const TASK_TYPE_VALUES = ["ONE_OFF", "RESPONSIBILITY"] as const;
+const TASK_MANAGE_CAP = "perm.project_manage";
+
+function canManageTasks(req: Request): boolean {
+  if (!req.user) return false;
+  if (req.user.isAdmin) return true;
+  if (isTechnicalAdmin(req)) return true;
+  return hasCapability(req, TASK_MANAGE_CAP);
+}
 
 const numericIdString = (label: string) =>
   z.string().regex(/^\d+$/, `${label} muss eine Zahl sein`).transform(Number);
@@ -325,6 +333,7 @@ export function registerTaskRoutes(router: Router) {
     validateBody(createTaskSchema),
     asyncHandler(async (req, res) => {
       const body = req.body as z.infer<typeof createTaskSchema>;
+      const canManage = canManageTasks(req);
       if (!req.user) {
         return notFound(res, "Aufgabe");
       }
@@ -333,7 +342,7 @@ export function registerTaskRoutes(router: Router) {
         .values({
           title: body.title,
           description: body.description ?? null,
-          assignedToId: body.assignedToId ?? null,
+          assignedToId: canManage ? body.assignedToId ?? null : null,
           dueDate: body.dueDate ?? null,
           parentId: body.parentId ?? null,
           sopId: body.sopId ?? null,
@@ -392,6 +401,7 @@ export function registerTaskRoutes(router: Router) {
     asyncHandler(async (req, res) => {
       const id = req.params.id;
       const body = req.body as z.infer<typeof updateTaskSchema>;
+      const canManage = canManageTasks(req);
       if (!req.user) {
         return notFound(res, "Aufgabe");
       }
@@ -417,7 +427,7 @@ export function registerTaskRoutes(router: Router) {
       if (Object.prototype.hasOwnProperty.call(body, "description")) {
         updatePayload.description = body.description ?? null;
       }
-      if (Object.prototype.hasOwnProperty.call(body, "assignedToId")) {
+      if (canManage && Object.prototype.hasOwnProperty.call(body, "assignedToId")) {
         updatePayload.assignedToId = body.assignedToId ?? null;
       }
       if (Object.prototype.hasOwnProperty.call(body, "dueDate")) {
