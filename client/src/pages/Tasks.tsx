@@ -35,6 +35,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, Plus, Pencil, ListCheck, CheckCircle } from "lucide-react";
 import type { Employee } from "@shared/schema";
 import { useAuth } from "@/lib/auth";
+import { SubtaskList } from "@/components/tasks/SubtaskList";
 
 const VIEW_OPTIONS: Array<{
   value: "my" | "team" | "responsibilities";
@@ -941,117 +942,21 @@ export default function Tasks() {
                       </div>
                     </div>
                   )}
-                  {subtasksLoading ? (
-                    <div className="flex h-32 items-center justify-center text-muted-foreground">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    </div>
-                  ) : subtasks.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">
-                      Keine Unteraufgaben vorhanden.
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {subtasks.map((subtask) => (
-                        <div
-                          key={subtask.id}
-                          className="rounded-lg border border-border bg-background p-3 shadow-sm"
-                        >
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="font-medium">{subtask.title}</p>
-                          <div className="flex items-center gap-2">
-                            <Badge className={STATUS_BADGE_STYLES[subtask.status]}>
-                              {STATUS_LABELS[subtask.status]}
-                            </Badge>
-                            {subtask.type === "RESPONSIBILITY" && (
-                              <Badge className={TYPE_BADGE_STYLES[subtask.type]}>
-                                Daueraufgabe
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                          <div className="mt-3 grid gap-2 md:grid-cols-3">
-                            <div className="space-y-1">
-                              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                                Status
-                              </p>
-                              <Select
-                                value={subtask.status}
-                                onValueChange={(value) =>
-                                  handleSubtaskUpdate(subtask.id, {
-                                    status: value as TaskLifecycleStatus,
-                                  })
-                                }
-                                disabled={updatingSubtaskId === subtask.id}
-                              >
-                                <SelectTrigger>
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {Object.entries(STATUS_LABELS).map(
-                                    ([status, label]) => (
-                                      <SelectItem key={status} value={status}>
-                                        {label}
-                                      </SelectItem>
-                                    ),
-                                  )}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div className="space-y-1">
-                              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                                Verantwortlich
-                              </p>
-                              <Select
-                                value={
-                                  subtask.assignedToId
-                                    ? String(subtask.assignedToId)
-                                    : ""
-                                }
-                                onValueChange={(value) =>
-                                  handleSubtaskUpdate(subtask.id, {
-                                    assignedToId: value ? Number(value) : null,
-                                  })
-                                }
-                                disabled={updatingSubtaskId === subtask.id}
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Unassigned" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="">
-                                    Unassigned
-                                  </SelectItem>
-                                  {assigneeOptions.map((option) => (
-                                    <SelectItem
-                                      key={option.value}
-                                      value={option.value}
-                                    >
-                                      {option.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div className="space-y-1">
-                              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                                Frist
-                              </p>
-                              <Input
-                                type="date"
-                                value={subtask.dueDate ?? ""}
-                                onChange={(event) =>
-                                  handleSubtaskUpdate(subtask.id, {
-                                    dueDate: event.target.value || null,
-                                  })
-                                }
-                                disabled={updatingSubtaskId === subtask.id}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                <SubtaskList
+                  subtasks={subtasks}
+                  loading={subtasksLoading}
+                  assigneeOptions={assigneeOptions}
+                  onStatusChange={(id, status) =>
+                    handleSubtaskUpdate(id, { status })
+                  }
+                  onAssigneeChange={(id, assignedToId) =>
+                    handleSubtaskUpdate(id, { assignedToId })
+                  }
+                  onDueDateChange={(id, dueDate) =>
+                    handleSubtaskUpdate(id, { dueDate })
+                  }
+                  updatingSubtaskId={updatingSubtaskId}
+                />
                 </div>
               </div>
             )}

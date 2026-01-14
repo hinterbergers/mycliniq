@@ -2,7 +2,7 @@ import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -46,16 +46,22 @@ import {
   BookOpen,
   Download,
   History,
+  Loader2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Employee, ProjectInitiative, Sop } from "@shared/schema";
 import {
   employeeApi,
   projectApi,
   sopApi,
+  tasksApi,
   type SopDetail,
   type SopReferenceSuggestion,
+  type TaskItem,
+  type TaskLifecycleStatus,
+  type TaskType,
 } from "@/lib/api";
+import { SubtaskList } from "@/components/tasks/SubtaskList";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 import {
@@ -95,11 +101,28 @@ const SOP_LABELS: Record<string, string> = {
   archived: "Archiviert",
 };
 
-const PROJECT_LABELS: Record<string, string> = {
-  proposed: "Vorgeschlagen",
-  active: "Laufend",
-  done: "Abgeschlossen",
-  archived: "Archiviert",
+const TASK_STATUS_BADGE_STYLES: Record<TaskLifecycleStatus, string> = {
+  NOT_STARTED: "bg-slate-50 text-slate-900 border-slate-200",
+  IN_PROGRESS: "bg-amber-50 text-amber-900 border-amber-200",
+  SUBMITTED: "bg-blue-50 text-blue-900 border-blue-200",
+  DONE: "bg-emerald-50 text-emerald-900 border-emerald-200",
+};
+
+const TASK_STATUS_LABELS: Record<TaskLifecycleStatus, string> = {
+  NOT_STARTED: "Nicht begonnen",
+  IN_PROGRESS: "In Arbeit",
+  SUBMITTED: "Zur Freigabe eingereicht",
+  DONE: "Abgeschlossen",
+};
+
+const TASK_TYPE_LABELS: Record<TaskType, string> = {
+  ONE_OFF: "Einmalig",
+  RESPONSIBILITY: "Verantwortung",
+};
+
+const TASK_TYPE_BADGE_STYLES: Record<TaskType, string> = {
+  ONE_OFF: "bg-slate-100 text-slate-700 border-slate-200",
+  RESPONSIBILITY: "bg-violet-50 text-violet-900 border-violet-200",
 };
 
 function normalizeSopStatus(status?: string | null) {
@@ -206,7 +229,6 @@ export default function AdminProjects() {
   const [projects, setProjects] = useState<ProjectInitiative[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [sopSearch, setSopSearch] = useState("");
-  const [projectSearch, setProjectSearch] = useState("");
 
   const [sopEditorOpen, setSopEditorOpen] = useState(false);
   const [editingSop, setEditingSop] = useState<Sop | null>(null);
@@ -271,6 +293,16 @@ export default function AdminProjects() {
     yearOrVersion: "",
     relevanceNote: "",
   });
+  const [activeTab, setActiveTab] = useState<"sops" | "projects">("sops");
+  const [adminTasks, setAdminTasks] = useState<TaskItem[]>([]);
+  const [tasksLoading, setTasksLoading] = useState(false);
+  const [tasksError, setTasksError] = useState<string | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
+  const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null);
+  const [selectedSubtasks, setSelectedSubtasks] = useState<TaskItem[]>([]);
+  const [workflowLoading, setWorkflowLoading] = useState(false);
+  const [taskDetailLoading, setTaskDetailLoading] = useState(false);
+  const [taskSubtasksLoading, setTaskSubtasksLoading] = useState(false);
 
   const canManageSops =
     isAdmin ||
@@ -315,6 +347,109 @@ export default function AdminProjects() {
     [employees],
   );
 
+  const resolveEmployeeName = (employeeId?: number | null) => {
+    if (!employeeId) return "Unbekannt";
+    const employee = employeeLookup.get(employeeId);
+    return employee
+      ? formatEmployeeName(employee.name, employee.lastName)
+      : `ID ${employeeId}`;
+  };
+
+  const fetchAdminTasks = useCallback(async () => {
+    setTasksLoading(true);
+    setTasksError(null);
+    try {
+      const data = await tasksApi.list({ view: "team", status: "SUBMITTED" });
+      setAdminTasks(data);
+      setSelectedTaskId((current) => {
+        if (current && data.some((task) => task.id === current)) return current;
+        return data[0]?.id ?? null;
+      });
+    } catch (error: any) {
+      setTasksError(
+        error?.message || "Aufgaben konnten nicht geladen werden.",
+      );
+    } finally {
+      setTasksLoading(false);
+    }
+  }, []);
+
+  const loadTaskDetail = useCallback(async (taskId: number) => {
+    setTaskDetailLoading(true);
+    try {
+      const detail = await tasksApi.getById(taskId);
+      setSelectedTask(detail);
+    } catch (error: any) {
+      toast({
+        title: "Fehler",
+        description:
+          error?.message || "Aufgabe konnte nicht geladen werden.",
+        variant: "destructive",
+      });
+    } finally {
+      setTaskDetailLoading(false);
+    }
+  }, [toast]);
+
+  const loadTaskSubtasks = useCallback(async (taskId: number) => {
+    setTaskSubtasksLoading(true);
+    try {
+      const subtasks = await tasksApi.getSubtasks(taskId);
+      setSelectedSubtasks(subtasks);
+    } catch (error: any) {
+      toast({
+        title: "Fehler",
+        description:
+          error?.message || "Unteraufgaben konnten nicht geladen werden.",
+        variant: "destructive",
+      });
+    } finally {
+      setTaskSubtasksLoading(false);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    if (activeTab !== "projects") return;
+    fetchAdminTasks();
+  }, [activeTab, fetchAdminTasks]);
+
+  useEffect(() => {
+    if (!selectedTaskId) {
+      setSelectedTask(null);
+      setSelectedSubtasks([]);
+      return;
+    }
+    loadTaskDetail(selectedTaskId);
+    loadTaskSubtasks(selectedTaskId);
+  }, [selectedTaskId, loadTaskDetail, loadTaskSubtasks]);
+
+  const handleAdminTaskAction = async (
+    status: TaskLifecycleStatus,
+    description: string,
+  ) => {
+    if (!selectedTask) return;
+    setWorkflowLoading(true);
+    try {
+      await tasksApi.update(selectedTask.id, { status });
+      toast({
+        title: "Erfolgreich",
+        description,
+      });
+      await fetchAdminTasks();
+      await loadTaskDetail(selectedTask.id);
+      await loadTaskSubtasks(selectedTask.id);
+    } catch (error: any) {
+      toast({
+        title: "Fehler",
+        description:
+          error?.message || "Status konnte nicht geändert werden.",
+        variant: "destructive",
+      });
+    } finally {
+      setWorkflowLoading(false);
+    }
+  };
+
   const filteredSops = useMemo(() => {
     if (!sopSearch.trim()) return sops;
     const term = sopSearch.toLowerCase();
@@ -327,27 +462,11 @@ export default function AdminProjects() {
     );
   }, [sops, sopSearch]);
 
-  const filteredProjects = useMemo(() => {
-    if (!projectSearch.trim()) return projects;
-    const term = projectSearch.toLowerCase();
-    return projects.filter(
-      (project) =>
-        project.title.toLowerCase().includes(term) ||
-        (project.description || "").toLowerCase().includes(term),
-    );
-  }, [projects, projectSearch]);
-
   const sopStatusSections = [
     { key: "proposed", title: "Vorgeschlagen" },
     { key: "in_progress", title: "Laufend" },
     { key: "review", title: "Review" },
     { key: "published", title: "Freigegeben" },
-  ];
-
-  const projectSections = [
-    { key: "proposed", title: "Vorgeschlagen" },
-    { key: "active", title: "Laufend" },
-    { key: "done", title: "Abgeschlossen" },
   ];
 
   const openSopEditor = (sop?: Sop) => {
@@ -1024,114 +1143,6 @@ export default function AdminProjects() {
     );
   };
 
-  const renderProjectItem = (project: ProjectInitiative) => {
-    const statusKey = normalizeProjectStatus(project.status);
-    const owner = project.ownerId ? employeeLookup.get(project.ownerId) : null;
-    return (
-      <Card
-        key={project.id}
-        className="border-none kabeg-shadow hover:shadow-md transition-shadow"
-      >
-        <CardContent className="p-4 flex flex-col gap-3">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="space-y-1">
-              <h4 className="font-semibold">{project.title}</h4>
-              <div className="flex flex-wrap gap-2">
-                <Badge variant="outline" className="text-muted-foreground">
-                  {project.category}
-                </Badge>
-                <Badge
-                  className={
-                    STATUS_STYLES[statusKey] ||
-                    "bg-slate-100 text-slate-600 border-slate-200"
-                  }
-                >
-                  {PROJECT_LABELS[statusKey] || statusKey}
-                </Badge>
-                {owner && (
-                  <Badge variant="secondary">
-                    {owner.lastName || owner.name}
-                  </Badge>
-                )}
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2 justify-end">
-              {canManageProjects && (
-                <>
-                  {statusKey === "proposed" && (
-                    <>
-                      <Button
-                        size="sm"
-                        onClick={() =>
-                          handleProjectAction(project.id, "accept")
-                        }
-                      >
-                        Annehmen
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={() =>
-                          setReasonDialog({
-                            type: "project",
-                            id: project.id,
-                            action: "reject",
-                          })
-                        }
-                      >
-                        Ablehnen
-                      </Button>
-                    </>
-                  )}
-                  {statusKey === "active" && (
-                    <Button
-                      size="sm"
-                      onClick={() =>
-                        handleProjectAction(project.id, "complete")
-                      }
-                    >
-                      Abschliessen
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => openProjectEditor(project)}
-                  >
-                    <Pencil className="w-4 h-4 mr-1" />
-                    Bearbeiten
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => openMemberDialog("project", project.id)}
-                  >
-                    <Users className="w-4 h-4 mr-1" />
-                    Mitglieder
-                  </Button>
-                  {canDeleteProjects && (
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => deleteProject(project.id)}
-                    >
-                      Loeschen
-                    </Button>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-          {project.description && (
-            <p className="text-sm text-muted-foreground line-clamp-2">
-              {project.description}
-            </p>
-          )}
-        </CardContent>
-      </Card>
-    );
-  };
-
   const detailCategory = detailSop
     ? normalizeSopCategory(detailSop.category)
     : null;
@@ -1152,7 +1163,10 @@ export default function AdminProjects() {
           </p>
         </div>
 
-        <Tabs defaultValue="sops">
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => setActiveTab(value as "sops" | "projects")}
+        >
           <TabsList>
             <TabsTrigger value="sops">SOPs</TabsTrigger>
             <TabsTrigger value="projects">Aufgaben</TabsTrigger>
@@ -1198,45 +1212,197 @@ export default function AdminProjects() {
           </TabsContent>
 
           <TabsContent value="projects" className="space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <Input
-                placeholder="Aufgabe suchen..."
-                value={projectSearch}
-                onChange={(event) => setProjectSearch(event.target.value)}
-                className="max-w-sm"
-              />
-              {canManageProjects && (
-                <Button onClick={() => openProjectEditor()}>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Neue Aufgabe
-                </Button>
-              )}
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold">Aufgaben-Queue</p>
+                <p className="text-xs text-muted-foreground">
+                  Sicht: Team · Status: Eingereichte Aufgaben
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-muted-foreground" />
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  <span>{adminTasks.length}</span> Aufgaben
+                </p>
+              </div>
             </div>
-
-            {loading && (
-              <p className="text-sm text-muted-foreground">Lade Aufgaben...</p>
-            )}
-            {!loading &&
-              projectSections.map((section) => {
-                const items = filteredProjects.filter(
-                  (project) =>
-                    normalizeProjectStatus(project.status) === section.key,
-                );
-                if (!items.length) return null;
-                return (
-                  <div key={section.key} className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <BookOpen className="w-4 h-4 text-muted-foreground" />
-                      <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                        {section.title}
-                      </h3>
-                    </div>
-                    <div className="space-y-3">
-                      {items.map(renderProjectItem)}
-                    </div>
+            <div className="grid gap-4 lg:grid-cols-[1fr_1.3fr]">
+              <Card className="h-full">
+                <CardContent className="space-y-2 p-0">
+              {tasksLoading ? (
+                <div className="flex h-48 items-center justify-center">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                </div>
+              ) : tasksError ? (
+                <p className="p-4 text-sm text-destructive">{tasksError}</p>
+              ) : adminTasks.length === 0 ? (
+                <p className="p-4 text-sm text-muted-foreground">
+                  Keine eingereichten Aufgaben vorhanden.
+                </p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Titel</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Typ</TableHead>
+                      <TableHead>Erstellt von</TableHead>
+                      <TableHead>Erstellt am</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {adminTasks.map((task) => {
+                      const isActive = selectedTaskId === task.id;
+                      const creatorName = resolveEmployeeName(task.createdById);
+                      return (
+                        <TableRow
+                          key={task.id}
+                          className={`hover:cursor-pointer ${
+                            isActive ? "bg-primary/10" : ""
+                          }`}
+                          onClick={() => setSelectedTaskId(task.id)}
+                        >
+                          <TableCell className="w-[40%]">
+                            <span className="font-medium">{task.title}</span>
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={TASK_STATUS_BADGE_STYLES[task.status]}>
+                              {TASK_STATUS_LABELS[task.status]}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={TASK_TYPE_BADGE_STYLES[task.type]}>
+                              {TASK_TYPE_LABELS[task.type]}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{creatorName}</TableCell>
+                          <TableCell>{formatDate(task.createdAt)}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+                </CardContent>
+              </Card>
+              <Card className="h-full">
+                <CardHeader>
+                  <div className="flex flex-col gap-2">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Detailansicht
+                    </p>
+                    <h3 className="text-xl font-semibold">
+                      {selectedTask ? selectedTask.title : "Keine Aufgabe gewählt"}
+                    </h3>
+                    {selectedTask && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge className={TASK_STATUS_BADGE_STYLES[selectedTask.status]}>
+                          {TASK_STATUS_LABELS[selectedTask.status]}
+                        </Badge>
+                        <Badge className={TASK_TYPE_BADGE_STYLES[selectedTask.type]}>
+                          {TASK_TYPE_LABELS[selectedTask.type]}
+                        </Badge>
+                      </div>
+                    )}
                   </div>
-                );
-              })}
+                  {selectedTask && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {selectedTask.status === "SUBMITTED" && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              handleAdminTaskAction(
+                                "IN_PROGRESS",
+                                "Aufgabe wurde zurück in Arbeit gestellt.",
+                              )
+                            }
+                            disabled={workflowLoading}
+                          >
+                            Zurück in Arbeit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="default"
+                            onClick={() =>
+                              handleAdminTaskAction(
+                                "DONE",
+                                "Aufgabe wurde als erledigt markiert.",
+                              )
+                            }
+                            disabled={workflowLoading}
+                          >
+                            Annehmen
+                          </Button>
+                        </>
+                      )}
+                      {selectedTask.status !== "SUBMITTED" && (
+                        <p className="text-xs text-muted-foreground">
+                          Status: {TASK_STATUS_LABELS[selectedTask.status]}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </CardHeader>
+                <CardContent>
+                  {taskDetailLoading ? (
+                    <div className="flex h-48 items-center justify-center">
+                      <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                    </div>
+                  ) : !selectedTask ? (
+                    <p className="text-sm text-muted-foreground">
+                      Wähle eine Aufgabe aus der Liste.
+                    </p>
+                  ) : (
+                    <div className="space-y-4">
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Beschreibung
+                        </p>
+                        <MarkdownViewer
+                          value={selectedTask.description ?? ""}
+                          className="rounded-md bg-muted/20 p-3"
+                        />
+                      </div>
+                      <div className="grid gap-2 md:grid-cols-2">
+                        <div>
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                            Verantwortlich
+                          </p>
+                          <p>
+                            {selectedTask.assignedTo
+                              ? `${selectedTask.assignedTo.name} ${selectedTask.assignedTo.lastName}`
+                              : "Unassigned"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                            Fällig
+                          </p>
+                          <p>{formatDate(selectedTask.dueDate)}</p>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Erstellt von
+                        </p>
+                        <p>{resolveEmployeeName(selectedTask.createdById)}</p>
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Unteraufgaben
+                        </p>
+                        <SubtaskList
+                          subtasks={selectedSubtasks}
+                          loading={taskSubtasksLoading}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
         </Tabs>
       </div>
