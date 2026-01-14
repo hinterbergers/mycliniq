@@ -6,9 +6,9 @@
   "scripts": {
     "dev:client": "vite dev --port 5000",
     "dev": "NODE_ENV=development tsx server/index.ts",
-    "build": "npx --yes tsx ./script/build.ts",
+    "build": "node --import=tsx ./script/build.ts",
     "start": "NODE_ENV=production node dist/index.cjs",
-    "check": "npx --yes tsc",
+    "check": "tsc",
     "db:push": "npx drizzle-kit push",
     "format": "prettier --write \"server/**/*.ts\" \"client/**/*.{ts,tsx}\" \"shared/**/*.ts\" \"script/**/*.ts\"",
     "format:check": "prettier --check \"server/**/*.ts\" \"client/**/*.{ts,tsx}\" \"shared/**/*.ts\" \"script/**/*.ts\""
@@ -83,7 +83,10 @@
     "wouter": "^3.3.5",
     "ws": "^8.18.0",
     "zod": "^3.25.76",
-    "zod-validation-error": "^3.4.0"
+    "zod-validation-error": "^3.4.0",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.20.5",
+    "typescript": "5.6.3"
   },
   "devDependencies": {
     "@replit/vite-plugin-cartographer": "^0.4.4",
@@ -102,12 +105,9 @@
     "@vitejs/plugin-react": "^5.0.4",
     "autoprefixer": "^10.4.21",
     "drizzle-kit": "^0.31.4",
-    "esbuild": "^0.25.0",
     "postcss": "^8.5.6",
     "prettier": "^3.7.4",
     "tailwindcss": "^4.1.14",
-    "tsx": "^4.20.5",
-    "typescript": "5.6.3",
     "vite": "^7.1.9"
   },
   "optionalDependencies": {
