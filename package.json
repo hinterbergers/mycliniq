@@ -6,9 +6,9 @@
   "scripts": {
     "dev:client": "vite dev --port 5000",
     "dev": "NODE_ENV=development tsx server/index.ts",
-    "build": "node --import=tsx ./script/build.ts",
+    "build": "npx --yes tsx ./script/build.ts",
     "start": "NODE_ENV=production node dist/index.cjs",
-    "check": "tsc",
+    "check": "npx --yes tsc",
     "db:push": "npx drizzle-kit push",
     "format": "prettier --write \"server/**/*.ts\" \"client/**/*.{ts,tsx}\" \"shared/**/*.ts\" \"script/**/*.ts\"",
     "format:check": "prettier --check \"server/**/*.ts\" \"client/**/*.{ts,tsx}\" \"shared/**/*.ts\" \"script/**/*.ts\""
