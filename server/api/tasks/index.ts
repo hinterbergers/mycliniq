@@ -1,6 +1,6 @@
 import type { Router } from "express";
 import { z } from "zod";
-import { db, eq, and, isNull, desc, sql, or } from "../../lib/db";
+import { db, eq, and, isNull, inArray, desc, sql, or } from "../../lib/db";
 import {
   ok,
   created,
@@ -175,6 +175,27 @@ export function registerTaskRoutes(router: Router) {
         whereClauses.push(eq(tasks.type, "RESPONSIBILITY"));
       }
 
+      if (view === "team" && req.user.departmentId) {
+        const teammates = await db
+          .select({ employeeId: employees.id })
+          .from(employees)
+          .where(
+            and(
+              eq(employees.departmentId, req.user.departmentId),
+              eq(employees.isActive, true),
+            ),
+          );
+        const teammateIds = teammates.map((row) => row.employeeId);
+        if (teammateIds.length) {
+          whereClauses.push(
+            or(
+              inArray(tasks.assignedToId, teammateIds),
+              inArray(tasks.createdById, teammateIds),
+            ),
+          );
+        }
+      }
+
       const queryBuilder = db
         .select({
           id: tasks.id,
@@ -203,7 +224,7 @@ export function registerTaskRoutes(router: Router) {
       const rows = await finalQuery.orderBy(desc(tasks.createdAt));
 
       const result = rows.map((row) => mapTaskRow(row));
-      res.setHeader("Cache-Control", "no-store");
+      res.set("Cache-Control", "no-store");
 
       return ok(res, result);
     }),
