@@ -335,6 +335,18 @@ export function registerTaskRoutes(router: Router) {
       if (!req.user) {
         return notFound(res, "Aufgabe");
       }
+      if (
+        !canManage &&
+        ((body.assignedToId ?? null) !== null ||
+          (body.type ?? null) !== null ||
+          (body.status && body.status !== "SUBMITTED"))
+      ) {
+        return res.status(403).json({
+          success: false,
+          error:
+            "Keine Berechtigung: Aufgaben dürfen nur von Berechtigten zugewiesen oder im Status geändert werden.",
+        });
+      }
       const [createdTask] = await db
         .insert(tasks)
         .values({
@@ -419,6 +431,18 @@ export function registerTaskRoutes(router: Router) {
         updatedById: req.user.employeeId,
         updatedAt: new Date(),
       };
+      if (
+        !canManage &&
+        (Object.prototype.hasOwnProperty.call(body, "assignedToId") ||
+          Object.prototype.hasOwnProperty.call(body, "status") ||
+          Object.prototype.hasOwnProperty.call(body, "type"))
+      ) {
+        return res.status(403).json({
+          success: false,
+          error:
+            "Keine Berechtigung: Aufgaben dürfen nur von Berechtigten zugewiesen oder im Status geändert werden.",
+        });
+      }
 
       if (body.title) {
         updatePayload.title = body.title;
