@@ -2297,6 +2297,54 @@ export default function EmployeeManagement() {
                             />
                           </div>
 
+                          <div className="space-y-3 rounded-lg border border-border p-4">
+  <div className="flex items-center justify-between gap-4">
+    <div>
+      <Label>Befristete Anwesenheit</Label>
+      <p className="text-xs text-muted-foreground">
+        Für Turnusärzt:innen: Zugang und Rechte sind nur im definierten Zeitraum aktiv.
+        Nach Ablauf wird der Benutzer automatisch archiviert und kann sich nicht mehr anmelden.
+      </p>
+    </div>
+
+    <Switch
+      checked={editLimitedPresenceEnabled}
+      onCheckedChange={(checked) => {
+        const enabled = Boolean(checked);
+        setEditLimitedPresenceEnabled(enabled);
+        if (!enabled) {
+          setEditEmploymentFrom("");
+          setEditEmploymentUntil("");
+        }
+      }}
+      disabled={!canManageEmployees}
+    />
+  </div>
+
+  {editLimitedPresenceEnabled && (
+    <div className="grid md:grid-cols-2 gap-4">
+      <div className="space-y-2">
+        <Label>Von</Label>
+        <Input
+          type="date"
+          value={editEmploymentFrom}
+          onChange={(e) => setEditEmploymentFrom(e.target.value)}
+          disabled={!canManageEmployees}
+        />
+      </div>
+      <div className="space-y-2">
+        <Label>Bis</Label>
+        <Input
+          type="date"
+          value={editEmploymentUntil}
+          onChange={(e) => setEditEmploymentUntil(e.target.value)}
+          disabled={!canManageEmployees}
+        />
+      </div>
+    </div>
+  )}
+</div>
+
                           {canManageEmployees && (
                             <div className="space-y-3 rounded-lg border border-border p-4">
                               <div>
