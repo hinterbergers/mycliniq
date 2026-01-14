@@ -7,7 +7,6 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 import Dashboard from "@/pages/Dashboard";
 import Personal from "@/pages/Personal";
 import Guidelines from "@/pages/Guidelines";
-import Projects from "@/pages/Projects";
 import Settings from "@/pages/Settings";
 import Login from "@/pages/Login";
 import ShiftWishes from "@/pages/ShiftWishes";
@@ -70,14 +69,14 @@ function Router() {
         {() => <ProtectedRoute component={Tasks} />}
       </Route>
       <Route path="/projekte">
-        {() => <ProtectedRoute component={Projects} />}
+        <Redirect to="/aufgaben" />
       </Route>
       <Route path="/tools">{() => <ProtectedRoute component={Tools} />}</Route>
       <Route path="/nachrichten">
         {() => <ProtectedRoute component={Messages} />}
       </Route>
       <Route path="/projekte/:id">
-        {() => <ProtectedRoute component={ProjectDetail} />}
+        {(params) => <Redirect to={`/admin/projects/${params.id}`} />}
       </Route>
       <Route path="/einstellungen">
         {() => <ProtectedRoute component={Settings} />}
