@@ -112,7 +112,19 @@ export default function Tasks() {
   const loadTasks = async () => {
     setLoading(true);
     try {
-      const data = await tasksApi.list({ view });
+      const params: {
+        view?: "my" | "team" | "responsibilities";
+        status?: TaskLifecycleStatus;
+        q?: string;
+      } = { view };
+      if (statusFilter !== "all") {
+        params.status = statusFilter;
+      }
+      const trimmedSearch = searchTerm.trim();
+      if (trimmedSearch) {
+        params.q = trimmedSearch;
+      }
+      const data = await tasksApi.list(params);
       setTasks(data);
     } catch (error: any) {
       toast({
@@ -168,7 +180,7 @@ export default function Tasks() {
 
   useEffect(() => {
     loadTasks();
-  }, [view]);
+  }, [view, statusFilter, searchTerm]);
 
   useEffect(() => {
     const fetchEmployees = async () => {

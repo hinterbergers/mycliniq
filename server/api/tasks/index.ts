@@ -118,7 +118,7 @@ export function registerTaskRoutes(router: Router) {
     validateQuery(listQuerySchema),
     asyncHandler(async (req, res) => {
       const query = req.query as z.infer<typeof listQuerySchema>;
-      const view = query.view;
+      const view = query.view ?? "my";
       const assignedToId = query.assignedToId;
       const status = query.status;
       const type = query.type;
