@@ -402,6 +402,9 @@ export default function EmployeeManagement() {
   const [editInactiveFrom, setEditInactiveFrom] = useState("");
   const [editInactiveUntil, setEditInactiveUntil] = useState("");
   const [editInactiveReason, setEditInactiveReason] = useState("");
+  const [editLimitedPresenceEnabled, setEditLimitedPresenceEnabled] = useState(false);
+  const [editEmploymentFrom, setEditEmploymentFrom] = useState("");
+  const [editEmploymentUntil, setEditEmploymentUntil] = useState("");
   const [resetPasswordData, setResetPasswordData] = useState({
     newPassword: "",
     confirmPassword: "",
@@ -428,6 +431,9 @@ export default function EmployeeManagement() {
   const [newInactiveFrom, setNewInactiveFrom] = useState("");
   const [newInactiveUntil, setNewInactiveUntil] = useState("");
   const [newInactiveReason, setNewInactiveReason] = useState("");
+  const [newLimitedPresenceEnabled, setNewLimitedPresenceEnabled] = useState(false);
+  const [newEmploymentFrom, setNewEmploymentFrom] = useState("");
+  const [newEmploymentUntil, setNewEmploymentUntil] = useState("");
 
   const canManageEmployees = isAdmin || isTechnicalAdmin;
 
@@ -563,6 +569,9 @@ export default function EmployeeManagement() {
     setCompetencySearch("");
     setDiplomaSearch("");
     setRoomSearch("");
+    setNewLimitedPresenceEnabled(false);
+    setNewEmploymentFrom("");
+    setNewEmploymentUntil("");
   };
 
   const hydrateEditForm = (emp: Employee) => {
@@ -604,6 +613,13 @@ export default function EmployeeManagement() {
     setEditInactiveFrom(formatBirthday(emp.inactiveFrom));
     setEditInactiveUntil(formatBirthday(emp.inactiveUntil));
     setEditInactiveReason(emp.inactiveReason?.trim() || "");
+    const empWithWindow = emp as Employee & {
+      employmentFrom?: string | null;
+      employmentUntil?: string | null;
+    };
+    setEditLimitedPresenceEnabled(Boolean(empWithWindow.employmentFrom || empWithWindow.employmentUntil));
+    setEditEmploymentFrom(empWithWindow.employmentFrom ?? "");
+    setEditEmploymentUntil(empWithWindow.employmentUntil ?? "");
     const prefs = (emp.shiftPreferences as ShiftPreferences | null) || null;
     setEditDeploymentRoomIds(
       Array.isArray(prefs?.deploymentRoomIds) ? prefs.deploymentRoomIds : [],
@@ -738,6 +754,9 @@ export default function EmployeeManagement() {
       setEditCompetencyIds([]);
       setEditDiplomaIds([]);
       setEditServiceTypeOverrides([]);
+      setEditLimitedPresenceEnabled(false);
+      setEditEmploymentFrom("");
+      setEditEmploymentUntil("");
     }
   };
 
@@ -875,6 +894,21 @@ export default function EmployeeManagement() {
       });
       return;
     }
+    // Validate employment window date order before saving
+    if (
+      editLimitedPresenceEnabled &&
+      editEmploymentFrom &&
+      editEmploymentUntil &&
+      editEmploymentFrom > editEmploymentUntil
+    ) {
+      toast({
+        title: "Fehler",
+        description:
+          "Das Enddatum der befristeten Anwesenheit muss nach dem Startdatum liegen.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     const parsedVacationEntitlementValue = parseVacationEntitlementInput(
       editFormData.vacationEntitlement,
@@ -945,6 +979,8 @@ export default function EmployeeManagement() {
         inactiveReason: inactiveReasonValue || null,
         vacationEntitlement: parsedVacationEntitlementValue,
         shiftPreferences: nextShiftPreferences,
+        employmentFrom: editLimitedPresenceEnabled && editEmploymentFrom ? editEmploymentFrom : null,
+        employmentUntil: editLimitedPresenceEnabled && editEmploymentUntil ? editEmploymentUntil : null,
       };
 
       const updated = await employeeApi.update(editingEmployee.id, payload);
@@ -1110,6 +1146,21 @@ export default function EmployeeManagement() {
       });
       return;
     }
+    // Validate employment window date order before saving
+    if (
+      newLimitedPresenceEnabled &&
+      newEmploymentFrom &&
+      newEmploymentUntil &&
+      newEmploymentFrom > newEmploymentUntil
+    ) {
+      toast({
+        title: "Fehler",
+        description:
+          "Das Enddatum der befristeten Anwesenheit muss nach dem Startdatum liegen.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     const parsedVacationEntitlementNew = parseVacationEntitlementInput(
       newFormData.vacationEntitlement,
@@ -1164,6 +1215,8 @@ export default function EmployeeManagement() {
         inactiveReason: inactiveReasonValue || null,
         vacationEntitlement: parsedVacationEntitlementNew,
         shiftPreferences: nextShiftPreferences,
+        employmentFrom: newLimitedPresenceEnabled && newEmploymentFrom ? newEmploymentFrom : null,
+        employmentUntil: newLimitedPresenceEnabled && newEmploymentUntil ? newEmploymentUntil : null,
       };
       if (currentUser?.departmentId) {
         payload.departmentId = currentUser.departmentId;
@@ -2340,6 +2393,55 @@ export default function EmployeeManagement() {
                                 </div>
                               ))}
                             </div>
+                          </div>
+
+                          <div className="space-y-3 rounded-lg border border-border p-4">
+                            <div className="flex items-center justify-between gap-4">
+                              <div>
+                                <Label>Befristete Anwesenheit</Label>
+                                <p className="text-xs text-muted-foreground">
+                                  Für Turnusärzt:innen: Zugang und Rechte sind nur im definierten Zeitraum aktiv.
+                                  Nach Ablauf wird der Benutzer automatisch archiviert und kann sich nicht mehr anmelden.
+                                </p>
+                              </div>
+
+                              <Switch
+                                checked={newLimitedPresenceEnabled}
+                                onCheckedChange={(checked) => {
+                                  const enabled = Boolean(checked);
+                                  setNewLimitedPresenceEnabled(enabled);
+                                  if (!enabled) {
+                                    setNewEmploymentFrom("");
+                                    setNewEmploymentUntil("");
+                                  }
+                                }}
+                                disabled={!canManageEmployees}
+                              />
+                            </div>
+
+                            {newLimitedPresenceEnabled && (
+                              <div className="grid md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                  <Label>Von</Label>
+                                  <Input
+                                    type="date"
+                                    value={newEmploymentFrom}
+                                    onChange={(e) => setNewEmploymentFrom(e.target.value)}
+                                    disabled={!canManageEmployees}
+                                  />
+                                </div>
+
+                                <div className="space-y-2">
+                                  <Label>Bis</Label>
+                                  <Input
+                                    type="date"
+                                    value={newEmploymentUntil}
+                                    onChange={(e) => setNewEmploymentUntil(e.target.value)}
+                                    disabled={!canManageEmployees}
+                                  />
+                                </div>
+                              </div>
+                            )}
                           </div>
 
                           <div className="space-y-3 rounded-lg border border-border p-4">
