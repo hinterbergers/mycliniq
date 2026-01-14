@@ -13,6 +13,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { MarkdownViewer } from "@/components/editor/MarkdownEditor";
 import {
   tasksApi,
@@ -92,6 +100,13 @@ export default function Tasks() {
     null,
   );
   const [parentCompleting, setParentCompleting] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    title: "",
+    description: "",
+    dueDate: "",
+  });
+  const [creating, setCreating] = useState(false);
   const [workflowLoading, setWorkflowLoading] = useState(false);
 
   const loadTasks = async () => {
@@ -320,6 +335,55 @@ export default function Tasks() {
     }
   };
 
+  const resetCreateForm = () => {
+    setCreateForm({ title: "", description: "", dueDate: "" });
+  };
+
+  const handleCreateTask = async () => {
+    if (!createForm.title.trim()) {
+      toast({
+        title: "Titel erforderlich",
+        description: "Bitte einen Titel für die neue Aufgabe eingeben.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setCreating(true);
+    try {
+      const payload = {
+        title: createForm.title.trim(),
+        description: createForm.description ? createForm.description.trim() : null,
+        dueDate: createForm.dueDate || null,
+      };
+      const created = await tasksApi.create(payload);
+      await loadTasks();
+      await loadTaskDetail(created.id);
+      toast({
+        title: "Aufgabe erstellt",
+        description: "Die Aufgabe wurde erfolgreich angelegt.",
+      });
+      resetCreateForm();
+      setCreateDialogOpen(false);
+    } catch (error: any) {
+      toast({
+        title: "Fehler",
+        description:
+          error?.message || "Aufgabe konnte nicht erstellt werden.",
+        variant: "destructive",
+      });
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleCreateDialogChange = (open: boolean) => {
+    if (!open) {
+      resetCreateForm();
+    }
+    setCreateDialogOpen(open);
+  };
+
   const handleSubtaskUpdate = async (
     subtaskId: number,
     payload: TaskUpdatePayload,
@@ -475,13 +539,23 @@ export default function Tasks() {
 
         <Card className="flex flex-col">
           <CardHeader className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3">
               <CardTitle>Aufgabenliste</CardTitle>
               <div className="flex items-center gap-2">
-                <ListCheck className="w-4 h-4 text-muted-foreground" />
-                <span className="text-xs uppercase tracking-wide text-muted-foreground">
-                  {filteredTasks.length} Aufgaben
-                </span>
+                <Button
+                  size="sm"
+                  onClick={() => setCreateDialogOpen(true)}
+                  className="gap-1"
+                >
+                  <Plus className="w-3 h-3" />
+                  Aufgabe erstellen
+                </Button>
+                <div className="flex items-center gap-2">
+                  <ListCheck className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-xs uppercase tracking-wide text-muted-foreground">
+                    {filteredTasks.length} Aufgaben
+                  </span>
+                </div>
               </div>
             </div>
             <CardDescription>
@@ -969,9 +1043,91 @@ export default function Tasks() {
                 </div>
               </div>
             )}
-          </CardContent>
-        </Card>
-      </div>
-    </Layout>
-  );
+        </CardContent>
+      </Card>
+      <Dialog open={createDialogOpen} onOpenChange={handleCreateDialogChange}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Aufgabe erstellen</DialogTitle>
+            <DialogDescription>
+              Neue Aufgaben können jederzeit hinzugefügt werden. Pflichtfeld ist
+              der Titel.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                Titel
+              </p>
+              <Input
+                value={createForm.title}
+                onChange={(event) =>
+                  setCreateForm((prev) => ({
+                    ...prev,
+                    title: event.target.value,
+                  }))
+                }
+                placeholder="Titel der Aufgabe"
+                required
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                Beschreibung
+              </p>
+              <Textarea
+                value={createForm.description}
+                onChange={(event) =>
+                  setCreateForm((prev) => ({
+                    ...prev,
+                    description: event.target.value,
+                  }))
+                }
+                placeholder="Optional: Markdown Beschreibung"
+                rows={5}
+              />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                Fälligkeitsdatum
+              </p>
+              <Input
+                type="date"
+                value={createForm.dueDate}
+                onChange={(event) =>
+                  setCreateForm((prev) => ({
+                    ...prev,
+                    dueDate: event.target.value,
+                  }))
+                }
+              />
+            </div>
+          </div>
+          <DialogFooter className="flex justify-end gap-2">
+            <Button
+              variant="ghost"
+              onClick={() => handleCreateDialogChange(false)}
+              disabled={creating}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              onClick={handleCreateTask}
+              disabled={creating}
+              className="gap-2"
+            >
+              {creating ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Plus className="w-4 h-4" />
+              )}
+              Aufgabe erstellen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  </Layout>
+);
 }
