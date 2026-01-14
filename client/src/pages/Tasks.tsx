@@ -73,7 +73,7 @@ const TYPE_BADGE_STYLES: Record<TaskType, string> = {
 export default function Tasks() {
   const { toast } = useToast();
   const { can } = useAuth();
-  const canManageTasks = can("project.manage");
+  const canManageTasks = can("perm.project_manage");
   const [view, setView] = useState<"my" | "team" | "responsibilities">("my");
   const [statusFilter, setStatusFilter] = useState<TaskLifecycleStatus | "all">(
     "all",
@@ -666,43 +666,43 @@ export default function Tasks() {
                 </Button>
               </div>
             </div>
-            {selectedTask && !isEditing && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {selectedTask.status !== "SUBMITTED" ? (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={handleSubmitForApproval}
-                    disabled={workflowLoading}
-                  >
-                    Zur Freigabe einreichen
-                  </Button>
-                ) : canManageTasks ? (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleRevertToInProgress}
-                      disabled={workflowLoading}
-                    >
-                      Zurück zu In Arbeit
-                    </Button>
-                    <Button
-                      variant="default"
-                      size="sm"
-                      onClick={handleMarkDone}
-                      disabled={workflowLoading}
-                    >
-                      Als erledigt markieren
-                    </Button>
-                  </>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    Wird zur Freigabe eingereicht.
-                  </p>
+                {selectedTask && !isEditing && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {selectedTask.status !== "SUBMITTED" ? (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={handleSubmitForApproval}
+                        disabled={workflowLoading}
+                      >
+                        Zur Freigabe einreichen
+                      </Button>
+                    ) : canManageTasks ? (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleRevertToInProgress}
+                          disabled={workflowLoading}
+                        >
+                          Zurück zu In Arbeit
+                        </Button>
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={handleMarkDone}
+                          disabled={workflowLoading}
+                        >
+                          Als erledigt markieren
+                        </Button>
+                      </>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        Wird zur Freigabe eingereicht.
+                      </p>
+                    )}
+                  </div>
                 )}
-              </div>
-            )}
           </CardHeader>
           <CardContent>
             {detailLoading ? (
@@ -758,58 +758,64 @@ export default function Tasks() {
                       />
                     </div>
                     <div className="grid gap-3 md:grid-cols-2">
-                      <div className="space-y-1">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                          Status
-                        </p>
-                        <Select
-                          value={editForm.status}
-                          onValueChange={(value) =>
-                            setEditForm((prev) => ({
-                              ...prev,
-                              status: value as TaskLifecycleStatus,
-                            }))
-                          }
-                          disabled={saving}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Object.entries(STATUS_LABELS).map(([status, label]) => (
-                              <SelectItem key={status} value={status}>
-                                {label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                          Typ
-                        </p>
-                        <Select
-                          value={editForm.type}
-                          onValueChange={(value) =>
-                            setEditForm((prev) => ({
-                              ...prev,
-                              type: value as TaskType,
-                            }))
-                          }
-                          disabled={saving}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Object.entries(TYPE_LABELS).map(([type, label]) => (
-                              <SelectItem key={type} value={type}>
-                                {label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
+                        {canManageTasks && (
+                          <div className="space-y-1">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                              Status
+                            </p>
+                            <Select
+                              value={editForm.status}
+                              onValueChange={(value) =>
+                                setEditForm((prev) => ({
+                                  ...prev,
+                                  status: value as TaskLifecycleStatus,
+                                }))
+                              }
+                              disabled={saving}
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {Object.entries(STATUS_LABELS).map(
+                                  ([status, label]) => (
+                                    <SelectItem key={status} value={status}>
+                                      {label}
+                                    </SelectItem>
+                                  ),
+                                )}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                        {canManageTasks && (
+                          <div className="space-y-1">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                              Typ
+                            </p>
+                            <Select
+                              value={editForm.type}
+                              onValueChange={(value) =>
+                                setEditForm((prev) => ({
+                                  ...prev,
+                                  type: value as TaskType,
+                                }))
+                              }
+                              disabled={saving}
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {Object.entries(TYPE_LABELS).map(([type, label]) => (
+                                  <SelectItem key={type} value={type}>
+                                    {label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
                     </div>
                     <div className="space-y-1">
                       <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">

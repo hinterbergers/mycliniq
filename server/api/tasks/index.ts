@@ -14,16 +14,13 @@ import {
   idParamSchema,
 } from "../../lib/validate";
 import { tasks, employees } from "@shared/schema";
-import { requireAuth, hasCapability, isTechnicalAdmin } from "../middleware/auth";
+import { requireAuth, hasCapability } from "../middleware/auth";
 
 const TASK_STATUS_VALUES = ["NOT_STARTED", "IN_PROGRESS", "SUBMITTED", "DONE"] as const;
 const TASK_TYPE_VALUES = ["ONE_OFF", "RESPONSIBILITY"] as const;
 const TASK_MANAGE_CAP = "perm.project_manage";
 
 function canManageTasks(req: Request): boolean {
-  if (!req.user) return false;
-  if (req.user.isAdmin) return true;
-  if (isTechnicalAdmin(req)) return true;
   return hasCapability(req, TASK_MANAGE_CAP);
 }
 
@@ -61,6 +58,7 @@ const createTaskSchema = z.object({
   parentId: z.number().int().positive().optional().nullable(),
   sopId: z.number().int().positive().optional().nullable(),
   type: taskTypeSchema.optional(),
+  status: taskStatusSchema.optional(),
 });
 
 const updateTaskSchema = z.object({
@@ -346,7 +344,8 @@ export function registerTaskRoutes(router: Router) {
           dueDate: body.dueDate ?? null,
           parentId: body.parentId ?? null,
           sopId: body.sopId ?? null,
-          type: body.type ?? "ONE_OFF",
+          type: canManage ? body.type ?? "ONE_OFF" : "ONE_OFF",
+          status: canManage ? body.status ?? "NOT_STARTED" : "SUBMITTED",
           createdById: req.user.employeeId,
           updatedById: req.user.employeeId,
         })
@@ -436,7 +435,7 @@ export function registerTaskRoutes(router: Router) {
       if (Object.prototype.hasOwnProperty.call(body, "sopId")) {
         updatePayload.sopId = body.sopId ?? null;
       }
-      if (body.status) {
+      if (body.status && canManage) {
         updatePayload.status = body.status;
         if (body.status === "DONE") {
           updatePayload.completedAt = new Date();
@@ -444,7 +443,7 @@ export function registerTaskRoutes(router: Router) {
           updatePayload.completedAt = null;
         }
       }
-      if (body.type) {
+      if (body.type && canManage) {
         updatePayload.type = body.type;
       }
 

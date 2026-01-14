@@ -223,7 +223,7 @@ const formatEmployeeName = (name?: string | null, lastName?: string | null) => {
 
 export default function AdminProjects() {
   const { toast } = useToast();
-  const { employee, isAdmin, isTechnicalAdmin, capabilities } = useAuth();
+  const { employee, isAdmin, isTechnicalAdmin, capabilities, can } = useAuth();
   const [loading, setLoading] = useState(true);
   const [sops, setSops] = useState<Sop[]>([]);
   const [projects, setProjects] = useState<ProjectInitiative[]>([]);
@@ -323,6 +323,7 @@ export default function AdminProjects() {
     isAdmin || isTechnicalAdmin || capabilities.includes("perm.project_manage");
   const canDeleteProjects =
     isAdmin || isTechnicalAdmin || capabilities.includes("perm.project_delete");
+  const canManageTasks = can("perm.project_manage");
 
   useEffect(() => {
     loadData();
@@ -466,7 +467,7 @@ export default function AdminProjects() {
   };
 
   const handleAssignmentChange = async (id: number | null) => {
-    if (!selectedTask || !canManageProjects) return;
+    if (!selectedTask || !canManageTasks) return;
     setWorkflowLoading(true);
     try {
       await tasksApi.update(selectedTask.id, { assignedToId: id });
@@ -509,15 +510,14 @@ export default function AdminProjects() {
     }
     setCreatingTask(true);
     try {
-      const payload = {
-        title: createForm.title.trim(),
-        description: createForm.description.trim() || null,
-        dueDate: createForm.dueDate || null,
-        assignedToId:
-          canManageProjects && createForm.assignedToId
-            ? Number(createForm.assignedToId)
-            : null,
-      };
+    const payload = {
+      title: createForm.title.trim(),
+      description: createForm.description.trim() || null,
+      dueDate: createForm.dueDate || null,
+      ...(canManageTasks && createForm.assignedToId
+        ? { assignedToId: Number(createForm.assignedToId) }
+        : {}),
+    };
       const created = await tasksApi.create(payload);
       toast({
         title: "Aufgabe erstellt",
@@ -1411,7 +1411,7 @@ export default function AdminProjects() {
                   </div>
                   {selectedTask && (
                     <div className="flex flex-wrap items-center gap-2">
-                      {selectedTask.status === "SUBMITTED" && (
+                      {canManageTasks && selectedTask.status === "SUBMITTED" && (
                         <>
                           <Button
                             size="sm"
@@ -1440,6 +1440,11 @@ export default function AdminProjects() {
                             Annehmen
                           </Button>
                         </>
+                      )}
+                      {!canManageTasks && selectedTask.status === "SUBMITTED" && (
+                        <p className="text-xs text-muted-foreground">
+                          Status: {TASK_STATUS_LABELS[selectedTask.status]}
+                        </p>
                       )}
                       {selectedTask.status !== "SUBMITTED" && (
                         <p className="text-xs text-muted-foreground">
@@ -1474,7 +1479,7 @@ export default function AdminProjects() {
                           <p className="text-xs uppercase tracking-wide text-muted-foreground">
                             Verantwortlich
                           </p>
-                          {canManageProjects ? (
+                          {canManageTasks ? (
                             <Select
                               value={
                                 selectedTask.assignedToId
@@ -1584,32 +1589,34 @@ export default function AdminProjects() {
                 placeholder="Optional: Markdown"
               />
             </div>
-            <div className="space-y-1">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                Zuständig
-              </p>
-              <Select
-                value={createForm.assignedToId}
-                onValueChange={(value) =>
-                  setCreateForm((prev) => ({
-                    ...prev,
-                    assignedToId: value,
-                  }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Unassigned" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">Unassigned</SelectItem>
-                  {assignedOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {canManageTasks && (
+              <div className="space-y-1">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Zuständig
+                </p>
+                <Select
+                  value={createForm.assignedToId}
+                  onValueChange={(value) =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      assignedToId: value,
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Unassigned" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Unassigned</SelectItem>
+                    {assignedOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-1">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">
                 Fälligkeitsdatum
