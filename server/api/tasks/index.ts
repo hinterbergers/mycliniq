@@ -1,6 +1,6 @@
 import type { Router } from "express";
 import { z } from "zod";
-import { db, eq, and, isNull, inArray, desc, sql, or } from "../../lib/db";
+import { db, eq, and, isNull, desc, sql, or } from "../../lib/db";
 import {
   ok,
   created,
@@ -161,7 +161,7 @@ export function registerTaskRoutes(router: Router) {
         );
       }
 
-      const isMyView = view === "my" || !view;
+      const isMyView = view === "my";
       if (isMyView) {
         whereClauses.push(
           or(
@@ -173,22 +173,6 @@ export function registerTaskRoutes(router: Router) {
 
       if (view === "responsibilities") {
         whereClauses.push(eq(tasks.type, "RESPONSIBILITY"));
-      }
-
-      if (view === "team" && req.user.departmentId) {
-        const teammates = await db
-          .select({ employeeId: employees.id })
-          .from(employees)
-          .where(
-            and(
-              eq(employees.departmentId, req.user.departmentId),
-              eq(employees.isActive, true),
-            ),
-          );
-        const teammateIds = teammates.map((row) => row.employeeId);
-        if (teammateIds.length) {
-          whereClauses.push(inArray(tasks.assignedToId, teammateIds));
-        }
       }
 
       const queryBuilder = db
