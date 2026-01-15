@@ -131,7 +131,7 @@ export function SubtaskList({
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="max-h-72 overflow-y-auto">
                       {Object.entries(STATUS_LABELS).map(([status, label]) => (
                         <SelectItem key={status} value={status}>
                           {label}
