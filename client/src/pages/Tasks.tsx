@@ -106,7 +106,7 @@ export default function Tasks() {
   });
   const [saving, setSaving] = useState(false);
   const [subtaskTitle, setSubtaskTitle] = useState("");
-  const [addingSubtask, setAddingSubtask] = useState(false);
+  const [subtaskFormOpen, setSubtaskFormOpen] = useState(false);
   const [subtasks, setSubtasks] = useState<TaskItem[]>([]);
   const [subtasksLoading, setSubtasksLoading] = useState(false);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -122,6 +122,7 @@ export default function Tasks() {
   });
   const [creating, setCreating] = useState(false);
   const [workflowLoading, setWorkflowLoading] = useState(false);
+  const [creatingSubtask, setCreatingSubtask] = useState(false);
 
   const loadTasks = async () => {
     setLoading(true);
@@ -160,7 +161,7 @@ export default function Tasks() {
       setSelectedTask(detail);
       setIsEditing(false);
       setSubtaskTitle("");
-      setAddingSubtask(false);
+      setSubtaskFormOpen(false);
       await fetchSubtasks(detail.id);
     } catch (error: any) {
       toast({
@@ -306,13 +307,14 @@ export default function Tasks() {
       });
       return;
     }
-    setAddingSubtask(true);
+    setCreatingSubtask(true);
     try {
       await tasksApi.createSubtask(selectedTask.id, {
         title: subtaskTitle.trim(),
         type: "ONE_OFF",
       });
       setSubtaskTitle("");
+      setSubtaskFormOpen(false);
       await loadTaskDetail(selectedTask.id);
       toast({
         title: "Unteraufgabe",
@@ -326,24 +328,29 @@ export default function Tasks() {
         variant: "destructive",
       });
     } finally {
-      setAddingSubtask(false);
+      setCreatingSubtask(false);
     }
   };
 
   const handleCreateWorkSubtask = async () => {
     if (!selectedTask || selectedTask.type !== "RESPONSIBILITY") return;
+
     const now = new Date();
     const dueDate = now.toISOString().slice(0, 10);
     const title = `${selectedTask.title} – Check ${format(now, "dd.MM.yyyy")}`;
-    setAddingSubtask(true);
+
+    setCreatingSubtask(true);
     try {
       await tasksApi.createSubtask(selectedTask.id, {
         title,
         dueDate,
         type: "ONE_OFF",
       });
+
       setSubtaskTitle("");
+      setSubtaskFormOpen(false);
       await loadTaskDetail(selectedTask.id);
+
       toast({
         title: "Arbeits-Unteraufgabe",
         description: "Neue Unteraufgabe wurde angelegt.",
@@ -356,7 +363,7 @@ export default function Tasks() {
         variant: "destructive",
       });
     } finally {
-      setAddingSubtask(false);
+      setCreatingSubtask(false);
     }
   };
 
@@ -665,9 +672,10 @@ export default function Tasks() {
                   variant="outline"
                   size="sm"
                   onClick={() =>
-                    selectedTask && setAddingSubtask((prev) => !prev)
+                    selectedTask &&
+                    setSubtaskFormOpen((prev) => !prev)
                   }
-                  disabled={!selectedTask || workflowLoading}
+                  disabled={!selectedTask || workflowLoading || creatingSubtask}
                 >
                   <Plus className="w-4 h-4 mr-1" />
                   Unteraufgabe hinzufügen
@@ -901,36 +909,36 @@ export default function Tasks() {
                         {completedSubtasks}/{totalSubtasks} erledigt
                       </p>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {selectedTask.type === "RESPONSIBILITY" && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={handleCreateWorkSubtask}
-                          disabled={addingSubtask}
-                        >
-                          Neue Arbeits-Unteraufgabe
-                        </Button>
-                      )}
-                      {showParentComplete && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={handleCompleteParent}
-                          disabled={parentCompleting}
-                        >
-                          Elternaufgabe abschließen
-                        </Button>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {selectedTask.type === "RESPONSIBILITY" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleCreateWorkSubtask}
+                            disabled={creatingSubtask}
+                          >
+                            Neue Arbeits-Unteraufgabe
+                          </Button>
+                        )}
+                        {showParentComplete && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleCompleteParent}
+                            disabled={parentCompleting}
+                          >
+                            Elternaufgabe abschließen
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                  </div>
                   <div className="h-1 w-full overflow-hidden rounded-full bg-border">
                     <div
                       className="h-full bg-primary"
                       style={{ width: `${progressPercent}%` }}
                     />
                   </div>
-                  {addingSubtask && (
+                  {subtaskFormOpen && (
                     <div className="space-y-2">
                       <Input
                         placeholder="Titel der Unteraufgabe"
@@ -941,20 +949,21 @@ export default function Tasks() {
                         onKeyDown={handleSubtaskKeyDown}
                       />
                       <div className="flex gap-2">
-                        <Button
-                          type="button"
-                          onClick={handleAddSubtask}
-                          disabled={
-                            addingSubtask || subtaskTitle.trim().length === 0
-                          }
-                        >
-                          Unteraufgabe anlegen
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          onClick={() => setAddingSubtask(false)}
-                        >
-                          Abbrechen
+                          <Button
+                            type="button"
+                            onClick={handleAddSubtask}
+                            disabled={
+                              creatingSubtask ||
+                              subtaskTitle.trim().length === 0
+                            }
+                          >
+                            Unteraufgabe anlegen
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            onClick={() => setSubtaskFormOpen(false)}
+                          >
+                            Abbrechen
                         </Button>
                       </div>
                     </div>
