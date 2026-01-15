@@ -402,6 +402,7 @@ export default function EmployeeManagement() {
   const [editInactiveFrom, setEditInactiveFrom] = useState("");
   const [editInactiveUntil, setEditInactiveUntil] = useState("");
   const [editInactiveReason, setEditInactiveReason] = useState("");
+  const [editInactiveEnabled, setEditInactiveEnabled] = useState(false);
   const [editLimitedPresenceEnabled, setEditLimitedPresenceEnabled] = useState(false);
   const [editEmploymentFrom, setEditEmploymentFrom] = useState("");
   const [editEmploymentUntil, setEditEmploymentUntil] = useState("");
@@ -431,6 +432,7 @@ export default function EmployeeManagement() {
   const [newInactiveFrom, setNewInactiveFrom] = useState("");
   const [newInactiveUntil, setNewInactiveUntil] = useState("");
   const [newInactiveReason, setNewInactiveReason] = useState("");
+  const [newInactiveEnabled, setNewInactiveEnabled] = useState(false);
   const [newLimitedPresenceEnabled, setNewLimitedPresenceEnabled] = useState(false);
   const [newEmploymentFrom, setNewEmploymentFrom] = useState("");
   const [newEmploymentUntil, setNewEmploymentUntil] = useState("");
@@ -572,6 +574,7 @@ export default function EmployeeManagement() {
     setNewLimitedPresenceEnabled(false);
     setNewEmploymentFrom("");
     setNewEmploymentUntil("");
+    setNewInactiveEnabled(false);
   };
 
   const hydrateEditForm = (emp: Employee) => {
@@ -613,6 +616,13 @@ export default function EmployeeManagement() {
     setEditInactiveFrom(formatBirthday(emp.inactiveFrom));
     setEditInactiveUntil(formatBirthday(emp.inactiveUntil));
     setEditInactiveReason(emp.inactiveReason?.trim() || "");
+    setEditInactiveEnabled(
+      Boolean(
+        emp.inactiveFrom ||
+          emp.inactiveUntil ||
+          (emp.inactiveReason?.trim() || ""),
+      ),
+    );
     const empWithWindow = emp as Employee & {
       employmentFrom?: string | null;
       employmentUntil?: string | null;
@@ -757,6 +767,7 @@ export default function EmployeeManagement() {
       setEditLimitedPresenceEnabled(false);
       setEditEmploymentFrom("");
       setEditEmploymentUntil("");
+      setEditInactiveEnabled(false);
     }
   };
 
@@ -859,8 +870,10 @@ export default function EmployeeManagement() {
       return;
     }
 
-    const parsedInactiveFrom = parseInactiveDate(editInactiveFrom);
-    if (parsedInactiveFrom === null) {
+    const parsedInactiveFrom = editInactiveEnabled
+      ? parseInactiveDate(editInactiveFrom)
+      : "";
+    if (editInactiveEnabled && parsedInactiveFrom === null) {
       toast({
         title: "Fehler",
         description:
@@ -870,8 +883,10 @@ export default function EmployeeManagement() {
       return;
     }
 
-    const parsedInactiveUntil = parseInactiveDate(editInactiveUntil);
-    if (parsedInactiveUntil === null) {
+    const parsedInactiveUntil = editInactiveEnabled
+      ? parseInactiveDate(editInactiveUntil)
+      : "";
+    if (editInactiveEnabled && parsedInactiveUntil === null) {
       toast({
         title: "Fehler",
         description:
@@ -882,6 +897,7 @@ export default function EmployeeManagement() {
     }
 
     if (
+      editInactiveEnabled &&
       parsedInactiveFrom &&
       parsedInactiveUntil &&
       parsedInactiveFrom > parsedInactiveUntil
@@ -949,7 +965,9 @@ export default function EmployeeManagement() {
       return;
     }
 
-    const inactiveReasonValue = editInactiveReason.trim();
+    const inactiveReasonValue = editInactiveEnabled
+      ? editInactiveReason.trim()
+      : "";
     setSaving(true);
     try {
       const baseShiftPreferences =
@@ -1135,8 +1153,10 @@ export default function EmployeeManagement() {
       return;
     }
 
-    const parsedInactiveFrom = parseInactiveDate(newInactiveFrom);
-    if (parsedInactiveFrom === null) {
+    const parsedInactiveFrom = newInactiveEnabled
+      ? parseInactiveDate(newInactiveFrom)
+      : "";
+    if (newInactiveEnabled && parsedInactiveFrom === null) {
       toast({
         title: "Fehler",
         description:
@@ -1146,8 +1166,10 @@ export default function EmployeeManagement() {
       return;
     }
 
-    const parsedInactiveUntil = parseInactiveDate(newInactiveUntil);
-    if (parsedInactiveUntil === null) {
+    const parsedInactiveUntil = newInactiveEnabled
+      ? parseInactiveDate(newInactiveUntil)
+      : "";
+    if (newInactiveEnabled && parsedInactiveUntil === null) {
       toast({
         title: "Fehler",
         description:
@@ -1158,6 +1180,7 @@ export default function EmployeeManagement() {
     }
 
     if (
+      newInactiveEnabled &&
       parsedInactiveFrom &&
       parsedInactiveUntil &&
       parsedInactiveFrom > parsedInactiveUntil
@@ -1225,7 +1248,9 @@ export default function EmployeeManagement() {
       return;
     }
 
-    const inactiveReasonValue = newInactiveReason.trim();
+    const inactiveReasonValue = newInactiveEnabled
+      ? newInactiveReason.trim()
+      : "";
     setCreating(true);
     try {
       const nextShiftPreferences: ShiftPreferences = {
@@ -2493,59 +2518,79 @@ export default function EmployeeManagement() {
                           </div>
 
                           <div className="space-y-3 rounded-lg border border-border p-4">
-                            <div>
-                              <Label>Langzeit-Deaktivierung</Label>
-                              <p className="text-xs text-muted-foreground">
-                                Von/Bis - in diesem Zeitraum nicht fuer Dienst-
-                                und Wochenplan beruecksichtigen.
-                              </p>
-                            </div>
-                            <div className="grid md:grid-cols-2 gap-4">
-                              <div className="space-y-2">
-                                <Label>Von</Label>
-                                <Input
-                                  type="date"
-                                  value={newInactiveFrom}
-                                  onChange={(e) =>
-                                    setNewInactiveFrom(e.target.value)
+                            <div className="flex items-center justify-between gap-4">
+                              <div>
+                                <Label>Langzeit-Deaktivierung</Label>
+                                <p className="text-xs text-muted-foreground">
+                                  Von/Bis - in diesem Zeitraum nicht fuer Dienst-
+                                  und Wochenplan berücksichtigen.
+                                </p>
+                              </div>
+                              <Switch
+                                checked={newInactiveEnabled}
+                                onCheckedChange={(checked) => {
+                                  const enabled = Boolean(checked);
+                                  setNewInactiveEnabled(enabled);
+                                  if (!enabled) {
+                                    setNewInactiveFrom("");
+                                    setNewInactiveUntil("");
+                                    setNewInactiveReason("");
                                   }
-                                  disabled={!canManageEmployees}
-                                />
-                              </div>
-                              <div className="space-y-2">
-                                <Label>Bis</Label>
-                                <Input
-                                  type="date"
-                                  value={newInactiveUntil}
-                                  onChange={(e) =>
-                                    setNewInactiveUntil(e.target.value)
-                                  }
-                                  disabled={!canManageEmployees}
-                                />
-                              </div>
-                            </div>
-                            <div className="space-y-2">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <Label>Begruendung</Label>
-                                {newInactiveReason.trim() && (
-                                  <Badge
-                                    variant="secondary"
-                                    className="max-w-[280px] truncate"
-                                  >
-                                    {newInactiveReason.trim()}
-                                  </Badge>
-                                )}
-                              </div>
-                              <Textarea
-                                value={newInactiveReason}
-                                onChange={(e) =>
-                                  setNewInactiveReason(e.target.value)
-                                }
-                                placeholder="z.B. Papamonat, Elternkarenz"
-                                rows={2}
+                                }}
                                 disabled={!canManageEmployees}
                               />
                             </div>
+
+                            {newInactiveEnabled && (
+                              <>
+                                <div className="grid md:grid-cols-2 gap-4">
+                                  <div className="space-y-2">
+                                    <Label>Von</Label>
+                                    <Input
+                                      type="date"
+                                      value={newInactiveFrom}
+                                      onChange={(e) =>
+                                        setNewInactiveFrom(e.target.value)
+                                      }
+                                      disabled={!canManageEmployees}
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label>Bis</Label>
+                                    <Input
+                                      type="date"
+                                      value={newInactiveUntil}
+                                      onChange={(e) =>
+                                        setNewInactiveUntil(e.target.value)
+                                      }
+                                      disabled={!canManageEmployees}
+                                    />
+                                  </div>
+                                </div>
+                                <div className="space-y-2">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Label>Begruendung</Label>
+                                    {newInactiveReason.trim() && (
+                                      <Badge
+                                        variant="secondary"
+                                        className="max-w-[280px] truncate"
+                                      >
+                                        {newInactiveReason.trim()}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <Textarea
+                                    value={newInactiveReason}
+                                    onChange={(e) =>
+                                      setNewInactiveReason(e.target.value)
+                                    }
+                                    placeholder="z.B. Papamonat, Elternkarenz"
+                                    rows={2}
+                                    disabled={!canManageEmployees}
+                                  />
+                                </div>
+                              </>
+                            )}
                           </div>
 
                           <div className="space-y-2">
@@ -3498,59 +3543,79 @@ export default function EmployeeManagement() {
                     </div>
 
                     <div className="space-y-3 rounded-lg border border-border p-4">
-                      <div>
-                        <Label>Langzeit-Deaktivierung</Label>
-                        <p className="text-xs text-muted-foreground">
-                          Von/Bis - in diesem Zeitraum nicht fuer Dienst- und
-                          Wochenplan beruecksichtigen.
-                        </p>
-                      </div>
-                      <div className="grid md:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label>Von</Label>
-                          <Input
-                            type="date"
-                            value={editInactiveFrom}
-                            onChange={(e) =>
-                              setEditInactiveFrom(e.target.value)
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <Label>Langzeit-Deaktivierung</Label>
+                          <p className="text-xs text-muted-foreground">
+                            Von/Bis - in diesem Zeitraum nicht fuer Dienst- und
+                            Wochenplan berücksichtigen.
+                          </p>
+                        </div>
+                        <Switch
+                          checked={editInactiveEnabled}
+                          onCheckedChange={(checked) => {
+                            const enabled = Boolean(checked);
+                            setEditInactiveEnabled(enabled);
+                            if (!enabled) {
+                              setEditInactiveFrom("");
+                              setEditInactiveUntil("");
+                              setEditInactiveReason("");
                             }
-                            disabled={!canManageEmployees}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Bis</Label>
-                          <Input
-                            type="date"
-                            value={editInactiveUntil}
-                            onChange={(e) =>
-                              setEditInactiveUntil(e.target.value)
-                            }
-                            disabled={!canManageEmployees}
-                          />
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Label>Begruendung</Label>
-                          {editInactiveReason.trim() && (
-                            <Badge
-                              variant="secondary"
-                              className="max-w-[280px] truncate"
-                            >
-                              {editInactiveReason.trim()}
-                            </Badge>
-                          )}
-                        </div>
-                        <Textarea
-                          value={editInactiveReason}
-                          onChange={(e) =>
-                            setEditInactiveReason(e.target.value)
-                          }
-                          placeholder="z.B. Papamonat, Elternkarenz"
-                          rows={2}
+                          }}
                           disabled={!canManageEmployees}
                         />
                       </div>
+
+                      {editInactiveEnabled && (
+                        <>
+                          <div className="grid md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label>Von</Label>
+                              <Input
+                                type="date"
+                                value={editInactiveFrom}
+                                onChange={(e) =>
+                                  setEditInactiveFrom(e.target.value)
+                                }
+                                disabled={!canManageEmployees}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Bis</Label>
+                              <Input
+                                type="date"
+                                value={editInactiveUntil}
+                                onChange={(e) =>
+                                  setEditInactiveUntil(e.target.value)
+                                }
+                                disabled={!canManageEmployees}
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Label>Begruendung</Label>
+                              {editInactiveReason.trim() && (
+                                <Badge
+                                  variant="secondary"
+                                  className="max-w-[280px] truncate"
+                                >
+                                  {editInactiveReason.trim()}
+                                </Badge>
+                              )}
+                            </div>
+                            <Textarea
+                              value={editInactiveReason}
+                              onChange={(e) =>
+                                setEditInactiveReason(e.target.value)
+                              }
+                              placeholder="z.B. Papamonat, Elternkarenz"
+                              rows={2}
+                              disabled={!canManageEmployees}
+                            />
+                          </div>
+                        </>
+                      )}
                     </div>
 
                     <div className="space-y-2">
