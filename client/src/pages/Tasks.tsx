@@ -311,7 +311,6 @@ export default function Tasks() {
     try {
       await tasksApi.createSubtask(selectedTask.id, {
         title: subtaskTitle.trim(),
-        type: "ONE_OFF",
       });
       setSubtaskTitle("");
       setSubtaskFormOpen(false);
@@ -344,7 +343,6 @@ export default function Tasks() {
       await tasksApi.createSubtask(selectedTask.id, {
         title,
         dueDate,
-        type: "ONE_OFF",
       });
 
       setSubtaskTitle("");
