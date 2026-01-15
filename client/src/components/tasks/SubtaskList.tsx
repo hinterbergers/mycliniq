@@ -1,5 +1,11 @@
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
 import type { TaskItem, TaskLifecycleStatus } from "@/lib/api";
@@ -72,23 +78,22 @@ export function SubtaskList({
   }
 
   if (error) {
-    return (
-      <p className="text-sm text-destructive">{error}</p>
-    );
+    return <p className="text-sm text-destructive">{error}</p>;
   }
 
-  if (subtasks.length === 0) {
+  if (!subtasks || subtasks.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">
-        Keine Unteraufgaben vorhanden.
-      </p>
+      <p className="text-sm text-muted-foreground">Keine Unteraufgaben vorhanden.</p>
     );
   }
 
   const hasControls =
-    Boolean(onStatusChange) ||
-    Boolean(onAssigneeChange) ||
-    Boolean(onDueDateChange);
+    Boolean(onStatusChange) || Boolean(onAssigneeChange) || Boolean(onDueDateChange);
+
+  // Safety: Radix SelectItem value must NOT be empty string
+  const safeAssigneeOptions = (assigneeOptions ?? []).filter(
+    (o) => o.value && o.value.trim().length > 0,
+  );
 
   return (
     <div className="space-y-3">
@@ -136,6 +141,7 @@ export function SubtaskList({
                   </Select>
                 </div>
               )}
+
               {onAssigneeChange && (
                 <div className="space-y-1">
                   <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -143,9 +149,7 @@ export function SubtaskList({
                   </p>
                   <Select
                     value={
-                      subtask.assignedToId
-                        ? String(subtask.assignedToId)
-                        : "unassigned"
+                      subtask.assignedToId ? String(subtask.assignedToId) : "unassigned"
                     }
                     onValueChange={(v) =>
                       onAssigneeChange(
@@ -160,7 +164,7 @@ export function SubtaskList({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="unassigned">Unassigned</SelectItem>
-                      {assigneeOptions?.map((option) => (
+                      {safeAssigneeOptions.map((option) => (
                         <SelectItem key={option.value} value={option.value}>
                           {option.label}
                         </SelectItem>
@@ -169,6 +173,7 @@ export function SubtaskList({
                   </Select>
                 </div>
               )}
+
               {onDueDateChange && (
                 <div className="space-y-1">
                   <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -178,10 +183,7 @@ export function SubtaskList({
                     type="date"
                     value={subtask.dueDate ?? ""}
                     onChange={(event) =>
-                      onDueDateChange(
-                        subtask.id,
-                        event.target.value || null,
-                      )
+                      onDueDateChange(subtask.id, event.target.value || null)
                     }
                     disabled={updatingSubtaskId === subtask.id}
                   />
