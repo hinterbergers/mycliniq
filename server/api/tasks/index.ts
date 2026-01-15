@@ -336,25 +336,28 @@ export function registerTaskRoutes(router: Router) {
         return notFound(res, "Aufgabe");
       }
       if (!canManage) {
-        if (body.assignedToId !== undefined && body.assignedToId !== null) {
+        if (Object.prototype.hasOwnProperty.call(body, "assignedToId")) {
           return res.status(403).json({
             success: false,
             error:
-              "Keine Berechtigung: Aufgaben dürfen nur von Berechtigten zugewiesen werden.",
+              "Keine Berechtigung: Aufgaben dürfen nur von Berechtigten delegiert werden.",
           });
         }
-        if (body.status && body.status !== "SUBMITTED") {
-          return res.status(403).json({
-            success: false,
-            error:
-              "Keine Berechtigung: Aufgaben dürfen nur von Berechtigten im Status verändert werden.",
-          });
-        }
-        if (body.type) {
+        if (Object.prototype.hasOwnProperty.call(body, "type")) {
           return res.status(403).json({
             success: false,
             error:
               "Keine Berechtigung: Aufgaben dürfen nur von Berechtigten typisiert werden.",
+          });
+        }
+        if (
+          Object.prototype.hasOwnProperty.call(body, "status") &&
+          body.status !== "SUBMITTED"
+        ) {
+          return res.status(403).json({
+            success: false,
+            error:
+              "Keine Berechtigung: Aufgaben dürfen nur von Berechtigten im Status verändert werden.",
           });
         }
       }
