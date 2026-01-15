@@ -1189,6 +1189,7 @@ export type TaskCreatePayload = {
   parentId?: number | null;
   sopId?: number | null;
   type?: TaskType;
+  status?: TaskLifecycleStatus;
 };
 
 export type TaskUpdatePayload = Partial<{

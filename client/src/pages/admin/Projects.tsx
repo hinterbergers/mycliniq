@@ -1657,6 +1657,7 @@ export default function AdminProjects() {
           <DialogFooter className="flex justify-end gap-2">
             <Button
               variant="outline"
+              type="button"
               onClick={() => {
                 resetCreateForm();
                 setCreateDialogOpen(false);
@@ -1665,7 +1666,7 @@ export default function AdminProjects() {
             >
               Abbrechen
             </Button>
-            <Button onClick={handleCreateTask} disabled={creatingTask}>
+            <Button type="button" onClick={handleCreateTask} disabled={creatingTask}>
               {creatingTask ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
