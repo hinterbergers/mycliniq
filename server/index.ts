@@ -6,6 +6,7 @@ import { createServer } from "http";
 export { db } from "./db";
 
 const app = express();
+app.set("etag", false);
 const httpServer = createServer(app);
 
 declare module "http" {
