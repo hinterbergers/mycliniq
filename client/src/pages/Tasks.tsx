@@ -179,8 +179,9 @@ export default function Tasks() {
   const fetchSubtasks = async (parentId: number) => {
     setSubtasksLoading(true);
     try {
-      const data = await tasksApi.getSubtasks(parentId);
-      setSubtasks(data);
+      const resp: any = await tasksApi.getSubtasks(parentId);
+      const list: TaskItem[] = Array.isArray(resp) ? resp : (resp?.data ?? []);
+      setSubtasks(list);
     } catch (error: any) {
       toast({
         title: "Fehler",
@@ -253,9 +254,9 @@ export default function Tasks() {
       }));
   }, [employees]);
 
-  const totalSubtasks = subtasks.length;
-  const completedSubtasks = subtasks.filter((subtask) => subtask.status === "DONE")
-    .length;
+  const safeSubtasks = Array.isArray(subtasks) ? subtasks : [];
+  const totalSubtasks = safeSubtasks.length;
+  const completedSubtasks = safeSubtasks.filter((s) => s.status === "DONE").length;
   const progressPercent = totalSubtasks
     ? Math.min(100, Math.round((completedSubtasks / totalSubtasks) * 100))
     : 0;

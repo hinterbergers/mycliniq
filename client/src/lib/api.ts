@@ -194,6 +194,24 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return body as T;
 }
 
+function unwrap<T>(resp: unknown): T {
+  if (
+    resp &&
+    typeof resp === "object" &&
+    "success" in resp &&
+    "data" in resp
+  ) {
+    const envelope = resp as ApiEnvelope<T>;
+    return envelope.data as T;
+  }
+  return resp as T;
+}
+
+function unwrapArray<T>(resp: unknown): T[] {
+  const data = unwrap<unknown>(resp);
+  return Array.isArray(data) ? (data as T[]) : [];
+}
+
 export const meApi = {
   get: async (): Promise<MeResponse> => {
     const response = await apiFetch(`${API_BASE}/me`);
@@ -1226,12 +1244,14 @@ const buildTaskQuery = (params?: TaskListOptions): string => {
 export const tasksApi = {
   list: async (params?: TaskListOptions): Promise<TaskItem[]> => {
     const response = await apiFetch(`${API_BASE}/tasks${buildTaskQuery(params)}`);
-    return handleResponse<TaskItem[]>(response);
+    const data = await handleResponse<unknown>(response);
+    return unwrapArray<TaskItem>(data);
   },
 
   getById: async (id: number): Promise<TaskItem> => {
     const response = await apiFetch(`${API_BASE}/tasks/${id}`);
-    return handleResponse<TaskItem>(response);
+    const data = await handleResponse<unknown>(response);
+    return unwrap<TaskItem>(data);
   },
 
   create: async (data: TaskCreatePayload): Promise<TaskItem> => {
@@ -1239,7 +1259,8 @@ export const tasksApi = {
       method: "POST",
       body: JSON.stringify(data),
     });
-    return handleResponse<TaskItem>(response);
+    const payload = await handleResponse<unknown>(response);
+    return unwrap<TaskItem>(payload);
   },
 
   update: async (id: number, data: TaskUpdatePayload): Promise<TaskItem> => {
@@ -1247,7 +1268,8 @@ export const tasksApi = {
       method: "PATCH",
       body: JSON.stringify(data),
     });
-    return handleResponse<TaskItem>(response);
+    const payload = await handleResponse<unknown>(response);
+    return unwrap<TaskItem>(payload);
   },
 
   createSubtask: async (parentId: number, data: TaskCreatePayload) => {
@@ -1255,11 +1277,14 @@ export const tasksApi = {
       method: "POST",
       body: JSON.stringify(data),
     });
-    return handleResponse<TaskItem>(response);
+    const payload = await handleResponse<unknown>(response);
+    return unwrap<TaskItem>(payload);
   },
+
   getSubtasks: async (parentId: number): Promise<TaskItem[]> => {
     const response = await apiFetch(`${API_BASE}/tasks/${parentId}/subtasks`);
-    return handleResponse<TaskItem[]>(response);
+    const data = await handleResponse<unknown>(response);
+    return unwrapArray<TaskItem>(data);
   },
 };
 
