@@ -335,17 +335,28 @@ export function registerTaskRoutes(router: Router) {
       if (!req.user) {
         return notFound(res, "Aufgabe");
       }
-      if (
-        !canManage &&
-        ((body.assignedToId ?? null) !== null ||
-          (body.type ?? null) !== null ||
-          (body.status && body.status !== "SUBMITTED"))
-      ) {
-        return res.status(403).json({
-          success: false,
-          error:
-            "Keine Berechtigung: Aufgaben dürfen nur von Berechtigten zugewiesen oder im Status geändert werden.",
-        });
+      if (!canManage) {
+        if (body.assignedToId !== undefined && body.assignedToId !== null) {
+          return res.status(403).json({
+            success: false,
+            error:
+              "Keine Berechtigung: Aufgaben dürfen nur von Berechtigten zugewiesen werden.",
+          });
+        }
+        if (body.status && body.status !== "SUBMITTED") {
+          return res.status(403).json({
+            success: false,
+            error:
+              "Keine Berechtigung: Aufgaben dürfen nur von Berechtigten im Status verändert werden.",
+          });
+        }
+        if (body.type) {
+          return res.status(403).json({
+            success: false,
+            error:
+              "Keine Berechtigung: Aufgaben dürfen nur von Berechtigten typisiert werden.",
+          });
+        }
       }
       const [createdTask] = await db
         .insert(tasks)
