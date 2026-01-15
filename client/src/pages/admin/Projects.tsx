@@ -57,6 +57,7 @@ import {
   tasksApi,
   type SopDetail,
   type SopReferenceSuggestion,
+  type TaskCreatePayload,
   type TaskItem,
   type TaskLifecycleStatus,
   type TaskType,
@@ -521,15 +522,23 @@ export default function AdminProjects() {
     }
     setCreatingTask(true);
     try {
-    const payload = {
-      title: createForm.title.trim(),
-      description: createForm.description.trim() || null,
-      dueDate: createForm.dueDate || null,
-      status: "SUBMITTED" as TaskLifecycleStatus,
-      ...(canManageTasks && createForm.assignedToId
-        ? { assignedToId: Number(createForm.assignedToId) }
-        : {}),
-    };
+      const assigneeId =
+        canManageTasks && createForm.assignedToId
+          ? Number(createForm.assignedToId)
+          : null;
+      const payload: TaskCreatePayload = {
+        title: createForm.title.trim(),
+        description: createForm.description.trim() || null,
+        dueDate: createForm.dueDate || null,
+        status: "SUBMITTED" as TaskLifecycleStatus,
+        ...(canManageTasks
+          ? {
+              assignedToId: Number.isFinite(assigneeId ?? NaN)
+                ? (assigneeId as number)
+                : null,
+            }
+          : {}),
+      };
       const created = await tasksApi.create(payload);
       toast({
         title: "Aufgabe erstellt",
