@@ -1492,6 +1492,26 @@ export const insertTaskSchema = createInsertSchema(tasks).omit({
 export type InsertTask = z.infer<typeof insertTaskSchema>;
 export type Task = typeof tasks.$inferSelect;
 
+export const taskAttachments = pgTable(
+  "task_attachments",
+  {
+    id: serial("id").primaryKey(),
+    taskId: integer("task_id")
+      .references(() => tasks.id, { onDelete: "cascade" })
+      .notNull(),
+    uploadedById: integer("uploaded_by_id")
+      .references(() => employees.id)
+      .notNull(),
+    originalName: text("original_name").notNull(),
+    storedName: text("stored_name").notNull(),
+    mimeType: text("mime_type").notNull(),
+    size: integer("size").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("task_attachments_task_id_idx").on(table.taskId)],
+);
+
+
 // Project Documents table
 export const projectDocuments = pgTable("project_documents", {
   id: serial("id").primaryKey(),
