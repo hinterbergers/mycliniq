@@ -322,7 +322,7 @@ export default function AdminProjects() {
     title: "",
     description: "",
     dueDate: "",
-    assignedToId: "",
+    assignedToId: "unassigned",
   });
   const [creatingTask, setCreatingTask] = useState(false);
 
@@ -503,12 +503,12 @@ export default function AdminProjects() {
   };
 
   const resetCreateForm = () => {
-    setCreateForm({
-      title: "",
-      description: "",
-      dueDate: "",
-      assignedToId: "",
-    });
+      setCreateForm({
+        title: "",
+        description: "",
+        dueDate: "",
+        assignedToId: "unassigned",
+      });
   };
 
   const handleCreateTask = async () => {
@@ -523,7 +523,7 @@ export default function AdminProjects() {
     setCreatingTask(true);
     try {
       const assigneeId =
-        canManageTasks && createForm.assignedToId
+        canManageTasks && createForm.assignedToId !== "unassigned"
           ? Number(createForm.assignedToId)
           : null;
       const payload: TaskCreatePayload = {
@@ -533,9 +533,7 @@ export default function AdminProjects() {
         status: "SUBMITTED" as TaskLifecycleStatus,
         ...(canManageTasks
           ? {
-              assignedToId: Number.isFinite(assigneeId ?? NaN)
-                ? (assigneeId as number)
-                : null,
+              assignedToId: assigneeId,
             }
           : {}),
       };
@@ -1505,11 +1503,11 @@ export default function AdminProjects() {
                               value={
                                 selectedTask.assignedToId
                                   ? String(selectedTask.assignedToId)
-                                  : ""
+                                  : "unassigned"
                               }
                               onValueChange={(value) =>
                                 handleAssignmentChange(
-                                  value ? Number(value) : null,
+                                  value === "unassigned" ? null : Number(value),
                                 )
                               }
                               disabled={workflowLoading}
@@ -1518,7 +1516,9 @@ export default function AdminProjects() {
                                 <SelectValue placeholder="Unassigned" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="">Unassigned</SelectItem>
+                                <SelectItem value="unassigned">
+                                  Unassigned
+                                </SelectItem>
                                 {assignedOptions.map((option) => (
                                   <SelectItem
                                     key={option.value}
@@ -1615,21 +1615,21 @@ export default function AdminProjects() {
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">
                   Zuständig
                 </p>
-                <Select
-                  value={createForm.assignedToId}
-                  onValueChange={(value) =>
-                    setCreateForm((prev) => ({
-                      ...prev,
-                      assignedToId: value,
-                    }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Unassigned" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">Unassigned</SelectItem>
-                    {assignedOptions.map((option) => (
+              <Select
+                value={createForm.assignedToId}
+                onValueChange={(value) =>
+                  setCreateForm((prev) => ({
+                    ...prev,
+                    assignedToId: value,
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Unassigned" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unassigned">Unassigned</SelectItem>
+                  {assignedOptions.map((option) => (
                       <SelectItem key={option.value} value={option.value}>
                         {option.label}
                       </SelectItem>
