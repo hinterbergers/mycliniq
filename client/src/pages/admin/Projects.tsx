@@ -525,6 +525,7 @@ export default function AdminProjects() {
       title: createForm.title.trim(),
       description: createForm.description.trim() || null,
       dueDate: createForm.dueDate || null,
+      status: "SUBMITTED" as TaskLifecycleStatus,
       ...(canManageTasks && createForm.assignedToId
         ? { assignedToId: Number(createForm.assignedToId) }
         : {}),
@@ -1318,7 +1319,7 @@ export default function AdminProjects() {
                 Sicht: Team · Status: Eingereichte Aufgaben
               </p>
             </div>
-            {canManageProjects && (
+            {canManageTasks && (
               <Button
                 size="sm"
                 onClick={() => setCreateDialogOpen(true)}
