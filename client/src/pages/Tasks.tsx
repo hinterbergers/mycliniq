@@ -132,6 +132,9 @@ export default function Tasks() {
   const [creating, setCreating] = useState(false);
   const [workflowLoading, setWorkflowLoading] = useState(false);
   const [creatingSubtask, setCreatingSubtask] = useState(false);
+  const [fullscreenDialogOpen, setFullscreenDialogOpen] = useState(false);
+  const [fullscreenDescription, setFullscreenDescription] = useState("");
+  const [fullscreenSaving, setFullscreenSaving] = useState(false);
 
   const loadTasks = async () => {
     setLoading(true);
@@ -341,7 +344,7 @@ export default function Tasks() {
     }
   };
 
-  const handleCreateWorkSubtask = async () => {
+const handleCreateWorkSubtask = async () => {
     if (!selectedTask || selectedTask.type !== "RESPONSIBILITY") return;
 
     const now = new Date();
@@ -372,6 +375,31 @@ export default function Tasks() {
       });
     } finally {
       setCreatingSubtask(false);
+    }
+  };
+
+  const handleFullscreenSave = async () => {
+    if (!selectedTask) return;
+    setFullscreenSaving(true);
+    try {
+      await tasksApi.update(selectedTask.id, {
+        description: fullscreenDescription.trim() || null,
+      });
+      await loadTaskDetail(selectedTask.id);
+      toast({
+        title: "Beschreibung gespeichert",
+        description: "Die Vollbildbeschreibung wurde aktualisiert.",
+      });
+      setFullscreenDialogOpen(false);
+    } catch (error: any) {
+      toast({
+        title: "Fehler",
+        description:
+          error?.message || "Beschreibung konnte nicht gespeichert werden.",
+        variant: "destructive",
+      });
+    } finally {
+      setFullscreenSaving(false);
     }
   };
 
@@ -714,6 +742,18 @@ export default function Tasks() {
                 >
                   <Plus className="w-4 h-4 mr-1" />
                   Unteraufgabe hinzufügen
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (!selectedTask) return;
+                    setFullscreenDescription(selectedTask.description ?? "");
+                    setFullscreenDialogOpen(true);
+                  }}
+                  disabled={!selectedTask}
+                >
+                  Vollbild
                 </Button>
               </div>
             </div>
@@ -1101,6 +1141,41 @@ export default function Tasks() {
                 <Plus className="w-4 h-4" />
               )}
               Aufgabe erstellen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={fullscreenDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) setFullscreenDialogOpen(false);
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Beschreibung bearbeiten</DialogTitle>
+            <DialogDescription>
+              Aktualisiere die Beschreibung im Vollbildmodus.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={fullscreenDescription}
+            onChange={(event) => setFullscreenDescription(event.target.value)}
+            rows={12}
+          />
+          <DialogFooter className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setFullscreenDialogOpen(false)}
+              disabled={fullscreenSaving}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              onClick={handleFullscreenSave}
+              disabled={fullscreenSaving}
+            >
+              {fullscreenSaving ? "Speichern..." : "Speichern"}
             </Button>
           </DialogFooter>
         </DialogContent>
