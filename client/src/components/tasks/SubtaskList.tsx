@@ -142,11 +142,15 @@ export function SubtaskList({
                     Verantwortlich
                   </p>
                   <Select
-                    value={subtask.assignedToId ? String(subtask.assignedToId) : ""}
-                    onValueChange={(value) =>
+                    value={
+                      subtask.assignedToId
+                        ? String(subtask.assignedToId)
+                        : "unassigned"
+                    }
+                    onValueChange={(v) =>
                       onAssigneeChange(
                         subtask.id,
-                        value ? Number(value) : null,
+                        v === "unassigned" ? null : Number(v),
                       )
                     }
                     disabled={updatingSubtaskId === subtask.id}
@@ -155,7 +159,7 @@ export function SubtaskList({
                       <SelectValue placeholder="Unassigned" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Unassigned</SelectItem>
+                      <SelectItem value="unassigned">Unassigned</SelectItem>
                       {assigneeOptions?.map((option) => (
                         <SelectItem key={option.value} value={option.value}>
                           {option.label}
