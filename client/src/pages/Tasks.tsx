@@ -942,8 +942,11 @@ export default function Tasks() {
                       />
                       <div className="flex gap-2">
                         <Button
+                          type="button"
                           onClick={handleAddSubtask}
-                          disabled={addingSubtask}
+                          disabled={
+                            addingSubtask || subtaskTitle.trim().length === 0
+                          }
                         >
                           Unteraufgabe anlegen
                         </Button>
