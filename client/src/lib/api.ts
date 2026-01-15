@@ -1199,6 +1199,17 @@ export type TaskItem = {
   subtaskDone?: number;
 };
 
+export type TaskAttachment = {
+  id: number;
+  taskId: number;
+  uploadedById: number;
+  originalName: string;
+  storedName: string;
+  mimeType: string;
+  size: number;
+  createdAt: string;
+};
+
 export type TaskCreatePayload = {
   title: string;
   description?: string | null;
@@ -1286,6 +1297,23 @@ export const tasksApi = {
     const data = await handleResponse<unknown>(response);
     return unwrapArray<TaskItem>(data);
   },
+  getAttachments: async (taskId: number) => {
+    const response = await apiFetch(`${API_BASE}/tasks/${taskId}/attachments`);
+    const data = await handleResponse<unknown>(response);
+    return unwrapArray<TaskAttachment>(data);
+  },
+  uploadAttachment: async (taskId: number, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    const response = await apiFetch(`${API_BASE}/tasks/${taskId}/attachments`, {
+      method: "POST",
+      body: form,
+    });
+    const data = await handleResponse<unknown>(response);
+    return unwrap<TaskAttachment>(data);
+  },
+  getAttachmentDownloadUrl: (attachmentId: number) =>
+    `${API_BASE}/tasks/attachments/${attachmentId}/download`,
 };
 
 export type SopMemberInfo = {

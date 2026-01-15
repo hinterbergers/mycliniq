@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,6 +24,7 @@ import {
 import { MarkdownViewer } from "@/components/editor/MarkdownEditor";
 import {
   tasksApi,
+  TaskAttachment,
   TaskItem,
   TaskLifecycleStatus,
   TaskType,
@@ -118,6 +119,9 @@ export default function Tasks() {
   const [subtaskFormOpen, setSubtaskFormOpen] = useState(false);
   const [subtasks, setSubtasks] = useState<TaskItem[]>([]);
   const [subtasksLoading, setSubtasksLoading] = useState(false);
+  const [attachments, setAttachments] = useState<TaskAttachment[]>([]);
+  const [attachmentsLoading, setAttachmentsLoading] = useState(false);
+  const [attachmentsError, setAttachmentsError] = useState<string | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [updatingSubtaskId, setUpdatingSubtaskId] = useState<number | null>(
     null,
@@ -191,8 +195,7 @@ export default function Tasks() {
   const fetchSubtasks = async (parentId: number) => {
     setSubtasksLoading(true);
     try {
-      const resp: any = await tasksApi.getSubtasks(parentId);
-      const list: TaskItem[] = Array.isArray(resp) ? resp : (resp?.data ?? []);
+      const list = await tasksApi.getSubtasks(parentId);
       setSubtasks(list);
     } catch (error: any) {
       toast({
@@ -205,6 +208,24 @@ export default function Tasks() {
       setSubtasksLoading(false);
     }
   };
+
+  const loadAttachments = useCallback(
+    async (taskId: number) => {
+      setAttachmentsLoading(true);
+      setAttachmentsError(null);
+      try {
+        const data = await tasksApi.getAttachments(taskId);
+        setAttachments(data);
+      } catch (error: any) {
+        setAttachmentsError(
+          error?.message || "Anhänge konnten nicht geladen werden.",
+        );
+      } finally {
+        setAttachmentsLoading(false);
+      }
+    },
+    [toast],
+  );
 
   useEffect(() => {
     loadTasks();
@@ -237,6 +258,14 @@ export default function Tasks() {
       dueDate: selectedTask.dueDate ?? "",
     });
   }, [selectedTask]);
+
+  useEffect(() => {
+    if (!selectedTask) {
+      setAttachments([]);
+      return;
+    }
+    loadAttachments(selectedTask.id);
+  }, [selectedTask, loadAttachments]);
 
   const filteredTasks = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -344,7 +373,7 @@ export default function Tasks() {
     }
   };
 
-const handleCreateWorkSubtask = async () => {
+  const handleCreateWorkSubtask = async () => {
     if (!selectedTask || selectedTask.type !== "RESPONSIBILITY") return;
 
     const now = new Date();
@@ -375,6 +404,39 @@ const handleCreateWorkSubtask = async () => {
       });
     } finally {
       setCreatingSubtask(false);
+    }
+  };
+
+  const formatBytes = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    const kb = bytes / 1024;
+    if (kb < 1024) return `${kb.toFixed(1)} KB`;
+    const mb = kb / 1024;
+    return `${mb.toFixed(1)} MB`;
+  };
+
+  const handleAttachmentChange = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    if (!selectedTask) return;
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      await tasksApi.uploadAttachment(selectedTask.id, file);
+      toast({
+        title: "Anhang hochgeladen",
+        description: "Der Anhang wurde gespeichert.",
+      });
+      await loadAttachments(selectedTask.id);
+    } catch (error: any) {
+      toast({
+        title: "Fehler",
+        description:
+          error?.message || "Anhang konnte nicht hochgeladen werden.",
+        variant: "destructive",
+      });
+    } finally {
+      event.target.value = "";
     }
   };
 
@@ -1058,6 +1120,59 @@ const handleCreateWorkSubtask = async () => {
                   }
                   updatingSubtaskId={updatingSubtaskId}
                 />
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Anhänge
+                    </p>
+                    <label className="flex items-center gap-2 text-sm text-primary">
+                      <input
+                        type="file"
+                        accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg"
+                        className="hidden"
+                        onChange={handleAttachmentChange}
+                        disabled={!selectedTask}
+                      />
+                      <span className="cursor-pointer">Hochladen</span>
+                    </label>
+                  </div>
+                  {attachmentsLoading ? (
+                    <div className="flex h-10 items-center justify-center text-sm text-muted-foreground">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    </div>
+                  ) : attachmentsError ? (
+                    <p className="text-sm text-destructive">{attachmentsError}</p>
+                  ) : attachments.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      Keine Anhänge vorhanden.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {attachments.map((attachment) => (
+                        <div
+                          key={attachment.id}
+                          className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2 text-sm"
+                        >
+                          <div className="space-y-1">
+                            <p className="font-medium">{attachment.originalName}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatBytes(attachment.size)} ·{" "}
+                              {new Date(attachment.createdAt).toLocaleString(
+                                "de-DE",
+                              )}
+                            </p>
+                          </div>
+                          <a
+                            className="text-sm text-primary underline"
+                            href={tasksApi.getAttachmentDownloadUrl(attachment.id)}
+                          >
+                            Download
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )}

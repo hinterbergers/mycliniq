@@ -1,5 +1,8 @@
 import type { Router, Request } from "express";
 import { z } from "zod";
+import path from "path";
+import fs from "fs";
+import crypto from "crypto";
 import { db, eq, and, isNull, inArray, desc, sql, or } from "../../lib/db";
 import {
   ok,
@@ -13,12 +16,121 @@ import {
   validateQuery,
   idParamSchema,
 } from "../../lib/validate";
-import { tasks, employees } from "@shared/schema";
+import { tasks, employees, taskAttachments } from "@shared/schema";
 import { requireAuth, hasCapability } from "../middleware/auth";
 
 const TASK_STATUS_VALUES = ["NOT_STARTED", "IN_PROGRESS", "SUBMITTED", "DONE"] as const;
 const TASK_TYPE_VALUES = ["ONE_OFF", "RESPONSIBILITY"] as const;
 const TASK_MANAGE_CAP = "perm.project_manage";
+export const uploadsDir =
+  process.env.UPLOADS_DIR ??
+  path.join(process.cwd(), "uploads", "tasks");
+
+fs.mkdirSync(uploadsDir, { recursive: true });
+
+const allowedMimeTypes = new Set([
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "image/png",
+  "image/jpeg",
+]);
+const MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024;
+
+type ParsedAttachment = {
+  originalName: string;
+  mimeType: string;
+  buffer: Buffer;
+};
+
+function parseMultipartAttachment(req: Request): Promise<ParsedAttachment> {
+  return new Promise((resolve, reject) => {
+    const contentType = req.headers["content-type"];
+    if (
+      !contentType ||
+      typeof contentType !== "string" ||
+      !contentType.includes("multipart/form-data")
+    ) {
+      return reject(new Error("Ungültiger Content-Type"));
+    }
+    const boundaryMatch = contentType.match(/boundary=(.*)$/);
+    if (!boundaryMatch) {
+      return reject(new Error("Boundary fehlt im Content-Type"));
+    }
+    const boundary = boundaryMatch[1];
+    const boundaryBuffer = Buffer.from(`--${boundary}`);
+    const delimiter = Buffer.from(`\r\n--${boundary}`);
+
+    const chunks: Buffer[] = [];
+    let totalLength = 0;
+    req.on("data", (chunk) => {
+      totalLength += chunk.length;
+      if (totalLength > MAX_ATTACHMENT_SIZE) {
+        reject(new Error("Datei zu groß"));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => {
+      const buffer = Buffer.concat(chunks);
+      const start = buffer.indexOf(boundaryBuffer);
+      if (start === -1) {
+        return reject(new Error("Boundary nicht gefunden"));
+      }
+      const headerStart = start + boundaryBuffer.length + 2;
+      const headerEnd = buffer.indexOf("\r\n\r\n", headerStart);
+      if (headerEnd === -1) {
+        return reject(new Error("Header nicht gefunden"));
+      }
+      const headerText = buffer
+        .slice(headerStart, headerEnd)
+        .toString("utf8")
+        .split("\r\n");
+      const contentDisposition = headerText.find((line) =>
+        line.toLowerCase().startsWith("content-disposition"),
+      );
+      if (!contentDisposition) {
+        return reject(new Error("Content-Disposition fehlt"));
+      }
+      const filenameMatch = contentDisposition.match(
+        /filename="([^"]+)"(?:;|$)/,
+      );
+      const fieldMatch = contentDisposition.match(/name="([^"]+)"/);
+      if (!filenameMatch || fieldMatch?.[1] !== "file") {
+        return reject(new Error("Ungültiges Feld"));
+      }
+      const contentTypeHeader = headerText.find((line) =>
+        line.toLowerCase().startsWith("content-type"),
+      );
+      const mimeType =
+        contentTypeHeader?.split(":")[1]?.trim() ?? "application/octet-stream";
+      const fileStart = headerEnd + 4;
+      const boundaryIndex = buffer.indexOf(delimiter, fileStart);
+      if (boundaryIndex === -1) {
+        return reject(new Error("Dateigrenze nicht gefunden"));
+      }
+      let fileEnd = boundaryIndex;
+      if (buffer[fileEnd - 2] === 13 && buffer[fileEnd - 1] === 10) {
+        fileEnd -= 2;
+      }
+      const fileBuffer = buffer.slice(fileStart, fileEnd);
+      if (!allowedMimeTypes.has(mimeType)) {
+        return reject(
+          new Error("Nur PDF, DOCX, XLSX, PNG und JPG-Dateien sind erlaubt."),
+        );
+      }
+      resolve({
+        originalName: filenameMatch[1],
+        mimeType,
+        buffer: fileBuffer,
+      });
+    });
+    req.on("error", (error) => {
+      reject(error);
+    });
+  });
+}
 
 function canManageTasks(req: Request): boolean {
   return hasCapability(req, TASK_MANAGE_CAP);
@@ -32,6 +144,10 @@ type WhereClause =
   | ReturnType<typeof isNull>
   | ReturnType<typeof sql>
   | ReturnType<typeof or>;
+
+const attachmentIdParamSchema = z.object({
+  attachmentId: numericIdString("attachmentId"),
+});
 
 const listQuerySchema = z.object({
   view: z.enum(["my", "team", "responsibilities"]).optional(),
@@ -323,6 +439,115 @@ export function registerTaskRoutes(router: Router) {
         subtaskTotal,
         subtaskDone,
       });
+    }),
+  );
+
+  router.get(
+    "/:id/attachments",
+    validateParams(idParamSchema),
+    asyncHandler(async (req, res) => {
+      const id = req.params.id;
+      if (!req.user) {
+        return notFound(res, "Aufgabe");
+      }
+
+      const attachments = await db
+        .select({
+          id: taskAttachments.id,
+          taskId: taskAttachments.taskId,
+          uploadedById: taskAttachments.uploadedById,
+          originalName: taskAttachments.originalName,
+          storedName: taskAttachments.storedName,
+          mimeType: taskAttachments.mimeType,
+          size: taskAttachments.size,
+          createdAt: taskAttachments.createdAt,
+        })
+        .from(taskAttachments)
+        .where(eq(taskAttachments.taskId, id))
+        .orderBy(desc(taskAttachments.createdAt));
+
+      return ok(res, attachments);
+    }),
+  );
+
+  router.post(
+    "/:id/attachments",
+    validateParams(idParamSchema),
+    asyncHandler(async (req, res) => {
+      const id = req.params.id;
+      if (!req.user) {
+        return notFound(res, "Aufgabe");
+      }
+      let parsed: ParsedAttachment;
+      try {
+        parsed = await parseMultipartAttachment(req);
+      } catch (error: any) {
+        return res.status(400).json({
+          success: false,
+          error: error?.message || "Datei konnte nicht verarbeitet werden.",
+        });
+      }
+
+      const storedName = `${crypto.randomUUID()}${path.extname(
+        parsed.originalName,
+      )}`;
+      const storedPath = path.join(uploadsDir, storedName);
+      fs.writeFileSync(storedPath, parsed.buffer);
+
+      const [createdAttachment] = await db
+        .insert(taskAttachments)
+        .values({
+          taskId: id,
+          uploadedById: req.user.employeeId,
+          originalName: parsed.originalName,
+          storedName,
+          mimeType: parsed.mimeType,
+          size: parsed.buffer.length,
+        })
+        .returning();
+
+      return created(res, createdAttachment);
+    }),
+  );
+
+  router.get(
+    "/attachments/:attachmentId/download",
+    validateParams(attachmentIdParamSchema),
+    asyncHandler(async (req, res) => {
+      const attachmentId = req.params.attachmentId;
+      if (!req.user) {
+        return notFound(res, "Anhang");
+      }
+
+      const [attachment] = await db
+        .select({
+          id: taskAttachments.id,
+          storedName: taskAttachments.storedName,
+          originalName: taskAttachments.originalName,
+          mimeType: taskAttachments.mimeType,
+        })
+        .from(taskAttachments)
+        .where(eq(taskAttachments.id, attachmentId))
+        .limit(1);
+
+      if (!attachment) {
+        return notFound(res, "Anhang");
+      }
+
+      const filePath = path.join(uploadsDir, attachment.storedName);
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({
+          success: false,
+          error: "Datei nicht gefunden.",
+        });
+      }
+
+      res.setHeader("Content-Type", attachment.mimeType);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${attachment.originalName.replace(/"/g, '\\"')}"`,
+      );
+      res.sendFile(filePath);
     }),
   );
 

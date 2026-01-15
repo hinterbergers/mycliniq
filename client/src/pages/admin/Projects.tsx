@@ -57,6 +57,7 @@ import {
   tasksApi,
   type SopDetail,
   type SopReferenceSuggestion,
+  type TaskAttachment,
   type TaskCreatePayload,
   type TaskItem,
   type TaskLifecycleStatus,
@@ -317,6 +318,11 @@ export default function AdminProjects() {
   const [workflowLoading, setWorkflowLoading] = useState(false);
   const [taskDetailLoading, setTaskDetailLoading] = useState(false);
   const [taskSubtasksLoading, setTaskSubtasksLoading] = useState(false);
+  const [taskAttachments, setTaskAttachments] = useState<TaskAttachment[]>([]);
+  const [taskAttachmentsLoading, setTaskAttachmentsLoading] = useState(false);
+  const [taskAttachmentsError, setTaskAttachmentsError] = useState<string | null>(
+    null,
+  );
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createForm, setCreateForm] = useState({
     title: "",
@@ -404,6 +410,38 @@ export default function AdminProjects() {
     }
   }, []);
 
+  const handleAdminAttachmentChange = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    if (!selectedTaskId) return;
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      await tasksApi.uploadAttachment(selectedTaskId, file);
+      toast({
+        title: "Anhang hochgeladen",
+        description: "Der Anhang wurde gespeichert.",
+      });
+      await loadTaskAttachments(selectedTaskId);
+    } catch (error: any) {
+      toast({
+        title: "Fehler",
+        description:
+          error?.message || "Anhang konnte nicht hochgeladen werden.",
+        variant: "destructive",
+      });
+    } finally {
+      event.target.value = "";
+    }
+  };
+
+  const formatBytes = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    const kb = bytes / 1024;
+    if (kb < 1024) return `${kb.toFixed(1)} KB`;
+    return `${(kb / 1024).toFixed(1)} MB`;
+  };
+
   const loadTaskDetail = useCallback(async (taskId: number) => {
     setTaskDetailLoading(true);
     try {
@@ -438,6 +476,25 @@ export default function AdminProjects() {
     }
   }, [toast]);
 
+  const loadTaskAttachments = useCallback(
+    async (taskId: number) => {
+      setTaskAttachmentsLoading(true);
+      setTaskAttachmentsError(null);
+      try {
+        const data = await tasksApi.getAttachments(taskId);
+        setTaskAttachments(data);
+      } catch (error: any) {
+        setTaskAttachments([]);
+        setTaskAttachmentsError(
+          error?.message || "Anhänge konnten nicht geladen werden.",
+        );
+      } finally {
+        setTaskAttachmentsLoading(false);
+      }
+    },
+    [toast],
+  );
+
   useEffect(() => {
     if (activeTab !== "projects") return;
     fetchAdminTasks();
@@ -452,6 +509,14 @@ export default function AdminProjects() {
     loadTaskDetail(selectedTaskId);
     loadTaskSubtasks(selectedTaskId);
   }, [selectedTaskId, loadTaskDetail, loadTaskSubtasks]);
+
+  useEffect(() => {
+    if (!selectedTaskId) {
+      setTaskAttachments([]);
+      return;
+    }
+    loadTaskAttachments(selectedTaskId);
+  }, [selectedTaskId, loadTaskAttachments]);
 
   const handleAdminTaskAction = async (
     status: TaskLifecycleStatus,
@@ -1550,18 +1615,77 @@ export default function AdminProjects() {
                         </p>
                         <p>{resolveEmployeeName(selectedTask.createdById)}</p>
                       </div>
-                      <div className="space-y-2">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                          Unteraufgaben
-                        </p>
-                        <SubtaskList
-                          subtasks={selectedSubtasks}
-                          loading={taskSubtasksLoading}
-                        />
-                      </div>
+                    <div className="space-y-2">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                        Unteraufgaben
+                      </p>
+                      <SubtaskList
+                        subtasks={selectedSubtasks}
+                        loading={taskSubtasksLoading}
+                      />
                     </div>
-                  )}
-                </CardContent>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Anhänge
+                        </p>
+                        <label className="flex items-center gap-1 text-sm text-primary">
+                          <input
+                            type="file"
+                            accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg"
+                            className="hidden"
+                            onChange={handleAdminAttachmentChange}
+                            disabled={!selectedTaskId}
+                          />
+                          <span className="cursor-pointer">Hochladen</span>
+                        </label>
+                      </div>
+                      {taskAttachmentsLoading ? (
+                        <div className="flex h-10 items-center justify-center text-sm text-muted-foreground">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        </div>
+                      ) : taskAttachmentsError ? (
+                        <p className="text-sm text-destructive">
+                          {taskAttachmentsError}
+                        </p>
+                      ) : taskAttachments.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                          Keine Anhänge vorhanden.
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {taskAttachments.map((attachment) => (
+                            <div
+                              key={attachment.id}
+                              className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm"
+                            >
+                              <div className="space-y-1">
+                                <p className="font-medium">
+                                  {attachment.originalName}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {formatBytes(attachment.size)} ·{" "}
+                                  {new Date(
+                                    attachment.createdAt,
+                                  ).toLocaleString("de-DE")}
+                                </p>
+                              </div>
+                              <a
+                                className="text-sm text-primary underline"
+                                href={tasksApi.getAttachmentDownloadUrl(
+                                  attachment.id,
+                                )}
+                              >
+                                Download
+                              </a>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
               </Card>
             </div>
           </TabsContent>
