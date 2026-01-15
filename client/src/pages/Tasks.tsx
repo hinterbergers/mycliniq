@@ -32,7 +32,15 @@ import {
 } from "@/lib/api";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Plus, Pencil, ListCheck, CheckCircle } from "lucide-react";
+import { Loader2, Plus, Pencil, ListCheck, CheckCircle, SlidersHorizontal } from "lucide-react";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import type { Employee } from "@shared/schema";
 import { useAuth } from "@/lib/auth";
 import { SubtaskList } from "@/components/tasks/SubtaskList";
@@ -92,6 +100,7 @@ export default function Tasks() {
     "all",
   );
   const [searchTerm, setSearchTerm] = useState("");
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null);
@@ -513,57 +522,7 @@ export default function Tasks() {
 
   return (
     <Layout title="Aufgaben">
-      <div className="grid gap-4 md:grid-cols-[220px_2fr_1.1fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Filter</CardTitle>
-            <CardDescription>Wähle deine Ansicht</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-col gap-2">
-              {VIEW_OPTIONS.map((option) => (
-                <Button
-                  key={option.value}
-                  size="sm"
-                  variant={view === option.value ? "default" : "outline"}
-                  className="w-full justify-start"
-                  onClick={() => setView(option.value)}
-                >
-                  {option.label}
-                </Button>
-              ))}
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Status
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {["all", "NOT_STARTED", "IN_PROGRESS", "SUBMITTED", "DONE"].map(
-                  (value) => {
-                    const statusValue = value as TaskLifecycleStatus | "all";
-                    const label =
-                      statusValue === "all"
-                        ? "Alle"
-                        : STATUS_LABELS[statusValue];
-                    return (
-                      <Button
-                        key={value}
-                        size="sm"
-                        variant={
-                          statusFilter === statusValue ? "default" : "outline"
-                        }
-                        onClick={() => setStatusFilter(statusValue)}
-                      >
-                        {label}
-                      </Button>
-                    );
-                  },
-                )}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
+      <div className="grid gap-4 md:grid-cols-[2fr_1.1fr]">
         <Card className="flex flex-col">
           <CardHeader className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-3">
@@ -577,6 +536,88 @@ export default function Tasks() {
                   <Plus className="w-3 h-3" />
                   Aufgabe erstellen
                 </Button>
+                <Sheet open={filterSheetOpen} onOpenChange={setFilterSheetOpen}>
+                  <SheetTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1"
+                    >
+                      <SlidersHorizontal className="w-3 h-3" />
+                      Filter
+                    </Button>
+                  </SheetTrigger>
+                  <SheetContent side="right" className="space-y-4">
+                    <SheetHeader>
+                      <SheetTitle>Filter</SheetTitle>
+                      <SheetDescription>
+                        Ansicht, Status und Suche
+                      </SheetDescription>
+                    </SheetHeader>
+                    <div className="space-y-4">
+                      <div className="space-y-1">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Ansicht
+                        </p>
+                        <div className="flex flex-col gap-2">
+                          {VIEW_OPTIONS.map((option) => (
+                            <Button
+                              key={option.value}
+                              size="sm"
+                              variant={
+                                view === option.value ? "default" : "outline"
+                              }
+                              className="w-full justify-start"
+                              onClick={() => setView(option.value)}
+                            >
+                              {option.label}
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Status
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {["all", "NOT_STARTED", "IN_PROGRESS", "SUBMITTED", "DONE"].map(
+                            (value) => {
+                              const statusValue = value as TaskLifecycleStatus | "all";
+                              const label =
+                                statusValue === "all"
+                                  ? "Alle"
+                                  : STATUS_LABELS[statusValue];
+                              return (
+                                <Button
+                                  key={value}
+                                  size="sm"
+                                  variant={
+                                    statusFilter === statusValue
+                                      ? "default"
+                                      : "outline"
+                                  }
+                                  onClick={() => setStatusFilter(statusValue)}
+                                >
+                                  {label}
+                                </Button>
+                              );
+                            },
+                          )}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Suche
+                        </p>
+                        <Input
+                          placeholder="Suche in Aufgaben..."
+                          value={searchTerm}
+                          onChange={(event) => setSearchTerm(event.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </SheetContent>
+                </Sheet>
                 <div className="flex items-center gap-2">
                   <ListCheck className="w-4 h-4 text-muted-foreground" />
                   <span className="text-xs uppercase tracking-wide text-muted-foreground">
@@ -588,11 +629,6 @@ export default function Tasks() {
             <CardDescription>
               Suche &amp; wähle eine Aufgabe, um Details zu sehen.
             </CardDescription>
-            <Input
-              placeholder="Suche in Aufgaben..."
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-            />
           </CardHeader>
           <CardContent className="flex-1 p-0">
             {loading ? (
