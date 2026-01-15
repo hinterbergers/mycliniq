@@ -618,8 +618,8 @@ export default function EmployeeManagement() {
       employmentUntil?: string | null;
     };
     setEditLimitedPresenceEnabled(Boolean(empWithWindow.employmentFrom || empWithWindow.employmentUntil));
-    setEditEmploymentFrom(empWithWindow.employmentFrom ?? "");
-    setEditEmploymentUntil(empWithWindow.employmentUntil ?? "");
+    setEditEmploymentFrom(formatBirthday(empWithWindow.employmentFrom));
+    setEditEmploymentUntil(formatBirthday(empWithWindow.employmentUntil));
     const prefs = (emp.shiftPreferences as ShiftPreferences | null) || null;
     setEditDeploymentRoomIds(
       Array.isArray(prefs?.deploymentRoomIds) ? prefs.deploymentRoomIds : [],
@@ -894,12 +894,36 @@ export default function EmployeeManagement() {
       });
       return;
     }
-    // Validate employment window date order before saving
+    const parsedEmploymentFrom = editLimitedPresenceEnabled
+      ? parseInactiveDate(editEmploymentFrom)
+      : "";
+    if (parsedEmploymentFrom === null) {
+      toast({
+        title: "Fehler",
+        description:
+          "Bitte ein gueltiges Startdatum fuer die befristete Anwesenheit eingeben (TT.MM.JJJJ oder JJJJ-MM-TT).",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const parsedEmploymentUntil = editLimitedPresenceEnabled
+      ? parseInactiveDate(editEmploymentUntil)
+      : "";
+    if (parsedEmploymentUntil === null) {
+      toast({
+        title: "Fehler",
+        description:
+          "Bitte ein gueltiges Enddatum fuer die befristete Anwesenheit eingeben (TT.MM.JJJJ oder JJJJ-MM-TT).",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (
-      editLimitedPresenceEnabled &&
-      editEmploymentFrom &&
-      editEmploymentUntil &&
-      editEmploymentFrom > editEmploymentUntil
+      parsedEmploymentFrom &&
+      parsedEmploymentUntil &&
+      parsedEmploymentFrom > parsedEmploymentUntil
     ) {
       toast({
         title: "Fehler",
@@ -979,8 +1003,8 @@ export default function EmployeeManagement() {
         inactiveReason: inactiveReasonValue || null,
         vacationEntitlement: parsedVacationEntitlementValue,
         shiftPreferences: nextShiftPreferences,
-        employmentFrom: editLimitedPresenceEnabled && editEmploymentFrom ? editEmploymentFrom : null,
-        employmentUntil: editLimitedPresenceEnabled && editEmploymentUntil ? editEmploymentUntil : null,
+        employmentFrom: parsedEmploymentFrom || null,
+        employmentUntil: parsedEmploymentUntil || null,
       };
 
       const updated = await employeeApi.update(editingEmployee.id, payload);
@@ -1146,12 +1170,36 @@ export default function EmployeeManagement() {
       });
       return;
     }
-    // Validate employment window date order before saving
+    const parsedEmploymentFrom = newLimitedPresenceEnabled
+      ? parseInactiveDate(newEmploymentFrom)
+      : "";
+    if (parsedEmploymentFrom === null) {
+      toast({
+        title: "Fehler",
+        description:
+          "Bitte ein gueltiges Startdatum fuer die befristete Anwesenheit eingeben (TT.MM.JJJJ oder JJJJ-MM-TT).",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const parsedEmploymentUntil = newLimitedPresenceEnabled
+      ? parseInactiveDate(newEmploymentUntil)
+      : "";
+    if (parsedEmploymentUntil === null) {
+      toast({
+        title: "Fehler",
+        description:
+          "Bitte ein gueltiges Enddatum fuer die befristete Anwesenheit eingeben (TT.MM.JJJJ oder JJJJ-MM-TT).",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (
-      newLimitedPresenceEnabled &&
-      newEmploymentFrom &&
-      newEmploymentUntil &&
-      newEmploymentFrom > newEmploymentUntil
+      parsedEmploymentFrom &&
+      parsedEmploymentUntil &&
+      parsedEmploymentFrom > parsedEmploymentUntil
     ) {
       toast({
         title: "Fehler",
@@ -1215,8 +1263,8 @@ export default function EmployeeManagement() {
         inactiveReason: inactiveReasonValue || null,
         vacationEntitlement: parsedVacationEntitlementNew,
         shiftPreferences: nextShiftPreferences,
-        employmentFrom: newLimitedPresenceEnabled && newEmploymentFrom ? newEmploymentFrom : null,
-        employmentUntil: newLimitedPresenceEnabled && newEmploymentUntil ? newEmploymentUntil : null,
+        employmentFrom: parsedEmploymentFrom || null,
+        employmentUntil: parsedEmploymentUntil || null,
       };
       if (currentUser?.departmentId) {
         payload.departmentId = currentUser.departmentId;
@@ -2297,54 +2345,6 @@ export default function EmployeeManagement() {
                             />
                           </div>
 
-                          <div className="space-y-3 rounded-lg border border-border p-4">
-  <div className="flex items-center justify-between gap-4">
-    <div>
-      <Label>Befristete Anwesenheit</Label>
-      <p className="text-xs text-muted-foreground">
-        Für Turnusärzt:innen: Zugang und Rechte sind nur im definierten Zeitraum aktiv.
-        Nach Ablauf wird der Benutzer automatisch archiviert und kann sich nicht mehr anmelden.
-      </p>
-    </div>
-
-    <Switch
-      checked={editLimitedPresenceEnabled}
-      onCheckedChange={(checked) => {
-        const enabled = Boolean(checked);
-        setEditLimitedPresenceEnabled(enabled);
-        if (!enabled) {
-          setEditEmploymentFrom("");
-          setEditEmploymentUntil("");
-        }
-      }}
-      disabled={!canManageEmployees}
-    />
-  </div>
-
-  {editLimitedPresenceEnabled && (
-    <div className="grid md:grid-cols-2 gap-4">
-      <div className="space-y-2">
-        <Label>Von</Label>
-        <Input
-          type="date"
-          value={editEmploymentFrom}
-          onChange={(e) => setEditEmploymentFrom(e.target.value)}
-          disabled={!canManageEmployees}
-        />
-      </div>
-      <div className="space-y-2">
-        <Label>Bis</Label>
-        <Input
-          type="date"
-          value={editEmploymentUntil}
-          onChange={(e) => setEditEmploymentUntil(e.target.value)}
-          disabled={!canManageEmployees}
-        />
-      </div>
-    </div>
-  )}
-</div>
-
                           {canManageEmployees && (
                             <div className="space-y-3 rounded-lg border border-border p-4">
                               <div>
@@ -2492,55 +2492,6 @@ export default function EmployeeManagement() {
                             )}
                           </div>
 
-                          <div className="space-y-3 rounded-lg border border-border p-4">
-  <div className="flex items-center justify-between gap-4">
-    <div>
-      <Label>Befristete Anwesenheit</Label>
-      <p className="text-xs text-muted-foreground">
-        Für Turnusärzt:innen: Zugang und Rechte sind nur im definierten Zeitraum aktiv.
-        Nach Ablauf wird der Benutzer automatisch archiviert und kann sich nicht mehr anmelden.
-      </p>
-    </div>
-
-    <Switch
-      checked={editLimitedPresenceEnabled}
-      onCheckedChange={(checked) => {
-        const enabled = Boolean(checked);
-        setEditLimitedPresenceEnabled(enabled);
-        if (!enabled) {
-          setEditEmploymentFrom("");
-          setEditEmploymentUntil("");
-        }
-      }}
-      disabled={!canManageEmployees}
-    />
-  </div>
-
-  {editLimitedPresenceEnabled && (
-    <div className="grid md:grid-cols-2 gap-4">
-      <div className="space-y-2">
-        <Label>Von</Label>
-        <Input
-          type="date"
-          value={editEmploymentFrom}
-          onChange={(e) => setEditEmploymentFrom(e.target.value)}
-          disabled={!canManageEmployees}
-        />
-      </div>
-
-      <div className="space-y-2">
-        <Label>Bis</Label>
-        <Input
-          type="date"
-          value={editEmploymentUntil}
-          onChange={(e) => setEditEmploymentUntil(e.target.value)}
-          disabled={!canManageEmployees}
-        />
-      </div>
-    </div>
-  )}
-</div>
-                            
                           <div className="space-y-3 rounded-lg border border-border p-4">
                             <div>
                               <Label>Langzeit-Deaktivierung</Label>
@@ -3495,6 +3446,55 @@ export default function EmployeeManagement() {
                           </div>
                         ))}
                       </div>
+                    </div>
+
+                    <div className="space-y-3 rounded-lg border border-border p-4">
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <Label>Befristete Anwesenheit</Label>
+                          <p className="text-xs text-muted-foreground">
+                            Für Turnusärzt:innen: Zugang und Rechte sind nur im definierten Zeitraum aktiv.
+                            Nach Ablauf wird der Benutzer automatisch archiviert und kann sich nicht mehr anmelden.
+                          </p>
+                        </div>
+
+                        <Switch
+                          checked={editLimitedPresenceEnabled}
+                          onCheckedChange={(checked) => {
+                            const enabled = Boolean(checked);
+                            setEditLimitedPresenceEnabled(enabled);
+                            if (!enabled) {
+                              setEditEmploymentFrom("");
+                              setEditEmploymentUntil("");
+                            }
+                          }}
+                          disabled={!canManageEmployees}
+                        />
+                      </div>
+
+                      {editLimitedPresenceEnabled && (
+                        <div className="grid md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>Von</Label>
+                            <Input
+                              type="date"
+                              value={editEmploymentFrom}
+                              onChange={(e) => setEditEmploymentFrom(e.target.value)}
+                              disabled={!canManageEmployees}
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label>Bis</Label>
+                            <Input
+                              type="date"
+                              value={editEmploymentUntil}
+                              onChange={(e) => setEditEmploymentUntil(e.target.value)}
+                              disabled={!canManageEmployees}
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div className="space-y-3 rounded-lg border border-border p-4">
