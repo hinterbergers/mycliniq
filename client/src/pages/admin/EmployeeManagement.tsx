@@ -228,6 +228,7 @@ interface ShiftPreferences {
   deploymentRoomIds?: number[];
   serviceTypeOverrides?: ServiceType[];
   vacationVisibilityRoleGroups?: VacationVisibilityGroup[];
+  externalDutyOnly?: boolean;
 }
 
 interface CompetencyAssignment {
@@ -406,6 +407,7 @@ export default function EmployeeManagement() {
   const [editLimitedPresenceEnabled, setEditLimitedPresenceEnabled] = useState(false);
   const [editEmploymentFrom, setEditEmploymentFrom] = useState("");
   const [editEmploymentUntil, setEditEmploymentUntil] = useState("");
+  const [editExternalDutyOnly, setEditExternalDutyOnly] = useState(false);
   const [resetPasswordData, setResetPasswordData] = useState({
     newPassword: "",
     confirmPassword: "",
@@ -436,6 +438,7 @@ export default function EmployeeManagement() {
   const [newLimitedPresenceEnabled, setNewLimitedPresenceEnabled] = useState(false);
   const [newEmploymentFrom, setNewEmploymentFrom] = useState("");
   const [newEmploymentUntil, setNewEmploymentUntil] = useState("");
+  const [newExternalDutyOnly, setNewExternalDutyOnly] = useState(false);
 
   const canManageEmployees = isAdmin || isTechnicalAdmin;
 
@@ -575,6 +578,7 @@ export default function EmployeeManagement() {
     setNewEmploymentFrom("");
     setNewEmploymentUntil("");
     setNewInactiveEnabled(false);
+    setNewExternalDutyOnly(false);
   };
 
   const hydrateEditForm = (emp: Employee) => {
@@ -651,6 +655,7 @@ export default function EmployeeManagement() {
     setEditVacationVisibilityGroups(
       visibilityGroups.length ? visibilityGroups : DEFAULT_VISIBILITY_GROUPS,
     );
+    setEditExternalDutyOnly(Boolean(prefs?.externalDutyOnly));
     setEditCompetencyIds([]);
     setEditDiplomaIds([]);
     setResetPasswordData({ newPassword: "", confirmPassword: "" });
@@ -768,6 +773,7 @@ export default function EmployeeManagement() {
       setEditEmploymentFrom("");
       setEditEmploymentUntil("");
       setEditInactiveEnabled(false);
+      setEditExternalDutyOnly(false);
     }
   };
 
@@ -979,6 +985,12 @@ export default function EmployeeManagement() {
         ...baseShiftPreferences,
         deploymentRoomIds: editDeploymentRoomIds,
       };
+      if (editExternalDutyOnly) {
+        nextShiftPreferences.externalDutyOnly = true;
+      } else {
+        delete (nextShiftPreferences as { externalDutyOnly?: boolean })
+          .externalDutyOnly;
+      }
       if (editServiceTypeOverrides.length) {
         nextShiftPreferences.serviceTypeOverrides = editServiceTypeOverrides;
       } else {
@@ -1256,6 +1268,12 @@ export default function EmployeeManagement() {
       const nextShiftPreferences: ShiftPreferences = {
         deploymentRoomIds: newDeploymentRoomIds,
       };
+      if (newExternalDutyOnly) {
+        nextShiftPreferences.externalDutyOnly = true;
+      } else {
+        delete (nextShiftPreferences as { externalDutyOnly?: boolean })
+          .externalDutyOnly;
+      }
       if (newServiceTypeOverrides.length) {
         nextShiftPreferences.serviceTypeOverrides = newServiceTypeOverrides;
       }
