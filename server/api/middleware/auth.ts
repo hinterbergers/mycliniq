@@ -239,6 +239,9 @@ async function getAuthUserByEmployeeId(
       accessScope,
     };
   } catch (error) {
+    if (error instanceof AccessDeniedError) {
+      throw error;
+    }
     console.error("[Auth] Error fetching employee:", error);
     return null;
   }
