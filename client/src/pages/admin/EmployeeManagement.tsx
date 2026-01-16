@@ -2533,6 +2533,24 @@ export default function EmployeeManagement() {
                                 </div>
                               </div>
                             )}
+
+                            <div className="border-t border-border/60 pt-3">
+                              <div className="flex items-center justify-between gap-4">
+                                <div>
+                                  <Label>Für Fremddienste freischalten</Label>
+                                  <p className="text-xs text-muted-foreground">
+                                    Wird nach 3 Monaten ab Startdatum wirksam. Danach nur Dienstplan & Dienstwünsche.
+                                  </p>
+                                </div>
+                                <Switch
+                                  checked={newExternalDutyOnly}
+                                  onCheckedChange={(checked) =>
+                                    setNewExternalDutyOnly(Boolean(checked))
+                                  }
+                                  disabled={!canManageEmployees}
+                                />
+                              </div>
+                            </div>
                           </div>
 
                           <div className="space-y-3 rounded-lg border border-border p-4">
@@ -3558,6 +3576,24 @@ export default function EmployeeManagement() {
                           </div>
                         </div>
                       )}
+
+                      <div className="border-t border-border/60 pt-3">
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <Label>Für Fremddienste freischalten</Label>
+                            <p className="text-xs text-muted-foreground">
+                              Wird nach 3 Monaten ab Startdatum wirksam. Danach nur Dienstplan & Dienstwünsche.
+                            </p>
+                          </div>
+                          <Switch
+                            checked={editExternalDutyOnly}
+                            onCheckedChange={(checked) =>
+                              setEditExternalDutyOnly(Boolean(checked))
+                            }
+                            disabled={!canManageEmployees}
+                          />
+                        </div>
+                      </div>
                     </div>
 
                     <div className="space-y-3 rounded-lg border border-border p-4">
