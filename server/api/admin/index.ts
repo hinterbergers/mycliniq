@@ -217,6 +217,7 @@ export function registerAdminRoutes(app: Express): void {
             systemRole: req.user.systemRole,
             appRole: req.user.appRole,
             isAdmin: req.user.isAdmin,
+            accessScope: req.user.accessScope,
           },
           department: department
             ? {

@@ -26,6 +26,7 @@ export interface UserData {
   systemRole: SystemRole;
   appRole: string;
   isAdmin: boolean;
+  accessScope?: "full" | "external_duty";
 }
 
 const CAPABILITY_ALIASES: Record<string, string[]> = {

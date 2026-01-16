@@ -37,6 +37,7 @@ export function Sidebar({
     canAny,
     isSuperuser,
   } = useAuth();
+  const isExternalDuty = user?.accessScope === "external_duty";
 
   const adminCaps = [
     "dutyplan.edit",
@@ -134,9 +135,12 @@ export function Sidebar({
       )}
       <nav className="flex-1 px-3 py-4 space-y-1">
         {navItems
-          .filter((item) =>
-            item.adminOnly ? hasAdminAccess : true,
-          )
+      .filter((item) => {
+        if (isExternalDuty) {
+          return ["/dienstplaene", "/aufgaben"].includes(item.href);
+        }
+        return item.adminOnly ? hasAdminAccess : true;
+      })
           .map((item) => {
             const isActive =
               location === item.href ||
