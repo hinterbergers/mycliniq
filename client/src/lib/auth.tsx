@@ -232,11 +232,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const verifyToken = useCallback(
-    async (authToken: string) => {
+    async (authToken: string): Promise<{ success: boolean; errorMessage?: string }> => {
+      let failureMessage: string | undefined;
       try {
         setIsLoading(true);
 
-        // 1) Primär: /api/me  -> { success:true, data:{ user, department, clinic, capabilities, employee? } }
         const primary = await fetchMe(authToken);
         const primaryData = primary.data?.data ?? primary.data;
         if (
@@ -257,7 +257,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             > | null,
           });
 
-          // Wenn employee fehlt: optionaler Fallback, aber NICHT mehr auth-blocking
           if (!meData.employee) {
             const fb = await fetchAuthMe(authToken);
             if (fb.ok) {
@@ -272,10 +271,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               }
             }
           }
-          return;
+          return { success: true };
         }
 
-        // 2) Fallback: /api/auth/me
+        if (!primary.ok || primary.data?.success === false) {
+          failureMessage = primary.data?.error ?? failureMessage;
+        }
+
         const fallback = await fetchAuthMe(authToken);
         if (fallback.ok && fallback.data?.success !== false) {
           const fbData = fallback.data?.data ?? fallback.data;
@@ -293,25 +295,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               capabilities: fbCapabilities,
               employee: fbEmployee ?? null,
             });
-            return;
+            return { success: true };
           }
 
-          // falls nur employee geliefert würde:
           if (fbEmployee) {
             applyAuthState({
               employee: fbEmployee,
               user: buildUserFromEmployee(fbEmployee),
               capabilities: fbCapabilities,
             });
-            return;
+            return { success: true };
           }
+        } else if (fallback.data?.success === false || !fallback.ok) {
+          failureMessage = fallback.data?.error ?? failureMessage;
         }
 
-        // Wenn beides fehlschlägt -> reset
         resetAuthState();
+        return {
+          success: false,
+          errorMessage: failureMessage ?? "Authentifizierung fehlgeschlagen",
+        };
       } catch (err) {
         console.error("[Auth] verification failed:", err);
         resetAuthState();
+        const errMessage =
+          failureMessage ??
+          (err instanceof Error ? err.message : "Authentifizierung fehlgeschlagen");
+        return { success: false, errorMessage: errMessage };
       } finally {
         setIsLoading(false);
       }
@@ -395,7 +405,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         // danach immer verifizieren (single source of truth)
-        await verifyToken(authToken);
+        const verification = await verifyToken(authToken);
+        if (!verification.success) {
+          throw new Error(
+            verification.errorMessage || "Authentifizierung fehlgeschlagen",
+          );
+        }
       } finally {
         setIsLoading(false);
       }

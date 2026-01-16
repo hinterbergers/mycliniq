@@ -516,10 +516,10 @@ export async function registerRoutes(
 
         if (now.getTime() < start.getTime()) {
           return res.status(403).json({
+            success: false,
             error: `Zugang erst ab ${employee.employmentFrom} aktiv.`,
           });
         }
-
         const fullUntil = addMonths(start, 3);
         fullUntil.setHours(0, 0, 0, 0);
 
@@ -540,7 +540,10 @@ export async function registerRoutes(
           }
 
           if (!shiftPrefs?.externalDutyOnly) {
-            return res.status(403).json({ error: "Befristung abgelaufen." });
+            return res.status(403).json({
+              success: false,
+              error: "Befristung abgelaufen.",
+            });
           }
         }
       }
