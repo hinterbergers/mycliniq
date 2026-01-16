@@ -532,29 +532,19 @@ export async function registerRoutes(
       }
       const externalDutyOnly = Boolean(shiftPrefs?.externalDutyOnly);
 
-      if (employmentFrom && today.getTime() < employmentFrom.getTime()) {
-        return res.status(403).json({
-          success: false,
-          error: `Zugang erst ab ${employee.employmentFrom} aktiv.`,
-        });
-      }
-
       if (employmentFrom) {
         const fullUntil = addMonths(employmentFrom, 3);
         fullUntil.setHours(0, 0, 0, 0);
-        if (today.getTime() > fullUntil.getTime() && !externalDutyOnly) {
+        let fullAccessEnd = fullUntil;
+        if (employmentUntil && employmentUntil.getTime() < fullAccessEnd.getTime()) {
+          fullAccessEnd = employmentUntil;
+        }
+        if (today.getTime() > fullAccessEnd.getTime() && !externalDutyOnly) {
           return res.status(403).json({
             success: false,
             error: "Befristung abgelaufen.",
           });
         }
-      }
-
-      if (employmentUntil && today.getTime() > employmentUntil.getTime() && !externalDutyOnly) {
-        return res.status(403).json({
-          success: false,
-          error: "Befristung abgelaufen.",
-        });
       }
 
       const token = crypto.randomBytes(32).toString("hex");
