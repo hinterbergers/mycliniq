@@ -19,6 +19,9 @@ import {
   weeklyPlanAssignments,
   rooms,
   employees,
+  dutyDays,
+  dutySlots,
+  dutyAssignments,
 } from "@shared/schema";
 
 /**
@@ -83,6 +86,42 @@ const updateLockedWeekdaysSchema = z.object({
 const assignmentIdParamSchema = z.object({
   assignmentId: z.string().regex(/^\d+$/).transform(Number),
 });
+
+function toDateOnly(value?: string | null): Date | null {
+  if (!value) return null;
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function addMonths(date: Date, months: number): Date {
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + months);
+  return next;
+}
+
+function isWithinFullAccessWindow(emp: any, dateIso: string): boolean {
+  if (!emp || !dateIso) return true;
+  const target = toDateOnly(dateIso);
+  if (!target) return true;
+  if (!emp.employmentFrom) return true;
+  const start = toDateOnly(emp.employmentFrom);
+  if (!start) return true;
+  const fullUntil = addMonths(start, 3);
+  fullUntil.setHours(0, 0, 0, 0);
+  let fullAccessEnd = fullUntil;
+  if (emp.employmentUntil) {
+    const until = toDateOnly(emp.employmentUntil);
+    if (until && until.getTime() < fullAccessEnd.getTime()) {
+      fullAccessEnd = until;
+    }
+  }
+  return (
+    target.getTime() >= start.getTime() &&
+    target.getTime() <= fullAccessEnd.getTime()
+  );
+}
 
 /**
  * Weekly Plan (Wochenplan) API Routes
@@ -676,9 +715,51 @@ export function registerWeeklyPlanRoutes(router: Router) {
     "/:id/generate-from-duty",
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
+      const { id } = req.params;
+      const planId = Number(id);
+      const [plan] = await db
+        .select()
+        .from(weeklyPlans)
+        .where(eq(weeklyPlans.id, planId));
+
+      if (!plan) {
+        return notFound(res, "Wochenplan");
+      }
+
+      const dutyPlanId = plan.generatedFromDutyPlanId;
+      if (!dutyPlanId) {
+        return validationError(
+          res,
+          "Der Wochenplan ist nicht mit einem Dienstplan verknüpft",
+        );
+      }
+
+      const dutyAssignmentsRows = await db
+        .select({
+          employeeId: dutyAssignments.employeeId,
+          employmentFrom: employees.employmentFrom,
+          employmentUntil: employees.employmentUntil,
+          shiftPreferences: employees.shiftPreferences,
+          date: dutyDays.date,
+        })
+        .from(dutyAssignments)
+        .innerJoin(dutySlots, eq(dutyAssignments.dutySlotId, dutySlots.id))
+        .innerJoin(dutyDays, eq(dutySlots.dutyDayId, dutyDays.id))
+        .leftJoin(employees, eq(dutyAssignments.employeeId, employees.id))
+        .where(eq(dutyDays.dutyPlanId, dutyPlanId));
+
+      let skippedLimitedPresenceAssignments = 0;
+      dutyAssignmentsRows.forEach((row) => {
+        if (!row.employeeId) return;
+        if (!isWithinFullAccessWindow(row, row.date ?? "")) {
+          skippedLimitedPresenceAssignments += 1;
+        }
+      });
+
       return ok(res, {
         message: "Generierung aus Dienstplan noch nicht implementiert",
         hint: "Manuelle Zuweisung über POST /:id/assign verwenden",
+        skippedLimitedPresenceAssignments,
       });
     }),
   );
