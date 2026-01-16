@@ -199,6 +199,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 const toDate = (value: string) => new Date(`${value}T00:00:00`);
 
+const addMonths = (date: Date, months: number) => {
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + months);
+  return next;
+};
+
 const formatDate = (date: Date) => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -496,6 +502,47 @@ export async function registerRoutes(
       );
       if (!isValidPassword) {
         return res.status(401).json({ error: "Ungültige Anmeldedaten" });
+      }
+
+      const employmentFromDate = employee.employmentFrom
+        ? toDate(employee.employmentFrom)
+        : null;
+      if (employmentFromDate) {
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+
+        const start = new Date(employmentFromDate);
+        start.setHours(0, 0, 0, 0);
+
+        if (now.getTime() < start.getTime()) {
+          return res.status(403).json({
+            error: `Zugang erst ab ${employee.employmentFrom} aktiv.`,
+          });
+        }
+
+        const fullUntil = addMonths(start, 3);
+        fullUntil.setHours(0, 0, 0, 0);
+
+        if (now.getTime() > fullUntil.getTime()) {
+          let shiftPrefs: { externalDutyOnly?: boolean } | null = null;
+          if (employee.shiftPreferences) {
+            if (typeof employee.shiftPreferences === "string") {
+              try {
+                shiftPrefs = JSON.parse(employee.shiftPreferences);
+              } catch {
+                shiftPrefs = null;
+              }
+            } else if (typeof employee.shiftPreferences === "object") {
+              shiftPrefs = employee.shiftPreferences as {
+                externalDutyOnly?: boolean;
+              };
+            }
+          }
+
+          if (!shiftPrefs?.externalDutyOnly) {
+            return res.status(403).json({ error: "Befristung abgelaufen." });
+          }
+        }
       }
 
       const token = crypto.randomBytes(32).toString("hex");
