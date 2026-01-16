@@ -210,13 +210,30 @@ async function getAuthUserByEmployeeId(
     if (employmentFrom) {
       const start = new Date(employmentFrom);
       start.setHours(0, 0, 0, 0);
+      const end =
+        employee.employmentUntil && typeof employee.employmentUntil === "string"
+          ? (() => {
+              const d = new Date(employee.employmentUntil);
+              d.setHours(0, 0, 0, 0);
+              return d;
+            })()
+          : null;
       const now = new Date();
+      now.setHours(0, 0, 0, 0);
+
       if (now.getTime() < start.getTime()) {
-        throw new AccessDeniedError("Zugang erst ab Startdatum");
-      }
-      const fullAccessUntil = addMonths(start, 3);
-      if (now.getTime() > fullAccessUntil.getTime()) {
-        if (shiftPrefs?.externalDutyOnly) {
+        accessScope = "external_duty";
+      } else {
+        const fullUntil = addMonths(start, 3);
+        fullUntil.setHours(0, 0, 0, 0);
+        let fullAccessEnd = fullUntil;
+        if (end && end.getTime() < fullAccessEnd.getTime()) {
+          fullAccessEnd = end;
+        }
+
+        if (now.getTime() <= fullAccessEnd.getTime()) {
+          accessScope = "full";
+        } else if (shiftPrefs?.externalDutyOnly) {
           accessScope = "external_duty";
         } else {
           throw new AccessDeniedError("Befristete Anwesenheit abgelaufen");
