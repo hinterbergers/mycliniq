@@ -102,12 +102,13 @@ function addMonths(date: Date, months: number): Date {
 }
 
 function isWithinFullAccessWindow(emp: any, dateIso: string): boolean {
-  if (!emp || !dateIso) return true;
+  if (!emp) return false;
+  if (!dateIso) return false;
   const target = toDateOnly(dateIso);
-  if (!target) return true;
+  if (!target) return false;
   if (!emp.employmentFrom) return true;
   const start = toDateOnly(emp.employmentFrom);
-  if (!start) return true;
+  if (!start) return false;
   const fullUntil = addMonths(start, 3);
   fullUntil.setHours(0, 0, 0, 0);
   let fullAccessEnd = fullUntil;
