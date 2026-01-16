@@ -199,6 +199,13 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 const toDate = (value: string) => new Date(`${value}T00:00:00`);
 
+const toDateOnly = (value: string | null | undefined) => {
+  if (!value) return null;
+  const date = toDate(value);
+  date.setHours(0, 0, 0, 0);
+  return date;
+};
+
 const addMonths = (date: Date, months: number) => {
   const next = new Date(date);
   next.setMonth(next.getMonth() + months);
@@ -504,48 +511,50 @@ export async function registerRoutes(
         return res.status(401).json({ error: "Ungültige Anmeldedaten" });
       }
 
-      const employmentFromDate = employee.employmentFrom
-        ? toDate(employee.employmentFrom)
-        : null;
-      if (employmentFromDate) {
-        const now = new Date();
-        now.setHours(0, 0, 0, 0);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const employmentFrom = toDateOnly(employee.employmentFrom);
+      const employmentUntil = toDateOnly(employee.employmentUntil);
 
-        const start = new Date(employmentFromDate);
-        start.setHours(0, 0, 0, 0);
+      let shiftPrefs: { externalDutyOnly?: boolean } | null = null;
+      if (employee.shiftPreferences) {
+        if (typeof employee.shiftPreferences === "string") {
+          try {
+            shiftPrefs = JSON.parse(employee.shiftPreferences);
+          } catch {
+            shiftPrefs = null;
+          }
+        } else if (typeof employee.shiftPreferences === "object") {
+          shiftPrefs = employee.shiftPreferences as {
+            externalDutyOnly?: boolean;
+          };
+        }
+      }
+      const externalDutyOnly = Boolean(shiftPrefs?.externalDutyOnly);
 
-        if (now.getTime() < start.getTime()) {
+      if (employmentFrom && today.getTime() < employmentFrom.getTime()) {
+        return res.status(403).json({
+          success: false,
+          error: `Zugang erst ab ${employee.employmentFrom} aktiv.`,
+        });
+      }
+
+      if (employmentFrom) {
+        const fullUntil = addMonths(employmentFrom, 3);
+        fullUntil.setHours(0, 0, 0, 0);
+        if (today.getTime() > fullUntil.getTime() && !externalDutyOnly) {
           return res.status(403).json({
             success: false,
-            error: `Zugang erst ab ${employee.employmentFrom} aktiv.`,
+            error: "Befristung abgelaufen.",
           });
         }
-        const fullUntil = addMonths(start, 3);
-        fullUntil.setHours(0, 0, 0, 0);
+      }
 
-        if (now.getTime() > fullUntil.getTime()) {
-          let shiftPrefs: { externalDutyOnly?: boolean } | null = null;
-          if (employee.shiftPreferences) {
-            if (typeof employee.shiftPreferences === "string") {
-              try {
-                shiftPrefs = JSON.parse(employee.shiftPreferences);
-              } catch {
-                shiftPrefs = null;
-              }
-            } else if (typeof employee.shiftPreferences === "object") {
-              shiftPrefs = employee.shiftPreferences as {
-                externalDutyOnly?: boolean;
-              };
-            }
-          }
-
-          if (!shiftPrefs?.externalDutyOnly) {
-            return res.status(403).json({
-              success: false,
-              error: "Befristung abgelaufen.",
-            });
-          }
-        }
+      if (employmentUntil && today.getTime() > employmentUntil.getTime() && !externalDutyOnly) {
+        return res.status(403).json({
+          success: false,
+          error: "Befristung abgelaufen.",
+        });
       }
 
       const token = crypto.randomBytes(32).toString("hex");
