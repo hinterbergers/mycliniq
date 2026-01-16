@@ -58,6 +58,7 @@ const assignSlotSchema = z.object({
   employeeId: z.number().positive(),
   roleBadge: z.string().nullable().optional(),
   isPrimary: z.boolean().default(true),
+  source: z.enum(["manual", "generator"]).optional(),
 });
 
 /**
@@ -91,6 +92,35 @@ function compareYearMonth(
 ): number {
   if (year === otherYear) return month - otherMonth;
   return year - otherYear;
+}
+
+function isAutoAssignableForDate(emp: any, dutyDateIso: string): boolean {
+  if (!dutyDateIso) return true;
+  const target = toDate(dutyDateIso);
+  if (!target || !(target instanceof Date) || Number.isNaN(target.getTime())) {
+    return true;
+  }
+  if (!emp?.employmentFrom) return true;
+  const start = toDate(emp.employmentFrom);
+  if (!start) return true;
+  start.setHours(0, 0, 0, 0);
+  const fullUntil = addMonths(start, 3);
+  fullUntil.setHours(0, 0, 0, 0);
+  let fullAccessEnd = fullUntil;
+  if (emp.employmentUntil) {
+    const until = toDate(emp.employmentUntil);
+    if (until) {
+      until.setHours(0, 0, 0, 0);
+      if (until.getTime() < fullAccessEnd.getTime()) {
+        fullAccessEnd = until;
+      }
+    }
+  }
+  target.setHours(0, 0, 0, 0);
+  return (
+    target.getTime() >= start.getTime() &&
+    target.getTime() <= fullAccessEnd.getTime()
+  );
 }
 
 /**
@@ -565,6 +595,7 @@ export function registerDutyPlanRoutes(router: Router) {
       const { slotId } = req.params;
       const slotIdNum = Number(slotId);
       const { employeeId, roleBadge, isPrimary } = req.body;
+      const source = (req.body.source as "manual" | "generator" | undefined) ?? "manual";
 
       // Verify slot exists
       const [slot] = await db
@@ -575,6 +606,14 @@ export function registerDutyPlanRoutes(router: Router) {
         return notFound(res, "Slot");
       }
 
+      const [day] = await db
+        .select()
+        .from(dutyDays)
+        .where(eq(dutyDays.id, slot.dutyDayId));
+      if (!day) {
+        return notFound(res, "Diensttag");
+      }
+
       // Verify employee exists
       const [employee] = await db
         .select()
@@ -582,6 +621,17 @@ export function registerDutyPlanRoutes(router: Router) {
         .where(eq(employees.id, employeeId));
       if (!employee) {
         return notFound(res, "Mitarbeiter");
+      }
+
+      if (
+        source === "generator" &&
+        !isAutoAssignableForDate(employee, day?.date ?? "")
+      ) {
+        return res.status(403).json({
+          success: false,
+          error:
+            "Außerhalb des Vollzugriffs (3 Monate ab Start). Nur manuelle Zuweisung erlaubt.",
+        });
       }
 
       // Check if assignment already exists
