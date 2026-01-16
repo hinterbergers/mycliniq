@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
+import { addMonths } from "date-fns";
 import { db, eq, and } from "../../lib/db";
 import {
   employees,
@@ -23,6 +24,7 @@ export interface AuthUser {
   departmentId?: number;
   clinicId?: number;
   capabilities: string[]; // Permission keys for current department
+  accessScope: "full" | "external_duty";
 }
 
 /**
@@ -31,6 +33,10 @@ export interface AuthUser {
 interface SessionData {
   employeeId?: number;
   userId?: string;
+}
+
+interface ShiftPreferences {
+  externalDutyOnly?: boolean;
 }
 
 /**
@@ -175,6 +181,36 @@ async function getAuthUserByEmployeeId(
       | "clinic_admin"
       | "system_admin";
     const isTechnicalAdmin = systemRole !== "employee";
+    const employmentFrom = employee.employmentFrom
+      ? new Date(employee.employmentFrom)
+      : null;
+    const prefsRaw = employee.shiftPreferences;
+    let shiftPrefs: ShiftPreferences | null = null;
+    if (prefsRaw && typeof prefsRaw === "string") {
+      try {
+        shiftPrefs = JSON.parse(prefsRaw);
+      } catch {
+        shiftPrefs = null;
+      }
+    } else if (prefsRaw && typeof prefsRaw === "object") {
+      shiftPrefs = prefsRaw as ShiftPreferences;
+    }
+
+    let accessScope: "full" | "external_duty" = "full";
+    if (employmentFrom) {
+      const now = new Date();
+      if (now.getTime() < employmentFrom.getTime()) {
+        return null;
+      }
+      const fullAccessUntil = addMonths(employmentFrom, 3);
+      if (now.getTime() > fullAccessUntil.getTime()) {
+        if (shiftPrefs?.externalDutyOnly) {
+          accessScope = "external_duty";
+        } else {
+          return null;
+        }
+      }
+    }
 
     return {
       id: userId,
@@ -188,6 +224,7 @@ async function getAuthUserByEmployeeId(
       departmentId,
       clinicId,
       capabilities,
+      accessScope,
     };
   } catch (error) {
     console.error("[Auth] Error fetching employee:", error);
@@ -280,6 +317,16 @@ export async function authenticate(
     }
 
     // Attach user to request
+    if (
+      user.accessScope === "external_duty" &&
+      !isExternalDutyAllowed(req.path)
+    ) {
+      res.status(403).json({
+        success: false,
+        error: "Eingeschränkter Zugriff",
+      });
+      return;
+    }
     req.user = user;
     next();
   } catch (error) {
@@ -514,3 +561,16 @@ export const getOwnerIdFrom = {
     (req: Request) =>
       Number(req.query[queryName]),
 };
+
+const externalDutyAllowedPrefixes = [
+  "/api/auth/me",
+  "/api/duty-plans",
+  "/api/shift-wishes",
+];
+
+function isExternalDutyAllowed(path: string): boolean {
+  const normalized = path.toLowerCase();
+  return externalDutyAllowedPrefixes.some(
+    (prefix) => normalized === prefix || normalized.startsWith(`${prefix}/`),
+  );
+}

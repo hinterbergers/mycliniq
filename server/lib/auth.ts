@@ -86,6 +86,7 @@ async function getAuthUserByEmployeeId(
     isAdmin: employee.isAdmin || appRole === "Admin",
     name: employee.name,
     lastName: employee.lastName || "",
+    accessScope: "full",
   };
 }
 
