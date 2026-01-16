@@ -11,6 +11,7 @@ import {
   Wrench,
   MessageCircle,
   ListCheck,
+  Calendar as CalendarIcon,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Search } from "lucide-react";
@@ -62,6 +63,7 @@ export function Sidebar({
 
   const navItems = [
     { href: "/dienstplaene", label: "Dienstpläne", icon: CalendarDays },
+    { href: "/dienstwuensche", label: "Dienstwünsche", icon: CalendarIcon },
     { href: "/wissen", label: "SOPs", icon: FileText },
     { href: "/aufgaben", label: "Aufgaben", icon: ListCheck },
     { href: "/tools", label: "Tools", icon: Wrench },
@@ -69,6 +71,8 @@ export function Sidebar({
     { href: "/admin", label: "Verwaltung", icon: Users, adminOnly: true },
     { href: "/einstellungen", label: "Einstellungen", icon: Settings },
   ];
+
+  const externalDutyNav = new Set(["/dienstplaene", "/dienstwuensche"]);
 
   const getInitials = (name: string) => {
     if (!name) return "?";
@@ -135,12 +139,12 @@ export function Sidebar({
       )}
       <nav className="flex-1 px-3 py-4 space-y-1">
         {navItems
-      .filter((item) => {
-        if (isExternalDuty) {
-          return ["/dienstplaene", "/aufgaben"].includes(item.href);
-        }
-        return item.adminOnly ? hasAdminAccess : true;
-      })
+          .filter((item) => {
+            if (isExternalDuty) {
+              return externalDutyNav.has(item.href);
+            }
+            return item.adminOnly ? hasAdminAccess : true;
+          })
           .map((item) => {
             const isActive =
               location === item.href ||
