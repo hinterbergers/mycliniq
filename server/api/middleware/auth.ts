@@ -39,6 +39,16 @@ interface ShiftPreferences {
   externalDutyOnly?: boolean;
 }
 
+class AccessDeniedError extends Error {
+  public statusCode: number;
+
+  constructor(message: string, statusCode = 403) {
+    super(message);
+    this.name = "AccessDeniedError";
+    this.statusCode = statusCode;
+  }
+}
+
 /**
  * Extend Express Request to include user
  */
@@ -198,16 +208,18 @@ async function getAuthUserByEmployeeId(
 
     let accessScope: "full" | "external_duty" = "full";
     if (employmentFrom) {
+      const start = new Date(employmentFrom);
+      start.setHours(0, 0, 0, 0);
       const now = new Date();
-      if (now.getTime() < employmentFrom.getTime()) {
-        return null;
+      if (now.getTime() < start.getTime()) {
+        throw new AccessDeniedError("Zugang erst ab Startdatum");
       }
-      const fullAccessUntil = addMonths(employmentFrom, 3);
+      const fullAccessUntil = addMonths(start, 3);
       if (now.getTime() > fullAccessUntil.getTime()) {
         if (shiftPrefs?.externalDutyOnly) {
           accessScope = "external_duty";
         } else {
-          return null;
+          throw new AccessDeniedError("Befristete Anwesenheit abgelaufen");
         }
       }
     }
@@ -264,6 +276,9 @@ async function verifyToken(token: string): Promise<AuthUser | null> {
 
     return await getAuthUserByEmployeeId(session.employeeId);
   } catch (error) {
+    if (error instanceof AccessDeniedError) {
+      throw error;
+    }
     console.error("[Auth] Token verification error:", error);
     return null;
   }
@@ -316,10 +331,9 @@ export async function authenticate(
       return;
     }
 
-    // Attach user to request
     if (
       user.accessScope === "external_duty" &&
-      !isExternalDutyAllowed(req.path)
+      !isExternalDutyAllowed(req)
     ) {
       res.status(403).json({
         success: false,
@@ -327,9 +341,17 @@ export async function authenticate(
       });
       return;
     }
+
+    // Attach user to request
     req.user = user;
     next();
   } catch (error) {
+    if (error instanceof AccessDeniedError) {
+      res
+        .status(error.statusCode)
+        .json({ success: false, error: error.message });
+      return;
+    }
     console.error("[Auth] Middleware error:", error);
     res.status(500).json({ success: false, error: "Authentifizierungsfehler" });
   }
@@ -562,15 +584,32 @@ export const getOwnerIdFrom = {
       Number(req.query[queryName]),
 };
 
-const externalDutyAllowedPrefixes = [
-  "/api/auth/me",
-  "/api/duty-plans",
-  "/api/shift-wishes",
-];
+function isExternalDutyAllowed(req: Request): boolean {
+  const normalizedPath = req.path.toLowerCase();
+  const method = req.method.toUpperCase();
+  if (normalizedPath === "/api/auth/me" || normalizedPath === "/api/me") {
+    return true;
+  }
 
-function isExternalDutyAllowed(path: string): boolean {
-  const normalized = path.toLowerCase();
-  return externalDutyAllowedPrefixes.some(
-    (prefix) => normalized === prefix || normalized.startsWith(`${prefix}/`),
-  );
+  if (
+    method === "GET" &&
+    (normalizedPath === "/api/duty-plans" ||
+      normalizedPath.startsWith("/api/duty-plans/"))
+  ) {
+    return true;
+  }
+
+  const serviceLinesRoot = "/api/service-lines";
+  if (normalizedPath === serviceLinesRoot && method === "GET") {
+    return true;
+  }
+
+  if (
+    normalizedPath.startsWith(`${serviceLinesRoot}/`) &&
+    normalizedPath.includes("wish")
+  ) {
+    return true;
+  }
+
+  return false;
 }
