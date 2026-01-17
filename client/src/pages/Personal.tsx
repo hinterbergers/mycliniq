@@ -410,7 +410,7 @@ function RosterView({
   currentDate: Date;
   setCurrentDate: (d: Date) => void;
 }) {
-  const { employee: currentUser } = useAuth();
+  const { employee: currentUser, user } = useAuth();
   const { toast } = useToast();
   const [dutyPlan, setDutyPlan] = useState<DutyPlan | null>(null);
   const [planLoading, setPlanLoading] = useState(false);
@@ -424,6 +424,7 @@ function RosterView({
   const [longTermAbsences, setLongTermAbsences] = useState<LongTermAbsence[]>(
     [],
   );
+  const isExternalDuty = user?.accessScope === "external_duty";
 
   const planStatus = dutyPlan?.status;
   const statusLabel = planStatus ? PLAN_STATUS_LABELS[planStatus] : "Vorschau";
@@ -448,13 +449,15 @@ function RosterView({
     setPlanLoading(true);
     setRosterLoading(true);
     try {
-      const [plan, rosterData, employeeData, plannedAbsenceData] =
+    const [plan, rosterData, employeeData, plannedAbsenceData] =
         await Promise.all([
-          dutyPlansApi.getByMonth(year, month),
-          rosterApi.getByMonth(year, month),
-          employeeApi.getAll(),
-          plannedAbsencesAdminApi.getRange({ from: startDate, to: endDate }),
-        ]);
+        dutyPlansApi.getByMonth(year, month),
+        rosterApi.getByMonth(year, month),
+        isExternalDuty ? Promise.resolve([]) : employeeApi.getAll(),
+        isExternalDuty
+          ? Promise.resolve([])
+          : plannedAbsencesAdminApi.getRange({ from: startDate, to: endDate }),
+      ]);
       let serviceLineData: ServiceLine[] = [];
       try {
         serviceLineData = await serviceLinesApi.getAll();
@@ -491,7 +494,7 @@ function RosterView({
 
   useEffect(() => {
     loadRoster();
-  }, [currentDate]);
+  }, [currentDate, isExternalDuty]);
 
   const employeesById = useMemo(
     () => new Map(employees.map((emp) => [emp.id, emp])),
