@@ -20,8 +20,8 @@ import {
 import { Building, Save, Loader2, Plus, Trash2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { getAuthToken } from "@/lib/auth";
-import { serviceLinesApi } from "@/lib/api";
+import { getAuthToken, useAuth } from "@/lib/auth";
+import { serviceLinesApi, getServiceLineContextFromEmployee } from "@/lib/api";
 import type { ServiceLine } from "@shared/schema";
 
 interface Clinic {
@@ -78,6 +78,7 @@ const getDefaultStateForCountry = (country: string) => {
 };
 
 export default function ClinicSettings() {
+  const { employee: currentUser } = useAuth();
   const { toast } = useToast();
   const [clinic, setClinic] = useState<Clinic | null>(null);
   const [loading, setLoading] = useState(true);
@@ -119,7 +120,9 @@ export default function ClinicSettings() {
   const loadServiceLines = async () => {
     setServiceLinesLoading(true);
     try {
-      const lines = await serviceLinesApi.getAll();
+      const lines = await serviceLinesApi.getAll(
+        getServiceLineContextFromEmployee(currentUser),
+      );
       const normalized = lines.map((line) => ({
         id: line.id,
         key: line.key,

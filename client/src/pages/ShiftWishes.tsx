@@ -60,6 +60,7 @@ import {
   rosterSettingsApi,
   employeeApi,
   serviceLinesApi,
+  getServiceLineContextFromEmployee,
   dutyPlansApi,
   type NextPlanningMonth,
 } from "@/lib/api";
@@ -574,7 +575,9 @@ export default function ShiftWishes() {
       ] = await Promise.all([
         rosterSettingsApi.getNextPlanningMonth().catch(() => null),
         canViewAll ? employeeApi.getAll() : Promise.resolve([]),
-        serviceLinesApi.getAll().catch(() => []),
+        serviceLinesApi
+          .getAll(getServiceLineContextFromEmployee(currentUser))
+          .catch(() => []),
         dutyPlansApi.getAll().catch(() => []),
       ]);
 

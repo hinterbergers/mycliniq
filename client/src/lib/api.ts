@@ -483,9 +483,38 @@ export const rosterApi = {
 // Service Lines API (Dienstschienen)
 type ServiceLineInput = Omit<InsertServiceLine, "clinicId">;
 
+export type ServiceLineQuery = {
+  clinicId?: number;
+  departmentId?: number;
+};
+
+export const getServiceLineContextFromEmployee = (
+  employee?: Pick<Employee, "departmentId"> | null,
+): ServiceLineQuery | undefined => {
+  if (!employee) return undefined;
+  if (typeof employee.departmentId === "number") {
+    return { departmentId: employee.departmentId };
+  }
+  return undefined;
+};
+
+const buildServiceLineUrl = (context?: ServiceLineQuery) => {
+  const params = new URLSearchParams();
+  if (typeof context?.clinicId === "number") {
+    params.set("clinicId", String(context.clinicId));
+  }
+  if (typeof context?.departmentId === "number") {
+    params.set("departmentId", String(context.departmentId));
+  }
+
+  const baseUrl = `${API_BASE}/service-lines`;
+  const query = params.toString();
+  return query ? `${baseUrl}?${query}` : baseUrl;
+};
+
 export const serviceLinesApi = {
-  getAll: async (): Promise<ServiceLine[]> => {
-    const response = await apiFetch(`${API_BASE}/service-lines`);
+  getAll: async (context?: ServiceLineQuery): Promise<ServiceLine[]> => {
+    const response = await apiFetch(buildServiceLineUrl(context));
     return handleResponse<ServiceLine[]>(response);
   },
 

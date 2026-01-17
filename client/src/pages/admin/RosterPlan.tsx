@@ -71,6 +71,7 @@ import {
   dutyPlansApi,
   rosterSettingsApi,
   serviceLinesApi,
+  getServiceLineContextFromEmployee,
   type NextPlanningMonth,
   type PlannedAbsenceAdmin,
 } from "@/lib/api";
@@ -604,7 +605,9 @@ export default function RosterPlan() {
       ]);
       let serviceLineData: ServiceLine[] = [];
       try {
-        serviceLineData = await serviceLinesApi.getAll();
+        serviceLineData = await serviceLinesApi.getAll(
+          getServiceLineContextFromEmployee(currentUser),
+        );
       } catch {
         serviceLineData = [];
       }

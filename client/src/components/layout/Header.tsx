@@ -27,6 +27,7 @@ import {
   rosterSettingsApi,
   shiftSwapApi,
   serviceLinesApi,
+  getServiceLineContextFromEmployee,
   notificationsApi,
   onlineUsersApi,
   type NextPlanningMonth,
@@ -159,7 +160,9 @@ export function Header({
     try {
       const [data, serviceLineData] = await Promise.all([
         rosterSettingsApi.getNextPlanningMonth(),
-        serviceLinesApi.getAll().catch(() => []),
+        serviceLinesApi
+          .getAll(getServiceLineContextFromEmployee(employee))
+          .catch(() => []),
       ]);
       setPlanningMonth(data);
       setServiceLines(serviceLineData);

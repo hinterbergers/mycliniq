@@ -61,6 +61,7 @@ import {
   longTermWishesApi,
   longTermAbsencesApi,
   serviceLinesApi,
+  getServiceLineContextFromEmployee,
 } from "@/lib/api";
 import { apiRequest } from "@/lib/queryClient";
 import type {
@@ -675,7 +676,9 @@ export default function Settings() {
           competencyApi.getAll(),
           roomApi.getAll(),
           diplomaApi.getAll(),
-          serviceLinesApi.getAll().catch(() => []),
+          serviceLinesApi
+            .getAll(getServiceLineContextFromEmployee(currentUser))
+            .catch(() => []),
         ]);
       setAllEmployees(employees);
       setAvailableCompetencies(

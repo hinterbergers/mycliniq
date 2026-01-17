@@ -26,6 +26,7 @@ import {
   shiftSwapApi,
   rosterApi,
   serviceLinesApi,
+  getServiceLineContextFromEmployee,
 } from "@/lib/api";
 import type {
   Employee,
@@ -122,7 +123,9 @@ export function ShiftSwapDialog({
       ]);
       let serviceLineData: ServiceLine[] = [];
       try {
-        serviceLineData = await serviceLinesApi.getAll();
+        serviceLineData = await serviceLinesApi.getAll(
+          getServiceLineContextFromEmployee(currentUser),
+        );
       } catch {
         serviceLineData = [];
       }

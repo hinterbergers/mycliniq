@@ -70,6 +70,7 @@ import {
   rosterApi,
   rosterSettingsApi,
   serviceLinesApi,
+  getServiceLineContextFromEmployee,
   shiftSwapApi,
   plannedAbsencesAdminApi,
   longTermAbsencesApi,
@@ -460,7 +461,9 @@ function RosterView({
       ]);
       let serviceLineData: ServiceLine[] = [];
       try {
-        serviceLineData = await serviceLinesApi.getAll();
+        serviceLineData = await serviceLinesApi.getAll(
+          getServiceLineContextFromEmployee(currentUser),
+        );
       } catch {
         serviceLineData = [];
       }
@@ -960,7 +963,9 @@ function ShiftSwapRosterDialog({
       );
       let serviceLineData: ServiceLine[] = [];
       try {
-        serviceLineData = await serviceLinesApi.getAll();
+        serviceLineData = await serviceLinesApi.getAll(
+          getServiceLineContextFromEmployee(currentUser),
+        );
       } catch {
         serviceLineData = [];
       }
