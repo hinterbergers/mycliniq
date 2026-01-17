@@ -94,6 +94,22 @@ function compareYearMonth(
   return year - otherYear;
 }
 
+function toDate(value?: string | null): Date | null {
+  if (!value) return null;
+  // erwartet YYYY-MM-DD
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function addMonths(date: Date, months: number): Date {
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + months);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
 function isAutoAssignableForDate(emp: any, dutyDateIso: string): boolean {
   if (!dutyDateIso) return true;
   const target = toDate(dutyDateIso);
