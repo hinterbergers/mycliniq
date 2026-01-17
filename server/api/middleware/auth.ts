@@ -620,6 +620,21 @@ function isExternalDutyAllowed(req: Request): boolean {
     return true;
   }
 
+  if (
+    method === "GET" &&
+    normalizedPath === "/api/roster-settings/next-planning-month"
+  ) {
+    return true;
+  }
+
+  if (
+    method === "GET" &&
+    (normalizedPath === "/api/roster" ||
+      normalizedPath.startsWith("/api/roster/"))
+  ) {
+    return true;
+  }
+
   const serviceLinesRoot = "/api/service-lines";
   if (normalizedPath === serviceLinesRoot && method === "GET") {
     return true;
