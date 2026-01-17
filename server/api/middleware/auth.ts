@@ -222,6 +222,7 @@ async function getAuthUserByEmployeeId(
       now.setHours(0, 0, 0, 0);
 
       if (now.getTime() < start.getTime()) {
+        // Before the employment window opens we only allow external-duty scope.
         accessScope = "external_duty";
       } else {
         const fullUntil = addMonths(start, 3);
