@@ -109,10 +109,15 @@ const MONTH_NAMES = [
 
 const WEEKDAY_LABELS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 
+type CurrentUserLike = {
+  employmentFrom?: string | null;
+  employmentUntil?: string | null;
+};
+
 const getPlanMonthDate = (year: number, month: number) =>
   startOfMonth(new Date(year, month - 1, 1));
 
-const getMinSelectableMonth = (user: Employee | null) => {
+const getMinSelectableMonth = (user: CurrentUserLike | null | undefined) => {
   const todayMonth = startOfMonth(new Date());
   if (!user?.employmentFrom) return todayMonth;
   const employmentFromMonth = startOfMonth(new Date(user.employmentFrom));
@@ -121,7 +126,10 @@ const getMinSelectableMonth = (user: Employee | null) => {
     : todayMonth;
 };
 
-const findInitialMonth = (user: Employee | null, planMonths: Date[]) => {
+const findInitialMonth = (
+  user: CurrentUserLike | null | undefined,
+  planMonths: Date[],
+) => {
   const minMonth = getMinSelectableMonth(user);
   const sorted = [...planMonths].sort((a, b) => a.getTime() - b.getTime());
   const candidate = sorted.find((month) => !isBefore(month, minMonth));
@@ -239,6 +247,7 @@ export default function ShiftWishes() {
   const doesShifts = currentUser
     ? employeeDoesShifts(currentUser, serviceLineMeta)
     : false;
+  const isExternalDuty = (currentUser as any)?.accessScope === "external_duty";
   const isSubmitted = wish?.status === "Eingereicht";
 
 
@@ -521,7 +530,9 @@ export default function ShiftWishes() {
 
     const [wishData, absenceData] = await Promise.all([
       shiftWishesApi.getByEmployeeAndMonth(currentUser.id, year, month),
-      plannedAbsencesApi.getByEmployeeAndMonth(currentUser.id, year, month),
+      isExternalDuty
+        ? Promise.resolve([] as PlannedAbsence[])
+        : plannedAbsencesApi.getByEmployeeAndMonth(currentUser.id, year, month),
     ]);
 
     setWish(wishData);
@@ -564,13 +575,12 @@ export default function ShiftWishes() {
         serviceLineData,
         dutyPlanList,
       ] = await Promise.all([
-        rosterSettingsApi.getNextPlanningMonth(),
+        rosterSettingsApi.getNextPlanningMonth().catch(() => null),
         canViewAll ? employeeApi.getAll() : Promise.resolve([]),
         serviceLinesApi.getAll().catch(() => []),
         dutyPlansApi.getAll().catch(() => []),
       ]);
 
-      setPlanningMonth(monthData);
       setEmployees(emps);
       setServiceLines(serviceLineData);
 
@@ -580,6 +590,15 @@ export default function ShiftWishes() {
 
       const initialMonth = findInitialMonth(currentUser, planMonths);
       setSelectedMonth(initialMonth);
+
+      const fallbackPlanningMonth = (monthData ?? {
+        year: initialMonth.getFullYear(),
+        month: initialMonth.getMonth() + 1,
+        submittedCount: 0,
+        totalEmployees: 0,
+        allSubmitted: false,
+      }) as NextPlanningMonth;
+      setPlanningMonth(fallbackPlanningMonth);
 
       await loadMonthSpecificData(initialMonth);
     } catch (error) {
@@ -898,9 +917,11 @@ export default function ShiftWishes() {
             <TabsTrigger value="wishes" data-testid="tab-wishes">
               Dienstwünsche
             </TabsTrigger>
-            <TabsTrigger value="absences" data-testid="tab-absences">
-              Urlaub/Fortbildung
-            </TabsTrigger>
+            {!isExternalDuty && (
+              <TabsTrigger value="absences" data-testid="tab-absences">
+                Urlaub/Fortbildung
+              </TabsTrigger>
+            )}
             {canViewAll && (
               <TabsTrigger value="overview" data-testid="tab-overview">
                 Übersicht
@@ -1187,6 +1208,7 @@ export default function ShiftWishes() {
             </div>
           </TabsContent>
 
+          {!isExternalDuty && (
           <TabsContent value="absences" className="space-y-4">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
@@ -1403,6 +1425,7 @@ export default function ShiftWishes() {
               </CardContent>
             </Card>
           </TabsContent>
+          )}
 
           {canViewAll && (
             <TabsContent value="overview" className="space-y-4">
