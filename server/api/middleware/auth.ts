@@ -606,7 +606,7 @@ export const getOwnerIdFrom = {
 };
 
 function isExternalDutyAllowed(req: Request): boolean {
-  const normalizedPath = req.path.toLowerCase();
+  const normalizedPath = `${req.baseUrl || ""}${req.path || ""}`.toLowerCase();
   const method = req.method.toUpperCase();
   if (normalizedPath === "/api/auth/me" || normalizedPath === "/api/me") {
     return true;
@@ -625,11 +625,16 @@ function isExternalDutyAllowed(req: Request): boolean {
     return true;
   }
 
-  if (
-    normalizedPath.startsWith(`${serviceLinesRoot}/`) &&
-    normalizedPath.includes("wish")
-  ) {
-    return true;
+  if (normalizedPath.startsWith(`${serviceLinesRoot}/`)) {
+    const p = normalizedPath;
+    if (
+      p.includes("wish") ||
+      p.includes("wunsch") ||
+      p.includes("preference") ||
+      p.includes("prefs")
+    ) {
+      return true;
+    }
   }
 
   return false;
