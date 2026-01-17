@@ -20,6 +20,7 @@ import {
   shiftWishes,
   longTermShiftWishes,
   employees,
+  departments,
 } from "@shared/schema";
 
 const DEFAULT_SERVICE_LINES = [
@@ -137,12 +138,22 @@ async function ensureDefaults(clinicId: number) {
   return inserted;
 }
 
-function resolveClinicId(req: any): number | null {
+async function resolveClinicId(req: any): Promise<number | null> {
   if (req.query?.clinicId) {
     const parsed = Number(req.query.clinicId);
     if (!Number.isNaN(parsed)) return parsed;
   }
   if (req.user?.clinicId) return req.user.clinicId;
+  if (req.user?.departmentId) {
+    const [department] = await db
+      .select({ clinicId: departments.clinicId })
+      .from(departments)
+      .where(eq(departments.id, req.user.departmentId))
+      .limit(1);
+    if (department?.clinicId) {
+      return department.clinicId;
+    }
+  }
   return null;
 }
 
@@ -154,9 +165,12 @@ export function registerServiceLineRoutes(router: Router) {
   router.get(
     "/",
     asyncHandler(async (req, res) => {
-      const clinicId = resolveClinicId(req);
+      const clinicId = await resolveClinicId(req);
       if (!clinicId) {
-        return validationError(res, "Klinik-ID fehlt");
+        res
+          .status(403)
+          .json({ success: false, error: "Klinik/Abteilung fehlt" });
+        return;
       }
 
       const seeded = await ensureDefaults(clinicId);
@@ -182,7 +196,7 @@ export function registerServiceLineRoutes(router: Router) {
     "/",
     validateBody(createServiceLineSchema),
     asyncHandler(async (req, res) => {
-      const clinicId = resolveClinicId(req);
+      const clinicId = await resolveClinicId(req);
       if (!clinicId) {
         return validationError(res, "Klinik-ID fehlt");
       }
@@ -239,7 +253,7 @@ export function registerServiceLineRoutes(router: Router) {
     validateBody(updateServiceLineSchema),
     asyncHandler(async (req, res) => {
       const id = Number(req.params.id);
-      const clinicId = resolveClinicId(req);
+      const clinicId = await resolveClinicId(req);
       if (!clinicId) {
         return validationError(res, "Klinik-ID fehlt");
       }
@@ -390,7 +404,7 @@ export function registerServiceLineRoutes(router: Router) {
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
       const id = Number(req.params.id);
-      const clinicId = resolveClinicId(req);
+      const clinicId = await resolveClinicId(req);
       if (!clinicId) {
         return validationError(res, "Klinik-ID fehlt");
       }
