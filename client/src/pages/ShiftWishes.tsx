@@ -109,10 +109,7 @@ const MONTH_NAMES = [
 
 const WEEKDAY_LABELS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 
-type CurrentUserLike = {
-  employmentFrom?: string | null;
-  employmentUntil?: string | null;
-};
+type CurrentUserLike = Pick<Employee, "employmentFrom" | "employmentUntil">;
 
 const getPlanMonthDate = (year: number, month: number) =>
   startOfMonth(new Date(year, month - 1, 1));
@@ -130,7 +127,7 @@ const findInitialMonth = (
   user: CurrentUserLike | null | undefined,
   planMonths: Date[],
 ) => {
-  const minMonth = getMinSelectableMonth(user);
+  const minMonth = getMinSelectableMonth(user ?? null);
   const sorted = [...planMonths].sort((a, b) => a.getTime() - b.getTime());
   const candidate = sorted.find((month) => !isBefore(month, minMonth));
   return candidate ?? minMonth;
