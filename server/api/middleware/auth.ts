@@ -352,13 +352,14 @@ export async function authenticate(
       return;
     }
 
-    if (
-      user.accessScope === "external_duty" &&
-      !isExternalDutyAllowed(req)
-    ) {
+    if (user.accessScope === "external_duty" && !isExternalDutyAllowed(req)) {
+      const normalizedPath = `${req.baseUrl || ""}${req.path || ""}`;
       res.status(403).json({
         success: false,
         error: "Eingeschränkter Zugriff",
+        scope: "external_duty",
+        method: req.method,
+        path: normalizedPath,
       });
       return;
     }
@@ -631,6 +632,14 @@ function isExternalDutyAllowed(req: Request): boolean {
     method === "GET" &&
     (normalizedPath === "/api/roster" ||
       normalizedPath.startsWith("/api/roster/"))
+  ) {
+    return true;
+  }
+
+  // Shift wishes (Dienstwünsche)
+  if (
+    normalizedPath === "/api/shift-wishes" ||
+    normalizedPath.startsWith("/api/shift-wishes/")
   ) {
     return true;
   }
