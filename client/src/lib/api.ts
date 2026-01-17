@@ -526,6 +526,11 @@ export const dutyPlansApi = {
     return plans[0] ?? null;
   },
 
+  getAll: async (): Promise<DutyPlan[]> => {
+    const response = await apiFetch(`${API_BASE}/duty-plans`);
+    return handleResponse<DutyPlan[]>(response);
+  },
+
   create: async (
     data: Pick<InsertDutyPlan, "year" | "month"> & {
       generatedById?: number | null;

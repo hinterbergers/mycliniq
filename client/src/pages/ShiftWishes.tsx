@@ -60,6 +60,7 @@ import {
   rosterSettingsApi,
   employeeApi,
   serviceLinesApi,
+  dutyPlansApi,
   type NextPlanningMonth,
 } from "@/lib/api";
 import type {
@@ -107,6 +108,25 @@ const MONTH_NAMES = [
 ];
 
 const WEEKDAY_LABELS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+
+const getPlanMonthDate = (year: number, month: number) =>
+  startOfMonth(new Date(year, month - 1, 1));
+
+const getMinSelectableMonth = (user: Employee | null) => {
+  const todayMonth = startOfMonth(new Date());
+  if (!user?.employmentFrom) return todayMonth;
+  const employmentFromMonth = startOfMonth(new Date(user.employmentFrom));
+  return isAfter(employmentFromMonth, todayMonth)
+    ? employmentFromMonth
+    : todayMonth;
+};
+
+const findInitialMonth = (user: Employee | null, planMonths: Date[]) => {
+  const minMonth = getMinSelectableMonth(user);
+  const sorted = [...planMonths].sort((a, b) => a.getTime() - b.getTime());
+  const candidate = sorted.find((month) => !isBefore(month, minMonth));
+  return candidate ?? minMonth;
+};
 
 // --- Austrian holiday helpers ---
 const dayKey = (d: Date) => format(d, "yyyy-MM-dd");
@@ -188,6 +208,9 @@ export default function ShiftWishes() {
     number | undefined
   >();
   const [notes, setNotes] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState<Date>(
+    () => startOfMonth(new Date()),
+  );
 
   const [absenceDialogOpen, setAbsenceDialogOpen] = useState(false);
   const [deleteAbsenceOpen, setDeleteAbsenceOpen] = useState(false);
@@ -267,16 +290,13 @@ export default function ShiftWishes() {
   };
 
   const monthAnchor = useMemo(
-    () =>
-      planningMonth
-        ? startOfMonth(new Date(planningMonth.year, planningMonth.month - 1, 1))
-        : null,
-    [planningMonth?.year, planningMonth?.month],
+    () => (selectedMonth ? startOfMonth(selectedMonth) : null),
+    [selectedMonth],
   );
 
   const holidaySet = useMemo(
-    () => (planningMonth ? austrianHolidayKeys(planningMonth.year) : new Set<string>()),
-    [planningMonth?.year],
+    () => (selectedMonth ? austrianHolidayKeys(selectedMonth.getFullYear()) : new Set<string>()),
+    [selectedMonth],
   );
 
   const absenceKeySet = useMemo(() => {
@@ -412,7 +432,7 @@ export default function ShiftWishes() {
   };
 
   const interruptAbsencesForWishDays = async (wishDayKeys: string[]) => {
-    if (!currentUser || !planningMonth || !monthAnchor) return;
+    if (!currentUser || !monthAnchor || !selectedMonth) return;
     if (!wishDayKeys.length) return;
 
     const overrideSet = new Set(wishDayKeys);
@@ -441,22 +461,22 @@ export default function ShiftWishes() {
       // recreate remaining segments
       const segments = splitIntoRanges(remainingDays);
       for (const seg of segments) {
-        await plannedAbsencesApi.create({
-          employeeId: currentUser.id,
-          year: planningMonth.year,
-          month: planningMonth.month,
-          startDate: format(seg.start, "yyyy-MM-dd"),
-          endDate: format(seg.end, "yyyy-MM-dd"),
-          reason: absence.reason as any,
-          notes: (absence as any).notes ?? null,
-        });
+          await plannedAbsencesApi.create({
+            employeeId: currentUser.id,
+            year: selectedMonth.getFullYear(),
+            month: selectedMonth.getMonth() + 1,
+            startDate: format(seg.start, "yyyy-MM-dd"),
+            endDate: format(seg.end, "yyyy-MM-dd"),
+            reason: absence.reason as any,
+            notes: (absence as any).notes ?? null,
+          });
+        }
       }
-    }
 
     const absenceData = await plannedAbsencesApi.getByEmployeeAndMonth(
       currentUser.id,
-      planningMonth.year,
-      planningMonth.month,
+      selectedMonth.getFullYear(),
+      selectedMonth.getMonth() + 1,
     );
     setAbsences(absenceData);
   };
@@ -494,68 +514,74 @@ export default function ShiftWishes() {
     loadData();
   }, [currentUser?.id, canViewAll]);
 
+  const loadMonthSpecificData = async (monthDate: Date) => {
+    if (!currentUser) return;
+    const year = monthDate.getFullYear();
+    const month = monthDate.getMonth() + 1;
+
+    const [wishData, absenceData] = await Promise.all([
+      shiftWishesApi.getByEmployeeAndMonth(currentUser.id, year, month),
+      plannedAbsencesApi.getByEmployeeAndMonth(currentUser.id, year, month),
+    ]);
+
+    setWish(wishData);
+    if (wishData) {
+      applyWishDayStates(wishData, year, month);
+      setAvoidWeekdays(wishData.avoidWeekdays || []);
+      setMaxShiftsPerWeek(wishData.maxShiftsPerWeek || undefined);
+      setMaxShiftsPerMonth(wishData.maxShiftsPerMonth || undefined);
+      setMaxWeekendShifts(wishData.maxWeekendShifts || undefined);
+      setNotes(wishData.notes || "");
+    } else {
+      setPreferredShiftDays([]);
+      setAvoidShiftDays([]);
+      setAvoidWeekdays([]);
+      setMaxShiftsPerWeek(undefined);
+      setMaxShiftsPerMonth(undefined);
+      setMaxWeekendShifts(undefined);
+      setNotes("");
+    }
+
+    setAbsences(absenceData);
+
+    if (canViewAll) {
+      const allWishData = await shiftWishesApi.getByMonth(year, month);
+      setAllWishes(allWishData);
+    } else {
+      setAllWishes([]);
+    }
+  };
+
   const loadData = async () => {
     if (!currentUser) return;
 
     try {
       setLoading(true);
 
-      const [monthData, emps, serviceLineData] = await Promise.all([
+      const [
+        monthData,
+        emps,
+        serviceLineData,
+        dutyPlanList,
+      ] = await Promise.all([
         rosterSettingsApi.getNextPlanningMonth(),
         canViewAll ? employeeApi.getAll() : Promise.resolve([]),
         serviceLinesApi.getAll().catch(() => []),
+        dutyPlansApi.getAll().catch(() => []),
       ]);
 
       setPlanningMonth(monthData);
       setEmployees(emps);
       setServiceLines(serviceLineData);
 
-      if (monthData) {
-        const [wishData, absenceData] = await Promise.all([
-          shiftWishesApi.getByEmployeeAndMonth(
-            currentUser.id,
-            monthData.year,
-            monthData.month,
-          ),
-          plannedAbsencesApi.getByEmployeeAndMonth(
-            currentUser.id,
-            monthData.year,
-            monthData.month,
-          ),
-        ]);
+      const planMonths = dutyPlanList
+        .map((plan) => getPlanMonthDate(plan.year, plan.month))
+        .sort((a, b) => a.getTime() - b.getTime());
 
-        setWish(wishData);
-        if (wishData) {
-          applyWishDayStates(
-            wishData,
-            monthData.year,
-            monthData.month,
-          );
-          setAvoidWeekdays(wishData.avoidWeekdays || []);
-          setMaxShiftsPerWeek(wishData.maxShiftsPerWeek || undefined);
-          setMaxShiftsPerMonth(wishData.maxShiftsPerMonth || undefined);
-          setMaxWeekendShifts(wishData.maxWeekendShifts || undefined);
-          setNotes(wishData.notes || "");
-        } else {
-          setPreferredShiftDays([]);
-          setAvoidShiftDays([]);
-          setAvoidWeekdays([]);
-          setMaxShiftsPerWeek(undefined);
-          setMaxShiftsPerMonth(undefined);
-          setMaxWeekendShifts(undefined);
-          setNotes("");
-        }
+      const initialMonth = findInitialMonth(currentUser, planMonths);
+      setSelectedMonth(initialMonth);
 
-        setAbsences(absenceData);
-
-        if (canViewAll) {
-          const allWishData = await shiftWishesApi.getByMonth(
-            monthData.year,
-            monthData.month,
-          );
-          setAllWishes(allWishData);
-        }
-      }
+      await loadMonthSpecificData(initialMonth);
     } catch (error) {
       toast({
         title: "Fehler",
@@ -568,7 +594,7 @@ export default function ShiftWishes() {
   };
 
   const handleSave = async () => {
-    if (!currentUser || !planningMonth) return;
+    if (!currentUser || !selectedMonth) return;
 
     try {
       setSaving(true);
@@ -584,8 +610,8 @@ export default function ShiftWishes() {
 
       const wishData = {
         employeeId: currentUser.id,
-        year: planningMonth.year,
-        month: planningMonth.month,
+        year: selectedMonth.getFullYear(),
+        month: selectedMonth.getMonth() + 1,
         preferredShiftDays: normalizedPreferredShiftDays,
         avoidShiftDays: normalizedAvoidShiftDays,
         avoidWeekdays: avoidWeekdays,
@@ -601,23 +627,19 @@ export default function ShiftWishes() {
       if (wish) {
         const updated = await shiftWishesApi.update(wish.id, wishData);
         setWish(updated);
-        if (planningMonth) {
-          applyWishDayStates(
-            updated,
-            planningMonth.year,
-            planningMonth.month,
-          );
-        }
+        applyWishDayStates(
+          updated,
+          selectedMonth.getFullYear(),
+          selectedMonth.getMonth() + 1,
+        );
       } else {
         const created = await shiftWishesApi.create(wishData);
         setWish(created);
-        if (planningMonth) {
-          applyWishDayStates(
-            created,
-            planningMonth.year,
-            planningMonth.month,
-          );
-        }
+        applyWishDayStates(
+          created,
+          selectedMonth.getFullYear(),
+          selectedMonth.getMonth() + 1,
+        );
       }
 
       // --- Interrupt absences for wish days overlapping ---
@@ -704,7 +726,7 @@ export default function ShiftWishes() {
   };
 
   const handleAddAbsence = async () => {
-    if (!currentUser || !planningMonth || !newAbsenceStart || !newAbsenceEnd)
+    if (!currentUser || !selectedMonth || !newAbsenceStart || !newAbsenceEnd)
       return;
 
     try {
@@ -712,8 +734,8 @@ export default function ShiftWishes() {
 
       await plannedAbsencesApi.create({
         employeeId: currentUser.id,
-        year: planningMonth.year,
-        month: planningMonth.month,
+        year: selectedMonth.getFullYear(),
+        month: selectedMonth.getMonth() + 1,
         startDate: format(newAbsenceStart, "yyyy-MM-dd"),
         endDate: format(newAbsenceEnd, "yyyy-MM-dd"),
         reason: newAbsenceReason as any,
@@ -728,8 +750,8 @@ export default function ShiftWishes() {
 
       const absenceData = await plannedAbsencesApi.getByEmployeeAndMonth(
         currentUser.id,
-        planningMonth.year,
-        planningMonth.month,
+        selectedMonth.getFullYear(),
+        selectedMonth.getMonth() + 1,
       );
       setAbsences(absenceData);
 
@@ -818,7 +840,7 @@ export default function ShiftWishes() {
     );
   }
 
-  const monthName = MONTH_NAMES[planningMonth.month - 1];
+  const monthName = MONTH_NAMES[selectedMonth.getMonth()];
 
   return (
     <Layout>
@@ -829,7 +851,7 @@ export default function ShiftWishes() {
               Dienstwünsche
             </h1>
             <p className="text-muted-foreground mt-1">
-              Wünsche für {monthName} {planningMonth.year}
+              Wünsche für {monthName} {selectedMonth.getFullYear()}
             </p>
           </div>
 
@@ -867,7 +889,7 @@ export default function ShiftWishes() {
           <Info className="h-4 w-4 text-blue-600" />
           <AlertDescription className="text-blue-800">
             <strong>Planungszeitraum:</strong> Wünsche für {monthName}{" "}
-            {planningMonth.year} sind aktuell freigeschaltet.
+            {selectedMonth.getFullYear()} sind aktuell freigeschaltet.
           </AlertDescription>
         </Alert>
 
@@ -1172,7 +1194,7 @@ export default function ShiftWishes() {
                   <CardTitle>Urlaub / Fortbildung</CardTitle>
                   <CardDescription>
                     Zeitraum für Urlaub oder Fortbildung im {monthName}{" "}
-                    {planningMonth.year}
+                    {selectedMonth.getFullYear()}
                   </CardDescription>
                 </div>
 
