@@ -22,6 +22,7 @@ import {
   employees,
   departments,
 } from "@shared/schema";
+import { hasCapability } from "../middleware/auth";
 
 const DEFAULT_SERVICE_LINES = [
   {
@@ -180,7 +181,10 @@ export function registerServiceLineRoutes(router: Router) {
           .status(401)
           .json({ success: false, error: "Anmeldung erforderlich" });
       }
-      if (!req.user.capabilities?.includes("service_lines.read")) {
+      if (
+        req.user.accessScope === "external_duty" &&
+        !hasCapability(req, "service_lines.read")
+      ) {
         return res
           .status(403)
           .json({ success: false, error: "Eingeschränkter Zugriff" });

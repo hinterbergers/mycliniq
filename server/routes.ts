@@ -46,7 +46,7 @@ import crypto from "crypto";
 import { generateRosterPlan } from "./services/rosterGenerator";
 import { registerModularApiRoutes } from "./api";
 import { employeeDoesShifts, OVERDUTY_KEY } from "@shared/shiftTypes";
-import { requireAuth } from "./api/middleware/auth";
+import { requireAuth, hasCapability } from "./api/middleware/auth";
 import { getWeek, getWeekYear } from "date-fns";
 import {
   type AbsenceCategory,
@@ -818,7 +818,10 @@ export async function registerRoutes(
           .status(401)
           .json({ success: false, error: "Anmeldung erforderlich" });
       }
-      if (!req.user.capabilities?.includes("duty_plan.read")) {
+      if (
+        req.user.accessScope === "external_duty" &&
+        !hasCapability(req, "duty_plan.read")
+      ) {
         return res
           .status(403)
           .json({ success: false, error: "Eingeschränkter Zugriff" });
@@ -2965,7 +2968,10 @@ export async function registerRoutes(
             .status(401)
             .json({ success: false, error: "Anmeldung erforderlich" });
         }
-        if (!req.user.capabilities?.includes("duty_plan.read")) {
+        if (
+          req.user.accessScope === "external_duty" &&
+          !hasCapability(req, "duty_plan.read")
+        ) {
           return res
             .status(403)
             .json({ success: false, error: "Eingeschränkter Zugriff" });
@@ -3075,14 +3081,17 @@ export async function registerRoutes(
   );
 
   // Shift Wishes routes
-  app.get("/api/shift-wishes", requireAuth, async (req: Request, res: Response) => {
-    try {
+    app.get("/api/shift-wishes", requireAuth, async (req: Request, res: Response) => {
+      try {
       if (!req.user) {
         return res
           .status(401)
           .json({ success: false, error: "Anmeldung erforderlich" });
       }
-      if (!req.user.capabilities?.includes("shift_wishes.read")) {
+      if (
+        req.user.accessScope === "external_duty" &&
+        !hasCapability(req, "shift_wishes.read")
+      ) {
         return res
           .status(403)
           .json({ success: false, error: "Eingeschränkter Zugriff" });
@@ -3127,7 +3136,10 @@ export async function registerRoutes(
           .status(401)
           .json({ success: false, error: "Anmeldung erforderlich" });
       }
-      if (!req.user.capabilities?.includes("shift_wishes.write")) {
+      if (
+        req.user.accessScope === "external_duty" &&
+        !hasCapability(req, "shift_wishes.write")
+      ) {
         return res
           .status(403)
           .json({ success: false, error: "Eingeschränkter Zugriff" });
@@ -3161,7 +3173,10 @@ export async function registerRoutes(
           .status(401)
           .json({ success: false, error: "Anmeldung erforderlich" });
       }
-      if (!req.user.capabilities?.includes("shift_wishes.write")) {
+      if (
+        req.user.accessScope === "external_duty" &&
+        !hasCapability(req, "shift_wishes.write")
+      ) {
         return res
           .status(403)
           .json({ success: false, error: "Eingeschränkter Zugriff" });
@@ -3209,7 +3224,10 @@ export async function registerRoutes(
             .status(401)
             .json({ success: false, error: "Anmeldung erforderlich" });
         }
-        if (!req.user.capabilities?.includes("shift_wishes.write")) {
+        if (
+          req.user.accessScope === "external_duty" &&
+          !hasCapability(req, "shift_wishes.write")
+        ) {
           return res
             .status(403)
             .json({ success: false, error: "Eingeschränkter Zugriff" });
@@ -3296,7 +3314,10 @@ export async function registerRoutes(
           .status(401)
           .json({ success: false, error: "Anmeldung erforderlich" });
       }
-      if (!req.user.capabilities?.includes("shift_wishes.write")) {
+      if (
+        req.user.accessScope === "external_duty" &&
+        !hasCapability(req, "shift_wishes.write")
+      ) {
         return res
           .status(403)
           .json({ success: false, error: "Eingeschränkter Zugriff" });
