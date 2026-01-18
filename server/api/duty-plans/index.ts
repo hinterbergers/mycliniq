@@ -1,6 +1,6 @@
 import type { Router } from "express";
 import { z } from "zod";
-import { db, eq, and } from "../../lib/db";
+import { db, eq, and, gte, lte, inArray } from "../../lib/db";
 import {
   ok,
   created,
@@ -21,7 +21,9 @@ import {
   dutyAssignments,
   employees,
   rosterSettings,
+  rosterShifts,
 } from "@shared/schema";
+import { requireEditor } from "../middleware/auth";
 
 /**
  * Schema for creating a new duty plan
@@ -833,6 +835,121 @@ export function registerDutyPlanRoutes(router: Router) {
       return ok(res, {
         message: "KI-Generierung noch nicht implementiert",
         hint: "Manuelle Zuweisung über PUT /slots/:slotId/assign verwenden",
+      });
+    }),
+  );
+
+  router.post(
+    "/:id/publish-to-roster",
+    validateParams(idParamSchema),
+    requireEditor,
+    asyncHandler(async (req, res) => {
+      const planId = Number(req.params.id);
+      const forcePublish =
+        String(req.query.force ?? "").toLowerCase() === "true";
+      const isAdmin = Boolean(req.user?.isAdmin || req.user?.appRole === "Admin");
+
+      const [plan] = await db
+        .select()
+        .from(dutyPlans)
+        .where(eq(dutyPlans.id, planId));
+
+      if (!plan) {
+        return notFound(res, "Dienstplan");
+      }
+
+      if (
+        plan.status !== "Freigegeben" &&
+        !(forcePublish && isAdmin)
+      ) {
+        return error(
+          res,
+          "Nur freigegebene Dienstpläne dürfen in den Dienstplan exportiert werden",
+          403,
+        );
+      }
+
+      const days = await db
+        .select()
+        .from(dutyDays)
+        .where(eq(dutyDays.dutyPlanId, planId));
+      const dayById = new Map(days.map((day) => [day.id, day]));
+      const dayIds = days.map((day) => day.id);
+
+      const slots =
+        dayIds.length > 0
+          ? await db
+              .select()
+              .from(dutySlots)
+              .where(inArray(dutySlots.dutyDayId, dayIds))
+          : [];
+      const slotById = new Map(slots.map((slot) => [slot.id, slot]));
+      const slotIds = slots.map((slot) => slot.id);
+
+      const assignments =
+        slotIds.length > 0
+          ? await db
+              .select()
+              .from(dutyAssignments)
+              .where(inArray(dutyAssignments.dutySlotId, slotIds))
+          : [];
+
+      const shiftsToInsert: Array<{
+        date: string;
+        serviceType: string;
+        employeeId: number;
+        assigneeFreeText: null;
+        notes: null;
+      }> = [];
+
+      assignments.forEach((assignment) => {
+        const slot = slotById.get(assignment.dutySlotId);
+        if (!slot) return;
+        const day = dayById.get(slot.dutyDayId);
+        if (!day) return;
+        shiftsToInsert.push({
+          date: day.date,
+          serviceType: slot.serviceType,
+          employeeId: assignment.employeeId,
+          assigneeFreeText: null,
+          notes: null,
+        });
+      });
+
+      const startDate = formatDate(plan.year, plan.month, 1);
+      const endDate = formatDate(
+        plan.year,
+        plan.month,
+        getDaysInMonth(plan.year, plan.month),
+      );
+
+      const publishedCount = await db.transaction(async (tx) => {
+        await tx
+          .delete(rosterShifts)
+          .where(
+            and(
+              gte(rosterShifts.date, startDate),
+              lte(rosterShifts.date, endDate),
+            ),
+          );
+
+        if (!shiftsToInsert.length) {
+          return 0;
+        }
+
+        const inserted = await tx
+          .insert(rosterShifts)
+          .values(shiftsToInsert)
+          .returning();
+
+        return inserted.length;
+      });
+
+      res.json({
+        success: true,
+        publishedCount,
+        year: plan.year,
+        month: plan.month,
       });
     }),
   );
