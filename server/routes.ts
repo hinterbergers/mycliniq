@@ -444,7 +444,20 @@ export async function registerRoutes(
   };
 
   const resolvePlanningMonth = async () => {
-    const settings = await storage.getRosterSettings();
+    const rawSettings = await storage.getRosterSettings();
+    const settings = rawSettings
+      ? {
+          ...rawSettings,
+          wishYear:
+            typeof rawSettings.wishYear === "number"
+              ? rawSettings.wishYear
+              : null,
+          wishMonth:
+            typeof rawSettings.wishMonth === "number"
+              ? rawSettings.wishMonth
+              : null,
+        }
+      : null;
     const previewPlan = await storage.getLatestDutyPlanByStatus("Vorläufig");
     const lastApproved = settings
       ? { year: settings.lastApprovedYear, month: settings.lastApprovedMonth }
@@ -470,14 +483,21 @@ export async function registerRoutes(
     const shouldPersist =
       !settings ||
       !storedWish ||
-      compareYearMonth(
-        auto.year,
-        auto.month,
-        storedWish.year,
-        storedWish.month,
-      ) > 0;
+        compareYearMonth(
+          auto.year,
+          auto.month,
+          storedWish.year,
+          storedWish.month,
+        ) > 0;
+    const shouldPersistFinal = storedWish ? false : shouldPersist;
 
-    return { settings, lastApproved, auto, current, shouldPersist };
+    return {
+      settings,
+      lastApproved,
+      auto,
+      current,
+      shouldPersist: shouldPersistFinal,
+    };
   };
 
   // Auth routes
@@ -2978,16 +2998,10 @@ export async function registerRoutes(
         }
         const { settings, lastApproved, auto, current, shouldPersist } =
           await resolvePlanningMonth();
-        const wishOverride =
-          settings?.wishYear && settings?.wishMonth
-            ? { year: settings.wishYear, month: settings.wishMonth }
-            : null;
-        const selectedMonth = wishOverride ?? current;
-        const shouldPersistFinal = wishOverride ? false : shouldPersist;
-        const year = selectedMonth.year;
-        const month = selectedMonth.month;
+        const year = current.year;
+        const month = current.month;
 
-        if (shouldPersistFinal) {
+        if (shouldPersist) {
           await storage.upsertRosterSettings({
             lastApprovedYear: lastApproved.year,
             lastApprovedMonth: lastApproved.month,
