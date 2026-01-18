@@ -803,6 +803,16 @@ export async function registerRoutes(
   // Roster routes
   app.get("/api/roster/:year/:month", async (req: Request, res: Response) => {
     try {
+      if (!req.user) {
+        return res
+          .status(401)
+          .json({ success: false, error: "Anmeldung erforderlich" });
+      }
+      if (!req.user.capabilities?.includes("duty_plan.read")) {
+        return res
+          .status(403)
+          .json({ success: false, error: "Eingeschränkter Zugriff" });
+      }
       const year = parseInt(req.params.year);
       const month = parseInt(req.params.month);
       const shifts = await storage.getRosterShiftsByMonth(year, month);
@@ -2940,6 +2950,16 @@ export async function registerRoutes(
     "/api/roster-settings/next-planning-month",
     async (req: Request, res: Response) => {
       try {
+        if (!req.user) {
+          return res
+            .status(401)
+            .json({ success: false, error: "Anmeldung erforderlich" });
+        }
+        if (!req.user.capabilities?.includes("duty_plan.read")) {
+          return res
+            .status(403)
+            .json({ success: false, error: "Eingeschränkter Zugriff" });
+        }
         const { settings, lastApproved, auto, current, shouldPersist } =
           await resolvePlanningMonth();
         const year = current.year;
