@@ -149,6 +149,8 @@ const SERVICE_LINE_PALETTE = [
   },
 ];
 
+const API_BASE = "/api";
+
 const FALLBACK_SERVICE_LINES = [
   {
     key: "kreiszimmer",
@@ -630,7 +632,7 @@ export default function RosterPlan() {
 
       setEmployees(empData);
       setServiceLines(serviceLineData);
-      setShifts(shiftData);
+      setShifts(Array.isArray(shiftData) ? shiftData : []);
       setAbsences(plannedAbsenceData);
       setLongTermAbsences(longTermAbsenceData);
       setDutyPlan(plan ?? null);
@@ -1122,39 +1124,99 @@ export default function RosterPlan() {
       title: "KI-Generierung",
       description: "Dienstplan wird automatisch erstellt...",
     });
-  
+
     try {
       const year = currentDate.getFullYear();
       const month = currentDate.getMonth() + 1;
-  
-      const result = await rosterApi.generate(year, month, { rules: aiRules });
-  
-      if (result.success) {
-        setGeneratedShifts(result.shifts);
-        setGenerationReasoning(result.reasoning);
-        setGenerationWarnings(result.warnings);
-  
-        // ✅ close rules dialog and show preview
-        setRulesDialogOpen(false);
-        setGenerationDialogOpen(true);
-  
-        toast({
-          title: "Generierung erfolgreich",
-          description: `${result.generatedShifts} Dienste wurden erstellt`,
-        });
-        ok = true;
+
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
       }
+
+      const response = await fetch(`${API_BASE}/roster/generate`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          year,
+          month,
+          rules: aiRules,
+        }),
+      });
+
+      if (!response.ok) {
+        const text = (await response.text()).trim();
+        throw new Error(text || "Generierung fehlgeschlagen");
+      }
+
+      const payload = await response.json().catch(() => ({}));
+      const result =
+        payload && typeof payload === "object"
+          ? (payload as Record<string, any>)
+          : ({} as Record<string, any>);
+      const rawShifts = Array.isArray(result.shifts) ? result.shifts : [];
+      const shifts: GeneratedShift[] = rawShifts
+        .filter(
+          (
+            shift,
+          ): shift is GeneratedShift =>
+            Boolean(shift) &&
+            typeof shift.date === "string" &&
+            typeof shift.serviceType === "string" &&
+            typeof shift.employeeId === "number",
+        )
+        .map((shift) => ({
+          date: shift.date,
+          serviceType: shift.serviceType,
+          employeeId: shift.employeeId,
+          employeeName:
+            typeof shift.employeeName === "string" ? shift.employeeName : "",
+        }));
+      const reasoning =
+        typeof result.reasoning === "string" ? result.reasoning : "";
+      const warnings = Array.isArray(result.warnings)
+        ? result.warnings.filter((item): item is string => typeof item === "string")
+        : [];
+      const generatedCount =
+        typeof result.generatedShifts === "number"
+          ? result.generatedShifts
+          : shifts.length;
+      const success = Boolean(result.success);
+
+      if (!success) {
+        const message =
+          typeof result.error === "string"
+            ? result.error
+            : result.message || "Generierung fehlgeschlagen";
+        throw new Error(message);
+      }
+
+      setGeneratedShifts(shifts);
+      setGenerationReasoning(reasoning);
+      setGenerationWarnings(warnings as string[]);
+
+      // ✅ close rules dialog and show preview
+      setRulesDialogOpen(false);
+      setGenerationDialogOpen(true);
+
+      toast({
+        title: "Generierung erfolgreich",
+        description: `${generatedCount} Dienste wurden erstellt`,
+      });
+      ok = true;
     } catch (error: any) {
       console.error("Generation failed:", error);
       toast({
         title: "Generierung fehlgeschlagen",
-        description: error.message || "Bitte später erneut versuchen",
+        description: error?.message || "Bitte später erneut versuchen",
         variant: "destructive",
       });
     } finally {
       setIsGenerating(false);
     }
-  
+
     return ok;
   };
 
