@@ -212,6 +212,78 @@ const addMonths = (date: Date, months: number) => {
   return next;
 };
 
+const makeMonthStart = (year: number, month: number) => {
+  const date = new Date(year, month - 1, 1);
+  date.setHours(0, 0, 0, 0);
+  return date;
+};
+
+const makeMonthEnd = (year: number, month: number) => {
+  const lastDay = new Date(year, month, 0);
+  lastDay.setHours(0, 0, 0, 0);
+  return lastDay;
+};
+
+const monthRange = (year: number, month: number) => {
+  const start = new Date(year, month - 1, 1);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(year, month, 0);
+  end.setHours(0, 0, 0, 0);
+  return { start, end };
+};
+
+const overlaps = (
+  aStart: Date | null,
+  aEnd: Date | null,
+  bStart: Date,
+  bEnd: Date,
+) => {
+  const start = aStart ?? new Date("1970-01-01");
+  const end = aEnd ?? new Date("2999-12-31");
+  return start.getTime() <= bEnd.getTime() && end.getTime() >= bStart.getTime();
+};
+
+const isEligibleForWishMonth = (
+  emp: {
+    employmentFrom?: string | null;
+    employmentUntil?: string | null;
+    inactiveFrom?: string | null;
+    inactiveUntil?: string | null;
+  },
+  year: number,
+  month: number,
+) => {
+  const { start, end } = monthRange(year, month);
+
+  const employmentFrom = toDateOnly(emp.employmentFrom);
+  const employmentUntil = toDateOnly(emp.employmentUntil);
+  if (!overlaps(employmentFrom, employmentUntil, start, end)) {
+    return false;
+  }
+
+  const inactiveFrom = toDateOnly(emp.inactiveFrom);
+  const inactiveUntil = toDateOnly(emp.inactiveUntil);
+  if (inactiveFrom || inactiveUntil) {
+    if (overlaps(inactiveFrom, inactiveUntil, start, end)) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+const overlapsMonth = (
+  employee: { employmentFrom?: string | null; employmentUntil?: string | null },
+  monthStart: Date,
+  monthEnd: Date,
+) => {
+  const employmentFrom = toDateOnly(employee.employmentFrom ?? null);
+  const employmentUntil = toDateOnly(employee.employmentUntil ?? null);
+  const startOk = !employmentFrom || employmentFrom <= monthEnd;
+  const endOk = !employmentUntil || employmentUntil >= monthStart;
+  return startOk && endOk;
+};
+
 const formatDate = (date: Date) => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -441,6 +513,18 @@ export async function registerRoutes(
     )
       return true;
     return req.user.capabilities?.includes("dutyplan.edit") ?? false;
+  };
+
+  const overlapsMonth = (
+    employee: { employmentFrom?: string | null; employmentUntil?: string | null },
+    monthStart: Date,
+    monthEnd: Date,
+  ) => {
+    const employmentFrom = toDateOnly(employee.employmentFrom ?? null);
+    const employmentUntil = toDateOnly(employee.employmentUntil ?? null);
+    const startOk = !employmentFrom || employmentFrom <= monthEnd;
+    const endOk = !employmentUntil || employmentUntil >= monthStart;
+    return startOk && endOk;
   };
 
   const resolvePlanningMonth = async () => {
@@ -3044,9 +3128,9 @@ export async function registerRoutes(
               .where(eq(serviceLines.clinicId, clinicId))
               .orderBy(asc(serviceLines.sortOrder), asc(serviceLines.label))
           : [];
-        const eligibleEmployees = employees.filter((employee) =>
-          employeeDoesShifts(employee, serviceLineMeta),
-        );
+        const eligibleEmployees = employees
+          .filter((employee) => employeeDoesShifts(employee, serviceLineMeta))
+          .filter((employee) => isEligibleForWishMonth(employee, year, month));
         const eligibleEmployeeIds = new Set(
           eligibleEmployees.map((emp) => emp.id),
         );
@@ -3192,6 +3276,26 @@ export async function registerRoutes(
         return res.status(403).json({ error: "Zugriff nur auf eigene Daten erlaubt" });
       }
 
+      const targetEmployeeId = Number(payload?.employeeId ?? currentEmployeeId);
+      if (!targetEmployeeId) {
+        return res.status(400).json({ error: "EmployeeId fehlt" });
+      }
+      const employee = await storage.getEmployee(targetEmployeeId);
+      if (!employee) {
+        return res.status(404).json({ error: "Mitarbeiter nicht gefunden" });
+      }
+      const year = Number(payload?.year);
+      const month = Number(payload?.month);
+      if (!year || !month) {
+        return res.status(400).json({ error: "Jahr und Monat sind erforderlich" });
+      }
+      if (!isEligibleForWishMonth(employee, year, month)) {
+        return res.status(400).json({
+          error:
+            "Wunschmonat liegt außerhalb Beschäftigungszeit / Langzeit-Deaktivierung.",
+        });
+      }
+
       // Force draft fields on create (server is source of truth)
       const wish = await storage.createShiftWish({
         ...payload,
@@ -3286,6 +3390,17 @@ export async function registerRoutes(
 
         if (existing.status === "Eingereicht") {
           return res.status(400).json({ error: "Wunsch ist bereits eingereicht" });
+        }
+
+        const employee = await storage.getEmployee(existing.employeeId);
+        if (!employee) {
+          return res.status(404).json({ error: "Mitarbeiter nicht gefunden" });
+        }
+        if (!isEligibleForWishMonth(employee, existing.year, existing.month)) {
+          return res.status(400).json({
+            error:
+              "Wunschmonat liegt außerhalb Beschäftigungszeit / Langzeit-Deaktivierung.",
+          });
         }
 
         const wish = await storage.updateShiftWish(id, {
