@@ -591,6 +591,28 @@ export const dutyPlansApi = {
     });
     return handleResponse<DutyPlan>(response);
   },
+  publishToRoster: async (
+    id: number,
+    options?: { force?: boolean },
+  ): Promise<{ success: true; publishedCount: number; year: number; month: number }> => {
+    const params = new URLSearchParams();
+    if (options?.force) {
+      params.set("force", "true");
+    }
+    const query = params.toString();
+    const response = await apiFetch(
+      `${API_BASE}/duty-plans/${id}/publish-to-roster${query ? `?${query}` : ""}`,
+      {
+        method: "POST",
+      },
+    );
+    return handleResponse<{
+      success: true;
+      publishedCount: number;
+      year: number;
+      month: number;
+    }>(response);
+  },
 };
 
 // Absence API
