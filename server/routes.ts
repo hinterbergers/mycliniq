@@ -580,6 +580,16 @@ export async function registerRoutes(
 
   app.post("/api/auth/logout", async (req: Request, res: Response) => {
     try {
+      if (!req.user) {
+        return res
+          .status(401)
+          .json({ success: false, error: "Anmeldung erforderlich" });
+      }
+      if (!req.user.capabilities?.includes("auth.logout")) {
+        return res
+          .status(403)
+          .json({ success: false, error: "Eingeschränkter Zugriff" });
+      }
       const authHeader = req.headers.authorization;
       if (authHeader?.startsWith("Bearer ")) {
         const token = authHeader.substring(7);
