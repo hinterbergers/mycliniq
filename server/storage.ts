@@ -356,17 +356,34 @@ export class DatabaseStorage implements IStorage {
   async getRosterShiftsByMonth(
     year: number,
     month: number,
+    opts?: {
+      draftOnly?: boolean;
+      finalOnly?: boolean;
+      includeDraft?: boolean;
+    },
   ): Promise<RosterShift[]> {
     const lastDay = new Date(year, month, 0).getDate();
     const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
     const endDate = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
 
+    let condition = and(
+      gte(rosterShifts.date, startDate),
+      lte(rosterShifts.date, endDate),
+    );
+
+    if (!opts?.includeDraft) {
+      const finalOnly = opts?.finalOnly ?? !opts?.draftOnly ?? true;
+      if (opts?.draftOnly) {
+        condition = and(condition, eq(rosterShifts.isDraft, true));
+      } else if (finalOnly) {
+        condition = and(condition, eq(rosterShifts.isDraft, false));
+      }
+    }
+
     return await db
       .select()
       .from(rosterShifts)
-      .where(
-        and(gte(rosterShifts.date, startDate), lte(rosterShifts.date, endDate)),
-      );
+      .where(condition);
   }
 
   async getRosterShiftsByDate(date: string): Promise<RosterShift[]> {

@@ -667,6 +667,7 @@ export const rosterShifts = pgTable("roster_shifts", {
   employeeId: integer("employee_id").references(() => employees.id),
   assigneeFreeText: text("assignee_free_text"),
   notes: text("notes"),
+  isDraft: boolean("is_draft").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

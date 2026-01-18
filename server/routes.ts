@@ -951,7 +951,14 @@ export async function registerRoutes(
       }
       const year = parseInt(req.params.year);
       const month = parseInt(req.params.month);
-      const shifts = await storage.getRosterShiftsByMonth(year, month);
+      const includeDraft = String(req.query.includeDraft) === "1";
+      const draftOnly = includeDraft ? false : String(req.query.draft) === "1";
+      const finalOnly = includeDraft ? false : !draftOnly;
+      const shifts = await storage.getRosterShiftsByMonth(year, month, {
+        includeDraft,
+        draftOnly,
+        finalOnly,
+      });
       res.json(shifts);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch roster" });
@@ -981,10 +988,17 @@ export async function registerRoutes(
           .status(400)
           .json({ error: "Mitarbeiter oder Freitext ist erforderlich" });
       }
+      const overrideIsDraftQuery = String(req.query.draft) === "1";
+      const bodyIsDraft =
+        typeof req.body.isDraft === "boolean" ? req.body.isDraft : undefined;
+      const isDraftFlag =
+        overrideIsDraftQuery || bodyIsDraft === true ? true : false;
+
       const payload = {
         ...validatedData,
         employeeId: rawEmployeeId || null,
         assigneeFreeText: rawEmployeeId ? null : rawFreeText || null,
+        isDraft: isDraftFlag,
       };
       const shift = await storage.createRosterShift(payload);
       res.status(201).json(shift);
@@ -1023,7 +1037,15 @@ export async function registerRoutes(
   app.patch("/api/roster/:id", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
+      const overrideIsDraftQuery = String(req.query.draft) === "1";
+      const bodyIsDraft =
+        typeof req.body?.isDraft === "boolean" ? req.body.isDraft : undefined;
+      const isDraftFlag =
+        overrideIsDraftQuery || bodyIsDraft === true ? true : undefined;
       const updateData = { ...req.body };
+      if (typeof isDraftFlag === "boolean") {
+        updateData.isDraft = isDraftFlag;
+      }
       if (
         Object.prototype.hasOwnProperty.call(updateData, "assigneeFreeText")
       ) {
@@ -1080,7 +1102,14 @@ export async function registerRoutes(
           .status(400)
           .json({ error: "Mitarbeiter oder Freitext ist erforderlich" });
       }
-      const results = await storage.bulkCreateRosterShifts(shifts);
+      const overrideIsDraftQuery = String(req.query.draft) === "1";
+      const normalizedShifts = shifts.map((shift: any) => {
+        const bodyIsDraft =
+          typeof shift?.isDraft === "boolean" ? shift.isDraft : undefined;
+        const isDraftFlag = overrideIsDraftQuery || bodyIsDraft === true;
+        return { ...shift, isDraft: isDraftFlag };
+      });
+      const results = await storage.bulkCreateRosterShifts(normalizedShifts);
       res.status(201).json(results);
     } catch (error) {
       res.status(500).json({ error: "Failed to create roster shifts" });
@@ -1093,7 +1122,24 @@ export async function registerRoutes(
       try {
         const year = parseInt(req.params.year);
         const month = parseInt(req.params.month);
-        await storage.deleteRosterShiftsByMonth(year, month);
+        const includeDraft = String(req.query.includeDraft) === "1";
+        const draftOnly = includeDraft ? false : String(req.query.draft) === "1";
+        const finalOnly = includeDraft ? false : !draftOnly;
+
+        const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
+        const monthEndDate = new Date(year, month, 0);
+        const monthEnd = `${year}-${String(month).padStart(2, "0")}-${String(monthEndDate.getDate()).padStart(2, "0")}`;
+
+        const conditions = [
+          gte(rosterShifts.date, monthStart),
+          lte(rosterShifts.date, monthEnd),
+        ];
+
+        if (!includeDraft) {
+          conditions.push(eq(rosterShifts.isDraft, draftOnly));
+        }
+
+        await db.delete(rosterShifts).where(and(...conditions));
         res.status(204).send();
       } catch (error) {
         res.status(500).json({ error: "Failed to delete roster shifts" });
@@ -1149,10 +1195,8 @@ export async function registerRoutes(
 
       res.json({
         success: true,
-        generatedShifts: result.shifts.length,
-        reasoning: result.reasoning,
-        warnings: result.warnings,
-        shifts: result.shifts,
+        mode: "draft",
+        createdCount: result.shifts.length,
       });
     } catch (error: any) {
       console.error("Roster generation error:", error);
@@ -1168,20 +1212,36 @@ export async function registerRoutes(
     "/api/roster/apply-generated",
     async (req: Request, res: Response) => {
       try {
-        const { year, month, shifts, replaceExisting } = req.body;
+        const { year, month, shifts, replaceExisting, isDraft } = req.body;
 
         if (!shifts || !Array.isArray(shifts)) {
           return res.status(400).json({ error: "Keine Dienste zum Speichern" });
         }
 
+        const overrideIsDraftQuery = String(req.query.draft) === "1";
+        const isDraftFlag = overrideIsDraftQuery || isDraft === true;
+
+        const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
+        const monthEndDate = new Date(year, month, 0);
+        const monthEnd = `${year}-${String(month).padStart(2, "0")}-${String(monthEndDate.getDate()).padStart(2, "0")}`;
+
         if (replaceExisting) {
-          await storage.deleteRosterShiftsByMonth(year, month);
+          await db
+            .delete(rosterShifts)
+            .where(
+              and(
+                gte(rosterShifts.date, monthStart),
+                lte(rosterShifts.date, monthEnd),
+                eq(rosterShifts.isDraft, isDraftFlag),
+              ),
+            );
         }
 
         const shiftData = shifts.map((s: any) => ({
           employeeId: s.employeeId,
           date: s.date,
           serviceType: s.serviceType,
+          isDraft: isDraftFlag,
         }));
 
         const results = await storage.bulkCreateRosterShifts(shiftData);
