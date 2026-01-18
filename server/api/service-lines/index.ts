@@ -154,6 +154,16 @@ async function resolveClinicId(req: any): Promise<number | null> {
       return department.clinicId;
     }
   }
+  // Fallback: if user has no clinic/department context, but there is exactly one active clinicId in serviceLines, use it.
+  const activeClinicRows = await db
+    .select({ clinicId: serviceLines.clinicId })
+    .from(serviceLines)
+    .where(eq(serviceLines.isActive, true))
+    .groupBy(serviceLines.clinicId);
+
+  if (activeClinicRows.length === 1) {
+    return activeClinicRows[0].clinicId;
+  }
   return null;
 }
 

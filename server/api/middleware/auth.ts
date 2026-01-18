@@ -242,6 +242,19 @@ async function getAuthUserByEmployeeId(
       }
     }
 
+    if (accessScope === "external_duty") {
+      const externalDutyCaps = [
+        "duty_plan.read",
+        "shift_wishes.read",
+        "shift_wishes.write",
+        "service_lines.read",
+        "auth.logout",
+      ];
+      const expanded = new Set(capabilities);
+      externalDutyCaps.forEach((cap) => expanded.add(cap));
+      capabilities = [...expanded];
+    }
+
     return {
       id: userId,
       employeeId: employee.id,
@@ -349,18 +362,6 @@ export async function authenticate(
       res
         .status(401)
         .json({ success: false, error: "Ungültiges oder abgelaufenes Token" });
-      return;
-    }
-
-    if (user.accessScope === "external_duty" && !isExternalDutyAllowed(req)) {
-      const normalizedPath = `${req.baseUrl || ""}${req.path || ""}`;
-      res.status(403).json({
-        success: false,
-        error: "Eingeschränkter Zugriff",
-        scope: "external_duty",
-        method: req.method,
-        path: normalizedPath,
-      });
       return;
     }
 
@@ -560,6 +561,10 @@ export function hasCapability(req: Request, capability: string): boolean {
   // Technical admins have all capabilities implicitly
   if (isTechnicalAdmin(req)) return true;
   return req.user.capabilities.includes(capability);
+}
+
+export function hasCap(req: Request, key: string): boolean {
+  return Boolean(req.user?.capabilities?.includes(key));
 }
 
 /**
