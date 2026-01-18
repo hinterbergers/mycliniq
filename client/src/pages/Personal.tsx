@@ -189,6 +189,7 @@ export default function Personal() {
   const [planningMonth, setPlanningMonth] = useState<NextPlanningMonth | null>(
     null,
   );
+  const [initialMonthApplied, setInitialMonthApplied] = useState(false);
 
   useEffect(() => {
     const loadPlanningMonth = async () => {
@@ -205,6 +206,18 @@ export default function Personal() {
     };
     loadPlanningMonth();
   }, [toast]);
+
+  useEffect(() => {
+    if (planningMonth && !initialMonthApplied) {
+      const nextDate = new Date(
+        planningMonth.year,
+        planningMonth.month - 1,
+        1,
+      );
+      setCurrentDate(nextDate);
+      setInitialMonthApplied(true);
+    }
+  }, [planningMonth, initialMonthApplied]);
 
   const wishLabel = planningMonth
     ? format(
