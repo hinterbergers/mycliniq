@@ -555,6 +555,13 @@ export const dutyPlansApi = {
     return plans[0] ?? null;
   },
 
+  getById: async (
+    id: number,
+  ): Promise<DutyPlan & { days?: any[] }> => {
+    const response = await apiFetch(`${API_BASE}/duty-plans/${id}`);
+    return handleResponse<DutyPlan & { days?: any[] }>(response);
+  },
+
   getAll: async (): Promise<DutyPlan[]> => {
     const response = await apiFetch(`${API_BASE}/duty-plans`);
     return handleResponse<DutyPlan[]>(response);

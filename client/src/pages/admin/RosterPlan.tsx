@@ -599,12 +599,16 @@ export default function RosterPlan() {
       const startDate = format(startOfMonth(currentDate), "yyyy-MM-dd");
       const endDate = format(endOfMonth(currentDate), "yyyy-MM-dd");
 
-      const [empData, shiftData, plannedAbsenceData, plan] = await Promise.all([
+      const [empData, shiftData, plannedAbsenceData] = await Promise.all([
         employeeApi.getAll(),
         rosterApi.getByMonth(year, month),
         plannedAbsencesAdminApi.getRange({ from: startDate, to: endDate }),
-        dutyPlansApi.getByMonth(year, month),
       ]);
+      const planSummary = await dutyPlansApi.getByMonth(year, month);
+      let plan = planSummary;
+      if (planSummary?.id) {
+        plan = await dutyPlansApi.getById(planSummary.id);
+      }
       let serviceLineData: ServiceLine[] = [];
       try {
         serviceLineData = await serviceLinesApi.getAll(
@@ -630,7 +634,7 @@ export default function RosterPlan() {
       setShifts(shiftData);
       setAbsences(plannedAbsenceData);
       setLongTermAbsences(longTermAbsenceData);
-      setDutyPlan(plan);
+      setDutyPlan(plan ?? null);
     } catch (error) {
       console.error("Failed to load data:", error);
       toast({
@@ -1272,7 +1276,11 @@ export default function RosterPlan() {
         nextStatus,
         nextStatus === "Freigegeben" ? currentUser.id : null,
       );
-      setDutyPlan(updated);
+      let detailed = updated;
+      if (updated.id) {
+        detailed = await dutyPlansApi.getById(updated.id);
+      }
+      setDutyPlan(detailed);
       toast({
         title: "Status aktualisiert",
         description: `Dienstplan ist jetzt ${PLAN_STATUS_LABELS[updated.status]}.`,

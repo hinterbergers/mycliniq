@@ -869,52 +869,24 @@ export function registerDutyPlanRoutes(router: Router) {
         );
       }
 
-      const days = await db
-        .select()
-        .from(dutyDays)
+      const assignments = await db
+        .select({
+          date: dutyDays.date,
+          serviceType: dutySlots.serviceType,
+          employeeId: dutyAssignments.employeeId,
+        })
+        .from(dutyAssignments)
+        .innerJoin(dutySlots, eq(dutyAssignments.dutySlotId, dutySlots.id))
+        .innerJoin(dutyDays, eq(dutySlots.dutyDayId, dutyDays.id))
         .where(eq(dutyDays.dutyPlanId, planId));
-      const dayById = new Map(days.map((day) => [day.id, day]));
-      const dayIds = days.map((day) => day.id);
 
-      const slots =
-        dayIds.length > 0
-          ? await db
-              .select()
-              .from(dutySlots)
-              .where(inArray(dutySlots.dutyDayId, dayIds))
-          : [];
-      const slotById = new Map(slots.map((slot) => [slot.id, slot]));
-      const slotIds = slots.map((slot) => slot.id);
-
-      const assignments =
-        slotIds.length > 0
-          ? await db
-              .select()
-              .from(dutyAssignments)
-              .where(inArray(dutyAssignments.dutySlotId, slotIds))
-          : [];
-
-      const shiftsToInsert: Array<{
-        date: string;
-        serviceType: string;
-        employeeId: number;
-        assigneeFreeText: null;
-        notes: null;
-      }> = [];
-
-      assignments.forEach((assignment) => {
-        const slot = slotById.get(assignment.dutySlotId);
-        if (!slot) return;
-        const day = dayById.get(slot.dutyDayId);
-        if (!day) return;
-        shiftsToInsert.push({
-          date: day.date,
-          serviceType: slot.serviceType,
-          employeeId: assignment.employeeId,
-          assigneeFreeText: null,
-          notes: null,
-        });
-      });
+      const shiftsToInsert = assignments.map((assignment) => ({
+        date: assignment.date,
+        serviceType: assignment.serviceType,
+        employeeId: assignment.employeeId,
+        assigneeFreeText: null,
+        notes: null,
+      }));
 
       const startDate = formatDate(plan.year, plan.month, 1);
       const endDate = formatDate(
