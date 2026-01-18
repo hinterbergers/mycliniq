@@ -444,18 +444,27 @@ export async function registerRoutes(
   };
 
   const resolvePlanningMonth = async () => {
+    const toIntOrNull = (value: unknown): number | null => {
+      if (typeof value === "number") {
+        return Number.isFinite(value) ? value : null;
+      }
+      if (typeof value === "string") {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+      }
+      return null;
+    };
+
     const rawSettings = await storage.getRosterSettings();
     const settings = rawSettings
       ? {
           ...rawSettings,
-          wishYear:
-            typeof rawSettings.wishYear === "number"
-              ? rawSettings.wishYear
-              : null,
-          wishMonth:
-            typeof rawSettings.wishMonth === "number"
-              ? rawSettings.wishMonth
-              : null,
+          wishYear: toIntOrNull(
+            (rawSettings as any).wishYear ?? (rawSettings as any).wish_year,
+          ),
+          wishMonth: toIntOrNull(
+            (rawSettings as any).wishMonth ?? (rawSettings as any).wish_month,
+          ),
         }
       : null;
     const previewPlan = await storage.getLatestDutyPlanByStatus("Vorläufig");
