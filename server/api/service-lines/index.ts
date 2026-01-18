@@ -175,6 +175,17 @@ export function registerServiceLineRoutes(router: Router) {
   router.get(
     "/",
     asyncHandler(async (req, res) => {
+      if (!req.user) {
+        return res
+          .status(401)
+          .json({ success: false, error: "Anmeldung erforderlich" });
+      }
+      if (!req.user.capabilities?.includes("service_lines.read")) {
+        return res
+          .status(403)
+          .json({ success: false, error: "Eingeschränkter Zugriff" });
+      }
+
       const clinicId = await resolveClinicId(req);
       if (!clinicId) {
         res
