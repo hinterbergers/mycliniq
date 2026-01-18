@@ -2978,10 +2978,16 @@ export async function registerRoutes(
         }
         const { settings, lastApproved, auto, current, shouldPersist } =
           await resolvePlanningMonth();
-        const year = current.year;
-        const month = current.month;
+        const wishOverride =
+          settings?.wishYear && settings?.wishMonth
+            ? { year: settings.wishYear, month: settings.wishMonth }
+            : null;
+        const selectedMonth = wishOverride ?? current;
+        const shouldPersistFinal = wishOverride ? false : shouldPersist;
+        const year = selectedMonth.year;
+        const month = selectedMonth.month;
 
-        if (shouldPersist) {
+        if (shouldPersistFinal) {
           await storage.upsertRosterSettings({
             lastApprovedYear: lastApproved.year,
             lastApprovedMonth: lastApproved.month,
