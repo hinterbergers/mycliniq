@@ -339,26 +339,37 @@ Antworte mit folgendem JSON-Format:
   + rulesSection;
 
   try {
-    const response = await getOpenAIClient().chat.completions.create({
-      model: "gpt-5",
-      messages: [
-        {
-          role: "system",
-          content:
-            "Du bist ein Experte für Krankenhausdienstplanung. Antworte immer auf Deutsch und im angeforderten JSON-Format.",
-        },
-        { role: "user", content: prompt },
-      ],
-      response_format: { type: "json_object" },
-      max_completion_tokens: 8192,
-    });
+    const createResponse = (maxOutputTokens: number) =>
+      getOpenAIClient().responses.create({
+        model: "gpt-5-mini",
+        reasoning: { effort: "low" },
+        text: { format: { type: "json_object" } },
+        input: [
+          {
+            role: "system",
+            content:
+              "Du bist ein Experte für Krankenhausdienstplanung. Antworte immer auf Deutsch und gib ausschließlich ein JSON-Objekt zurück, das der gewünschten Struktur entspricht.",
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        max_output_tokens: maxOutputTokens,
+      });
 
-    const content = response.choices[0].message.content;
-    if (!content) {
-      throw new Error("Keine Antwort vom KI-Modell erhalten");
+    let response = await createResponse(4000);
+    let outputText = (response.output_text ?? "").trim();
+    if (response.status === "incomplete" || !outputText) {
+      response = await createResponse(8000);
+      outputText = (response.output_text ?? "").trim();
     }
 
-    const result = JSON.parse(content) as GenerationResult;
+    if (!outputText) {
+      throw new Error("KI-Output zu kurz/leer (max_output_tokens)");
+    }
+
+    const result = JSON.parse(outputText) as GenerationResult;
 
     const validatedShifts = result.shifts.filter((shift) => {
       const employee = activeEmployees.find((e) => e.id === shift.employeeId);
