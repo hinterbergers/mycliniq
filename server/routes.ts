@@ -3067,6 +3067,17 @@ export async function registerRoutes(
   // Shift Wishes routes
   app.get("/api/shift-wishes", requireAuth, async (req: Request, res: Response) => {
     try {
+      if (!req.user) {
+        return res
+          .status(401)
+          .json({ success: false, error: "Anmeldung erforderlich" });
+      }
+      if (!req.user.capabilities?.includes("shift_wishes.read")) {
+        return res
+          .status(403)
+          .json({ success: false, error: "Eingeschränkter Zugriff" });
+      }
+
       const { year, month, employeeId } = req.query;
 
       if (employeeId && year && month) {
@@ -3101,6 +3112,17 @@ export async function registerRoutes(
 
   app.post("/api/shift-wishes", requireAuth, async (req: Request, res: Response) => {
     try {
+      if (!req.user) {
+        return res
+          .status(401)
+          .json({ success: false, error: "Anmeldung erforderlich" });
+      }
+      if (!req.user.capabilities?.includes("shift_wishes.write")) {
+        return res
+          .status(403)
+          .json({ success: false, error: "Eingeschränkter Zugriff" });
+      }
+
       const payload = req.body as any;
       const currentEmployeeId = req.user?.employeeId;
       const isAdmin = Boolean(req.user?.isAdmin || req.user?.appRole === "Admin");
@@ -3124,6 +3146,17 @@ export async function registerRoutes(
 
   app.patch("/api/shift-wishes/:id", requireAuth, async (req: Request, res: Response) => {
     try {
+      if (!req.user) {
+        return res
+          .status(401)
+          .json({ success: false, error: "Anmeldung erforderlich" });
+      }
+      if (!req.user.capabilities?.includes("shift_wishes.write")) {
+        return res
+          .status(403)
+          .json({ success: false, error: "Eingeschränkter Zugriff" });
+      }
+
       const id = parseInt(req.params.id);
       const existing = await storage.getShiftWish(id);
       if (!existing) {
@@ -3161,6 +3194,17 @@ export async function registerRoutes(
     requireAuth,
     async (req: Request, res: Response) => {
       try {
+        if (!req.user) {
+          return res
+            .status(401)
+            .json({ success: false, error: "Anmeldung erforderlich" });
+        }
+        if (!req.user.capabilities?.includes("shift_wishes.write")) {
+          return res
+            .status(403)
+            .json({ success: false, error: "Eingeschränkter Zugriff" });
+        }
+
         const id = parseInt(req.params.id);
         const existing = await storage.getShiftWish(id);
         if (!existing) {
@@ -3237,6 +3281,17 @@ export async function registerRoutes(
   );
   app.delete("/api/shift-wishes/:id", requireAuth, async (req: Request, res: Response) => {
     try {
+      if (!req.user) {
+        return res
+          .status(401)
+          .json({ success: false, error: "Anmeldung erforderlich" });
+      }
+      if (!req.user.capabilities?.includes("shift_wishes.write")) {
+        return res
+          .status(403)
+          .json({ success: false, error: "Eingeschränkter Zugriff" });
+      }
+
       const id = parseInt(req.params.id);
       const existing = await storage.getShiftWish(id);
       if (!existing) {
