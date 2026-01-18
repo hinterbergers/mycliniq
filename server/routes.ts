@@ -444,29 +444,39 @@ export async function registerRoutes(
   };
 
   const resolvePlanningMonth = async () => {
+    const rawSettings = await storage.getRosterSettings();
+
     const toIntOrNull = (value: unknown): number | null => {
-      if (typeof value === "number") {
-        return Number.isFinite(value) ? value : null;
-      }
+      if (typeof value === "number" && Number.isFinite(value)) return value;
       if (typeof value === "string") {
-        const parsed = Number(value);
-        return Number.isFinite(parsed) ? parsed : null;
+        const trimmed = value.trim();
+        if (!trimmed) return null;
+        const num = Number(trimmed);
+        return Number.isFinite(num) ? num : null;
       }
       return null;
     };
 
-    const rawSettings = await storage.getRosterSettings();
+    const wishYear = rawSettings
+      ? toIntOrNull(
+          (rawSettings as any).wishYear ?? (rawSettings as any).wish_year,
+        )
+      : null;
+
+    const wishMonth = rawSettings
+      ? toIntOrNull(
+          (rawSettings as any).wishMonth ?? (rawSettings as any).wish_month,
+        )
+      : null;
+
     const settings = rawSettings
       ? {
           ...rawSettings,
-          wishYear: toIntOrNull(
-            (rawSettings as any).wishYear ?? (rawSettings as any).wish_year,
-          ),
-          wishMonth: toIntOrNull(
-            (rawSettings as any).wishMonth ?? (rawSettings as any).wish_month,
-          ),
+          wishYear,
+          wishMonth,
         }
       : null;
+
     const previewPlan = await storage.getLatestDutyPlanByStatus("Vorläufig");
     const lastApproved = settings
       ? { year: settings.lastApprovedYear, month: settings.lastApprovedMonth }
@@ -3086,11 +3096,11 @@ export async function registerRoutes(
           return res.status(400).json({ error: "Ungültiger Monat" });
         }
 
-        const { settings, lastApproved, current } =
-          await resolvePlanningMonth();
-        if (compareYearMonth(year, month, current.year, current.month) < 0) {
+        const { settings, lastApproved } = await resolvePlanningMonth();
+        const minAllowed = addMonth(lastApproved.year, lastApproved.month);
+        if (compareYearMonth(year, month, minAllowed.year, minAllowed.month) < 0) {
           return res.status(400).json({
-            error: "Wunschmonat darf nicht in die Vergangenheit gesetzt werden",
+            error: "Wunschmonat darf nicht vor dem Monat nach dem letzten freigegebenen Plan liegen",
           });
         }
 
