@@ -217,6 +217,7 @@ export default function ShiftWishes() {
   const [selectedMonth, setSelectedMonth] = useState<Date>(
     () => startOfMonth(new Date()),
   );
+  const [eligibleEmployeeIds, setEligibleEmployeeIds] = useState<number[]>([]);
 
   const [absenceDialogOpen, setAbsenceDialogOpen] = useState(false);
   const [deleteAbsenceOpen, setDeleteAbsenceOpen] = useState(false);
@@ -247,6 +248,20 @@ export default function ShiftWishes() {
     : false;
   const isExternalDuty = (currentUser as any)?.accessScope === "external_duty";
   const isSubmitted = wish?.status === "Eingereicht";
+
+  const employeesWithExistingWishes = useMemo(
+    () => new Set(allWishes.map((wish) => wish.employeeId)),
+    [allWishes],
+  );
+
+  const displayedEmployees = useMemo(() => {
+    return employees.filter(
+      (employee) =>
+        employeeDoesShifts(employee, serviceLineMeta) &&
+        (employeesWithExistingWishes.has(employee.id) ||
+          eligibleEmployeeIds.includes(employee.id)),
+    );
+  }, [employees, serviceLineMeta, employeesWithExistingWishes, eligibleEmployeeIds]);
 
 
   const normalizeDayKeys = (
@@ -622,6 +637,7 @@ export default function ShiftWishes() {
       }) as NextPlanningMonth;
       
       setPlanningMonth(fallbackPlanningMonth);
+      setEligibleEmployeeIds(monthData?.eligibleEmployeeIds ?? []);
       
       await loadMonthSpecificData(initialMonth);
     } catch (error) {
@@ -1506,11 +1522,7 @@ export default function ShiftWishes() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {employees
-                        .filter((employee) =>
-                          employeeDoesShifts(employee, serviceLineMeta),
-                        )
-                        .map((emp) => {
+                      {displayedEmployees.map((emp) => {
                           const empWish = allWishes.find(
                             (w) => w.employeeId === emp.id,
                           );

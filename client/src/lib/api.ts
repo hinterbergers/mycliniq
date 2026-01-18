@@ -1974,6 +1974,7 @@ export interface NextPlanningMonth {
   allSubmitted: boolean;
   draftShiftCount?: number;
   hasDraft?: boolean;
+  eligibleEmployeeIds?: number[];
 }
 
 export const rosterSettingsApi = {

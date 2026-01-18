@@ -3154,6 +3154,7 @@ export async function registerRoutes(
           allSubmitted,
           draftShiftCount,
           hasDraft: draftShiftCount > 0,
+          eligibleEmployeeIds: eligibleEmployees.map((emp) => emp.id),
         });
       } catch (error) {
         res.status(500).json({ error: "Failed to get next planning month" });
