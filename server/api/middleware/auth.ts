@@ -609,7 +609,12 @@ export const getOwnerIdFrom = {
 function isExternalDutyAllowed(req: Request): boolean {
   const normalizedPath = `${req.baseUrl || ""}${req.path || ""}`.toLowerCase();
   const method = req.method.toUpperCase();
+
   if (normalizedPath === "/api/auth/me" || normalizedPath === "/api/me") {
+    return true;
+  }
+
+  if (normalizedPath === "/api/auth/logout" && method === "POST") {
     return true;
   }
 
