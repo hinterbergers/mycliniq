@@ -338,7 +338,7 @@ export default function RosterPlan() {
   const [planningMonth, setPlanningMonth] = useState<NextPlanningMonth | null>(
     null,
   );
-  const [initialMonthApplied, setInitialMonthApplied] = useState(false);
+  const [publishedPlanApplied, setPublishedPlanApplied] = useState(false);
   const [wishDialogOpen, setWishDialogOpen] = useState(false);
   const [wishMonth, setWishMonth] = useState<number>(
     currentDate.getMonth() + 1,
@@ -667,13 +667,34 @@ export default function RosterPlan() {
   }, [planningMonth]);
 
   useEffect(() => {
-    if (planningMonth && !initialMonthApplied) {
-      setCurrentDate(
-        new Date(planningMonth.year, planningMonth.month - 1, 1),
-      );
-      setInitialMonthApplied(true);
-    }
-  }, [planningMonth, initialMonthApplied]);
+    if (publishedPlanApplied) return;
+    let active = true;
+    const loadPublishedPlan = async () => {
+      try {
+        const plans = await dutyPlansApi.getAll();
+        const published = plans
+          .filter((plan) => plan.status === "Freigegeben")
+          .sort((a, b) => {
+            if (a.year !== b.year) return a.year - b.year;
+            return a.month - b.month;
+          });
+        const latest = published[published.length - 1];
+        if (published.length && latest && active) {
+          setCurrentDate(new Date(latest.year, latest.month - 1, 1));
+        }
+      } catch (error) {
+        console.error("Failed to load published plans:", error);
+      } finally {
+        if (active) {
+          setPublishedPlanApplied(true);
+        }
+      }
+    };
+    void loadPublishedPlan();
+    return () => {
+      active = false;
+    };
+  }, [publishedPlanApplied]);
 
   useEffect(() => {
     if (!manualEditMode) {
@@ -1790,8 +1811,14 @@ export default function RosterPlan() {
               bleibt erlaubt.
             </div>
           )}
-          <div className="overflow-x-auto overflow-y-visible">
-            <Table className="border-collapse w-full min-w-[1400px]">
+        <div className="overflow-x-auto overflow-y-visible">
+          {!shifts.length && !isLoading && (
+            <div className="px-4 py-3 text-sm text-muted-foreground border-b border-border">
+              Keine Schichten für{" "}
+              {format(currentDate, "MMMM yyyy", { locale: de })}.
+            </div>
+          )}
+          <Table className="border-collapse w-full min-w-[1400px]">
               <TableHeader>
                 <TableRow className="bg-muted/50 hover:bg-muted/50">
                   <TableHead className="w-12 text-center border-r border-border font-bold">
