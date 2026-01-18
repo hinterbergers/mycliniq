@@ -588,18 +588,41 @@ export default function ShiftWishes() {
         .map((plan) => getPlanMonthDate(plan.year, plan.month))
         .sort((a, b) => a.getTime() - b.getTime());
 
-      const initialMonth = findInitialMonth(currentUser, planMonths);
-      setSelectedMonth(initialMonth);
+      const minMonth = getMinSelectableMonth(currentUser ?? null);
 
-      const fallbackPlanningMonth = (monthData ?? {
+      const planningMonthDate = monthData
+        ? getPlanMonthDate(monthData.year, monthData.month)
+        : null;
+      
+      const fromPlans = findInitialMonth(currentUser, planMonths);
+      
+      let initialMonth = fromPlans;
+      
+      // Priorität: next-planning-month, aber nie vor minMonth
+      if (planningMonthDate && !isBefore(planningMonthDate, minMonth)) {
+        initialMonth = planningMonthDate;
+      } else if (isBefore(fromPlans, minMonth)) {
+        initialMonth = minMonth;
+      }
+      
+      setSelectedMonth(initialMonth);
+      
+      // planning month nur verwenden, wenn es >= minMonth ist, sonst fallback auf initialMonth
+      const effectivePlanningMonth =
+        planningMonthDate && !isBefore(planningMonthDate, minMonth)
+          ? monthData
+          : null;
+      
+      const fallbackPlanningMonth = (effectivePlanningMonth ?? {
         year: initialMonth.getFullYear(),
         month: initialMonth.getMonth() + 1,
         submittedCount: 0,
         totalEmployees: 0,
         allSubmitted: false,
       }) as NextPlanningMonth;
+      
       setPlanningMonth(fallbackPlanningMonth);
-
+      
       await loadMonthSpecificData(initialMonth);
     } catch (error) {
       toast({
