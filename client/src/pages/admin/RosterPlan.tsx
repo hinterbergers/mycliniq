@@ -1256,6 +1256,20 @@ export default function RosterPlan() {
         title: "Status aktualisiert",
         description: `Dienstplan ist jetzt ${PLAN_STATUS_LABELS[updated.status]}.`,
       });
+
+      if (nextStatus === "Freigegeben") {
+        try {
+          await dutyPlansApi.publishToRoster(updated.id);
+          await loadData();
+        } catch (error: any) {
+          toast({
+            title: "Roster befüllen fehlgeschlagen",
+            description:
+              error?.message || "Dienstplan wurde aber freigegeben.",
+            variant: "destructive",
+          });
+        }
+      }
     } catch (error: any) {
       toast({
         title: "Status-Update fehlgeschlagen",
