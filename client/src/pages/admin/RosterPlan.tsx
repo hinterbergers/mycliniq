@@ -324,7 +324,6 @@ export default function RosterPlan() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isStatusUpdating, setIsStatusUpdating] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [publishingRoster, setPublishingRoster] = useState(false);
 
   const [generationDialogOpen, setGenerationDialogOpen] = useState(false);
   const [generatedShifts, setGeneratedShifts] = useState<GeneratedShift[]>([]);
@@ -1287,17 +1286,9 @@ export default function RosterPlan() {
       });
 
       if (nextStatus === "Freigegeben") {
-        try {
-          await dutyPlansApi.publishToRoster(updated.id);
-          await loadData();
-        } catch (error: any) {
-          toast({
-            title: "Roster befüllen fehlgeschlagen",
-            description:
-              error?.message || "Dienstplan wurde aber freigegeben.",
-            variant: "destructive",
-          });
-        }
+        // Important: Do NOT auto-call publish-to-roster here.
+        // This page edits roster shifts directly; an auto "publish-to-roster" call can overwrite/wipe the month.
+        await loadData();
       }
     } catch (error: any) {
       toast({
@@ -1309,27 +1300,6 @@ export default function RosterPlan() {
       setIsStatusUpdating(false);
     }
   };
-
-  const handlePublishRoster = useCallback(async () => {
-    if (!dutyPlan?.id) return;
-    setPublishingRoster(true);
-    try {
-      const result = await dutyPlansApi.publishToRoster(dutyPlan.id);
-      toast({
-        title: "Roster übernommen",
-        description: `${result.publishedCount} Schichten ins Dienstplan übertragen.`,
-      });
-      await loadData();
-    } catch (error: any) {
-      toast({
-        title: "Roster befüllen fehlgeschlagen",
-        description: error?.message || "Bitte später erneut versuchen.",
-        variant: "destructive",
-      });
-    } finally {
-      setPublishingRoster(false);
-    }
-  }, [dutyPlan?.id, loadData, toast]);
 
   const handleSetWishMonth = async () => {
     setWishSaving(true);
@@ -1600,21 +1570,6 @@ export default function RosterPlan() {
               >
                 <Calendar className="w-4 h-4" />
                 Dienstwünsche freigeben
-              </Button>
-            )}
-            {(canPublish || canEdit) && planStatus === "Freigegeben" && (
-              <Button
-                variant="outline"
-                className="gap-2"
-                onClick={handlePublishRoster}
-                disabled={publishingRoster}
-              >
-                {publishingRoster ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <ArrowRight className="w-4 h-4" />
-                )}
-                Roster aus Dienstplan befüllen
               </Button>
             )}
           </div>

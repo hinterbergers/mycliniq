@@ -843,85 +843,11 @@ export function registerDutyPlanRoutes(router: Router) {
     "/:id/publish-to-roster",
     validateParams(idParamSchema),
     requireEditor,
-    asyncHandler(async (req, res) => {
-      const planId = Number(req.params.id);
-      const forcePublish =
-        String(req.query.force ?? "").toLowerCase() === "true";
-      const isAdmin = Boolean(req.user?.isAdmin || req.user?.appRole === "Admin");
-
-      const [plan] = await db
-        .select()
-        .from(dutyPlans)
-        .where(eq(dutyPlans.id, planId));
-
-      if (!plan) {
-        return notFound(res, "Dienstplan");
-      }
-
-      if (
-        plan.status !== "Freigegeben" &&
-        !(forcePublish && isAdmin)
-      ) {
-        return error(
-          res,
-          "Nur freigegebene Dienstpläne dürfen in den Dienstplan exportiert werden",
-          403,
-        );
-      }
-
-      const assignments = await db
-        .select({
-          date: dutyDays.date,
-          serviceType: dutySlots.serviceType,
-          employeeId: dutyAssignments.employeeId,
-        })
-        .from(dutyAssignments)
-        .innerJoin(dutySlots, eq(dutyAssignments.dutySlotId, dutySlots.id))
-        .innerJoin(dutyDays, eq(dutySlots.dutyDayId, dutyDays.id))
-        .where(eq(dutyDays.dutyPlanId, planId));
-
-      const shiftsToInsert = assignments.map((assignment) => ({
-        date: assignment.date,
-        serviceType: assignment.serviceType,
-        employeeId: assignment.employeeId,
-        assigneeFreeText: null,
-        notes: null,
-      }));
-
-      const startDate = formatDate(plan.year, plan.month, 1);
-      const endDate = formatDate(
-        plan.year,
-        plan.month,
-        getDaysInMonth(plan.year, plan.month),
-      );
-
-      const publishedCount = await db.transaction(async (tx) => {
-        await tx
-          .delete(rosterShifts)
-          .where(
-            and(
-              gte(rosterShifts.date, startDate),
-              lte(rosterShifts.date, endDate),
-            ),
-          );
-
-        if (!shiftsToInsert.length) {
-          return 0;
-        }
-
-        const inserted = await tx
-          .insert(rosterShifts)
-          .values(shiftsToInsert)
-          .returning();
-
-        return inserted.length;
-      });
-
-      res.json({
-        success: true,
-        publishedCount,
-        year: plan.year,
-        month: plan.month,
+    asyncHandler(async (_req, res) => {
+      return res.status(410).json({
+        success: false,
+        error:
+          "publish-to-roster ist deaktiviert: RosterShifts sind die Quelle der Wahrheit.",
       });
     }),
   );
