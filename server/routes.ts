@@ -43,7 +43,10 @@ import {
 import { fromZodError } from "zod-validation-error";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
-import { generateRosterPlan } from "./services/rosterGenerator";
+import {
+  generateRosterPlan,
+  buildRosterPromptPayload,
+} from "./services/rosterGenerator";
 import { registerModularApiRoutes } from "./api";
 import { employeeDoesShifts, OVERDUTY_KEY } from "@shared/shiftTypes";
 import { requireAuth, hasCapability } from "./api/middleware/auth";
@@ -1151,6 +1154,12 @@ export async function registerRoutes(
   app.post("/api/roster/generate", async (req: Request, res: Response) => {
     try {
       const { year, month, rules } = req.body;
+      const preview =
+        String(req.query.preview) === "1" || req.body?.preview === true;
+      const promptOverride =
+        typeof req.body?.promptOverride === "string"
+          ? req.body.promptOverride
+          : undefined;
 
       if (!year || !month) {
         return res
@@ -1181,6 +1190,36 @@ export async function registerRoutes(
             .orderBy(asc(serviceLines.sortOrder), asc(serviceLines.label))
         : [];
 
+      const promptPayload = buildRosterPromptPayload({
+        employees,
+        absences,
+        shiftWishes: wishes,
+        longTermWishes,
+        longTermAbsences,
+        year,
+        month,
+        serviceLines: serviceLineMeta,
+        rules,
+        promptOverride,
+      });
+
+      if (preview) {
+        const isAdmin = Boolean(
+          req.user?.isAdmin || req.user?.appRole === "Admin",
+        );
+        if (process.env.ROSTER_PROMPT_PREVIEW !== "1" || !isAdmin) {
+          return res.status(404).json({ success: false, error: "Not found" });
+        }
+        return res.json({
+          success: true,
+          model: promptPayload.model,
+          maxOutputTokens: promptPayload.maxOutputTokens,
+          system: promptPayload.system,
+          prompt: promptPayload.prompt,
+          input: promptPayload.input,
+        });
+      }
+
       const result = await generateRosterPlan(
         employees,
         absences,
@@ -1191,6 +1230,7 @@ export async function registerRoutes(
         longTermAbsences,
         serviceLineMeta,
         rules,
+        { promptOverride },
       );
 
       res.json({
