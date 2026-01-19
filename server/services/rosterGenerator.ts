@@ -479,9 +479,10 @@ export async function generateRosterPlan(
     const createResponse = (maxOutputTokens: number) =>
       getOpenAIClient().responses.create({
         model,
+        instructions: promptPayload.system,
+        input: promptPayload.prompt,
         reasoning,
         text,
-        input,
         max_output_tokens: maxOutputTokens,
       });
 
