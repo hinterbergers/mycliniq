@@ -1,6 +1,4 @@
 import OpenAI from "openai";
-import crypto from "crypto";
-import type * as ResponsesAPI from "openai/resources/responses/responses";
 import type {
   Employee,
   Absence,
@@ -66,6 +64,20 @@ interface GenerationResult {
   warnings: string[];
 }
 
+export interface RosterPromptPayload {
+  model: string;
+  maxOutputTokens: number;
+  input: Array<{ role: "system" | "user"; content: string }>;
+  system: string;
+  prompt: string;
+}
+
+interface GenerateRosterOptions {
+  promptOverride?: string;
+  modelOverride?: string;
+  maxOutputTokens?: number;
+}
+
 interface AiRuleWeights {
   weekendFairness?: number;
   preferenceSatisfaction?: number;
@@ -128,77 +140,350 @@ function hasHardLongTermBlock(
   });
 }
 
-interface BuildRosterPromptParams {
-  employees: Employee[];
-  absences: Absence[];
-  shiftWishes: ShiftWish[];
-  longTermWishes: LongTermShiftWish[];
-  longTermAbsences: LongTermAbsence[];
-  year: number;
-  month: number;
-  serviceLines: ServiceLineMeta[];
-  rules?: AiRules;
-  promptOverride?: string;
-}
+export async function generateRosterPlan(
+  employees: Employee[],
+  existingAbsences: Absence[],
+  year: number,
+  month: number,
+  shiftWishes: ShiftWish[] = [],
+  longTermWishes: LongTermShiftWish[] = [],
+  longTermAbsences: LongTermAbsence[] = [],
+  serviceLines: ServiceLineMeta[] = [],
+  rules?: AiRules,
+  options?: GenerateRosterOptions,
+): Promise<GenerationResult> {
+  // Prompt builder extracted
+  const startDate = startOfMonth(new Date(year, month - 1));
+  const endDate = endOfMonth(new Date(year, month - 1));
+  const days = eachDayOfInterval({ start: startDate, end: endDate });
 
-interface BuildRosterPromptPayload {
-  model: "gpt-5-mini";
-  maxOutputTokens: number;
-  system: string;
-  prompt: string;
-  input: ResponsesAPI.ResponseInput;
-  reasoning: { effort: "low" };
-  text: { format: { type: "json_object" } };
-  activeEmployees: Employee[];
-  employeeData: Array<{
-    id: number;
-    name: string;
-    role: string | null;
-    primaryArea: string | null;
-    competencies: string[] | null | undefined;
-    serviceTypes: ServiceType[];
-    preferredDays: string[];
-    preferredWeekendDays: string[];
-    avoidDays: string[];
-    avoidWeekdays: string[];
-    preferredServiceTypes: ServiceType[];
-    avoidServiceTypes: ServiceType[];
-    maxShiftsPerWeek: number;
-    maxShiftsPerMonth: number | null;
-    maxWeekendShifts: number | null;
-    notes: string;
-    longTermRules: LongTermWishRule[];
-    absences: string[];
-  }>;
-  daysData: Array<{ date: string; dayName: string; isWeekend: boolean }>;
-  normalizedRules: {
-    hard: string;
-    soft: string;
-    weights: {
-      weekendFairness: number;
-      preferenceSatisfaction: number;
-      minimizeConflicts: number;
-    };
+  const serviceTypeKeys = serviceLines.length
+    ? serviceLines.map((line) => line.key).filter((key) => Boolean(key))
+    : SERVICE_TYPES;
+
+  const activeEmployees = employees.filter(
+    (e) => e.isActive && employeeDoesShifts(e, serviceLines),
+  );
+  const submittedWishes = shiftWishes.filter(
+    (wish) => wish.status === "Eingereicht",
+  );
+  const wishesByEmployeeId = new Map(
+    submittedWishes.map((wish) => [wish.employeeId, wish]),
+  );
+  const approvedLongTerm = longTermWishes.filter(
+    (wish) => wish.status === "Genehmigt",
+  );
+  const longTermByEmployeeId = new Map(
+    approvedLongTerm.map((wish) => [wish.employeeId, wish]),
+  );
+  const approvedLongTermAbsences = longTermAbsences.filter(
+    (absence) => absence.status === "Genehmigt",
+  );
+  const longTermAbsencesByEmployeeId = new Map<number, LongTermAbsence[]>();
+  approvedLongTermAbsences.forEach((absence) => {
+    const list = longTermAbsencesByEmployeeId.get(absence.employeeId) || [];
+    list.push(absence);
+    longTermAbsencesByEmployeeId.set(absence.employeeId, list);
+  });
+
+  const toServiceTypeList = (values: unknown): ServiceType[] => {
+    if (!Array.isArray(values)) return [];
+    return values.filter((value): value is ServiceType =>
+      serviceTypeKeys.includes(value as ServiceType),
+    );
   };
-  longTermByEmployeeId: Map<number, LongTermShiftWish>;
-  longTermAbsencesByEmployeeId: Map<number, LongTermAbsence[]>;
+
+  const toIsoDateList = (daysList: unknown): string[] => {
+    if (!Array.isArray(daysList)) return [];
+    return daysList
+      .map((day) => {
+        if (typeof day === "string" && /^\d{4}-\d{2}-\d{2}$/.test(day)) {
+          return day;
+        }
+        if (typeof day === "number" && Number.isInteger(day)) {
+          return format(new Date(year, month - 1, day), "yyyy-MM-dd");
+        }
+        return null;
+      })
+      .filter((value): value is string => Boolean(value));
+  };
+
+  const toWeekdayList = (values: unknown): string[] => {
+    if (!Array.isArray(values)) return [];
+    const weekdayMap = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    return values
+      .filter((value): value is number => Number.isInteger(value))
+      .map((value) => weekdayMap[value - 1])
+      .filter((value): value is string => Boolean(value));
+  };
+
+  const employeeData = activeEmployees.map((e) => {
+    const prefs = e.shiftPreferences as ShiftPreferences | null;
+    const wish = wishesByEmployeeId.get(e.id);
+    const longTerm = longTermByEmployeeId.get(e.id);
+    const absenceDates = existingAbsences
+      .filter((a) => a.employeeId === e.id)
+      .map((a) => `${a.startDate} bis ${a.endDate} (${a.reason})`);
+    const approvedAbsences = longTermAbsencesByEmployeeId.get(e.id) || [];
+    approvedAbsences.forEach((absence) => {
+      absenceDates.push(
+        `Langzeitabwesenheit: ${absence.startDate} bis ${absence.endDate} (${absence.reason})`,
+      );
+    });
+    const inactiveFrom = toDate(e.inactiveFrom);
+    const inactiveUntil = toDate(e.inactiveUntil);
+    if (inactiveFrom || inactiveUntil) {
+      const formattedFrom = inactiveFrom
+        ? format(inactiveFrom, "yyyy-MM-dd")
+        : "offen";
+      const formattedUntil = inactiveUntil
+        ? format(inactiveUntil, "yyyy-MM-dd")
+        : "offen";
+      absenceDates.push(
+        `Langzeitabwesenheit (Legacy): ${formattedFrom} bis ${formattedUntil}`,
+      );
+    }
+
+    return {
+      id: e.id,
+      name: e.name,
+      role: e.role,
+      primaryArea: e.primaryDeploymentArea,
+      competencies: e.competencies,
+      serviceTypes: getServiceTypesForEmployee(e, serviceLines),
+      preferredDays: toIsoDateList(wish?.preferredShiftDays),
+      preferredWeekendDays: toIsoDateList(wish?.preferredShiftDays),
+      avoidDays: toIsoDateList(wish?.avoidShiftDays),
+      avoidWeekdays: toWeekdayList(wish?.avoidWeekdays),
+      preferredServiceTypes: toServiceTypeList(wish?.preferredServiceTypes),
+      avoidServiceTypes: toServiceTypeList(wish?.avoidServiceTypes),
+      maxShiftsPerWeek:
+        wish?.maxShiftsPerWeek ||
+        e.maxShiftsPerWeek ||
+        prefs?.maxShiftsPerWeek ||
+        5,
+      maxShiftsPerMonth:
+        wish?.maxShiftsPerMonth || prefs?.maxShiftsPerMonth || null,
+      maxWeekendShifts:
+        wish?.maxWeekendShifts || prefs?.maxWeekendShifts || null,
+      notes: wish?.notes || prefs?.notes || "",
+      longTermRules: Array.isArray(longTerm?.rules) ? longTerm?.rules : [],
+      absences: absenceDates,
+    };
+  });
+
+  const daysData = days.map((d) => ({
+    date: format(d, "yyyy-MM-dd"),
+    dayName: format(d, "EEEE"),
+    isWeekend: isWeekend(d),
+  }));
+
+  const serviceLineSummary = serviceLines.length
+    ? serviceLines.map((line) => `- ${line.key}: ${line.label}`).join("\n")
+    : `- gyn (Gynäkologie-Dienst)\n- kreiszimmer (Kreißzimmer)\n- turnus (Turnus)`;
+
+  const clampWeight = (value?: number) =>
+    typeof value === "number" && !Number.isNaN(value)
+      ? Math.max(0, Math.min(10, value))
+      : 0;
+
+  const normalizedRules = {
+    hard: rules?.hard?.trim() ?? "",
+    soft: rules?.soft?.trim() ?? "",
+    weights: {
+      weekendFairness: clampWeight(rules?.weights?.weekendFairness),
+      preferenceSatisfaction: clampWeight(
+        rules?.weights?.preferenceSatisfaction,
+      ),
+      minimizeConflicts: clampWeight(rules?.weights?.minimizeConflicts),
+    },
+  };
+
+  const rulesSection = `## KI-Regelwerk
+### HARD RULES
+${normalizedRules.hard || "- Keine harten Regeln definiert -"}
+### SOFT RULES
+${normalizedRules.soft || "- Keine weichen Regeln definiert -"}
+### WEIGHTS
+${JSON.stringify(normalizedRules.weights, null, 2)}
+`;
+
+  const systemMessage =
+    "Du bist ein Experte für Krankenhausdienstplanung. Antworte immer auf Deutsch und gib ausschließlich ein JSON-Objekt zurück, das der gewünschten Struktur entspricht.";
+
+  const basePrompt = `Du bist ein Dienstplan-Experte für eine gynäkologische Abteilung eines Krankenhauses.
+
+Erstelle einen optimalen Dienstplan für ${format(startDate, "MMMM yyyy")}.
+
+## Verfügbare Mitarbeiter:
+${JSON.stringify(employeeData, null, 2)}
+
+## Zu besetzende Tage:
+${JSON.stringify(daysData, null, 2)}
+
+## Dienstschienen:
+${serviceLineSummary}
+Wenn im Mitarbeiterobjekt "serviceTypes" gesetzt sind, dürfen nur diese Dienstschienen zugewiesen werden.
+Beachte in den Mitarbeiterdaten:
+- preferredWeekendDays (Datumsliste für Wochenendwünsche in ${format(startDate, "MMMM yyyy")})
+- avoidDays (nicht mögliche Tage in ${format(startDate, "MMMM yyyy")})
+- avoidWeekdays (Wochentage vermeiden, z. B. Mon, Tue)
+- preferredServiceTypes / avoidServiceTypes
+- maxShiftsPerWeek / maxShiftsPerMonth / maxWeekendShifts
+- longTermRules: wiederkehrende Regeln mit kind/weekday/strength/serviceType (serviceType optional oder "any")
+
+## Regeln:
+1. Jeder Tag muss alle Pflicht-Dienstschienen besetzen (falls ServiceLines dafür vorhanden sind)
+2. Optionale Dienstschienen nur besetzen, wenn Personal verfügbar
+3. Respektiere Abwesenheiten - kein Mitarbeiter darf an Tagen eingeteilt werden, an denen er/sie abwesend ist
+4. Respektiere longTermRules mit strength=HARD (ALWAYS_OFF oder AVOID_ON) als harte Sperre
+5. preferredWeekendDays möglichst berücksichtigen, avoidDays möglichst vermeiden
+6. avoidWeekdays berücksichtigen (keine Einteilung an diesen Wochentagen)
+7. preferredServiceTypes bevorzugen, avoidServiceTypes möglichst vermeiden
+8. Maximale Dienste pro Woche und Monat pro Mitarbeiter beachten
+9. Maximale Wochenenddienste beachten
+10. Gleichmäßige Verteilung der Dienste anstreben
+11. Wochenenden fair verteilen
+12. Kompetenzen berücksichtigen für komplexe Fälle
+
+Antworte mit folgendem JSON-Format:
+{
+  "shifts": [
+    {"date": "2026-01-01", "serviceType": "gyn", "employeeId": 1, "employeeName": "Dr. Name"},
+    ...
+  ],
+  "reasoning": "Kurze Erklärung der Planungsentscheidungen",
+  "warnings": ["Liste von Warnungen oder Konflikten"]
+}`;
+
+  const fullPrompt = `${basePrompt}\n\n${rulesSection}`;
+
+  try {
+    const createResponse = (maxOutputTokens: number) => {
+      const payload = buildRosterPromptPayload(
+        employees,
+        existingAbsences,
+        year,
+        month,
+        shiftWishes,
+        longTermWishes,
+        longTermAbsences,
+        serviceLines,
+        rules,
+        { ...options, maxOutputTokens },
+      );
+
+      return getOpenAIClient().responses.create({
+        model: payload.model,
+        reasoning: { effort: "low" },
+        text: { format: { type: "json_object" } },
+        input: payload.input,
+        max_output_tokens: maxOutputTokens,
+      });
+    };
+
+    let response = await createResponse(4000);
+    let outputText = (response.output_text ?? "").trim();
+    if (response.status === "incomplete" || !outputText) {
+      response = await createResponse(8000);
+      outputText = (response.output_text ?? "").trim();
+    }
+
+    if (!outputText) {
+      throw new Error("KI-Output zu kurz/leer (max_output_tokens)");
+    }
+
+    const result = JSON.parse(outputText) as GenerationResult;
+
+    const validatedShifts = result.shifts.filter((shift) => {
+      const employee = activeEmployees.find((e) => e.id === shift.employeeId);
+      if (!employee) {
+        console.warn(`Mitarbeiter ${shift.employeeId} nicht gefunden`);
+        return false;
+      }
+
+      const allowed = getServiceTypesForEmployee(employee, serviceLines);
+      if (!allowed.includes(shift.serviceType)) {
+        console.warn(
+          `${employee.name} ist nicht berechtigt für ${shift.serviceType}`,
+        );
+        return false;
+      }
+
+      const isAbsent = existingAbsences.some(
+        (a) =>
+          a.employeeId === shift.employeeId &&
+          a.startDate <= shift.date &&
+          a.endDate >= shift.date,
+      );
+      if (isAbsent) {
+        console.warn(`${employee.name} ist am ${shift.date} abwesend`);
+        return false;
+      }
+      const longTermBlocks =
+        longTermAbsencesByEmployeeId.get(employee.id) || [];
+      const isLongTermAbsent = longTermBlocks.some((absence) =>
+        isDateWithinRange(shift.date, absence.startDate, absence.endDate),
+      );
+      if (isLongTermAbsent) {
+        console.warn(
+          `${employee.name} ist am ${shift.date} langfristig abwesend`,
+        );
+        return false;
+      }
+      const isLegacyInactive = isDateWithinRange(
+        shift.date,
+        employee.inactiveFrom,
+        employee.inactiveUntil,
+      );
+      if (isLegacyInactive) {
+        console.warn(
+          `${employee.name} ist am ${shift.date} langfristig deaktiviert (Legacy)`,
+        );
+        return false;
+      }
+
+      const longTermRules = longTermByEmployeeId.get(employee.id)?.rules as
+        | LongTermWishRule[]
+        | undefined;
+      if (hasHardLongTermBlock(longTermRules, shift.date, shift.serviceType)) {
+        console.warn(
+          `${employee.name} ist laut Langfristregel am ${shift.date} gesperrt`,
+        );
+        return false;
+      }
+
+      return true;
+    });
+
+    return {
+      shifts: validatedShifts,
+      reasoning: result.reasoning || "Dienstplan erfolgreich generiert",
+      warnings: result.warnings || [],
+    };
+  } catch (error) {
+    console.error("Fehler bei der Dienstplan-Generierung:", error);
+    throw new Error(
+      `Dienstplan-Generierung fehlgeschlagen: ${error instanceof Error ? error.message : "Unbekannter Fehler"}`,
+    );
+  }
 }
 
 export function buildRosterPromptPayload(
-  params: BuildRosterPromptParams,
-): BuildRosterPromptPayload {
-  const {
-    employees,
-    absences,
-    shiftWishes,
-    longTermWishes,
-    longTermAbsences,
-    year,
-    month,
-    serviceLines,
-    rules,
-    promptOverride,
-  } = params;
+  employees: Employee[],
+  existingAbsences: Absence[],
+  year: number,
+  month: number,
+  shiftWishes: ShiftWish[] = [],
+  longTermWishes: LongTermShiftWish[] = [],
+  longTermAbsences: LongTermAbsence[] = [],
+  serviceLines: ServiceLineMeta[] = [],
+  rules?: AiRules,
+  options?: GenerateRosterOptions,
+): RosterPromptPayload {
+  // Reuse generateRosterPlan's prompt building by calling it with a minimal subset.
+  // We intentionally duplicate the prompt-building steps in a small way for preview.
+  // NOTE: This function must stay in sync with generateRosterPlan.
 
   const startDate = startOfMonth(new Date(year, month - 1));
   const endDate = endOfMonth(new Date(year, month - 1));
@@ -263,14 +548,15 @@ export function buildRosterPromptPayload(
     const weekdayMap = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     return values
       .filter((value): value is number => Number.isInteger(value))
-      .map((value) => weekdayMap[value - 1]);
+      .map((value) => weekdayMap[value - 1])
+      .filter((value): value is string => Boolean(value));
   };
 
   const employeeData = activeEmployees.map((e) => {
     const prefs = e.shiftPreferences as ShiftPreferences | null;
     const wish = wishesByEmployeeId.get(e.id);
     const longTerm = longTermByEmployeeId.get(e.id);
-    const absenceDates = absences
+    const absenceDates = existingAbsences
       .filter((a) => a.employeeId === e.id)
       .map((a) => `${a.startDate} bis ${a.endDate} (${a.reason})`);
     const approvedAbsences = longTermAbsencesByEmployeeId.get(e.id) || [];
@@ -328,9 +614,7 @@ export function buildRosterPromptPayload(
   }));
 
   const serviceLineSummary = serviceLines.length
-    ? serviceLines
-        .map((line) => `- ${line.key}: ${line.label}`)
-        .join("\n")
+    ? serviceLines.map((line) => `- ${line.key}: ${line.label}`).join("\n")
     : `- gyn (Gynäkologie-Dienst)\n- kreiszimmer (Kreißzimmer)\n- turnus (Turnus)`;
 
   const clampWeight = (value?: number) =>
@@ -343,268 +627,39 @@ export function buildRosterPromptPayload(
     soft: rules?.soft?.trim() ?? "",
     weights: {
       weekendFairness: clampWeight(rules?.weights?.weekendFairness),
-      preferenceSatisfaction: clampWeight(rules?.weights?.preferenceSatisfaction),
+      preferenceSatisfaction: clampWeight(
+        rules?.weights?.preferenceSatisfaction,
+      ),
       minimizeConflicts: clampWeight(rules?.weights?.minimizeConflicts),
     },
   };
 
-  const rulesSection = `## KI-Regelwerk
-### HARD RULES
-${normalizedRules.hard || "- Keine harten Regeln definiert -"}
-### SOFT RULES
-${normalizedRules.soft || "- Keine weichen Regeln definiert -"}
-### WEIGHTS
-${JSON.stringify(normalizedRules.weights, null, 2)}
-`;
+  const rulesSection = `## KI-Regelwerk\n### HARD RULES\n${normalizedRules.hard || "- Keine harten Regeln definiert -"}\n### SOFT RULES\n${normalizedRules.soft || "- Keine weichen Regeln definiert -"}\n### WEIGHTS\n${JSON.stringify(normalizedRules.weights, null, 2)}\n`;
 
-  const monthName = format(startDate, "MMMM yyyy");
-  const prompt = promptOverride?.trim()
-    ? promptOverride
-    : `Du bist ein Dienstplan-Experte für eine gynäkologische Abteilung eines Krankenhauses.
+  const basePrompt = `Du bist ein Dienstplan-Experte für eine gynäkologische Abteilung eines Krankenhauses.\n\nErstelle einen optimalen Dienstplan für ${format(startDate, "MMMM yyyy")}.\n\n## Verfügbare Mitarbeiter:\n${JSON.stringify(employeeData, null, 2)}\n\n## Zu besetzende Tage:\n${JSON.stringify(daysData, null, 2)}\n\n## Dienstschienen:\n${serviceLineSummary}\nWenn im Mitarbeiterobjekt "serviceTypes" gesetzt sind, dürfen nur diese Dienstschienen zugewiesen werden.\n\nAntworte mit folgendem JSON-Format:\n{\n  "shifts": [\n    {"date": "${format(startDate, "yyyy")}-01-01", "serviceType": "gyn", "employeeId": 1, "employeeName": "Dr. Name"}\n  ],\n  "reasoning": "Kurze Erklärung der Planungsentscheidungen",\n  "warnings": ["Liste von Warnungen oder Konflikten"]\n}`;
 
-Erstelle einen optimalen Dienstplan für ${monthName}.
+  const fullPrompt = `${basePrompt}\n\n${rulesSection}`;
 
-## Verfügbare Mitarbeiter:
-${JSON.stringify(employeeData, null, 2)}
-
-## Zu besetzende Tage:
-${JSON.stringify(daysData, null, 2)}
-
-## Dienstschienen:
-${serviceLineSummary}
-Wenn im Mitarbeiterobjekt "serviceTypes" gesetzt sind, dürfen nur diese Dienstschienen zugewiesen werden.
-Beachte in den Mitarbeiterdaten:
-- preferredWeekendDays (Datumsliste für Wochenendwünsche in ${monthName})
-- avoidDays (nicht mögliche Tage in ${monthName})
-- avoidWeekdays berücksichtigen (Wochentage vermeiden, z. B. Mon, Tue)
-- preferredServiceTypes / avoidServiceTypes
-- maxShiftsPerWeek / maxShiftsPerMonth / maxWeekendShifts
-- longTermRules: wiederkehrende Regeln mit kind/weekday/strength/serviceType (serviceType optional oder "any")
-
-## Regeln:
-1. Jeder Tag muss alle Pflicht-Dienstschienen besetzen (falls ServiceLines dafür vorhanden sind)
-2. Optionale Dienstschienen nur besetzen, wenn Personal verfügbar
-3. Respektiere Abwesenheiten - kein Mitarbeiter darf an Tagen eingeteilt werden, an denen er/sie abwesend ist
-4. Respektiere longTermRules mit strength=HARD (ALWAYS_OFF oder AVOID_ON) als harte Sperre
-5. preferredWeekendDays möglichst berücksichtigen, avoidDays möglichst vermeiden
-6. avoidWeekdays berücksichtigen (keine Einteilung an diesen Wochentagen)
-7. preferredServiceTypes bevorzugen, avoidServiceTypes möglichst vermeiden
-8. Maximale Dienste pro Woche und Monat pro Mitarbeiter beachten
-9. Maximale Wochenenddienste beachten
-10. Gleichmäßige Verteilung der Dienste anstreben
-11. Wochenenden fair verteilen
-12. Kompetenzen berücksichtigen für komplexe Fälle
-
-Antworte mit folgendem JSON-Format:
-{
-  "shifts": [
-    {"date": "2026-01-01", "serviceType": "gyn", "employeeId": 1, "employeeName": "Dr. Name"},
-    ...
-  ],
-  "reasoning": "Kurze Erklärung der Planungsentscheidungen",
-  "warnings": ["Liste von Warnungen oder Konflikten"]
-}
-${rulesSection}`;
-
-  const system =
-    "Du bist ein Experte für Krankenhausdienstplanung. Antworte immer auf Deutsch und im angeforderten JSON-Format.";
-  const createMessageInput = (
-    role: "system" | "user",
-    textValue: string,
-  ): ResponsesAPI.ResponseInputMessageItem => ({
-    id: crypto.randomUUID(),
-    role,
-    content: [{ type: "input_text", text: textValue }],
-    type: "message",
-  });
-  const input: ResponsesAPI.ResponseInput = [
-    createMessageInput("system", system),
-    createMessageInput("user", prompt),
-  ];
+  const model = options?.modelOverride?.trim() || "gpt-5-mini";
+  const maxOutputTokens = options?.maxOutputTokens ?? 4000;
+  const prompt = options?.promptOverride?.trim() || fullPrompt;
 
   return {
-    model: "gpt-5-mini",
-    maxOutputTokens: 4000,
-    system,
+    model,
+    maxOutputTokens,
+    system: "Du bist ein Experte für Krankenhausdienstplanung. Antworte immer auf Deutsch und gib ausschließlich ein JSON-Objekt zurück, das der gewünschten Struktur entspricht.",
     prompt,
-    input,
-    reasoning: { effort: "low" },
-    text: { format: { type: "json_object" } },
-    activeEmployees,
-    employeeData,
-    daysData,
-    normalizedRules,
-    longTermByEmployeeId,
-    longTermAbsencesByEmployeeId,
+    input: [
+      {
+        role: "system",
+        content:
+          "Du bist ein Experte für Krankenhausdienstplanung. Antworte immer auf Deutsch und gib ausschließlich ein JSON-Objekt zurück, das der gewünschten Struktur entspricht.",
+      },
+      { role: "user", content: prompt },
+    ],
   };
 }
 
-export async function generateRosterPlan(
-  employees: Employee[],
-  existingAbsences: Absence[],
-  year: number,
-  month: number,
-  shiftWishes: ShiftWish[] = [],
-  longTermWishes: LongTermShiftWish[] = [],
-  longTermAbsences: LongTermAbsence[] = [],
-  serviceLines: ServiceLineMeta[] = [],
-  rules?: AiRules,
-  options?: { promptOverride?: string },
-): Promise<GenerationResult> {
-  const promptPayload = buildRosterPromptPayload({
-    employees,
-    absences: existingAbsences,
-    shiftWishes,
-    longTermWishes,
-    longTermAbsences,
-    year,
-    month,
-    serviceLines,
-    rules,
-    promptOverride: options?.promptOverride,
-  });
-
-  const {
-    activeEmployees,
-    longTermByEmployeeId,
-    longTermAbsencesByEmployeeId,
-    input,
-    maxOutputTokens,
-    model,
-    reasoning,
-    text,
-  } = promptPayload;
-
-  try {
-    const createResponse = (maxOutputTokens: number) =>
-      getOpenAIClient().responses.create({
-        model,
-        reasoning,
-        text,
-        input,
-        max_output_tokens: maxOutputTokens,
-      });
-
-    let response = await createResponse(4000);
-    let outputText = (response.output_text ?? "").trim();
-    if (response.status === "incomplete" || !outputText) {
-      response = await createResponse(8000);
-      outputText = (response.output_text ?? "").trim();
-    }
-
-    if (!outputText) {
-      throw new Error("KI-Output zu kurz/leer (max_output_tokens)");
-    }
-
-    const result = JSON.parse(outputText) as GenerationResult;
-    const rawShiftCount = Array.isArray(result.shifts) ? result.shifts.length : 0;
-
-    const removalCounters = {
-      missingEmployee: 0,
-      notAllowedServiceType: 0,
-      absent: 0,
-      longTermAbsent: 0,
-      legacyInactive: 0,
-      hardLongTermRule: 0,
-    };
-
-    const validatedShifts = result.shifts.filter((shift) => {
-      const employee = activeEmployees.find((e) => e.id === shift.employeeId);
-      if (!employee) {
-        removalCounters.missingEmployee += 1;
-        console.warn(`Mitarbeiter ${shift.employeeId} nicht gefunden`);
-        return false;
-      }
-
-      const allowed = getServiceTypesForEmployee(employee, serviceLines);
-      if (!allowed.includes(shift.serviceType)) {
-        removalCounters.notAllowedServiceType += 1;
-        console.warn(
-          `${employee.name} ist nicht berechtigt für ${shift.serviceType}`,
-        );
-        return false;
-      }
-
-      const isAbsent = existingAbsences.some(
-        (a) =>
-          a.employeeId === shift.employeeId &&
-          a.startDate <= shift.date &&
-          a.endDate >= shift.date,
-      );
-      if (isAbsent) {
-        removalCounters.absent += 1;
-        console.warn(`${employee.name} ist am ${shift.date} abwesend`);
-        return false;
-      }
-      const longTermBlocks =
-        longTermAbsencesByEmployeeId.get(employee.id) || [];
-      const isLongTermAbsent = longTermBlocks.some((absence) =>
-        isDateWithinRange(shift.date, absence.startDate, absence.endDate),
-      );
-      if (isLongTermAbsent) {
-        removalCounters.longTermAbsent += 1;
-        console.warn(
-          `${employee.name} ist am ${shift.date} langfristig abwesend`,
-        );
-        return false;
-      }
-      const isLegacyInactive = isDateWithinRange(
-        shift.date,
-        employee.inactiveFrom,
-        employee.inactiveUntil,
-      );
-      if (isLegacyInactive) {
-        removalCounters.legacyInactive += 1;
-        console.warn(
-          `${employee.name} ist am ${shift.date} langfristig deaktiviert (Legacy)`,
-        );
-        return false;
-      }
-
-      const longTermRules = longTermByEmployeeId.get(employee.id)?.rules as
-        | LongTermWishRule[]
-        | undefined;
-      if (hasHardLongTermBlock(longTermRules, shift.date, shift.serviceType)) {
-        removalCounters.hardLongTermRule += 1;
-        console.warn(
-          `${employee.name} ist laut Langfristregel am ${shift.date} gesperrt`,
-        );
-        return false;
-      }
-
-      return true;
-    });
-
-    const warnings = Array.isArray(result.warnings) ? [...result.warnings] : [];
-    if (rawShiftCount > 0 && validatedShifts.length === 0) {
-      const removalSummary = Object.entries(removalCounters)
-        .filter(([, count]) => count > 0)
-        .map(([key, count]) => `${key}=${count}`)
-        .join(",");
-      warnings.push(
-        `WARN: Alle KI-Zuweisungen wurden durch Validierung entfernt. raw=${rawShiftCount}, removed=${removalSummary}`,
-      );
-      if (process.env.ROSTER_PROMPT_PREVIEW === "1") {
-        warnings.push(
-          `PREVIEW_COUNTERS:${JSON.stringify(removalCounters)}`,
-        );
-      }
-    }
-
-    return {
-      shifts: validatedShifts,
-      reasoning: result.reasoning || "Dienstplan erfolgreich generiert",
-      warnings,
-    };
-  } catch (error) {
-    console.error("Fehler bei der Dienstplan-Generierung:", error);
-    throw new Error(
-      `Dienstplan-Generierung fehlgeschlagen: ${
-        error instanceof Error ? error.message : "Unbekannter Fehler"
-      }`,
-    );
-  }
-}
 export async function validateShiftAssignment(
   employee: Employee,
   date: string,
