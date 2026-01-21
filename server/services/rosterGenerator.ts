@@ -419,6 +419,9 @@ function buildRosterPromptContext(
   );
   employeeSummary.forEach((employee) => {
     employee.allowedServiceTypes.forEach((type) => {
+      if (!eligibleByServiceType[type]) {
+        eligibleByServiceType[type] = [];
+      }
       eligibleByServiceType[type].push(employee.id);
     });
   });
