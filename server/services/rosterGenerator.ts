@@ -168,6 +168,7 @@ interface BuildRosterPromptContext {
     blockedRanges: Array<{ from: string; until: string; kind: string }>;
     hardLongTermRules: string[];
   }>;
+  eligibleByServiceType: Record<ServiceType, number[]>;
   daysData: Array<{ date: string; dayName: string; isWeekend: boolean }>;
   daySummary: {
     month: string;
@@ -210,6 +211,7 @@ interface UnfilledShift {
   date: string;
   serviceType: ServiceType;
   reason: string;
+  candidates: number[];
 }
 
 export interface PromptPayload {
@@ -408,6 +410,18 @@ function buildRosterPromptContext(
     dayName: format(d, "EEEE"),
     isWeekend: isWeekend(d),
   }));
+  const eligibleByServiceType = (SERVICE_TYPES as ServiceType[]).reduce(
+    (acc, type) => {
+      acc[type] = [];
+      return acc;
+    },
+    {} as Record<ServiceType, number[]>,
+  );
+  employeeSummary.forEach((employee) => {
+    employee.allowedServiceTypes.forEach((type) => {
+      eligibleByServiceType[type].push(employee.id);
+    });
+  });
   const daySummary = {
     month: `${year}-${String(month).padStart(2, "0")}`,
     daysInMonth: days.length,
@@ -453,6 +467,7 @@ ${JSON.stringify(normalizedRules.weights, null, 2)}
     employeeSummary,
     daysData,
     daySummary,
+    eligibleByServiceType,
     normalizedRules,
     longTermByEmployeeId,
     longTermAbsencesByEmployeeId,
@@ -472,6 +487,7 @@ function buildPromptBundle(
     serviceLineSummary,
     rulesSection,
     monthName,
+    eligibleByServiceType,
   } = context;
 
   const prompt = promptOverride?.trim()
@@ -489,8 +505,11 @@ Erstelle einen optimalen Dienstplan für ${monthName}.
 ${JSON.stringify(employeeSummary, null, 2)}
 
 ## Dienstschienen:
+Pflichtdienste pro Tag: gyn + kreiszimmer (je 1). Turnus ist optional; wenn unbesetzt, markiere ihn in „unfilled“.
 ${serviceLineSummary}
 Wenn im Mitarbeiterobjekt "serviceTypes" gesetzt sind, dürfen nur diese Dienstschienen zugewiesen werden.
+## Kandidaten je Diensttyp:
+${JSON.stringify(context.eligibleByServiceType, null, 2)}
 Beachte in den Mitarbeiterdaten:
 - preferredWeekendDays (Datumsliste für Wochenendwünsche in ${monthName})
 - avoidDays (nicht mögliche Tage in ${monthName})
@@ -500,7 +519,8 @@ Beachte in den Mitarbeiterdaten:
 - longTermRules: wiederkehrende Regeln mit kind/weekday/strength/serviceType (serviceType optional oder "any")
 
 ## Regeln:
-1. Jeder Tag muss alle Pflicht-Dienstschienen besetzen (falls ServiceLines dafür vorhanden sind)
+1. Jeder Tag muss gyn & kreiszimmer besetzen; turnus ist best-effort, markiere fehlende Slots unter „unfilled“.
+2. Für jeden Dienst darf nur aus eligibleByServiceType[serviceType] gewählt werden.
 2. Optionale Dienstschienen nur besetzen, wenn Personal verfügbar
 3. Respektiere Abwesenheiten - kein Mitarbeiter darf an Tagen eingeteilt werden, an denen er/sie abwesend ist
 4. Respektiere longTermRules mit strength=HARD (ALWAYS_OFF oder AVOID_ON) als harte Sperre
@@ -515,17 +535,17 @@ Beachte in den Mitarbeiterdaten:
 
 Antworte mit folgendem JSON-Format:
 {
-  "shifts": [
-    {"date": "2026-01-01", "serviceType": "gyn", "employeeId": 1, "employeeName": "Dr. Name"},
-    ...
+  "shifts": [ ... ],
+  "unfilled": [
+    {"date":"2026-03-15","serviceType":"gyn","reason":"Keine freie Person","candidates":[1,4]}
   ],
-  "reasoning": "Kurze Erklärung der Planungsentscheidungen",
-  "warnings": ["Liste von Warnungen oder Konflikten"]
+  "violations": ["Beschreibung von Regelverletzungen"],
+  "notes": "Zusätzliche Hinweise"
 }
 ${rulesSection}`;
 
   const system =
-    "Du bist ein Experte für Krankenhausdienstplanung. Antworte immer auf Deutsch und im angeforderten JSON-Format.";
+    "Du bist ein Experte für Krankenhausdienstplanung. Antworte immer auf Deutsch und im angeforderten JSON-Format. Keine langen Texte, notes max 10 Zeilen.";
 
   return {
     model: "gpt-5-mini",
@@ -653,7 +673,7 @@ export async function generateRosterPlan(
         max_output_tokens: maxTokens,
       });
 
-    let response = await createResponse(4000);
+    let response = await createResponse(1500);
     let outputText = extractResponseText(response);
     if (response.status === "incomplete" || !outputText) {
       response = await createResponse(8000);
@@ -682,11 +702,16 @@ export async function generateRosterPlan(
     };
 
     const unfilled: UnfilledShift[] = [];
-    const addUnfilled = (shift: GeneratedShift, reason: string) => {
+    const addUnfilled = (
+      shift: GeneratedShift,
+      reason: string,
+      candidates: number[] = [],
+    ) => {
       unfilled.push({
         date: shift.date,
         serviceType: shift.serviceType,
         reason,
+        candidates,
       });
     };
 
