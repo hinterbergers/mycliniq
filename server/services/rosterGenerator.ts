@@ -62,8 +62,15 @@ interface GeneratedShift {
 
 interface GenerationResult {
   shifts: GeneratedShift[];
-  reasoning: string;
-  warnings: string[];
+  reasoning?: string;
+  warnings?: string[];
+  unfilled?: Array<{
+    date: string;
+    serviceType: ServiceType;
+    reason: string;
+  }>;
+  violations?: string[];
+  notes?: string;
 }
 
 interface AiRuleWeights {
@@ -143,26 +150,30 @@ interface BuildRosterPromptParams {
 
 interface BuildRosterPromptContext {
   activeEmployees: Employee[];
-  employeeData: Array<{
+  employeeSummary: Array<{
     id: number;
     name: string;
-    role: string | null;
-    primaryArea: string | null;
-    serviceTypes: ServiceType[];
-    preferredDays: string[];
-    preferredWeekendDays: string[];
-    avoidDays: string[];
-    avoidWeekdays: string[];
-    preferredServiceTypes: ServiceType[];
-    avoidServiceTypes: ServiceType[];
-    maxShiftsPerWeek: number;
-    maxShiftsPerMonth: number | null;
-    maxWeekendShifts: number | null;
-    notes: string;
-    longTermRules: LongTermWishRule[];
-    absences: string[];
+    roleGroup: string;
+    allowedServiceTypes: ServiceType[];
+    limits: {
+      week: number;
+      month: number | null;
+      weekend: number | null;
+    };
+    wishes: {
+      preferredDates: string[];
+      avoidDates: string[];
+      avoidWeekdays: string[];
+    };
+    blockedRanges: Array<{ from: string; until: string; kind: string }>;
+    hardLongTermRules: string[];
   }>;
   daysData: Array<{ date: string; dayName: string; isWeekend: boolean }>;
+  daySummary: {
+    month: string;
+    daysInMonth: number;
+    weekendDates: string[];
+  };
   normalizedRules: {
     hard: string;
     soft: string;
@@ -195,6 +206,12 @@ interface RequestPayload {
   max_output_tokens: number;
 }
 
+interface UnfilledShift {
+  date: string;
+  serviceType: ServiceType;
+  reason: string;
+}
+
 export interface PromptPayload {
   model: "gpt-5-mini";
   maxOutputTokens: number;
@@ -203,6 +220,13 @@ export interface PromptPayload {
   promptCharCount: number;
   approxTokenHint: number;
   requestPayload: RequestPayload;
+}
+
+interface PromptContext {
+  model: "gpt-5-mini";
+  maxOutputTokens: number;
+  instructions: string;
+  input: string;
 }
 function buildRosterPromptContext(
   params: BuildRosterPromptParams,
@@ -285,7 +309,7 @@ function buildRosterPromptContext(
       .map((value) => weekdayMap[value - 1]);
   };
 
-  const employeeData = activeEmployees.map((e) => {
+  const employeeSummary = activeEmployees.map((e) => {
     const prefs = e.shiftPreferences as ShiftPreferences | null;
     const wish = wishesByEmployeeId.get(e.id);
     const longTerm = longTermByEmployeeId.get(e.id);
@@ -312,30 +336,70 @@ function buildRosterPromptContext(
       );
     }
 
-    return {
-      id: e.id,
-      name: e.name,
-      role: e.role,
-      primaryArea: e.primaryDeploymentArea,
-      serviceTypes: getServiceTypesForEmployee(e, serviceLines),
-      preferredDays: toIsoDateList(wish?.preferredShiftDays),
-      preferredWeekendDays: toIsoDateList(wish?.preferredShiftDays),
-      avoidDays: toIsoDateList(wish?.avoidShiftDays),
-      avoidWeekdays: toWeekdayList(wish?.avoidWeekdays),
-      preferredServiceTypes: toServiceTypeList(wish?.preferredServiceTypes),
-      avoidServiceTypes: toServiceTypeList(wish?.avoidServiceTypes),
-      maxShiftsPerWeek:
+    const allowedServiceTypes = getServiceTypesForEmployee(e, serviceLines);
+    const roleGroup =
+      allowedServiceTypes
+        .map((key) => serviceLines.find((line) => line.key === key))
+        .find((line) => line?.roleGroup)?.roleGroup ?? e.role ?? "allgemein";
+    const limits = {
+      week:
         wish?.maxShiftsPerWeek ||
         e.maxShiftsPerWeek ||
         prefs?.maxShiftsPerWeek ||
         5,
-      maxShiftsPerMonth:
-        wish?.maxShiftsPerMonth || prefs?.maxShiftsPerMonth || null,
-      maxWeekendShifts:
-        wish?.maxWeekendShifts || prefs?.maxWeekendShifts || null,
-      notes: wish?.notes || prefs?.notes || "",
-      longTermRules: Array.isArray(longTerm?.rules) ? longTerm?.rules : [],
-      absences: absenceDates,
+      month: wish?.maxShiftsPerMonth || prefs?.maxShiftsPerMonth || null,
+      weekend: wish?.maxWeekendShifts || prefs?.maxWeekendShifts || null,
+    };
+    const wishesCompact = {
+      preferredDates: toIsoDateList(wish?.preferredShiftDays),
+      avoidDates: toIsoDateList(wish?.avoidShiftDays),
+      avoidWeekdays: toWeekdayList(wish?.avoidWeekdays),
+    };
+    const absenceRanges = absences
+      .filter((a) => a.employeeId === e.id)
+      .map((a) => ({
+        from: a.startDate,
+        until: a.endDate,
+        kind: "absence",
+      }));
+    const longTermAbsenceRanges =
+      (longTermAbsencesByEmployeeId.get(e.id) || []).map((absence) => ({
+        from: absence.startDate,
+        until: absence.endDate,
+        kind: "long_term_absence",
+      }));
+    const legacyRange = (() => {
+      const from = toDate(e.inactiveFrom);
+      const until = toDate(e.inactiveUntil);
+      if (!from && !until) return null;
+      return {
+        from: from ? format(from, "yyyy-MM-dd") : "offen",
+        until: until ? format(until, "yyyy-MM-dd") : "offen",
+        kind: "inactive",
+      };
+    })();
+    const hardLongTermRules = Array.isArray(longTerm?.rules)
+      ? longTerm?.rules
+          .filter((rule) => rule.strength === "HARD")
+          .map(
+            (rule) =>
+              `${rule.kind} ${rule.weekday} ${rule.serviceType ?? "any"}`,
+          )
+      : [];
+
+    return {
+      id: e.id,
+      name: e.name,
+      roleGroup,
+      allowedServiceTypes,
+      limits,
+      wishes: wishesCompact,
+      blockedRanges: [
+        ...absenceRanges,
+        ...longTermAbsenceRanges,
+        ...(legacyRange ? [legacyRange] : []),
+      ],
+      hardLongTermRules,
     };
   });
 
@@ -344,6 +408,13 @@ function buildRosterPromptContext(
     dayName: format(d, "EEEE"),
     isWeekend: isWeekend(d),
   }));
+  const daySummary = {
+    month: `${year}-${String(month).padStart(2, "0")}`,
+    daysInMonth: days.length,
+    weekendDates: days
+      .filter((d) => isWeekend(d))
+      .map((d) => format(d, "yyyy-MM-dd")),
+  };
 
   const serviceLineSummary = serviceLines.length
     ? serviceLines
@@ -379,8 +450,9 @@ ${JSON.stringify(normalizedRules.weights, null, 2)}
 
   return {
     activeEmployees,
-    employeeData,
+    employeeSummary,
     daysData,
+    daySummary,
     normalizedRules,
     longTermByEmployeeId,
     longTermAbsencesByEmployeeId,
@@ -394,8 +466,13 @@ function buildPromptBundle(
   context: BuildRosterPromptContext,
   promptOverride?: string,
 ): PromptBundle {
-  const { employeeData, daysData, serviceLineSummary, rulesSection, monthName } =
-    context;
+  const {
+    employeeSummary,
+    daySummary,
+    serviceLineSummary,
+    rulesSection,
+    monthName,
+  } = context;
 
   const prompt = promptOverride?.trim()
     ? promptOverride
@@ -403,11 +480,13 @@ function buildPromptBundle(
 
 Erstelle einen optimalen Dienstplan für ${monthName}.
 
-## Verfügbare Mitarbeiter:
-${JSON.stringify(employeeData, null, 2)}
+## Monat
+- Monat: ${daySummary.month}
+- Tage im Monat: ${daySummary.daysInMonth}
+- Wochenenden: ${JSON.stringify(daySummary.weekendDates, null, 2)}
 
-## Zu besetzende Tage:
-${JSON.stringify(daysData, null, 2)}
+## Mitarbeiter (kompakt):
+${JSON.stringify(employeeSummary, null, 2)}
 
 ## Dienstschienen:
 ${serviceLineSummary}
@@ -456,29 +535,41 @@ ${rulesSection}`;
   };
 }
 
-export function buildRosterPromptPayload(
+function buildPromptContext(
   params: BuildRosterPromptParams,
-): PromptPayload {
+): PromptContext {
   const context = buildRosterPromptContext(params);
   const bundle = buildPromptBundle(context, params.promptOverride);
-
-  const promptCharCount = bundle.prompt.length;
-  const approxTokenHint = Math.ceil(promptCharCount / 4);
-
   return {
     model: bundle.model,
     maxOutputTokens: bundle.maxOutputTokens,
-    system: bundle.instructions,
-    prompt: bundle.prompt,
+    instructions: bundle.instructions,
+    input: bundle.prompt,
+  };
+}
+
+export function buildRosterPromptPayload(
+  params: BuildRosterPromptParams,
+): PromptPayload {
+  const promptContext = buildPromptContext(params);
+
+  const promptCharCount = promptContext.input.length;
+  const approxTokenHint = Math.ceil(promptCharCount / 4);
+
+  return {
+    model: promptContext.model,
+    maxOutputTokens: promptContext.maxOutputTokens,
+    system: promptContext.instructions,
+    prompt: promptContext.input,
     promptCharCount,
     approxTokenHint,
     requestPayload: {
-      model: bundle.model,
-      instructions: bundle.instructions,
-      input: bundle.prompt,
+      model: promptContext.model,
+      instructions: promptContext.instructions,
+      input: promptContext.input,
       reasoning: { effort: "low" },
       text: { format: { type: "json_object" } },
-      max_output_tokens: bundle.maxOutputTokens,
+      max_output_tokens: promptContext.maxOutputTokens,
     },
   };
 }
@@ -527,14 +618,25 @@ export async function generateRosterPlan(
     serviceLines,
     rules,
   });
-  const bundle = buildPromptBundle(context, options?.promptOverride);
+  const promptContext = buildPromptContext({
+    employees,
+    absences: existingAbsences,
+    shiftWishes,
+    longTermWishes,
+    longTermAbsences,
+    year,
+    month,
+    serviceLines,
+    rules,
+    promptOverride: options?.promptOverride,
+  });
 
   const {
     activeEmployees,
     longTermByEmployeeId,
     longTermAbsencesByEmployeeId,
   } = context;
-  const { maxOutputTokens, model, instructions, prompt } = bundle;
+  const { maxOutputTokens, model, instructions, input: prompt } = promptContext;
   const requestPayload: RequestPayload = {
     model,
     instructions,
@@ -579,11 +681,21 @@ export async function generateRosterPlan(
       hardLongTermRule: 0,
     };
 
+    const unfilled: UnfilledShift[] = [];
+    const addUnfilled = (shift: GeneratedShift, reason: string) => {
+      unfilled.push({
+        date: shift.date,
+        serviceType: shift.serviceType,
+        reason,
+      });
+    };
+
     const validatedShifts = result.shifts.filter((shift) => {
       const employee = activeEmployees.find((e) => e.id === shift.employeeId);
       if (!employee) {
         removalCounters.missingEmployee += 1;
         console.warn(`Mitarbeiter ${shift.employeeId} nicht gefunden`);
+        addUnfilled(shift, "Mitarbeiter nicht gefunden");
         return false;
       }
 
@@ -593,6 +705,7 @@ export async function generateRosterPlan(
         console.warn(
           `${employee.name} ist nicht berechtigt für ${shift.serviceType}`,
         );
+        addUnfilled(shift, "Nicht berechtigte Dienstschiene");
         return false;
       }
 
@@ -605,6 +718,7 @@ export async function generateRosterPlan(
       if (isAbsent) {
         removalCounters.absent += 1;
         console.warn(`${employee.name} ist am ${shift.date} abwesend`);
+        addUnfilled(shift, "Abwesenheit");
         return false;
       }
       const longTermBlocks =
@@ -617,6 +731,7 @@ export async function generateRosterPlan(
         console.warn(
           `${employee.name} ist am ${shift.date} langfristig abwesend`,
         );
+        addUnfilled(shift, "Langzeitabwesenheit");
         return false;
       }
       const isLegacyInactive = isDateWithinRange(
@@ -629,6 +744,7 @@ export async function generateRosterPlan(
         console.warn(
           `${employee.name} ist am ${shift.date} langfristig deaktiviert (Legacy)`,
         );
+        addUnfilled(shift, "Legacy-Deaktivierung");
         return false;
       }
 
@@ -640,23 +756,43 @@ export async function generateRosterPlan(
         console.warn(
           `${employee.name} ist laut Langfristregel am ${shift.date} gesperrt`,
         );
+        addUnfilled(shift, "Langfristregel (HARD)");
         return false;
       }
 
       return true;
     });
 
-    const warnings = Array.isArray(result.warnings) ? [...result.warnings] : [];
+    const violations = Array.isArray(result.violations)
+      ? [...result.violations]
+      : [];
+    const warningExtra = Array.isArray(result.warnings)
+      ? result.warnings.filter((item): item is string => typeof item === "string")
+      : [];
+    violations.push(...warningExtra);
+    const unfilledFromResult = Array.isArray(result.unfilled)
+      ? result.unfilled
+          .filter(
+            (item): item is UnfilledShift =>
+              Boolean(item && item.date && item.serviceType && item.reason),
+          )
+          .map((item) => ({
+            date: item.date,
+            serviceType: item.serviceType,
+            reason: item.reason,
+          }))
+      : [];
+    const allUnfilled = [...unfilled, ...unfilledFromResult];
     if (rawShiftCount > 0 && validatedShifts.length === 0) {
       const removalSummary = Object.entries(removalCounters)
         .filter(([, count]) => count > 0)
         .map(([key, count]) => `${key}=${count}`)
         .join(",");
-      warnings.push(
+      violations.push(
         `WARN: Alle KI-Zuweisungen wurden durch Validierung entfernt. raw=${rawShiftCount}, removed=${removalSummary}`,
       );
       if (process.env.ROSTER_PROMPT_PREVIEW === "1") {
-        warnings.push(
+        violations.push(
           `PREVIEW_COUNTERS:${JSON.stringify(removalCounters)}`,
         );
       }
@@ -664,8 +800,12 @@ export async function generateRosterPlan(
 
     return {
       shifts: validatedShifts,
-      reasoning: result.reasoning || "Dienstplan erfolgreich generiert",
-      warnings,
+      unfilled: allUnfilled,
+      violations,
+      notes:
+        typeof result.notes === "string"
+          ? result.notes
+          : result.reasoning || "Dienstplan erfolgreich generiert",
     };
   } catch (error) {
     console.error("Fehler bei der Dienstplan-Generierung:", error);
