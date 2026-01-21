@@ -57,7 +57,7 @@ interface GeneratedShift {
   date: string;
   serviceType: ServiceType;
   employeeId: number;
-  employeeName: string;
+  employeeName?: string;
 }
 
 interface GenerationResult {
@@ -186,6 +186,24 @@ interface PromptBundle {
   prompt: string;
 }
 
+interface RequestPayload {
+  model: string;
+  instructions: string;
+  input: string;
+  reasoning: { effort: "low" };
+  text: { format: { type: "json_object" } };
+  max_output_tokens: number;
+}
+
+export interface PromptPayload {
+  model: "gpt-5-mini";
+  maxOutputTokens: number;
+  system: string;
+  prompt: string;
+  promptCharCount: number;
+  approxTokenHint: number;
+  requestPayload: RequestPayload;
+}
 function buildRosterPromptContext(
   params: BuildRosterPromptParams,
 ): BuildRosterPromptContext {
@@ -440,7 +458,7 @@ ${rulesSection}`;
 
 export function buildRosterPromptPayload(
   params: BuildRosterPromptParams,
-) {
+): PromptPayload {
   const context = buildRosterPromptContext(params);
   const bundle = buildPromptBundle(context, params.promptOverride);
 
@@ -454,7 +472,36 @@ export function buildRosterPromptPayload(
     prompt: bundle.prompt,
     promptCharCount,
     approxTokenHint,
+    requestPayload: {
+      model: bundle.model,
+      instructions: bundle.instructions,
+      input: bundle.prompt,
+      reasoning: { effort: "low" },
+      text: { format: { type: "json_object" } },
+      max_output_tokens: bundle.maxOutputTokens,
+    },
   };
+}
+
+function extractResponseText(
+  response: ResponsesAPI.Response,
+): string {
+  const textOutput = (response.output_text ?? "").trim();
+  if (textOutput) return textOutput;
+
+  const messages = response.output ?? [];
+  for (const item of messages) {
+    if (!item || typeof item !== "object" || !("content" in item)) continue;
+    const contents = (item as { content?: unknown[] }).content;
+    if (!Array.isArray(contents)) continue;
+    for (const contentItem of contents) {
+      const item = contentItem as any;
+      if (typeof item?.text === "string") {
+        return item.text.trim();
+      }
+    }
+  }
+  return "";
 }
 
 export async function generateRosterPlan(
@@ -488,27 +535,36 @@ export async function generateRosterPlan(
     longTermAbsencesByEmployeeId,
   } = context;
   const { maxOutputTokens, model, instructions, prompt } = bundle;
+  const requestPayload: RequestPayload = {
+    model,
+    instructions,
+    input: prompt,
+    reasoning: { effort: "low" },
+    text: { format: { type: "json_object" } },
+    max_output_tokens: maxOutputTokens,
+  };
 
   try {
-    const createResponse = (maxOutputTokens: number) =>
+    const createResponse = (maxTokens: number) =>
       getOpenAIClient().responses.create({
-        model,
-        instructions,
-        input: prompt,
-        reasoning: { effort: "low" },
-        text: { format: { type: "json_object" } },
-        max_output_tokens: maxOutputTokens,
+        ...requestPayload,
+        max_output_tokens: maxTokens,
       });
 
     let response = await createResponse(4000);
-    let outputText = (response.output_text ?? "").trim();
+    let outputText = extractResponseText(response);
     if (response.status === "incomplete" || !outputText) {
       response = await createResponse(8000);
-      outputText = (response.output_text ?? "").trim();
+      outputText = extractResponseText(response);
     }
 
     if (!outputText) {
-      throw new Error("KI-Output zu kurz/leer (max_output_tokens)");
+      const reason = response?.incomplete_details?.reason
+        ? `: ${response.incomplete_details.reason}`
+        : "";
+      throw new Error(
+        `KI-Output zu kurz/leer (status=${response.status}${reason})`,
+      );
     }
 
     const result = JSON.parse(outputText) as GenerationResult;

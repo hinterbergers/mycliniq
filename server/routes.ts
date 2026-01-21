@@ -1216,6 +1216,9 @@ export async function registerRoutes(
           maxOutputTokens: promptPayload.maxOutputTokens,
           system: promptPayload.system,
           prompt: promptPayload.prompt,
+          promptCharCount: promptPayload.promptCharCount,
+          approxTokenHint: promptPayload.approxTokenHint,
+          requestPayload: promptPayload.requestPayload,
         });
       }
 
