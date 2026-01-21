@@ -141,21 +141,13 @@ interface BuildRosterPromptParams {
   promptOverride?: string;
 }
 
-interface BuildRosterPromptPayload {
-  model: "gpt-5-mini";
-  maxOutputTokens: number;
-  system: string;
-  prompt: string;
-  input: ResponsesAPI.ResponseInput;
-  reasoning: { effort: "low" };
-  text: { format: { type: "json_object" } };
+interface BuildRosterPromptContext {
   activeEmployees: Employee[];
   employeeData: Array<{
     id: number;
     name: string;
     role: string | null;
     primaryArea: string | null;
-    competencies: string[] | null | undefined;
     serviceTypes: ServiceType[];
     preferredDays: string[];
     preferredWeekendDays: string[];
@@ -182,11 +174,21 @@ interface BuildRosterPromptPayload {
   };
   longTermByEmployeeId: Map<number, LongTermShiftWish>;
   longTermAbsencesByEmployeeId: Map<number, LongTermAbsence[]>;
+  serviceLineSummary: string;
+  rulesSection: string;
+  monthName: string;
 }
 
-export function buildRosterPromptPayload(
+interface PromptBundle {
+  model: "gpt-5-mini";
+  maxOutputTokens: number;
+  instructions: string;
+  prompt: string;
+}
+
+function buildRosterPromptContext(
   params: BuildRosterPromptParams,
-): BuildRosterPromptPayload {
+): BuildRosterPromptContext {
   const {
     employees,
     absences,
@@ -197,7 +199,6 @@ export function buildRosterPromptPayload(
     month,
     serviceLines,
     rules,
-    promptOverride,
   } = params;
 
   const startDate = startOfMonth(new Date(year, month - 1));
@@ -298,7 +299,6 @@ export function buildRosterPromptPayload(
       name: e.name,
       role: e.role,
       primaryArea: e.primaryDeploymentArea,
-      competencies: e.competencies,
       serviceTypes: getServiceTypesForEmployee(e, serviceLines),
       preferredDays: toIsoDateList(wish?.preferredShiftDays),
       preferredWeekendDays: toIsoDateList(wish?.preferredShiftDays),
@@ -358,6 +358,27 @@ ${JSON.stringify(normalizedRules.weights, null, 2)}
 `;
 
   const monthName = format(startDate, "MMMM yyyy");
+
+  return {
+    activeEmployees,
+    employeeData,
+    daysData,
+    normalizedRules,
+    longTermByEmployeeId,
+    longTermAbsencesByEmployeeId,
+    serviceLineSummary,
+    rulesSection,
+    monthName,
+  };
+}
+
+function buildPromptBundle(
+  context: BuildRosterPromptContext,
+  promptOverride?: string,
+): PromptBundle {
+  const { employeeData, daysData, serviceLineSummary, rulesSection, monthName } =
+    context;
+
   const prompt = promptOverride?.trim()
     ? promptOverride
     : `Du bist ein Dienstplan-Experte für eine gynäkologische Abteilung eines Krankenhauses.
@@ -408,34 +429,31 @@ ${rulesSection}`;
 
   const system =
     "Du bist ein Experte für Krankenhausdienstplanung. Antworte immer auf Deutsch und im angeforderten JSON-Format.";
-  const createMessageInput = (
-    role: "system" | "user",
-    textValue: string,
-  ): ResponsesAPI.ResponseInputMessageItem => ({
-    id: crypto.randomUUID(),
-    role,
-    content: [{ type: "input_text", text: textValue }],
-    type: "message",
-  });
-  const input: ResponsesAPI.ResponseInput = [
-    createMessageInput("system", system),
-    createMessageInput("user", prompt),
-  ];
 
   return {
     model: "gpt-5-mini",
     maxOutputTokens: 4000,
-    system,
+    instructions: system,
     prompt,
-    input,
-    reasoning: { effort: "low" },
-    text: { format: { type: "json_object" } },
-    activeEmployees,
-    employeeData,
-    daysData,
-    normalizedRules,
-    longTermByEmployeeId,
-    longTermAbsencesByEmployeeId,
+  };
+}
+
+export function buildRosterPromptPayload(
+  params: BuildRosterPromptParams,
+) {
+  const context = buildRosterPromptContext(params);
+  const bundle = buildPromptBundle(context, params.promptOverride);
+
+  const promptCharCount = bundle.prompt.length;
+  const approxTokenHint = Math.ceil(promptCharCount / 4);
+
+  return {
+    model: bundle.model,
+    maxOutputTokens: bundle.maxOutputTokens,
+    system: bundle.instructions,
+    prompt: bundle.prompt,
+    promptCharCount,
+    approxTokenHint,
   };
 }
 
@@ -451,7 +469,7 @@ export async function generateRosterPlan(
   rules?: AiRules,
   options?: { promptOverride?: string },
 ): Promise<GenerationResult> {
-  const promptPayload = buildRosterPromptPayload({
+  const context = buildRosterPromptContext({
     employees,
     absences: existingAbsences,
     shiftWishes,
@@ -461,28 +479,24 @@ export async function generateRosterPlan(
     month,
     serviceLines,
     rules,
-    promptOverride: options?.promptOverride,
   });
+  const bundle = buildPromptBundle(context, options?.promptOverride);
 
   const {
     activeEmployees,
     longTermByEmployeeId,
     longTermAbsencesByEmployeeId,
-    input,
-    maxOutputTokens,
-    model,
-    reasoning,
-    text,
-  } = promptPayload;
+  } = context;
+  const { maxOutputTokens, model, instructions, prompt } = bundle;
 
   try {
     const createResponse = (maxOutputTokens: number) =>
       getOpenAIClient().responses.create({
         model,
-        instructions: promptPayload.system,
-        input: promptPayload.prompt,
-        reasoning,
-        text,
+        instructions,
+        input: prompt,
+        reasoning: { effort: "low" },
+        text: { format: { type: "json_object" } },
         max_output_tokens: maxOutputTokens,
       });
 

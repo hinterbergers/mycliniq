@@ -116,6 +116,22 @@ type ServiceLineConfig = {
   roleGroup?: string | null;
 };
 
+interface PromptPreviewData {
+  model: string;
+  maxOutputTokens: number;
+  system: string;
+  prompt: string;
+  promptCharCount: number;
+  approxTokenHint: number;
+}
+
+type GenerationPayload = {
+  year: number;
+  month: number;
+  rules: AiRules;
+  promptOverride?: string;
+};
+
 const SERVICE_LINE_PALETTE = [
   {
     header: "bg-pink-50/50 border-pink-100 text-pink-900",
@@ -363,6 +379,13 @@ export default function RosterPlan() {
   });
   const [rulesDialogOpen, setRulesDialogOpen] = useState(false);
   const [aiRules, setAiRules] = useState<AiRules>(DEFAULT_AI_RULES);
+  const [promptPreviewOpen, setPromptPreviewOpen] = useState(false);
+  const [promptPreviewSupported, setPromptPreviewSupported] = useState(true);
+  const [promptPreviewData, setPromptPreviewData] =
+    useState<PromptPreviewData | null>(null);
+  const [promptPreviewEdited, setPromptPreviewEdited] = useState("");
+  const [pendingGenerationPayload, setPendingGenerationPayload] =
+    useState<GenerationPayload | null>(null);
   const planStatus = dutyPlan?.status ?? "Entwurf";
   const planStatusLabel = PLAN_STATUS_LABELS[planStatus];
 
@@ -1112,112 +1135,221 @@ export default function RosterPlan() {
         description: error.message || "Bitte versuchen Sie es erneut.",
         variant: "destructive",
       });
+      } finally {
+        setExporting(false);
+      }
+    };
+
+  const buildGenerationPayload = (
+    promptOverride?: string,
+  ): GenerationPayload => ({
+    year: currentDate.getFullYear(),
+    month: currentDate.getMonth() + 1,
+    rules: aiRules,
+    promptOverride,
+  });
+
+  const showGenerationError = (error: any) => {
+    console.error("Generation failed:", error);
+    toast({
+      title: "Generierung fehlgeschlagen",
+      description: error?.message || "Bitte später erneut versuchen",
+      variant: "destructive",
+    });
+  };
+
+  const executeGeneration = async (
+    payload: GenerationPayload,
+  ): Promise<boolean> => {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE}/roster/generate`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const text = (await response.text()).trim();
+      throw new Error(text || "Generierung fehlgeschlagen");
+    }
+
+    const payloadData = await response.json().catch(() => ({}));
+    const result =
+      payloadData && typeof payloadData === "object"
+        ? (payloadData as Record<string, any>)
+        : ({} as Record<string, any>);
+    const rawShifts = Array.isArray(result.shifts) ? result.shifts : [];
+    const shifts: GeneratedShift[] = rawShifts
+      .filter(
+        (
+          shift,
+        ): shift is GeneratedShift =>
+          Boolean(shift) &&
+          typeof shift.date === "string" &&
+          typeof shift.serviceType === "string" &&
+          typeof shift.employeeId === "number",
+      )
+      .map((shift) => ({
+        date: shift.date,
+        serviceType: shift.serviceType,
+        employeeId: shift.employeeId,
+        employeeName:
+          typeof shift.employeeName === "string" ? shift.employeeName : "",
+      }));
+    const reasoning =
+      typeof result.reasoning === "string" ? result.reasoning : "";
+    const warnings = Array.isArray(result.warnings)
+      ? result.warnings.filter((item): item is string => typeof item === "string")
+      : [];
+    const generatedCount =
+      typeof result.generatedShifts === "number"
+        ? result.generatedShifts
+        : shifts.length;
+    const success = Boolean(result.success);
+
+    if (!success) {
+      const message =
+        typeof result.error === "string"
+          ? result.error
+          : result.message || "Generierung fehlgeschlagen";
+      throw new Error(message);
+    }
+
+    setGeneratedShifts(shifts);
+    setGenerationReasoning(reasoning);
+    setGenerationWarnings(warnings as string[]);
+
+    setRulesDialogOpen(false);
+    setGenerationDialogOpen(true);
+
+    toast({
+      title: "Generierung erfolgreich",
+      description: `${generatedCount} Dienste wurden erstellt`,
+    });
+    return true;
+  };
+
+  const requestPromptPreview = async (
+    payload: GenerationPayload,
+  ): Promise<boolean> => {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE}/roster/generate?preview=1`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+    });
+
+    if (response.status === 404) {
+      setPromptPreviewSupported(false);
+      return false;
+    }
+
+    if (!response.ok) {
+      const text = (await response.text()).trim();
+      throw new Error(text || "Preview fehlgeschlagen");
+    }
+
+    const previewData = await response.json().catch(() => ({}));
+    const promptText =
+      typeof previewData.prompt === "string" ? previewData.prompt : "";
+    setPromptPreviewData({
+      model: String(previewData.model ?? ""),
+      maxOutputTokens: Number(previewData.maxOutputTokens) || 0,
+      system: String(previewData.system ?? ""),
+      prompt: promptText,
+      promptCharCount: Number(previewData.promptCharCount) || 0,
+      approxTokenHint: Number(previewData.approxTokenHint) || 0,
+    });
+    setPromptPreviewEdited(promptText);
+    setPendingGenerationPayload(payload);
+    setPromptPreviewOpen(true);
+    return true;
+  };
+
+  const handlePromptPreviewGenerate = async () => {
+    if (!pendingGenerationPayload || !promptPreviewData) return;
+    const override =
+      promptPreviewEdited !== promptPreviewData.prompt
+        ? promptPreviewEdited
+        : undefined;
+    setPromptPreviewOpen(false);
+    setPromptPreviewData(null);
+    setPromptPreviewEdited("");
+    setPendingGenerationPayload(null);
+    setIsGenerating(true);
+    toast({
+      title: "KI-Generierung",
+      description: "Dienstplan wird automatisch erstellt...",
+    });
+    try {
+      await executeGeneration({
+        ...pendingGenerationPayload,
+        promptOverride: override,
+      });
+    } catch (error: any) {
+      showGenerationError(error);
     } finally {
-      setExporting(false);
+      setIsGenerating(false);
+    }
+  };
+
+  const handlePromptPreviewClose = () => {
+    setPromptPreviewOpen(false);
+    setPromptPreviewData(null);
+    setPromptPreviewEdited("");
+    setPendingGenerationPayload(null);
+  };
+
+  const copyPreviewText = (value: string, label: string) => {
+    if (!value) return;
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard
+        .writeText(value)
+        .then(() =>
+          toast({
+            title: `${label} kopiert`,
+            description: "In die Zwischenablage kopiert",
+          }),
+        )
+        .catch(() => {});
     }
   };
 
   const handleAutoGenerate = async (): Promise<boolean> => {
     setIsGenerating(true);
-    let ok = false;
     toast({
       title: "KI-Generierung",
       description: "Dienstplan wird automatisch erstellt...",
     });
+    const payload = buildGenerationPayload();
 
     try {
-      const year = currentDate.getFullYear();
-      const month = currentDate.getMonth() + 1;
-
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-      if (token) {
-        headers.Authorization = `Bearer ${token}`;
+      if (promptPreviewSupported) {
+        const previewShown = await requestPromptPreview(payload);
+        if (previewShown) {
+          return false;
+        }
       }
-
-      const response = await fetch(`${API_BASE}/roster/generate`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          year,
-          month,
-          rules: aiRules,
-        }),
-      });
-
-      if (!response.ok) {
-        const text = (await response.text()).trim();
-        throw new Error(text || "Generierung fehlgeschlagen");
-      }
-
-      const payload = await response.json().catch(() => ({}));
-      const result =
-        payload && typeof payload === "object"
-          ? (payload as Record<string, any>)
-          : ({} as Record<string, any>);
-      const rawShifts = Array.isArray(result.shifts) ? result.shifts : [];
-      const shifts: GeneratedShift[] = rawShifts
-        .filter(
-          (
-            shift,
-          ): shift is GeneratedShift =>
-            Boolean(shift) &&
-            typeof shift.date === "string" &&
-            typeof shift.serviceType === "string" &&
-            typeof shift.employeeId === "number",
-        )
-        .map((shift) => ({
-          date: shift.date,
-          serviceType: shift.serviceType,
-          employeeId: shift.employeeId,
-          employeeName:
-            typeof shift.employeeName === "string" ? shift.employeeName : "",
-        }));
-      const reasoning =
-        typeof result.reasoning === "string" ? result.reasoning : "";
-      const warnings = Array.isArray(result.warnings)
-        ? result.warnings.filter((item): item is string => typeof item === "string")
-        : [];
-      const generatedCount =
-        typeof result.generatedShifts === "number"
-          ? result.generatedShifts
-          : shifts.length;
-      const success = Boolean(result.success);
-
-      if (!success) {
-        const message =
-          typeof result.error === "string"
-            ? result.error
-            : result.message || "Generierung fehlgeschlagen";
-        throw new Error(message);
-      }
-
-      setGeneratedShifts(shifts);
-      setGenerationReasoning(reasoning);
-      setGenerationWarnings(warnings as string[]);
-
-      // ✅ close rules dialog and show preview
-      setRulesDialogOpen(false);
-      setGenerationDialogOpen(true);
-
-      toast({
-        title: "Generierung erfolgreich",
-        description: `${generatedCount} Dienste wurden erstellt`,
-      });
-      ok = true;
+      await executeGeneration(payload);
+      return true;
     } catch (error: any) {
-      console.error("Generation failed:", error);
-      toast({
-        title: "Generierung fehlgeschlagen",
-        description: error?.message || "Bitte später erneut versuchen",
-        variant: "destructive",
-      });
+      showGenerationError(error);
+      return false;
     } finally {
       setIsGenerating(false);
     }
-
-    return ok;
   };
 
   const handleGenerateFromRules = async () => {
@@ -2222,6 +2354,99 @@ export default function RosterPlan() {
                   Generieren
                 </Button>
               </div>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Prompt Preview Dialog */}
+        <Dialog
+          open={promptPreviewOpen}
+          onOpenChange={(open) => !open && handlePromptPreviewClose()}
+        >
+          <DialogContent className="max-w-4xl max-h-[85vh]">
+            <DialogHeader>
+              <DialogTitle>Prompt-Vorschau</DialogTitle>
+              <DialogDescription>
+                Überprüfen oder passen Sie den Prompt für die KI-Generierung an.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              {promptPreviewData ? (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="text-sm text-muted-foreground">
+                      Modell: <span className="font-semibold">{promptPreviewData.model}</span>
+                      <br />
+                      Tokens: <span className="font-semibold">{promptPreviewData.maxOutputTokens}</span>
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {promptPreviewData.promptCharCount} Zeichen · ca.{" "}
+                      {promptPreviewData.approxTokenHint} Token
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Instructions</Label>
+                    <div className="border rounded-md">
+                      <ScrollArea className="h-32">
+                        <pre className="p-3 text-xs whitespace-pre-wrap text-slate-900">
+                          {promptPreviewData.system}
+                        </pre>
+                      </ScrollArea>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => copyPreviewText(promptPreviewData.system, "Anweisungen")}
+                      >
+                        Anweisungen kopieren
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Prompt</Label>
+                    <Textarea
+                      className="h-40 font-mono text-xs"
+                      value={promptPreviewEdited}
+                      onChange={(event) => setPromptPreviewEdited(event.target.value)}
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => copyPreviewText(promptPreviewEdited, "Prompt")}
+                      >
+                        Prompt kopieren
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <Alert className="bg-primary/5 border-primary/20">
+                  <AlertDescription>Vorschau wird geladen…</AlertDescription>
+                </Alert>
+              )}
+            </div>
+            <DialogFooter className="gap-2 mt-4">
+              <Button
+                variant="ghost"
+                onClick={handlePromptPreviewClose}
+                disabled={isGenerating}
+              >
+                Abbrechen
+              </Button>
+              <Button
+                onClick={handlePromptPreviewGenerate}
+                disabled={isGenerating || !promptPreviewData}
+                className="gap-2"
+              >
+                {isGenerating ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4" />
+                )}
+                Jetzt generieren
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
