@@ -954,13 +954,29 @@ export async function registerRoutes(
       }
       const year = parseInt(req.params.year);
       const month = parseInt(req.params.month);
-      const includeDraft = String(req.query.includeDraft) === "1";
-      const draftOnly = includeDraft ? false : String(req.query.draft) === "1";
-      const finalOnly = includeDraft ? false : !draftOnly;
+      const parseFlag = (value?: string) => {
+        if (!value) return false;
+        const normalized = value.toLowerCase();
+        return normalized === "1" || normalized === "true" || normalized === "yes";
+      };
+      const draftQuery = parseFlag(req.query.draft as string | undefined);
+      const includeDraft = parseFlag(
+        req.query.includeDraft as string | undefined,
+      );
+      const draftAllowed = Boolean(
+        req.user?.isAdmin ||
+          req.user?.appRole === "Admin" ||
+          req.user?.appRole === "Editor",
+      );
+      if ((draftQuery || includeDraft) && !draftAllowed) {
+        return res
+          .status(403)
+          .json({ success: false, error: "Draft-Zugriff nur für Admins" });
+      }
+      // Draft results stay admin-only
       const shifts = await storage.getRosterShiftsByMonth(year, month, {
         includeDraft,
-        draftOnly,
-        finalOnly,
+        draft: draftQuery,
       });
       res.json(shifts);
     } catch (error) {
@@ -1235,10 +1251,31 @@ export async function registerRoutes(
         { promptOverride },
       );
 
+      const debugCounts = {
+        aiShiftCount: result.aiShiftCount,
+        normalizedShiftCount: result.normalizedShiftCount,
+        validatedShiftCount: result.validatedShiftCount,
+        createdCount: result.shifts.length,
+      };
+
+      const isAdmin = Boolean(
+        req.user?.isAdmin || req.user?.appRole === "Admin",
+      );
+      if (result.validatedShiftCount === 0) {
+        return res.status(422).json({
+          success: false,
+          ...debugCounts,
+          outputPreview: isAdmin
+            ? (result.outputText ?? "").slice(0, 300)
+            : undefined,
+          error: "Keine gültigen Schichten generiert",
+        });
+      }
+
       res.json({
         success: true,
         mode: "draft",
-        createdCount: result.shifts.length,
+        ...debugCounts,
       });
     } catch (error: any) {
       console.error("Roster generation error:", error);

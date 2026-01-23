@@ -71,6 +71,10 @@ interface GenerationResult {
   }>;
   violations?: string[];
   notes?: string;
+  aiShiftCount: number;
+  normalizedShiftCount: number;
+  validatedShiftCount: number;
+  outputText: string;
 }
 
 interface AiRuleWeights {
@@ -597,6 +601,37 @@ export function buildRosterPromptPayload(
   };
 }
 
+function normalizeShift(
+  shift: any,
+): GeneratedShift | null {
+  if (!shift || typeof shift !== "object") return null;
+  const date = typeof shift.date === "string" ? shift.date : null;
+  const serviceType =
+    typeof shift.serviceType === "string"
+      ? shift.serviceType
+      : typeof shift.service_type === "string"
+      ? shift.service_type
+      : null;
+  const employeeId =
+    typeof shift.employeeId === "number"
+      ? shift.employeeId
+      : typeof shift.employee_id === "number"
+      ? shift.employee_id
+      : null;
+  if (!date || !serviceType || !employeeId) return null;
+  return {
+    date,
+    serviceType,
+    employeeId,
+    employeeName:
+      typeof shift.employeeName === "string"
+        ? shift.employeeName
+        : typeof shift.employee_name === "string"
+        ? shift.employee_name
+        : undefined,
+  };
+}
+
 function extractResponseText(
   response: ResponsesAPI.Response,
 ): string {
@@ -692,8 +727,13 @@ export async function generateRosterPlan(
       );
     }
 
-    const result = JSON.parse(outputText) as GenerationResult;
-    const rawShiftCount = Array.isArray(result.shifts) ? result.shifts.length : 0;
+    const resultRaw = JSON.parse(outputText) as GenerationResult;
+    const rawShifts = Array.isArray(resultRaw.shifts) ? resultRaw.shifts : [];
+    const normalizedShifts = rawShifts
+      .map(normalizeShift)
+      .filter((shift): shift is GeneratedShift => Boolean(shift));
+    const rawShiftCount = rawShifts.length;
+    const normalizedShiftCount = normalizedShifts.length;
 
     const removalCounters = {
       missingEmployee: 0,
@@ -718,7 +758,7 @@ export async function generateRosterPlan(
       });
     };
 
-    const validatedShifts = result.shifts.filter((shift) => {
+    const validatedShifts = normalizedShifts.filter((shift) => {
       const employee = activeEmployees.find((e) => e.id === shift.employeeId);
       if (!employee) {
         removalCounters.missingEmployee += 1;
@@ -791,15 +831,15 @@ export async function generateRosterPlan(
       return true;
     });
 
-    const violations = Array.isArray(result.violations)
-      ? [...result.violations]
+    const violations = Array.isArray(resultRaw.violations)
+      ? [...resultRaw.violations]
       : [];
-    const warningExtra = Array.isArray(result.warnings)
-      ? result.warnings.filter((item): item is string => typeof item === "string")
+    const warningExtra = Array.isArray(resultRaw.warnings)
+      ? resultRaw.warnings.filter((item): item is string => typeof item === "string")
       : [];
     violations.push(...warningExtra);
-    const unfilledFromResult = Array.isArray(result.unfilled)
-      ? result.unfilled
+    const unfilledFromResult = Array.isArray(resultRaw.unfilled)
+      ? resultRaw.unfilled
           .filter(
             (item): item is UnfilledShift =>
               Boolean(item && item.date && item.serviceType && item.reason),
@@ -831,9 +871,13 @@ export async function generateRosterPlan(
       unfilled: allUnfilled,
       violations,
       notes:
-        typeof result.notes === "string"
-          ? result.notes
-          : result.reasoning || "Dienstplan erfolgreich generiert",
+        typeof resultRaw.notes === "string"
+          ? resultRaw.notes
+          : resultRaw.reasoning || "Dienstplan erfolgreich generiert",
+      aiShiftCount: rawShiftCount,
+      normalizedShiftCount,
+      validatedShiftCount: validatedShifts.length,
+      outputText,
     };
   } catch (error) {
     console.error("Fehler bei der Dienstplan-Generierung:", error);

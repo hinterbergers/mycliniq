@@ -623,9 +623,12 @@ export default function RosterPlan() {
       const startDate = format(startOfMonth(currentDate), "yyyy-MM-dd");
       const endDate = format(endOfMonth(currentDate), "yyyy-MM-dd");
 
+      const shouldFetchDraft = canEdit;
       const [empData, shiftData, plannedAbsenceData] = await Promise.all([
         employeeApi.getAll(),
-        rosterApi.getByMonth(year, month),
+        rosterApi.getByMonth(year, month, {
+          draft: shouldFetchDraft ? true : undefined,
+        }),
         plannedAbsencesAdminApi.getRange({ from: startDate, to: endDate }),
       ]);
       const planSummary = await dutyPlansApi.getByMonth(year, month);

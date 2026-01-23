@@ -375,8 +375,22 @@ type AiRulesPayload = {
 };
 
 export const rosterApi = {
-  getByMonth: async (year: number, month: number): Promise<RosterShift[]> => {
-    const response = await apiFetch(`${API_BASE}/roster/${year}/${month}`);
+  getByMonth: async (
+    year: number,
+    month: number,
+    opts?: { draft?: boolean; includeDraft?: boolean },
+  ): Promise<RosterShift[]> => {
+    const params = new URLSearchParams();
+    if (typeof opts?.draft === "boolean") {
+      params.set("draft", opts.draft ? "1" : "0");
+    }
+    if (opts?.includeDraft) {
+      params.set("includeDraft", "1");
+    }
+    const query = params.toString();
+    const response = await apiFetch(
+      `${API_BASE}/roster/${year}/${month}${query ? `?${query}` : ""}`,
+    );
     return handleResponse<RosterShift[]>(response);
   },
 

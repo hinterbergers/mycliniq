@@ -360,6 +360,7 @@ export class DatabaseStorage implements IStorage {
       draftOnly?: boolean;
       finalOnly?: boolean;
       includeDraft?: boolean;
+      draft?: boolean;
     },
   ): Promise<RosterShift[]> {
     const lastDay = new Date(year, month, 0).getDate();
@@ -371,7 +372,9 @@ export class DatabaseStorage implements IStorage {
       lte(rosterShifts.date, endDate),
     );
 
-    if (!opts?.includeDraft) {
+    if (typeof opts?.draft === "boolean") {
+      condition = and(condition, eq(rosterShifts.isDraft, opts.draft));
+    } else if (!opts?.includeDraft) {
       const finalOnly = opts?.finalOnly ?? !opts?.draftOnly ?? true;
       if (opts?.draftOnly) {
         condition = and(condition, eq(rosterShifts.isDraft, true));
