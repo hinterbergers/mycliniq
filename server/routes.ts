@@ -1268,6 +1268,7 @@ export async function registerRoutes(
           outputPreview: isAdmin
             ? (result.outputText ?? "").slice(0, 300)
             : undefined,
+          firstBadShiftReason: preview ? result.firstBadShiftReason : undefined,
           error: "Keine gültigen Schichten generiert",
         });
       }

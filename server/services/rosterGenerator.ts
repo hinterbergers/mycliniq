@@ -60,7 +60,7 @@ interface GeneratedShift {
   employeeName?: string;
 }
 
-interface GenerationResult {
+interface AiResponsePayload {
   shifts: GeneratedShift[];
   reasoning?: string;
   warnings?: string[];
@@ -71,10 +71,18 @@ interface GenerationResult {
   }>;
   violations?: string[];
   notes?: string;
+}
+
+interface GenerationResult {
+  shifts: GeneratedShift[];
+  unfilled: UnfilledShift[];
+  violations: string[];
+  notes: string;
   aiShiftCount: number;
   normalizedShiftCount: number;
   validatedShiftCount: number;
   outputText: string;
+  firstBadShiftReason: string | null;
 }
 
 interface AiRuleWeights {
@@ -549,6 +557,7 @@ Antworte mit folgendem JSON-Format:
   "violations": ["Beschreibung von Regelverletzungen"],
   "notes": "Zusätzliche Hinweise"
 }
+Bevorzugt employeeId; alternative Schlüssel staffId / employee_id / staff_id sind weiterhin gültig.
 ${rulesSection}`;
 
   const system =
@@ -617,6 +626,10 @@ function normalizeShift(
       ? shift.employeeId
       : typeof shift.employee_id === "number"
       ? shift.employee_id
+      : typeof shift.staffId === "number"
+      ? shift.staffId
+      : typeof shift.staff_id === "number"
+      ? shift.staff_id
       : null;
   if (!date || !serviceType || !employeeId) return null;
   return {
@@ -727,7 +740,7 @@ export async function generateRosterPlan(
       );
     }
 
-    const resultRaw = JSON.parse(outputText) as GenerationResult;
+    const resultRaw = JSON.parse(outputText) as AiResponsePayload;
     const rawShifts = Array.isArray(resultRaw.shifts) ? resultRaw.shifts : [];
     const normalizedShifts = rawShifts
       .map(normalizeShift)
@@ -844,13 +857,17 @@ export async function generateRosterPlan(
             (item): item is UnfilledShift =>
               Boolean(item && item.date && item.serviceType && item.reason),
           )
-          .map((item) => ({
-            date: item.date,
-            serviceType: item.serviceType,
-            reason: item.reason,
-          }))
+        .map((item) => ({
+          date: item.date,
+          serviceType: item.serviceType,
+          reason: item.reason,
+          candidates: Array.isArray(item.candidates)
+            ? item.candidates.filter((id): id is number => typeof id === "number")
+            : [],
+        }))
       : [];
     const allUnfilled = [...unfilled, ...unfilledFromResult];
+    const firstBadShiftReason = allUnfilled[0]?.reason ?? null;
     if (rawShiftCount > 0 && validatedShifts.length === 0) {
       const removalSummary = Object.entries(removalCounters)
         .filter(([, count]) => count > 0)
@@ -878,6 +895,7 @@ export async function generateRosterPlan(
       normalizedShiftCount,
       validatedShiftCount: validatedShifts.length,
       outputText,
+      firstBadShiftReason,
     };
   } catch (error) {
     console.error("Fehler bei der Dienstplan-Generierung:", error);
