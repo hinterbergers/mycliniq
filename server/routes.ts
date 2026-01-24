@@ -46,6 +46,7 @@ import crypto from "crypto";
 import {
   generateRosterPlan,
   buildRosterPromptPayload,
+  REQUIRED_SERVICE_GAP_REASON,
 } from "./services/rosterGenerator";
 import { registerModularApiRoutes } from "./api";
 import { employeeDoesShifts, OVERDUTY_KEY } from "@shared/shiftTypes";
@@ -1167,15 +1168,20 @@ export async function registerRoutes(
   );
 
   // AI Roster Generation
+
   app.post("/api/roster/generate", async (req: Request, res: Response) => {
     try {
-      const { year, month, rules } = req.body;
+      const { year, month, rules, mode } = req.body;
       const preview =
         String(req.query.preview) === "1" || req.body?.preview === true;
       const promptOverride =
         typeof req.body?.promptOverride === "string"
           ? req.body.promptOverride
           : undefined;
+      const wishesLocked =
+        req.body?.wishesLocked === true || req.body?.wishesLocked === "true";
+      const resolvedMode =
+        typeof mode === "string" && mode === "final" ? "final" : "draft";
 
       if (!year || !month) {
         return res
@@ -1185,14 +1191,56 @@ export async function registerRoutes(
 
       const employees = await storage.getEmployees();
       const lastDayOfMonth = new Date(year, month, 0).getDate();
-      const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
-      const endDate = `${year}-${String(month).padStart(2, "0")}-${String(lastDayOfMonth).padStart(2, "0")}`;
-      const absences = await storage.getAbsencesByDateRange(startDate, endDate);
+      const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
+      const monthEnd = `${year}-${String(month).padStart(2, "0")}-${String(
+        lastDayOfMonth,
+      ).padStart(2, "0")}`;
+
+      const generalAbsences = await storage.getAbsencesByDateRange(
+        monthStart,
+        monthEnd,
+      );
+      const plannedAbsences = await storage.getPlannedAbsencesByMonth(
+        year,
+        month,
+      );
+      const toIsoDateString = (value: string | Date | null | undefined): string =>
+        typeof value === "string"
+          ? value.slice(0, 10)
+          : value instanceof Date
+          ? value.toISOString().slice(0, 10)
+          : "";
+      const filteredPlannedAbsences = plannedAbsences.filter((absence) => {
+        if (absence.status === "Abgelehnt") return false;
+        const start = toIsoDateString(absence.startDate);
+        const end = toIsoDateString(absence.endDate);
+        return start <= monthEnd && end >= monthStart;
+      });
+      const plannedAsAbsences = filteredPlannedAbsences.map((absence) => ({
+        id: absence.id,
+        employeeId: absence.employeeId,
+        startDate: toIsoDateString(absence.startDate),
+        endDate: toIsoDateString(absence.endDate),
+        reason: absence.reason,
+        notes: absence.notes ?? null,
+        createdAt: absence.createdAt,
+      }));
+      const existingAbsences = [...generalAbsences, ...plannedAsAbsences];
+
+      const includeDraftWishes = resolvedMode === "draft" && !wishesLocked;
+      const wishStatuses = includeDraftWishes
+        ? ["Eingereicht", "Entwurf"]
+        : ["Eingereicht"];
+
       const wishes = await storage.getShiftWishesByMonth(year, month);
-      const longTermWishes =
-        await storage.getLongTermShiftWishesByStatus("Genehmigt");
-      const longTermAbsences =
-        await storage.getLongTermAbsencesByStatus("Genehmigt");
+      const shiftWishes = wishes.filter((wish) =>
+        wishStatuses.includes(wish.status),
+      );
+      const submittedWishesCount = await storage.getSubmittedWishesCount(
+        year,
+        month,
+      );
+
       const clinicId = (req as any).user?.clinicId;
       const serviceLineMeta = clinicId
         ? await db
@@ -1206,10 +1254,21 @@ export async function registerRoutes(
             .orderBy(asc(serviceLines.sortOrder), asc(serviceLines.label))
         : [];
 
+      const eligibleEmployeesCount = employees.filter(
+        (employee) => employee.isActive && employeeDoesShifts(employee, serviceLineMeta),
+      ).length;
+
+      const longTermWishes = await storage.getLongTermShiftWishesByStatus(
+        "Genehmigt",
+      );
+      const longTermAbsences = await storage.getLongTermAbsencesByStatus(
+        "Genehmigt",
+      );
+
       const promptPayload = buildRosterPromptPayload({
         employees,
-        absences,
-        shiftWishes: wishes,
+        absences: existingAbsences,
+        shiftWishes,
         longTermWishes,
         longTermAbsences,
         year,
@@ -1240,10 +1299,10 @@ export async function registerRoutes(
 
       const result = await generateRosterPlan(
         employees,
-        absences,
+        existingAbsences,
         year,
         month,
-        wishes,
+        shiftWishes,
         longTermWishes,
         longTermAbsences,
         serviceLineMeta,
@@ -1256,7 +1315,15 @@ export async function registerRoutes(
         normalizedShiftCount: result.normalizedShiftCount,
         validatedShiftCount: result.validatedShiftCount,
         createdCount: result.shifts.length,
+        absencesLoadedCount: existingAbsences.length,
+        shiftWishesLoadedCount: shiftWishes.length,
+        submittedWishesCount,
+        eligibleEmployeesCount,
       };
+      const requiredGaps = result.unfilled.filter(
+        (item) => item.reason === REQUIRED_SERVICE_GAP_REASON,
+      );
+      const hasRequiredGaps = requiredGaps.length > 0;
 
       const isAdmin = Boolean(
         req.user?.isAdmin || req.user?.appRole === "Admin",
@@ -1265,11 +1332,23 @@ export async function registerRoutes(
         return res.status(422).json({
           success: false,
           ...debugCounts,
+          unfilled: result.unfilled,
           outputPreview: isAdmin
             ? (result.outputText ?? "").slice(0, 300)
             : undefined,
           firstBadShiftReason: preview ? result.firstBadShiftReason : undefined,
           error: "Keine gültigen Schichten generiert",
+        });
+      }
+
+      if (resolvedMode === "final" && hasRequiredGaps) {
+        return res.status(400).json({
+          success: false,
+          mode: resolvedMode,
+          ...debugCounts,
+          unfilled: result.unfilled,
+          error:
+            "Erforderliche Dienstschienen fehlen in mindestens einem Tag für einen finalen Plan",
         });
       }
 
@@ -1300,9 +1379,10 @@ export async function registerRoutes(
 
       res.json({
         success: true,
-        mode: "draft",
+        mode: resolvedMode,
         ...debugCounts,
         createdCount,
+        unfilled: result.unfilled,
       });
     } catch (error: any) {
       console.error("Roster generation error:", error);

@@ -98,6 +98,11 @@ interface AiRules {
   weights?: AiRuleWeights;
 }
 
+const REQUIRED_SERVICE_TYPES: ServiceType[] = ["gyn", "kreiszimmer"]; // optional/best-effort: "turnus"
+const DISALLOWED_SERVICE_TYPES = new Set<ServiceType>(["overduty", "long_day"]);
+export const REQUIRED_SERVICE_GAP_REASON =
+  "Erforderliche Dienstschiene nicht besetzt";
+
 function toDate(value?: string | Date | null): Date | null {
   if (!value) return null;
   if (value instanceof Date) return value;
@@ -744,7 +749,8 @@ export async function generateRosterPlan(
     const rawShifts = Array.isArray(resultRaw.shifts) ? resultRaw.shifts : [];
     const normalizedShifts = rawShifts
       .map(normalizeShift)
-      .filter((shift): shift is GeneratedShift => Boolean(shift));
+      .filter((shift): shift is GeneratedShift => Boolean(shift))
+      .filter((shift) => !DISALLOWED_SERVICE_TYPES.has(shift.serviceType));
     const rawShiftCount = rawShifts.length;
     const normalizedShiftCount = normalizedShifts.length;
 
@@ -843,6 +849,31 @@ export async function generateRosterPlan(
 
       return true;
     });
+
+    const coverageByDate = new Map<string, Set<ServiceType>>();
+    validatedShifts.forEach((shift) => {
+      const set = coverageByDate.get(shift.date) || new Set<ServiceType>();
+      set.add(shift.serviceType);
+      coverageByDate.set(shift.date, set);
+    });
+    const monthInterval = eachDayOfInterval({
+      start: startOfMonth(new Date(year, month - 1)),
+      end: endOfMonth(new Date(year, month - 1)),
+    });
+    for (const day of monthInterval) {
+      const date = format(day, "yyyy-MM-dd");
+      const covered = coverageByDate.get(date) ?? new Set<ServiceType>();
+      for (const requiredType of REQUIRED_SERVICE_TYPES) {
+        if (!covered.has(requiredType)) {
+          unfilled.push({
+            date,
+            serviceType: requiredType,
+            reason: REQUIRED_SERVICE_GAP_REASON,
+            candidates: [],
+          });
+        }
+      }
+    }
 
     const violations = Array.isArray(resultRaw.violations)
       ? [...resultRaw.violations]
