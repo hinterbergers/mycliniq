@@ -1272,10 +1272,36 @@ export async function registerRoutes(
         });
       }
 
+      const draftMonthStart = `${year}-${String(month).padStart(2, "0")}-01`;
+      const draftMonthEnd = `${year}-${String(month).padStart(2, "0")}-${String(
+        new Date(year, month, 0).getDate(),
+      ).padStart(2, "0")}`;
+      // remove existing draft shifts for this month before inserting new preview rows
+      await db
+        .delete(rosterShifts)
+        .where(
+          and(
+            eq(rosterShifts.isDraft, true),
+            gte(rosterShifts.date, draftMonthStart),
+            lte(rosterShifts.date, draftMonthEnd),
+          ),
+        );
+      let createdCount = 0;
+      for (const shift of result.shifts) {
+        await storage.createRosterShift({
+          date: shift.date,
+          serviceType: shift.serviceType,
+          employeeId: shift.employeeId,
+          isDraft: true,
+        });
+        createdCount += 1;
+      }
+
       res.json({
         success: true,
         mode: "draft",
         ...debugCounts,
+        createdCount,
       });
     } catch (error: any) {
       console.error("Roster generation error:", error);
