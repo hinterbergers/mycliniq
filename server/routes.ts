@@ -862,7 +862,7 @@ export async function registerRoutes(
   app.get("/api/employees", async (req: Request, res: Response) => {
     try {
       const employeeList = await storage.getEmployees();
-      res.json(employees);
+      res.json(employeeList);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch employees" });
     }
@@ -1189,7 +1189,7 @@ export async function registerRoutes(
           .json({ error: "Jahr und Monat sind erforderlich" });
       }
 
-      const employees = await storage.getEmployees();
+      const employeeList = await storage.getEmployees();
       const lastDayOfMonth = new Date(year, month, 0).getDate();
       const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
       const monthEnd = `${year}-${String(month).padStart(2, "0")}-${String(
@@ -1255,7 +1255,8 @@ export async function registerRoutes(
         : [];
 
       const eligibleEmployeesCount = employeeList.filter(
-        (employee) => employee.isActive && employeeDoesShifts(employee, serviceLineMeta),
+        (employee: any) =>
+          employee.isActive && employeeDoesShifts(employee, serviceLineMeta),
       ).length;
 
       const longTermWishes = await storage.getLongTermShiftWishesByStatus(

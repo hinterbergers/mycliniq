@@ -1254,20 +1254,23 @@ export default function RosterPlan() {
       result.mode === "draft"
         ? "draft"
         : result.mode === "final"
-        ? "final"
-        : null;
+          ? "final"
+          : null;
     setLatestGenerationMode(generationMode);
     const nextIsDraft = planStatus === "Entwurf" || generationMode === "draft";
-    let displayedShifts = shifts;
+
+    // Keep the AI output for the preview/apply dialog. The roster table uses `shifts` state,
+    // which we refresh separately.
+    setGeneratedShifts(shifts);
+
     try {
-      displayedShifts = await reloadRosterShifts(nextIsDraft);
+      await reloadRosterShifts(nextIsDraft);
     } catch (refreshError) {
       console.error(
         "Failed to refresh roster shifts after generation:",
         refreshError,
       );
     }
-    setGeneratedShifts(displayedShifts);
     setGenerationReasoning(reasoning);
     setGenerationWarnings(warnings);
 
