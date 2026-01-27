@@ -22,6 +22,7 @@ import {
   isWeekend,
   startOfMonth,
   endOfMonth,
+  getWeek,
 } from "date-fns";
 
 // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
@@ -81,6 +82,10 @@ interface GenerationResult {
   aiShiftCount: number;
   normalizedShiftCount: number;
   validatedShiftCount: number;
+  requiredFilledByAI: number;
+  requiredFilledByFallback: number;
+  turnusFilledByAI: number;
+  turnusFilledByFallback: number;
   outputText: string;
   firstBadShiftReason: string | null;
 }
@@ -98,10 +103,12 @@ interface AiRules {
   weights?: AiRuleWeights;
 }
 
-const REQUIRED_SERVICE_TYPES: ServiceType[] = ["gyn", "kreiszimmer"]; // optional/best-effort: "turnus"
+const REQUIRED_SERVICE_TYPES: ServiceType[] = ["gyn", "kreiszimmer"];
+const OPTIONAL_SERVICE_TYPES: ServiceType[] = ["turnus"];
 const DISALLOWED_SERVICE_TYPES = new Set<ServiceType>(["overduty", "long_day"]);
 export const REQUIRED_SERVICE_GAP_REASON =
   "Erforderliche Dienstschiene nicht besetzt";
+const TURNUS_SERVICE_GAP_REASON = "Optionaler Turnusdienst nicht besetzt";
 
 function toDate(value?: string | Date | null): Date | null {
   if (!value) return null;
@@ -763,13 +770,20 @@ export async function generateRosterPlan(
       hardLongTermRule: 0,
     };
 
-    const unfilled: UnfilledShift[] = [];
+    const unfilledEntries: UnfilledShift[] = [];
+    const unfilledKeys = new Set<string>();
+    const pushUnfilledEntry = (entry: UnfilledShift) => {
+      const key = `${entry.date}|${entry.serviceType}`;
+      if (unfilledKeys.has(key)) return;
+      unfilledKeys.add(key);
+      unfilledEntries.push(entry);
+    };
     const addUnfilled = (
-      shift: GeneratedShift,
+      shift: { date: string; serviceType: ServiceType },
       reason: string,
       candidates: number[] = [],
     ) => {
-      unfilled.push({
+      pushUnfilledEntry({
         date: shift.date,
         serviceType: shift.serviceType,
         reason,
@@ -850,28 +864,235 @@ export async function generateRosterPlan(
       return true;
     });
 
+    const dayIsWeekendMap = new Map<string, boolean>(
+      context.daysData.map((day) => [day.date, day.isWeekend]),
+    );
+
     const coverageByDate = new Map<string, Set<ServiceType>>();
+    const addCoverage = (date: string, serviceType: ServiceType) => {
+      const set = coverageByDate.get(date) || new Set<ServiceType>();
+      set.add(serviceType);
+      coverageByDate.set(date, set);
+    };
+
+    const assignmentMeta = new Map<
+      number,
+      {
+        dates: Set<string>;
+        weekCounts: Map<number, number>;
+        monthCount: number;
+        weekendCount: number;
+      }
+    >();
+
+    const ensureAssignmentMeta = (employeeId: number) => {
+      const existing = assignmentMeta.get(employeeId);
+      if (existing) return existing;
+      const entry = {
+        dates: new Set<string>(),
+        weekCounts: new Map<number, number>(),
+        monthCount: 0,
+        weekendCount: 0,
+      };
+      assignmentMeta.set(employeeId, entry);
+      return entry;
+    };
+
+    const updateAssignmentMeta = (employeeId: number, date: string) => {
+      const meta = ensureAssignmentMeta(employeeId);
+      if (meta.dates.has(date)) return;
+      meta.dates.add(date);
+      const dateObj = new Date(`${date}T00:00:00`);
+      const weekNumber = getWeek(dateObj);
+      meta.weekCounts.set(
+        weekNumber,
+        (meta.weekCounts.get(weekNumber) ?? 0) + 1,
+      );
+      meta.monthCount += 1;
+      const isWeekendDate =
+        dayIsWeekendMap.get(date) ?? isWeekend(new Date(`${date}T00:00:00`));
+      if (isWeekendDate) {
+        meta.weekendCount += 1;
+      }
+    };
+
+    const employeeSummary = context.employeeSummary;
+
+    const proceedDays = context.daysData.map((day) => day.date);
+    const serviceTypesToAttempt = REQUIRED_SERVICE_TYPES;
+
+    const isEmployeeBlockedOnDate = (
+      employeeMeta: typeof employeeSummary[number],
+      date: string,
+    ) => {
+      const target = toDate(date);
+      if (!target) return true;
+      return employeeMeta.blockedRanges.some((range) => {
+        const from =
+          range.from && range.from !== "offen" ? toDate(range.from) : null;
+        const until =
+          range.until && range.until !== "offen" ? toDate(range.until) : null;
+        if (!from && !until) return false;
+        if (from && target < from) return false;
+        if (until && target > until) return false;
+        return Boolean(from || until);
+      });
+    };
+
+    const offsetDate = (date: string, delta: number) => {
+      const dateObj = new Date(`${date}T00:00:00`);
+      dateObj.setDate(dateObj.getDate() + delta);
+      return format(dateObj, "yyyy-MM-dd");
+    };
+
+    const scoreCandidate = (
+      employeeMeta: typeof employeeSummary[number],
+      date: string,
+      isWeekendDate: boolean,
+      weekendCount: number,
+    ) => {
+      let score = 0;
+      const preferredDates = new Set(employeeMeta.wishes.preferredDates);
+      const avoidDates = new Set(employeeMeta.wishes.avoidDates);
+      const avoidWeekdays = new Set(employeeMeta.wishes.avoidWeekdays);
+      if (preferredDates.has(date)) score += 3;
+      if (avoidDates.has(date)) score -= 3;
+      const dayIndex = new Date(`${date}T00:00:00`).getDay();
+      const weekdayShort = WEEKDAY_SHORT[dayIndex];
+      if (avoidWeekdays.has(weekdayShort)) score -= 2;
+      if (isWeekendDate) {
+        score -= weekendCount;
+      }
+      return score;
+    };
+
     validatedShifts.forEach((shift) => {
-      const set = coverageByDate.get(shift.date) || new Set<ServiceType>();
-      set.add(shift.serviceType);
-      coverageByDate.set(shift.date, set);
+      addCoverage(shift.date, shift.serviceType);
+      updateAssignmentMeta(shift.employeeId, shift.date);
     });
-    const monthInterval = eachDayOfInterval({
-      start: startOfMonth(new Date(year, month - 1)),
-      end: endOfMonth(new Date(year, month - 1)),
-    });
-    for (const day of monthInterval) {
-      const date = format(day, "yyyy-MM-dd");
-      const covered = coverageByDate.get(date) ?? new Set<ServiceType>();
-      for (const requiredType of REQUIRED_SERVICE_TYPES) {
-        if (!covered.has(requiredType)) {
-          unfilled.push({
-            date,
-            serviceType: requiredType,
-            reason: REQUIRED_SERVICE_GAP_REASON,
-            candidates: [],
-          });
+
+    const requiredFilledByAI = validatedShifts.filter((shift) =>
+      REQUIRED_SERVICE_TYPES.includes(shift.serviceType),
+    ).length;
+    const turnusFilledByAI = validatedShifts.filter(
+      (shift) => shift.serviceType === "turnus",
+    ).length;
+
+    const fallbackCounts = { required: 0, turnus: 0 };
+
+    const attemptFallback = (
+      date: string,
+      serviceType: ServiceType,
+      isRequired: boolean,
+    ) => {
+      const covered = coverageByDate.get(date);
+      if (covered?.has(serviceType)) return;
+      const prevDate = offsetDate(date, -1);
+      const nextDate = offsetDate(date, 1);
+      const dateObj = new Date(`${date}T00:00:00`);
+      const isWeekendDate =
+        dayIsWeekendMap.get(date) ?? isWeekend(new Date(`${date}T00:00:00`));
+      const candidateDetails: Array<{
+        id: number;
+        score: number;
+        weekendCount: number;
+      }> = [];
+
+      for (const employeeMeta of employeeSummary) {
+        if (!employeeMeta.allowedServiceTypes.includes(serviceType)) continue;
+        const meta = ensureAssignmentMeta(employeeMeta.id);
+        if (meta.dates.has(date)) continue;
+        if (meta.dates.has(prevDate) || meta.dates.has(nextDate)) continue;
+        if (isEmployeeBlockedOnDate(employeeMeta, date)) continue;
+
+        const weekNumber = getWeek(dateObj);
+        const weekLimit = employeeMeta.limits.week;
+        if (
+          typeof weekLimit === "number" &&
+          weekLimit >= 0 &&
+          (meta.weekCounts.get(weekNumber) ?? 0) >= weekLimit
+        ) {
+          continue;
         }
+
+        const monthLimit = employeeMeta.limits.month;
+        if (
+          typeof monthLimit === "number" &&
+          monthLimit >= 0 &&
+          meta.monthCount >= monthLimit
+        ) {
+          continue;
+        }
+
+        if (isWeekendDate) {
+          const weekendLimit = employeeMeta.limits.weekend;
+          if (
+            typeof weekendLimit === "number" &&
+            weekendLimit >= 0 &&
+            meta.weekendCount >= weekendLimit
+          ) {
+            continue;
+          }
+        }
+
+        const candidateScore = scoreCandidate(
+          employeeMeta,
+          date,
+          isWeekendDate,
+          meta.weekendCount,
+        );
+        candidateDetails.push({
+          id: employeeMeta.id,
+          score: candidateScore,
+          weekendCount: meta.weekendCount,
+        });
+      }
+
+        const candidateIds = candidateDetails.map((item) => item.id);
+      if (!candidateDetails.length) {
+        pushUnfilledEntry({
+          date,
+          serviceType,
+          reason: isRequired
+            ? REQUIRED_SERVICE_GAP_REASON
+            : TURNUS_SERVICE_GAP_REASON,
+          candidates: candidateIds,
+        });
+        return;
+      }
+
+      candidateDetails.sort((a, b) => {
+        if (a.score !== b.score) return b.score - a.score;
+        if (a.weekendCount !== b.weekendCount)
+          return a.weekendCount - b.weekendCount;
+        return a.id - b.id;
+      });
+
+      const chosen = candidateDetails[0];
+      const fallbackShift: GeneratedShift = {
+        date,
+        serviceType,
+        employeeId: chosen.id,
+      };
+      validatedShifts.push(fallbackShift);
+      updateAssignmentMeta(chosen.id, date);
+      addCoverage(date, serviceType);
+      if (serviceType === "turnus") {
+        fallbackCounts.turnus += 1;
+      } else if (isRequired) {
+        fallbackCounts.required += 1;
+      }
+    };
+
+    for (const date of proceedDays) {
+      for (const serviceType of serviceTypesToAttempt) {
+        attemptFallback(date, serviceType, true);
+      }
+    }
+
+    for (const date of proceedDays) {
+      for (const serviceType of OPTIONAL_SERVICE_TYPES) {
+        attemptFallback(date, serviceType, false);
       }
     }
 
@@ -888,16 +1109,19 @@ export async function generateRosterPlan(
             (item): item is UnfilledShift =>
               Boolean(item && item.date && item.serviceType && item.reason),
           )
-        .map((item) => ({
-          date: item.date,
-          serviceType: item.serviceType,
-          reason: item.reason,
-          candidates: Array.isArray(item.candidates)
-            ? item.candidates.filter((id): id is number => typeof id === "number")
-            : [],
-        }))
+          .map((item) => ({
+            date: item.date,
+            serviceType: item.serviceType,
+            reason: item.reason,
+            candidates: Array.isArray(item.candidates)
+              ? item.candidates.filter(
+                  (id): id is number => typeof id === "number",
+                )
+              : [],
+          }))
       : [];
-    const allUnfilled = [...unfilled, ...unfilledFromResult];
+    unfilledFromResult.forEach((entry) => pushUnfilledEntry(entry));
+    const allUnfilled = unfilledEntries;
     const firstBadShiftReason = allUnfilled[0]?.reason ?? null;
     if (rawShiftCount > 0 && validatedShifts.length === 0) {
       const removalSummary = Object.entries(removalCounters)
@@ -925,6 +1149,10 @@ export async function generateRosterPlan(
       aiShiftCount: rawShiftCount,
       normalizedShiftCount,
       validatedShiftCount: validatedShifts.length,
+      requiredFilledByAI,
+      requiredFilledByFallback: fallbackCounts.required,
+      turnusFilledByAI,
+      turnusFilledByFallback: fallbackCounts.turnus,
       outputText,
       firstBadShiftReason,
     };
