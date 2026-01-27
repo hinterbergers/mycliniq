@@ -108,7 +108,7 @@ const OPTIONAL_SERVICE_TYPES: ServiceType[] = ["turnus"];
 const DISALLOWED_SERVICE_TYPES = new Set<ServiceType>(["overduty", "long_day"]);
 export const REQUIRED_SERVICE_GAP_REASON =
   "Erforderliche Dienstschiene nicht besetzt";
-const TURNUS_SERVICE_GAP_REASON = "Optionaler Turnusdienst nicht besetzt";
+const TURNUS_SERVICE_GAP_REASON = "Turnus unbesetzt";
 
 function toDate(value?: string | Date | null): Date | null {
   if (!value) return null;
@@ -770,33 +770,11 @@ export async function generateRosterPlan(
       hardLongTermRule: 0,
     };
 
-    const unfilledEntries: UnfilledShift[] = [];
-    const unfilledKeys = new Set<string>();
-    const pushUnfilledEntry = (entry: UnfilledShift) => {
-      const key = `${entry.date}|${entry.serviceType}`;
-      if (unfilledKeys.has(key)) return;
-      unfilledKeys.add(key);
-      unfilledEntries.push(entry);
-    };
-    const addUnfilled = (
-      shift: { date: string; serviceType: ServiceType },
-      reason: string,
-      candidates: number[] = [],
-    ) => {
-      pushUnfilledEntry({
-        date: shift.date,
-        serviceType: shift.serviceType,
-        reason,
-        candidates,
-      });
-    };
-
     const validatedShifts = normalizedShifts.filter((shift) => {
       const employee = activeEmployees.find((e) => e.id === shift.employeeId);
       if (!employee) {
         removalCounters.missingEmployee += 1;
         console.warn(`Mitarbeiter ${shift.employeeId} nicht gefunden`);
-        addUnfilled(shift, "Mitarbeiter nicht gefunden");
         return false;
       }
 
@@ -806,7 +784,6 @@ export async function generateRosterPlan(
         console.warn(
           `${employee.name} ist nicht berechtigt für ${shift.serviceType}`,
         );
-        addUnfilled(shift, "Nicht berechtigte Dienstschiene");
         return false;
       }
 
@@ -819,7 +796,6 @@ export async function generateRosterPlan(
       if (isAbsent) {
         removalCounters.absent += 1;
         console.warn(`${employee.name} ist am ${shift.date} abwesend`);
-        addUnfilled(shift, "Abwesenheit");
         return false;
       }
       const longTermBlocks =
@@ -832,7 +808,6 @@ export async function generateRosterPlan(
         console.warn(
           `${employee.name} ist am ${shift.date} langfristig abwesend`,
         );
-        addUnfilled(shift, "Langzeitabwesenheit");
         return false;
       }
       const isLegacyInactive = isDateWithinRange(
@@ -845,7 +820,6 @@ export async function generateRosterPlan(
         console.warn(
           `${employee.name} ist am ${shift.date} langfristig deaktiviert (Legacy)`,
         );
-        addUnfilled(shift, "Legacy-Deaktivierung");
         return false;
       }
 
@@ -857,12 +831,13 @@ export async function generateRosterPlan(
         console.warn(
           `${employee.name} ist laut Langfristregel am ${shift.date} gesperrt`,
         );
-        addUnfilled(shift, "Langfristregel (HARD)");
         return false;
       }
 
       return true;
     });
+
+    const aiValidatedShiftsSnapshot = [...validatedShifts];
 
     const dayIsWeekendMap = new Map<string, boolean>(
       context.daysData.map((day) => [day.date, day.isWeekend]),
@@ -965,28 +940,10 @@ export async function generateRosterPlan(
       }
       return score;
     };
-
-    validatedShifts.forEach((shift) => {
-      addCoverage(shift.date, shift.serviceType);
-      updateAssignmentMeta(shift.employeeId, shift.date);
-    });
-
-    const requiredFilledByAI = validatedShifts.filter((shift) =>
-      REQUIRED_SERVICE_TYPES.includes(shift.serviceType),
-    ).length;
-    const turnusFilledByAI = validatedShifts.filter(
-      (shift) => shift.serviceType === "turnus",
-    ).length;
-
-    const fallbackCounts = { required: 0, turnus: 0 };
-
-    const attemptFallback = (
+    const collectCandidatesForSlot = (
       date: string,
       serviceType: ServiceType,
-      isRequired: boolean,
     ) => {
-      const covered = coverageByDate.get(date);
-      if (covered?.has(serviceType)) return;
       const prevDate = offsetDate(date, -1);
       const nextDate = offsetDate(date, 1);
       const dateObj = new Date(`${date}T00:00:00`);
@@ -997,7 +954,6 @@ export async function generateRosterPlan(
         score: number;
         weekendCount: number;
       }> = [];
-
       for (const employeeMeta of employeeSummary) {
         if (!employeeMeta.allowedServiceTypes.includes(serviceType)) continue;
         const meta = ensureAssignmentMeta(employeeMeta.id);
@@ -1047,26 +1003,38 @@ export async function generateRosterPlan(
           weekendCount: meta.weekendCount,
         });
       }
-
-        const candidateIds = candidateDetails.map((item) => item.id);
-      if (!candidateDetails.length) {
-        pushUnfilledEntry({
-          date,
-          serviceType,
-          reason: isRequired
-            ? REQUIRED_SERVICE_GAP_REASON
-            : TURNUS_SERVICE_GAP_REASON,
-          candidates: candidateIds,
-        });
-        return;
-      }
-
       candidateDetails.sort((a, b) => {
         if (a.score !== b.score) return b.score - a.score;
         if (a.weekendCount !== b.weekendCount)
           return a.weekendCount - b.weekendCount;
         return a.id - b.id;
       });
+      return candidateDetails;
+    };
+
+    validatedShifts.forEach((shift) => {
+      addCoverage(shift.date, shift.serviceType);
+      updateAssignmentMeta(shift.employeeId, shift.date);
+    });
+
+    const requiredFilledByAI = aiValidatedShiftsSnapshot.filter((shift) =>
+      REQUIRED_SERVICE_TYPES.includes(shift.serviceType),
+    ).length;
+    const turnusFilledByAI = aiValidatedShiftsSnapshot.filter(
+      (shift) => shift.serviceType === "turnus",
+    ).length;
+
+    const fallbackCounts = { required: 0, turnus: 0 };
+
+    const attemptFallback = (
+      date: string,
+      serviceType: ServiceType,
+      isRequired: boolean,
+    ) => {
+      const covered = coverageByDate.get(date);
+      if (covered?.has(serviceType)) return;
+      const candidateDetails = collectCandidatesForSlot(date, serviceType);
+      if (!candidateDetails.length) return;
 
       const chosen = candidateDetails[0];
       const fallbackShift: GeneratedShift = {
@@ -1096,6 +1064,42 @@ export async function generateRosterPlan(
       }
     }
 
+    const finalUnfilled: UnfilledShift[] = [];
+    const finalUnfilledKeys = new Set<string>();
+    const addFinalUnfilled = (entry: UnfilledShift) => {
+      const key = `${entry.date}|${entry.serviceType}`;
+      if (finalUnfilledKeys.has(key)) return;
+      finalUnfilledKeys.add(key);
+      finalUnfilled.push(entry);
+    };
+
+    const recordMissingSlot = (
+      date: string,
+      serviceType: ServiceType,
+      reason: string,
+    ) => {
+      const covered = coverageByDate.get(date);
+      if (covered?.has(serviceType)) return;
+      const candidates = collectCandidatesForSlot(date, serviceType).map(
+        (item) => item.id,
+      );
+      addFinalUnfilled({
+        date,
+        serviceType,
+        reason,
+        candidates,
+      });
+    };
+
+    for (const date of proceedDays) {
+      for (const requiredType of REQUIRED_SERVICE_TYPES) {
+        recordMissingSlot(date, requiredType, REQUIRED_SERVICE_GAP_REASON);
+      }
+      for (const optionalType of OPTIONAL_SERVICE_TYPES) {
+        recordMissingSlot(date, optionalType, TURNUS_SERVICE_GAP_REASON);
+      }
+    }
+
     const violations = Array.isArray(resultRaw.violations)
       ? [...resultRaw.violations]
       : [];
@@ -1103,25 +1107,7 @@ export async function generateRosterPlan(
       ? resultRaw.warnings.filter((item): item is string => typeof item === "string")
       : [];
     violations.push(...warningExtra);
-    const unfilledFromResult = Array.isArray(resultRaw.unfilled)
-      ? resultRaw.unfilled
-          .filter(
-            (item): item is UnfilledShift =>
-              Boolean(item && item.date && item.serviceType && item.reason),
-          )
-          .map((item) => ({
-            date: item.date,
-            serviceType: item.serviceType,
-            reason: item.reason,
-            candidates: Array.isArray(item.candidates)
-              ? item.candidates.filter(
-                  (id): id is number => typeof id === "number",
-                )
-              : [],
-          }))
-      : [];
-    unfilledFromResult.forEach((entry) => pushUnfilledEntry(entry));
-    const allUnfilled = unfilledEntries;
+    const allUnfilled = finalUnfilled;
     const firstBadShiftReason = allUnfilled[0]?.reason ?? null;
     if (rawShiftCount > 0 && validatedShifts.length === 0) {
       const removalSummary = Object.entries(removalCounters)
