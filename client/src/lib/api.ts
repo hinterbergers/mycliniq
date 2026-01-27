@@ -466,6 +466,7 @@ export const rosterApi = {
       employeeId: number;
       employeeName: string;
     }>;
+    mode?: "draft" | "final";
   }> => {
     const response = await apiFetch(`${API_BASE}/roster/generate`, {
       method: "POST",

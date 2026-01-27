@@ -347,6 +347,9 @@ export default function RosterPlan() {
   const [generatedShifts, setGeneratedShifts] = useState<GeneratedShift[]>([]);
   const [generationReasoning, setGenerationReasoning] = useState("");
   const [generationWarnings, setGenerationWarnings] = useState<string[]>([]);
+  const [latestGenerationMode, setLatestGenerationMode] = useState<
+    "draft" | "final" | null
+  >(null);
   const [isApplying, setIsApplying] = useState(false);
   const [manualEditMode, setManualEditMode] = useState(false);
   const [savingCellKey, setSavingCellKey] = useState<string | null>(null);
@@ -388,6 +391,29 @@ export default function RosterPlan() {
     useState<GenerationPayload | null>(null);
   const planStatus = dutyPlan?.status ?? "Entwurf";
   const planStatusLabel = PLAN_STATUS_LABELS[planStatus];
+  const isDraftMode =
+    planStatus === "Entwurf" || latestGenerationMode === "draft";
+
+  const fetchRosterShifts = useCallback(
+    async (draftFlag?: boolean) => {
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth() + 1;
+      const data = await rosterApi.getByMonth(year, month, {
+        draft: draftFlag ? true : undefined,
+      });
+      return Array.isArray(data) ? data : [];
+    },
+    [currentDate],
+  );
+
+  const reloadRosterShifts = useCallback(
+    async (draftFlag: boolean) => {
+      const data = await fetchRosterShifts(draftFlag);
+      setShifts(data);
+      return data;
+    },
+    [fetchRosterShifts],
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -623,13 +649,10 @@ export default function RosterPlan() {
       const startDate = format(startOfMonth(currentDate), "yyyy-MM-dd");
       const endDate = format(endOfMonth(currentDate), "yyyy-MM-dd");
 
-      const shouldFetchDraft = canEdit;
-      const [empData, shiftData, plannedAbsenceData] = await Promise.all([
+      const [empData, plannedAbsenceData, shiftData] = await Promise.all([
         employeeApi.getAll(),
-        rosterApi.getByMonth(year, month, {
-          draft: shouldFetchDraft ? true : undefined,
-        }),
         plannedAbsencesAdminApi.getRange({ from: startDate, to: endDate }),
+        fetchRosterShifts(isDraftMode ? true : undefined),
       ]);
       const planSummary = await dutyPlansApi.getByMonth(year, month);
       let plan = planSummary;
@@ -672,7 +695,7 @@ export default function RosterPlan() {
     } finally {
       setIsLoading(false);
     }
-  }, [currentDate, toast]);
+  }, [currentDate, fetchRosterShifts, isDraftMode, toast]);
 
   useEffect(() => {
     loadData();
@@ -1224,7 +1247,24 @@ export default function RosterPlan() {
       throw new Error(message);
     }
 
-    setGeneratedShifts(shifts);
+    const generationMode =
+      result.mode === "draft"
+        ? "draft"
+        : result.mode === "final"
+        ? "final"
+        : null;
+    setLatestGenerationMode(generationMode);
+    const nextIsDraft = planStatus === "Entwurf" || generationMode === "draft";
+    let displayedShifts = shifts;
+    try {
+      displayedShifts = await reloadRosterShifts(nextIsDraft);
+    } catch (refreshError) {
+      console.error(
+        "Failed to refresh roster shifts after generation:",
+        refreshError,
+      );
+    }
+    setGeneratedShifts(displayedShifts);
     setGenerationReasoning(reasoning);
     setGenerationWarnings(warnings as string[]);
 

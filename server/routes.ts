@@ -1381,11 +1381,50 @@ export async function registerRoutes(
         createdCount += 1;
       }
 
+      let draftShiftsResponse: Array<{
+        date: string;
+        serviceType: string;
+        employeeId: number | null;
+        employeeName: string | null;
+      }> = [];
+      if (resolvedMode === "draft") {
+        const draftShiftsRows = await db
+          .select({
+            date: rosterShifts.date,
+            serviceType: rosterShifts.serviceType,
+            employeeId: rosterShifts.employeeId,
+            firstName: employees.firstName,
+            lastName: employees.lastName,
+          })
+          .from(rosterShifts)
+          .leftJoin(employees, eq(rosterShifts.employeeId, employees.id))
+          .where(
+            and(
+              eq(rosterShifts.isDraft, true),
+              gte(rosterShifts.date, draftMonthStart),
+              lte(rosterShifts.date, draftMonthEnd),
+            ),
+          )
+          .orderBy(asc(rosterShifts.date), asc(rosterShifts.serviceType))
+          .limit(200);
+
+        draftShiftsResponse = draftShiftsRows.map((row) => ({
+          date: row.date,
+          serviceType: row.serviceType,
+          employeeId: row.employeeId ?? null,
+          employeeName: [row.firstName, row.lastName]
+            .filter((part): part is string => Boolean(part?.trim()))
+            .join(" ")
+            .trim() || null,
+        }));
+      }
+
       res.json({
         success: true,
         mode: resolvedMode,
         ...debugCounts,
         createdCount,
+        shifts: resolvedMode === "draft" ? draftShiftsResponse : [],
         unfilled: result.unfilled,
       });
     } catch (error: any) {
