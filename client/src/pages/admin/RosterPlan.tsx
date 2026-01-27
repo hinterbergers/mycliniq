@@ -104,8 +104,9 @@ import { getAustrianHoliday } from "@/lib/holidays";
 interface GeneratedShift {
   date: string;
   serviceType: string;
-  employeeId: number;
-  employeeName: string;
+  employeeId: number | null;
+  employeeName?: string;
+  assigneeFreeText?: string | null;
 }
 
 type ServiceLineConfig = {
@@ -1219,14 +1220,16 @@ export default function RosterPlan() {
           Boolean(shift) &&
           typeof shift.date === "string" &&
           typeof shift.serviceType === "string" &&
-          typeof shift.employeeId === "number",
+          ("employeeId" in shift),
       )
       .map((shift) => ({
         date: shift.date,
         serviceType: shift.serviceType,
         employeeId: shift.employeeId,
         employeeName:
-          typeof shift.employeeName === "string" ? shift.employeeName : "",
+          typeof (shift as any).employeeName === "string" ? (shift as any).employeeName : "",
+        assigneeFreeText:
+          typeof (shift as any).assigneeFreeText === "string" ? (shift as any).assigneeFreeText : null,
       }));
     const reasoning =
       typeof result.reasoning === "string" ? result.reasoning : "";
@@ -1266,7 +1269,7 @@ export default function RosterPlan() {
     }
     setGeneratedShifts(displayedShifts);
     setGenerationReasoning(reasoning);
-    setGenerationWarnings(warnings as string[]);
+    setGenerationWarnings(warnings);
 
     setRulesDialogOpen(false);
     setGenerationDialogOpen(true);

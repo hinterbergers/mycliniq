@@ -861,7 +861,7 @@ export async function registerRoutes(
   // Employee routes
   app.get("/api/employees", async (req: Request, res: Response) => {
     try {
-      const employees = await storage.getEmployees();
+      const employeeList = await storage.getEmployees();
       res.json(employees);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch employees" });
@@ -1254,7 +1254,7 @@ export async function registerRoutes(
             .orderBy(asc(serviceLines.sortOrder), asc(serviceLines.label))
         : [];
 
-      const eligibleEmployeesCount = employees.filter(
+      const eligibleEmployeesCount = employeeList.filter(
         (employee) => employee.isActive && employeeDoesShifts(employee, serviceLineMeta),
       ).length;
 
@@ -1266,7 +1266,7 @@ export async function registerRoutes(
       );
 
       const promptPayload = buildRosterPromptPayload({
-        employees,
+        employees: employeeList,
         absences: existingAbsences,
         shiftWishes,
         longTermWishes,
@@ -1298,7 +1298,7 @@ export async function registerRoutes(
       }
 
       const result = await generateRosterPlan(
-        employees,
+        employeeList,
         existingAbsences,
         year,
         month,
