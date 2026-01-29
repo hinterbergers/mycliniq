@@ -1508,6 +1508,16 @@ function WeeklyView() {
     });
   }, [rooms]);
 
+  const visibleRooms = useMemo(() => {
+    return roomsSorted.filter((room) => {
+      const title = (room.name ?? "").toLowerCase();
+      return (
+        !title.includes("raum verwaltung") &&
+        !title.includes("diensthabende am wochenende")
+      );
+    });
+  }, [roomsSorted]);
+
   const employeesById = useMemo(() => {
     return new Map(employees.map((employee) => [employee.id, employee]));
   }, [employees]);
@@ -1712,7 +1722,7 @@ function WeeklyView() {
             <div className="p-6 text-sm text-muted-foreground">
               Wochenplan wird geladen...
             </div>
-          ) : roomsSorted.length === 0 ? (
+          ) : visibleRooms.length === 0 ? (
             <div className="p-6 text-sm text-muted-foreground">
               Keine Arbeitsplätze für den Wochenplan gefunden.
             </div>
@@ -1740,7 +1750,7 @@ function WeeklyView() {
                   </tr>
                 </thead>
                 <tbody>
-                  {roomsSorted.map((room) => (
+                  {visibleRooms.map((room) => (
                     <tr
                       key={room.id}
                       className="border-b border-border align-top"

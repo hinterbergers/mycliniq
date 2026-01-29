@@ -255,6 +255,32 @@ const buildDisplayName = (
   return "Unbekannt";
 };
 
+const normalizeWorkplaceTitle = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return trimmed;
+  const parts = trimmed
+    .split("|")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  const toLower = (input: string) => input.toLowerCase();
+
+  if (parts.length === 3 && toLower(parts[0]) === toLower(parts[1])) {
+    return `${parts[0]} | ${parts[2]}`;
+  }
+
+  if (parts.length === 2) {
+    if (toLower(parts[0]) === toLower(parts[1])) {
+      return parts[0];
+    }
+    if (toLower(parts[1]).startsWith(toLower(parts[0]))) {
+      return parts[1];
+    }
+  }
+
+  return trimmed;
+};
+
 const loadServiceLines = async (
   clinicId: number,
 ): Promise<ServiceLineInfo[]> => {
@@ -2951,6 +2977,7 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
         const startDateTime = buildDateTime(entry.date, startTime);
         const endDateTime = buildDateTime(entry.date, endTime);
 
+        const normalizedTitle = normalizeWorkplaceTitle(entry.areaTitle);
         events.push(
           [
             "BEGIN:VEVENT",
@@ -2958,7 +2985,7 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
             `DTSTAMP:${dtStamp}`,
             `DTSTART:${toIcsDateTimeLocal(startDateTime)}`,
             `DTEND:${toIcsDateTimeLocal(endDateTime)}`,
-            `SUMMARY:${escapeIcs(entry.areaTitle)}`,
+            `SUMMARY:${escapeIcs(normalizedTitle)}`,
             `DESCRIPTION:${escapeIcs(description)}`,
             "END:VEVENT",
           ].join("\r\n"),
