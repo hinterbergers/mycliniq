@@ -2489,9 +2489,9 @@ export async function registerRoutes(
           serviceLineRows.map((line) => [line.key, line]),
         );
 
-        const employees = await storage.getEmployees();
+        const employeeRows = await storage.getEmployees();
         const employeesById = new Map(
-          employees.map((emp) => {
+          employeeRows.map((emp) => {
             const displayName =
               [emp.firstName, emp.lastName].filter(Boolean).join(" ").trim() ||
               emp.name ||
