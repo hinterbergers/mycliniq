@@ -48,7 +48,6 @@ import {
   buildRosterPromptPayload,
   REQUIRED_SERVICE_GAP_REASON,
 } from "./services/rosterGenerator";
-import jwt from "jsonwebtoken";
 import { registerModularApiRoutes } from "./api";
 import { employeeDoesShifts, OVERDUTY_KEY } from "@shared/shiftTypes";
 import { requireAuth, hasCapability } from "./api/middleware/auth";
@@ -60,6 +59,49 @@ import {
 } from "./lib/absence-categories";
 
 const rosterShifts = rosterShiftsTable;
+
+const JWT_ALGORITHMS: Record<string, crypto.BinaryToTextEncoding> = {
+  HS256: "sha256",
+  HS384: "sha384",
+  HS512: "sha512",
+};
+
+const verifyJwtIgnoreExpiration = (
+  token: string,
+  secret: string,
+): Record<string, unknown> => {
+  const parts = token.split(".");
+  if (parts.length !== 3) {
+    throw new Error("Ungültiges Token-Format");
+  }
+
+  const algHeader = Buffer.from(parts[0], "base64url").toString("utf-8");
+  let alg: string;
+  try {
+    const parsed = JSON.parse(algHeader);
+    alg = typeof parsed.alg === "string" ? parsed.alg : "HS256";
+  } catch (error) {
+    throw new Error("Ungültiger Token-Header");
+  }
+
+  const digest = JWT_ALGORITHMS[alg];
+  if (!digest) {
+    throw new Error("Nicht unterstützter Token-Algorithmus");
+  }
+
+  const payloadSegment = parts[1];
+  const expectedSignature = crypto
+    .createHmac(digest, secret)
+    .update(`${parts[0]}.${payloadSegment}`)
+    .digest("base64url");
+
+  if (parts[2] !== expectedSignature) {
+    throw new Error("Ungültige Token-Signatur");
+  }
+
+  const payloadJson = Buffer.from(payloadSegment, "base64url").toString("utf-8");
+  return JSON.parse(payloadJson) as Record<string, unknown>;
+};
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const isValidEmail = (value: string) =>
