@@ -57,6 +57,7 @@ import { requireAuth, hasCapability } from "./api/middleware/auth";
 import {
   addDays,
   addWeeks,
+  format,
   getWeek,
   getWeekYear,
   startOfWeek,
@@ -113,13 +114,20 @@ const verifyJwtIgnoreExpiration = (
   return JSON.parse(payloadJson) as Record<string, unknown>;
 };
 
-const getAuthTokenFromRequest = (req: Request) => {
-  const queryToken =
-    typeof req.query.token === "string"
-      ? req.query.token
-      : Array.isArray(req.query.token)
-      ? req.query.token[0]
-      : undefined;
+const getAuthTokenFromRequest = (req: Request): string | null => {
+  const resolveQueryToken = (value: unknown): string | undefined => {
+    if (typeof value === "string") return value;
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (typeof item === "string") {
+          return item;
+        }
+      }
+    }
+    return undefined;
+  };
+
+  const queryToken = resolveQueryToken(req.query.token);
   const authHeader =
     typeof req.headers.authorization === "string"
       ? req.headers.authorization
@@ -2424,20 +2432,22 @@ export async function registerRoutes(
 
   app.get("/api/roster/calendar", async (req: Request, res: Response) => {
       try {
-        const token = getAuthTokenFromRequest(req);
+      const token = getAuthTokenFromRequest(req);
 
-        if (!token) {
-          return res.status(401).json({
-            success: false,
-            error: "Ungültiges oder abgelaufenes Token",
-          });
-        }
+      if (!token) {
+        return res.status(401).json({
+          success: false,
+          error: "Ungültiges oder abgelaufenes Token",
+        });
+      }
 
-        const [sessionRow] = await db
-          .select({ employeeId: sessions.employeeId })
-          .from(sessions)
-          .where(eq(sessions.token, token))
-          .limit(1);
+      const sessionToken = token;
+
+      const [sessionRow] = await db
+        .select({ employeeId: sessions.employeeId })
+        .from(sessions)
+        .where(eq(sessions.token, sessionToken))
+        .limit(1);
 
         let employeeId: number | undefined;
         if (sessionRow) {
@@ -2453,7 +2463,7 @@ export async function registerRoutes(
           }
         let payload: Record<string, unknown>;
         try {
-          payload = verifyJwtIgnoreExpiration(token, jwtSecret);
+          payload = verifyJwtIgnoreExpiration(sessionToken, jwtSecret);
         } catch (error) {
             return res.status(401).json({
               success: false,
@@ -2490,7 +2500,9 @@ export async function registerRoutes(
           });
         }
 
-        const monthsParam = Number(req.query.months);
+        const monthsParam = Number(
+          typeof req.query.months === "string" ? req.query.months : undefined,
+        );
         const months = Number.isFinite(monthsParam)
           ? Math.min(Math.max(monthsParam, 1), 12)
           : 6;
@@ -2661,6 +2673,390 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
       }
     },
   );
+
+  app.get("/api/weekly/calendar", async (req: Request, res: Response) => {
+    try {
+      const token = getAuthTokenFromRequest(req);
+      if (!token) {
+        return res.status(401).json({
+          success: false,
+          error: "Ungültiges oder abgelaufenes Token",
+        });
+      }
+      const sessionToken = token;
+
+      const [sessionRow] = await db
+        .select({ employeeId: sessions.employeeId })
+        .from(sessions)
+        .where(eq(sessions.token, sessionToken))
+        .limit(1);
+
+      let employeeId: number | undefined;
+      if (sessionRow) {
+        employeeId = sessionRow.employeeId;
+      } else {
+        const jwtSecret = process.env.JWT_SECRET;
+        if (!jwtSecret) {
+          console.error("JWT_SECRET fehlt für Kalender-Token");
+          return res.status(500).json({
+            success: false,
+            error: "Serverkonfiguration fehlerhaft",
+          });
+        }
+        let payload: Record<string, unknown>;
+        try {
+          payload = verifyJwtIgnoreExpiration(sessionToken, jwtSecret);
+        } catch (error) {
+          return res.status(401).json({
+            success: false,
+            error: "Ungültiges oder abgelaufenes Token",
+          });
+        }
+        const candidate =
+          (typeof payload.employeeId === "number" && payload.employeeId) ||
+          (typeof payload.userId === "number" && payload.userId) ||
+          (typeof payload.id === "number" && payload.id) ||
+          (typeof payload.sub === "number" && payload.sub) ||
+          (typeof payload.employeeId === "string" &&
+            Number(payload.employeeId)) ||
+          (typeof payload.userId === "string" && Number(payload.userId)) ||
+          (typeof payload.id === "string" && Number(payload.id)) ||
+          (typeof payload.sub === "string" && Number(payload.sub));
+        if (Number.isFinite(candidate)) {
+          employeeId = Number(candidate);
+        }
+      }
+
+      if (!employeeId) {
+        return res.status(401).json({
+          success: false,
+          error: "Ungültiges oder abgelaufenes Token",
+        });
+      }
+
+      const sessionEmployee = await storage.getEmployee(employeeId);
+      if (!sessionEmployee) {
+        return res.status(401).json({
+          success: false,
+          error: "Ungültiges oder abgelaufenes Token",
+        });
+      }
+
+      const [empClinic] = await db
+        .select({ clinicId: departments.clinicId })
+        .from(employees)
+        .leftJoin(
+          departments,
+          eq(departments.id, employees.departmentId),
+        )
+        .where(eq(employees.id, employeeId))
+        .limit(1);
+      const clinicId = empClinic?.clinicId ?? null;
+      if (!clinicId) {
+        return res.status(400).json({ error: "Klinik-ID fehlt" });
+      }
+
+      const weeksParamValue =
+        typeof req.query.weeks === "string"
+          ? req.query.weeks
+          : Array.isArray(req.query.weeks)
+          ? req.query.weeks[0]
+          : undefined;
+      const weeksParam = Number(weeksParamValue);
+      const weeks = Number.isFinite(weeksParam)
+        ? Math.min(Math.max(Math.floor(weeksParam), 1), 26)
+        : 8;
+
+      const today = new Date();
+      const currentWeekStart = startOfWeek(today, { weekStartsOn: 1 });
+      const weekOptions = {
+        weekStartsOn: 1 as const,
+        firstWeekContainsDate: 4 as const,
+      };
+      const weeksInfo: Array<{
+        weekYear: number;
+        weekNumber: number;
+        startDate: Date;
+      }> = [];
+      for (let i = 0; i < weeks; i += 1) {
+        const weekStart = addWeeks(currentWeekStart, i);
+        weeksInfo.push({
+          weekYear: getWeekYear(weekStart),
+          weekNumber: getWeek(weekStart, weekOptions),
+          startDate: weekStart,
+        });
+      }
+
+      const weekFilters = weeksInfo.map(({ weekYear, weekNumber }) =>
+        and(
+          eq(weeklyAssignments.weekYear, weekYear),
+          eq(weeklyAssignments.weekNumber, weekNumber),
+        ),
+      );
+
+      const weekQuery = db
+        .select({
+          weekYear: weeklyAssignments.weekYear,
+          weekNumber: weeklyAssignments.weekNumber,
+          dayOfWeek: weeklyAssignments.dayOfWeek,
+          area: weeklyAssignments.area,
+          subArea: weeklyAssignments.subArea,
+          roleSlot: weeklyAssignments.roleSlot,
+          notes: weeklyAssignments.notes,
+          employeeId: weeklyAssignments.employeeId,
+          employeeFirstName: employees.firstName,
+          employeeLastName: employees.lastName,
+          employeeName: employees.name,
+        })
+        .from(weeklyAssignments)
+        .leftJoin(employees, eq(weeklyAssignments.employeeId, employees.id));
+
+      const assignmentRows =
+        weekFilters.length === 1
+          ? await weekQuery.where(weekFilters[0])
+          : await weekQuery.where(or(...weekFilters));
+
+      const employeeRows = await storage.getEmployees();
+      const employeeDisplayById = new Map(
+        employeeRows.map((emp) => [
+          emp.id,
+          buildDisplayName(
+            emp.firstName,
+            emp.lastName,
+            emp.name ?? emp.lastName,
+          ),
+        ]),
+      );
+
+      const assignmentsWithName = assignmentRows.map((row) => ({
+        ...row,
+        displayName: buildDisplayName(
+          row.employeeFirstName,
+          row.employeeLastName,
+          row.employeeName,
+        ),
+      }));
+
+      const assignmentsByDay = new Map<
+        string,
+        (typeof assignmentsWithName)[number][]
+      >();
+      const weekStartByKey = new Map(
+        weeksInfo.map((info) => [
+          `${info.weekYear}-${info.weekNumber}`,
+          info.startDate,
+        ]),
+      );
+
+      for (const row of assignmentsWithName) {
+        const dayKey = `${row.weekYear}-${row.weekNumber}-${row.dayOfWeek}`;
+        const existing = assignmentsByDay.get(dayKey) ?? [];
+        existing.push(row);
+        assignmentsByDay.set(dayKey, existing);
+      }
+
+      const dtStamp =
+        new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+
+      const events: string[] = [];
+      const employeeAssignments = assignmentsWithName.filter(
+        (row) => row.employeeId === employeeId,
+      );
+
+      employeeAssignments.forEach((row) => {
+        const weekKey = `${row.weekYear}-${row.weekNumber}`;
+        const weekStart = weekStartByKey.get(weekKey);
+        if (!weekStart || !row.dayOfWeek) return;
+
+        const eventDate = addDays(weekStart, row.dayOfWeek - 1);
+        const dayKey = `${weekKey}-${row.dayOfWeek}`;
+        const dayAssignments = assignmentsByDay.get(dayKey) ?? [];
+        const coworkers = dayAssignments
+          .filter(
+            (other) =>
+              other.employeeId &&
+              other.employeeId !== employeeId &&
+              other.area === row.area &&
+              (row.subArea ? other.subArea === row.subArea : true) &&
+              (row.roleSlot ? other.roleSlot === row.roleSlot : true),
+          )
+          .map((other) => other.displayName)
+          .filter(
+            (value, index, array) =>
+              Boolean(value) && array.indexOf(value) === index,
+          );
+
+        const summaryParts = [row.area];
+        if (row.subArea) summaryParts.push(row.subArea);
+        if (row.roleSlot) summaryParts.push(row.roleSlot);
+        const summary =
+          summaryParts.filter(Boolean).join(" / ") || "Wochenplan";
+
+        const descriptionLines = [
+          `Mit: ${
+            coworkers.length ? coworkers.join(", ") : "keine weiteren Personen"
+          }`,
+        ];
+        if (row.notes) {
+          descriptionLines.push(`Hinweis: ${row.notes}`);
+        }
+
+        const description = descriptionLines.join("\n");
+
+        const eventDateString = format(eventDate, "yyyy-MM-dd");
+        const startDateTime = buildDateTime(eventDateString, "07:30");
+        const endDateTime = buildDateTime(eventDateString, "13:30");
+
+        events.push(
+          [
+            "BEGIN:VEVENT",
+            `UID:weekly-${formatIcsDateOnly(eventDate)}-${employeeId}@mycliniq`,
+            `DTSTAMP:${dtStamp}`,
+            `DTSTART:${toIcsDateTimeLocal(startDateTime)}`,
+            `DTEND:${toIcsDateTimeLocal(endDateTime)}`,
+            `SUMMARY:${escapeIcs(summary)}`,
+            `DESCRIPTION:${escapeIcs(description)}`,
+            "END:VEVENT",
+          ].join("\r\n"),
+        );
+      });
+
+      if (!events.length) {
+        const rangeStart = weeksInfo[0]?.startDate ?? currentWeekStart;
+        const rangeEnd = addDays(
+          weeksInfo[weeksInfo.length - 1]?.startDate ?? rangeStart,
+          6,
+        );
+        const serviceLineRows = await loadServiceLines(clinicId);
+        const serviceLineLabelByKey = new Map(
+          serviceLineRows.map((line) => [line.key, line.label]),
+        );
+        const months: Array<{ year: number; month: number }> = [];
+        let cursor = new Date(
+          rangeStart.getFullYear(),
+          rangeStart.getMonth(),
+          1,
+        );
+        const lastMonth = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), 1);
+        while (cursor <= lastMonth) {
+          months.push({
+            year: cursor.getFullYear(),
+            month: cursor.getMonth() + 1,
+          });
+          cursor.setMonth(cursor.getMonth() + 1);
+        }
+
+        const allShifts: RosterShift[] = [];
+        for (const { year, month } of months) {
+          const monthShifts = await storage.getRosterShiftsByMonth(year, month);
+          allShifts.push(...monthShifts);
+        }
+
+        const filteredShifts = allShifts.filter((shift) => {
+          const shiftDate = toDate(shift.date);
+          return (
+            !Number.isNaN(shiftDate.getTime()) &&
+            shiftDate >= rangeStart &&
+            shiftDate <= rangeEnd
+          );
+        });
+
+        const shiftsByDate = filteredShifts.reduce<Record<string, RosterShift[]>>(
+          (acc, shift) => {
+            if (!acc[shift.date]) acc[shift.date] = [];
+            acc[shift.date].push(shift);
+            return acc;
+          },
+          {},
+        );
+
+        const ourShifts = filteredShifts.filter(
+          (shift) => shift.employeeId === employeeId,
+        );
+
+        ourShifts.forEach((shift) => {
+          const shiftDate = toDate(shift.date);
+          if (Number.isNaN(shiftDate.getTime())) return;
+
+          const dayShifts = shiftsByDate[shift.date] ?? [];
+          const coworkers = dayShifts
+            .filter(
+              (other) =>
+                other.employeeId &&
+                other.employeeId !== employeeId &&
+                other.serviceType === shift.serviceType,
+            )
+            .map((other) => {
+              if (other.employeeId && employeeDisplayById.has(other.employeeId)) {
+                return employeeDisplayById.get(other.employeeId) as string;
+              }
+              return other.assigneeFreeText || "Unbekannt";
+            })
+            .filter(
+              (value, index, array) =>
+                Boolean(value) && array.indexOf(value) === index,
+            );
+
+          const serviceLabel =
+            serviceLineLabelByKey.get(shift.serviceType) ||
+            shift.serviceType ||
+            "Dienstplan";
+          const descriptionLines = [
+            `Mit: ${
+              coworkers.length ? coworkers.join(", ") : "keine weiteren Personen"
+            }`,
+          ];
+          const description = descriptionLines.join("\n");
+          const eventDateString = format(shiftDate, "yyyy-MM-dd");
+          const isLongDay =
+            typeof shift.serviceType === "string" &&
+            shift.serviceType.toLowerCase().includes("long");
+          const startDateTime = buildDateTime(
+            eventDateString,
+            isLongDay ? "13:30" : "07:30",
+          );
+          const endDateTime = buildDateTime(
+            eventDateString,
+            isLongDay ? "18:00" : "13:30",
+          );
+
+          events.push(
+            [
+              "BEGIN:VEVENT",
+              `UID:weekly-${formatIcsDateOnly(shiftDate)}-${employeeId}@mycliniq`,
+              `DTSTAMP:${dtStamp}`,
+              `DTSTART:${toIcsDateTimeLocal(startDateTime)}`,
+              `DTEND:${toIcsDateTimeLocal(endDateTime)}`,
+              `SUMMARY:${escapeIcs(`Dienstplan: ${serviceLabel}`)}`,
+              `DESCRIPTION:${escapeIcs(description)}`,
+              "END:VEVENT",
+            ].join("\r\n"),
+          );
+        });
+      }
+
+      const calendar = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "X-PUBLISHED-TTL:PT1H",
+        "PRODID:-//MyCliniQ//WeeklyPlan//DE",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        ...events,
+        "END:VCALENDAR",
+      ].join("\r\n");
+
+      res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+      res.setHeader(
+        "Content-Disposition",
+        'inline; filename="weekly-plan.ics"',
+      );
+      res.send(calendar);
+    } catch (error: any) {
+      console.error("Weekly calendar export error:", error);
+      res.status(500).json({ error: "Kalender konnte nicht erstellt werden" });
+    }
+  });
 
   app.get(
     "/api/roster/export",

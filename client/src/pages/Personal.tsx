@@ -33,6 +33,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  ClipboardCopy,
   Download,
   Heart,
   Info,
@@ -1395,7 +1396,7 @@ function ShiftSwapRosterDialog({
 }
 
 function WeeklyView() {
-  const { employee: currentUser } = useAuth();
+  const { employee: currentUser, token } = useAuth();
   const { toast } = useToast();
   const [currentDate, setCurrentDate] = useState(() => new Date());
   const [rooms, setRooms] = useState<WeeklyPlanRoom[]>([]);
@@ -1406,6 +1407,80 @@ function WeeklyView() {
   );
   const [rosterShifts, setRosterShifts] = useState<RosterShift[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+
+  const getWeeklyCalendarUrl = () => {
+    if (!token || typeof window === "undefined") return null;
+    const baseUrl = window.location.origin.replace(/\/$/, "");
+    return `${baseUrl}/api/weekly/calendar?token=${encodeURIComponent(
+      token,
+    )}&weeks=8`;
+  };
+
+  const handleWeeklySubscribe = async () => {
+    const calendarUrl = getWeeklyCalendarUrl();
+    if (!calendarUrl) {
+      toast({
+        title: "Fehler",
+        description: "Kalenderlink konnte nicht erstellt werden.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const webcalUrl = calendarUrl.replace(/^https?:\/\//, "webcal://");
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(calendarUrl);
+      }
+      window.open(webcalUrl, "_blank");
+      toast({
+        title: "Wochenplan abonnieren",
+        description: "Der Abo-Link wurde geöffnet und kopiert.",
+      });
+    } catch (error) {
+      window.open(calendarUrl, "_blank");
+      toast({
+        title: "Wochenplan abonnieren",
+        description: "Der Abo-Link wurde geöffnet.",
+      });
+    }
+  };
+
+  const handleCopyWeeklyLink = async () => {
+    const calendarUrl = getWeeklyCalendarUrl();
+    if (!calendarUrl) {
+      toast({
+        title: "Fehler",
+        description: "Kalenderlink konnte nicht erstellt werden.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!navigator.clipboard?.writeText) {
+      toast({
+        title: "Link kopieren",
+        description: "Clipboard wird nicht unterstützt.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(calendarUrl);
+      toast({
+        title: "Link kopieren",
+        description: "Der Link wurde in die Zwischenablage kopiert.",
+      });
+    } catch (error) {
+      toast({
+        title: "Link kopieren",
+        description: "Der Link konnte nicht kopiert werden.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const weekStart = useMemo(
     () => startOfWeek(currentDate, { weekStartsOn: 1 }),
@@ -1577,39 +1652,61 @@ function WeeklyView() {
       </div>
 
       <Card className="border-none kabeg-shadow overflow-hidden">
-        <CardHeader className="pb-2">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="space-y-1">
-              <CardTitle className="flex items-center gap-2">
-                <CalendarIcon className="w-5 h-5" />
-                Wochenplan KW {weekNumber} / {weekYear}
-                <Badge variant="outline" className="ml-2 text-xs">
-                  {statusLabel}
-                </Badge>
-              </CardTitle>
-              <CardDescription>
-                {format(weekStart, "dd.MM.yyyy", { locale: de })} –{" "}
-                {format(weekEnd, "dd.MM.yyyy", { locale: de })}
-              </CardDescription>
+          <CardHeader className="pb-2">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="space-y-1">
+                <CardTitle className="flex items-center gap-2">
+                  <CalendarIcon className="w-5 h-5" />
+                  Wochenplan KW {weekNumber} / {weekYear}
+                  <Badge variant="outline" className="ml-2 text-xs">
+                    {statusLabel}
+                  </Badge>
+                </CardTitle>
+                <CardDescription>
+                  {format(weekStart, "dd.MM.yyyy", { locale: de })} –{" "}
+                  {format(weekEnd, "dd.MM.yyyy", { locale: de })}
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleWeeklySubscribe}
+                    disabled={!token}
+                  >
+                    <Rss className="w-4 h-4" />
+                    Wochenplan abonnieren
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCopyWeeklyLink}
+                    disabled={!token}
+                  >
+                    <ClipboardCopy className="w-4 h-4" />
+                    Link kopieren
+                  </Button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setCurrentDate(subWeeks(currentDate, 1))}
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setCurrentDate(addWeeks(currentDate, 1))}
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => setCurrentDate(subWeeks(currentDate, 1))}
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => setCurrentDate(addWeeks(currentDate, 1))}
-              >
-                <ChevronRight className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
+          </CardHeader>
         <CardContent className="p-0">
           {isLoading ? (
             <div className="p-6 text-sm text-muted-foreground">
