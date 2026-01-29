@@ -559,9 +559,8 @@ function RosterView({
       shift.employeeId === currentUser.id,
     );
   const getBadgeClass = (style: { cell: string }, highlight: boolean) => {
-    if (!isPublished || highlight) {
-      return style.cell;
-    }
+    // Nur der eigene Dienst farbig, alle anderen schlicht grau – unabhängig vom Plan-Status.
+    if (highlight) return style.cell;
     return "bg-slate-100 text-slate-500 border-slate-200";
   };
 
@@ -623,41 +622,8 @@ function RosterView({
         }),
       );
 
-    const longTermEntries: RosterAbsenceEntry[] = longTermAbsences
-      .filter(
-        (absence) =>
-          absence.status === "Genehmigt" &&
-          absence.startDate <= dateStr &&
-          absence.endDate >= dateStr,
-      )
-      .map(
-        (absence): RosterAbsenceEntry => ({
-          employeeId: absence.employeeId,
-          name: resolveEmployeeLastName(absence.employeeId),
-          reason: absence.reason,
-          source: "long_term",
-          status: "Genehmigt",
-        }),
-      );
-
-    const legacyEntries: RosterAbsenceEntry[] = employees
-      .filter((employee) => isLegacyInactiveOnDate(employee, dateStr))
-      .map(
-        (employee): RosterAbsenceEntry => ({
-          employeeId: employee.id,
-          name: resolveEmployeeLastName(
-            employee.id,
-            employee.name,
-            employee.lastName,
-          ),
-          reason: "Langzeit-Deaktivierung",
-          source: "legacy",
-        }),
-      );
-
-    return [...plannedEntries, ...longTermEntries, ...legacyEntries].sort(
-      (a, b) => a.name.localeCompare(b.name),
-    );
+    // Langzeit-Abwesenheiten (long_term / legacy) werden im Dienstplan immer ausgeblendet.
+    return [...plannedEntries].sort((a, b) => a.name.localeCompare(b.name));
   };
 
   const myShifts = currentUser
@@ -762,15 +728,15 @@ function RosterView({
           <table className="w-full min-w-[800px] text-sm">
             <thead>
               <tr className="bg-primary text-white">
-                <th className="p-3 text-left font-medium w-16">KW</th>
-                <th className="p-3 text-left font-medium w-12">Tag</th>
-                <th className="p-3 text-left font-medium w-24">Datum</th>
+                <th className="px-2 py-2 text-left font-medium w-16">KW</th>
+                <th className="px-2 py-2 text-left font-medium w-12">Tag</th>
+                <th className="px-2 py-2 text-left font-medium w-24">Datum</th>
                 {serviceLineDisplay.map((line) => (
-                  <th key={line.key} className="p-3 text-left font-medium">
+                  <th key={line.key} className="px-2 py-2 text-left font-medium">
                     {line.label}
                   </th>
                 ))}
-                <th className="p-3 text-left font-medium">Abwesenheiten</th>
+                <th className="px-2 py-2 text-left font-medium">Abwesenheiten</th>
               </tr>
             </thead>
             <tbody>
@@ -778,7 +744,7 @@ function RosterView({
                 <tr>
                   <td
                     colSpan={rosterColumnCount}
-                    className="p-6 text-center text-muted-foreground"
+                    className="p-4 text-center text-muted-foreground"
                   >
                     Dienstplan wird geladen...
                   </td>
@@ -818,12 +784,12 @@ function RosterView({
                       )}
                       data-testid={`roster-row-${dateKey}`}
                     >
-                      <td className="p-3 font-medium text-primary">
+                      <td className="px-2 py-1.5 font-medium text-primary">
                         {showKW ? weekNumber : ""}
                       </td>
                       <td
                         className={cn(
-                          "p-3 font-medium",
+                          "px-2 py-1.5 font-medium",
                           highlightRow && "text-rose-600",
                         )}
                       >
@@ -831,7 +797,7 @@ function RosterView({
                       </td>
                       <td
                         className={cn(
-                          "p-3 text-muted-foreground",
+                          "px-2 py-1.5 text-muted-foreground",
                           highlightRow && "text-rose-600",
                         )}
                       >
@@ -841,13 +807,13 @@ function RosterView({
                         const shift = dayShifts[line.key];
                         const label = getShiftDisplay(shift);
                         return (
-                          <td key={line.key} className="p-3">
+                          <td key={line.key} className="px-2 py-1.5">
                             {label !== "-" ? (
                               <Badge
                                 variant="outline"
-                                className={getBadgeClass(
-                                  line.style,
-                                  isMyShift(shift),
+                                className={cn(
+                                  getBadgeClass(line.style, isMyShift(shift)),
+                                  "px-2 py-0.5 text-xs leading-4",
                                 )}
                               >
                                 {label}
@@ -858,7 +824,7 @@ function RosterView({
                           </td>
                         );
                       })}
-                      <td className="p-3 text-muted-foreground text-xs">
+                      <td className="px-2 py-1.5 text-muted-foreground text-xs">
                         {(() => {
                           const dayAbsences = getAbsencesForDate(day);
                           if (!dayAbsences.length) {

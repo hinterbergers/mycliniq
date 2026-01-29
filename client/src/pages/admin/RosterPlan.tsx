@@ -9,6 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -221,6 +222,7 @@ const MONTH_NAMES = [
 ];
 
 const RULES_STORAGE_KEY = "mycliniq.roster.aiRules.v1";
+const LONGTERM_ABSENCE_TOGGLE_KEY = "mycliniq.roster.editor.showLongTermAbsences.v1";
 
 type AiRuleWeights = {
   weekendFairness: number;
@@ -353,6 +355,7 @@ export default function RosterPlan() {
   >(null);
   const [isApplying, setIsApplying] = useState(false);
   const [manualEditMode, setManualEditMode] = useState(false);
+  const [showLongTermAbsences, setShowLongTermAbsences] = useState(false);
   const [savingCellKey, setSavingCellKey] = useState<string | null>(null);
   const [manualDrafts, setManualDrafts] = useState<Record<string, string>>({});
   const [activeCellKey, setActiveCellKey] = useState<string | null>(null);
@@ -464,6 +467,21 @@ export default function RosterPlan() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(RULES_STORAGE_KEY, JSON.stringify(aiRules));
   }, [aiRules]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem(LONGTERM_ABSENCE_TOGGLE_KEY);
+    if (!stored) return;
+    setShowLongTermAbsences(stored === "1");
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      LONGTERM_ABSENCE_TOGGLE_KEY,
+      showLongTermAbsences ? "1" : "0",
+    );
+  }, [showLongTermAbsences]);
 
   const serviceLineDisplay = useMemo(() => {
     const lines: ServiceLineConfig[] = (
@@ -795,36 +813,40 @@ export default function RosterPlan() {
         }),
       );
 
-    const longTermEntries: RosterAbsenceEntry[] = longTermAbsences
-      .filter(
-        (absence) =>
-          absence.status === "Genehmigt" &&
-          absence.startDate <= dateStr &&
-          absence.endDate >= dateStr,
-      )
-      .map(
-        (absence): RosterAbsenceEntry => ({
-          employeeId: absence.employeeId,
-          name: resolveEmployeeLastName(absence.employeeId),
-          reason: absence.reason,
-          source: "long_term",
-        }),
-      );
+    const longTermEntries: RosterAbsenceEntry[] = showLongTermAbsences
+      ? longTermAbsences
+          .filter(
+            (absence) =>
+              absence.status === "Genehmigt" &&
+              absence.startDate <= dateStr &&
+              absence.endDate >= dateStr,
+          )
+          .map(
+            (absence): RosterAbsenceEntry => ({
+              employeeId: absence.employeeId,
+              name: resolveEmployeeLastName(absence.employeeId),
+              reason: absence.reason,
+              source: "long_term",
+            }),
+          )
+      : [];
 
-    const legacyEntries: RosterAbsenceEntry[] = employees
-      .filter((employee) => isLegacyInactiveOnDate(employee, dateStr))
-      .map(
-        (employee): RosterAbsenceEntry => ({
-          employeeId: employee.id,
-          name: resolveEmployeeLastName(
-            employee.id,
-            employee.name,
-            employee.lastName,
-          ),
-          reason: "Langzeit-Deaktivierung",
-          source: "legacy",
-        }),
-      );
+    const legacyEntries: RosterAbsenceEntry[] = showLongTermAbsences
+      ? employees
+          .filter((employee) => isLegacyInactiveOnDate(employee, dateStr))
+          .map(
+            (employee): RosterAbsenceEntry => ({
+              employeeId: employee.id,
+              name: resolveEmployeeLastName(
+                employee.id,
+                employee.name,
+                employee.lastName,
+              ),
+              reason: "Langzeit-Deaktivierung",
+              source: "legacy",
+            }),
+          )
+      : [];
 
     return [...plannedEntries, ...longTermEntries, ...legacyEntries].sort(
       (a, b) => a.name.localeCompare(b.name),
@@ -1710,6 +1732,21 @@ export default function RosterPlan() {
           </div>
 
           <div className="flex flex-wrap gap-2">
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2">
+              <Checkbox
+                id="toggle-longterm-absences"
+                checked={showLongTermAbsences}
+                onCheckedChange={(value) =>
+                  setShowLongTermAbsences(Boolean(value))
+                }
+              />
+              <Label
+                htmlFor="toggle-longterm-absences"
+                className="text-sm cursor-pointer"
+              >
+                Langzeit-Abwesenheiten anzeigen
+              </Label>
+            </div>
             {canEdit && (
               <Button
                 variant={manualEditMode ? "default" : "outline"}
