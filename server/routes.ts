@@ -2629,9 +2629,9 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
         const month = Number(req.query.month) || new Date().getMonth() + 1;
 
         const shifts = await storage.getRosterShiftsByMonth(year, month);
-        const employees = await storage.getEmployees();
+        const employeeRows = await storage.getEmployees();
         const employeesById = new Map(
-          employees.map((emp) => [emp.id, emp.name]),
+          employeeRows.map((emp) => [emp.id, emp.name]),
         );
         const clinicId = req.user?.clinicId;
         if (!clinicId) {
@@ -3530,7 +3530,7 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
         }
 
         // Get eligible employees and submitted wishes count
-        const employees = await storage.getEmployees();
+        const employeeRows = await storage.getEmployees();
         const clinicId = (req as any).user?.clinicId;
         const serviceLineMeta = clinicId
           ? await db
@@ -3543,7 +3543,7 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
               .where(eq(serviceLines.clinicId, clinicId))
               .orderBy(asc(serviceLines.sortOrder), asc(serviceLines.label))
           : [];
-        const eligibleEmployees = employees
+        const eligibleEmployees = employeeRows
           .filter((employee) => employeeDoesShifts(employee, serviceLineMeta))
           .filter((employee) => isEligibleForWishMonth(employee, year, month));
         const eligibleEmployeeIds = new Set(
