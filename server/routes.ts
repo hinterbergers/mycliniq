@@ -6,6 +6,7 @@ import {
   eq,
   asc,
   and,
+  or,
   gte,
   lte,
   ne,
@@ -38,6 +39,7 @@ import {
   rooms,
   weeklyPlans,
   weeklyPlanAssignments,
+  weeklyAssignments,
   dailyOverrides,
   type RosterShift,
 } from "@shared/schema";
@@ -52,7 +54,13 @@ import {
 import { registerModularApiRoutes } from "./api";
 import { employeeDoesShifts, OVERDUTY_KEY } from "@shared/shiftTypes";
 import { requireAuth, hasCapability } from "./api/middleware/auth";
-import { getWeek, getWeekYear } from "date-fns";
+import {
+  addDays,
+  addWeeks,
+  getWeek,
+  getWeekYear,
+  startOfWeek,
+} from "date-fns";
 import {
   type AbsenceCategory,
   mapAbsenceCategory,
@@ -103,6 +111,25 @@ const verifyJwtIgnoreExpiration = (
 
   const payloadJson = Buffer.from(payloadSegment, "base64url").toString("utf-8");
   return JSON.parse(payloadJson) as Record<string, unknown>;
+};
+
+const getAuthTokenFromRequest = (req: Request) => {
+  const queryToken =
+    typeof req.query.token === "string"
+      ? req.query.token
+      : Array.isArray(req.query.token)
+      ? req.query.token[0]
+      : undefined;
+  const authHeader =
+    typeof req.headers.authorization === "string"
+      ? req.headers.authorization
+      : undefined;
+  const headerToken =
+    authHeader && authHeader.startsWith("Bearer ")
+      ? authHeader.slice(7)
+      : undefined;
+
+  return queryToken ?? headerToken ?? null;
 };
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -193,6 +220,31 @@ const toIcsDateTimeLocal = (date: Date) => {
   const hours = String(date.getHours()).padStart(2, "0");
   const minutes = String(date.getMinutes()).padStart(2, "0");
   return `${year}${month}${day}T${hours}${minutes}00`;
+};
+
+const escapeIcs = (value: string) =>
+  value
+    .replace(/\\/g, "\\\\")
+    .replace(/;/g, "\\;")
+    .replace(/,/g, "\\,")
+    .replace(/\n/g, "\\n");
+
+const formatIcsDateOnly = (date: Date) => {
+  const year = String(date.getFullYear());
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}${month}${day}`;
+};
+
+const buildDisplayName = (
+  firstName?: string | null,
+  lastName?: string | null,
+  fallback?: string | null,
+) => {
+  const joined = [firstName, lastName].filter(Boolean).join(" ").trim();
+  if (joined) return joined;
+  if (fallback) return fallback;
+  return "Unbekannt";
 };
 
 const loadServiceLines = async (
@@ -2372,13 +2424,7 @@ export async function registerRoutes(
 
   app.get("/api/roster/calendar", async (req: Request, res: Response) => {
       try {
-        const authHeader = req.headers.authorization;
-        const bearerToken = authHeader?.startsWith("Bearer ")
-          ? authHeader.substring(7)
-          : null;
-        const queryToken =
-          typeof req.query.token === "string" ? req.query.token : null;
-        const token = queryToken ?? bearerToken;
+        const token = getAuthTokenFromRequest(req);
 
         if (!token) {
           return res.status(401).json({
@@ -2497,20 +2543,17 @@ export async function registerRoutes(
 
         const employeeRows = await storage.getEmployees();
         const employeesById = new Map(
-          employeeRows.map((emp) => {
-            const displayName =
-              [emp.firstName, emp.lastName].filter(Boolean).join(" ").trim() ||
-              emp.name ||
-              emp.lastName ||
-              "Unbekannt";
-            return [
-              emp.id,
-              {
-                displayName,
-                phonePrivate: emp.phonePrivate || null,
-              },
-            ];
-          }),
+          employeeRows.map((emp) => [
+            emp.id,
+            {
+              displayName: buildDisplayName(
+                emp.firstName,
+                emp.lastName,
+                emp.name ?? emp.lastName,
+              ),
+              phonePrivate: emp.phonePrivate || null,
+            },
+          ]),
         );
 
         type ShiftsByDate = Record<string, RosterShift[]>;
@@ -2524,13 +2567,6 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
 );
 
         const currentEmployeeId = sessionEmployee.id;
-
-        const escapeIcs = (value: string) =>
-          value
-            .replace(/\\/g, "\\\\")
-            .replace(/;/g, "\\;")
-            .replace(/,/g, "\\,")
-            .replace(/\n/g, "\\n");
 
         const dtStamp =
           new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
