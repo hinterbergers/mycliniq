@@ -2427,16 +2427,14 @@ if (!sessionEmployee) {
         );
 
         type ShiftsByDate = Record<string, RosterShift[]>;
-        const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
-          (acc, shift) => {
-            if (!acc[shift.date]) {
-              acc[shift.date] = [];
-            }
-            acc[shift.date].push(shift);
-            return acc;
-          },
-          {},
-        );
+const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
+  (acc, shift) => {
+    if (!acc[shift.date]) acc[shift.date] = [];
+    acc[shift.date].push(shift);
+    return acc;
+  },
+  {},
+);
 
         const currentEmployeeId = sessionEmployee.id;
 
@@ -2478,8 +2476,7 @@ if (!sessionEmployee) {
             if (line.endsNextDay) {
               endDateTime.setDate(endDateTime.getDate() + 1);
             }
-
-            const serviceLabel = rosterSummaryForServiceType(shift.serviceType);
+              const serviceLabel = rosterSummaryForServiceType(shift.serviceType);
 
             const others = (shiftsByDate[shift.date] || [])
               .filter((other) => other.employeeId !== currentEmployeeId)
