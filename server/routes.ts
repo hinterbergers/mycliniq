@@ -48,6 +48,7 @@ import {
   buildRosterPromptPayload,
   REQUIRED_SERVICE_GAP_REASON,
 } from "./services/rosterGenerator";
+import jwt from "jsonwebtoken";
 import { registerModularApiRoutes } from "./api";
 import { employeeDoesShifts, OVERDUTY_KEY } from "@shared/shiftTypes";
 import { requireAuth, hasCapability } from "./api/middleware/auth";
@@ -2327,45 +2328,80 @@ export async function registerRoutes(
 
   app.get("/api/roster/calendar", async (req: Request, res: Response) => {
       try {
-        // iCal-Subscriptions schicken oft keine Bearer-Header → daher Token auch als ?token=
-// Für Abo-Token ignorieren wir das Ablaufdatum, damit macOS Kalender nicht nach Login fragt.
-const authHeader = req.headers.authorization;
-const bearerToken = authHeader?.startsWith("Bearer ")
-  ? authHeader.substring(7)
-  : null;
+        const authHeader = req.headers.authorization;
+        const bearerToken = authHeader?.startsWith("Bearer ")
+          ? authHeader.substring(7)
+          : null;
+        const queryToken =
+          typeof req.query.token === "string" ? req.query.token : null;
+        const token = queryToken ?? bearerToken;
 
-const queryToken = typeof req.query.token === "string" ? req.query.token : null;
-const sessionToken = queryToken ?? bearerToken;
+        if (!token) {
+          return res.status(401).json({
+            success: false,
+            error: "Ungültiges oder abgelaufenes Token",
+          });
+        }
 
-if (!sessionToken) {
-  return res.status(401).json({ error: "Anmeldung erforderlich" });
-}
+        const [sessionRow] = await db
+          .select({ employeeId: sessions.employeeId })
+          .from(sessions)
+          .where(eq(sessions.token, token))
+          .limit(1);
 
-const [sessionRow] = await db
-  .select({
-    employeeId: sessions.employeeId,
-    expiresAt: sessions.expiresAt,
-  })
-  .from(sessions)
-  .where(eq(sessions.token, sessionToken))
-  .limit(1);
+        let employeeId: number | undefined;
+        if (sessionRow) {
+          employeeId = sessionRow.employeeId;
+        } else {
+          const jwtSecret = process.env.JWT_SECRET;
+          if (!jwtSecret) {
+            console.error("JWT_SECRET fehlt für Kalender-Token");
+            return res.status(500).json({
+              success: false,
+              error: "Serverkonfiguration fehlerhaft",
+            });
+          }
+          let payload: Record<string, unknown>;
+          try {
+            payload = jwt.verify(token, jwtSecret, {
+              ignoreExpiration: true,
+            }) as Record<string, unknown>;
+          } catch (error) {
+            return res.status(401).json({
+              success: false,
+              error: "Ungültiges oder abgelaufenes Token",
+            });
+          }
+          const candidate =
+            (typeof payload.employeeId === "number" && payload.employeeId) ||
+            (typeof payload.userId === "number" && payload.userId) ||
+            (typeof payload.id === "number" && payload.id) ||
+            (typeof payload.sub === "number" && payload.sub) ||
+            (typeof payload.employeeId === "string" &&
+              Number(payload.employeeId)) ||
+            (typeof payload.userId === "string" && Number(payload.userId)) ||
+            (typeof payload.id === "string" && Number(payload.id)) ||
+            (typeof payload.sub === "string" && Number(payload.sub));
+          if (Number.isFinite(candidate)) {
+            employeeId = Number(candidate);
+          }
+        }
 
-if (!sessionRow) {
-  return res.status(401).json({ error: "Sitzung abgelaufen" });
-}
+        if (!employeeId) {
+          return res.status(401).json({
+            success: false,
+            error: "Ungültiges oder abgelaufenes Token",
+          });
+        }
 
-// Bearer (UI) bleibt zeitlich begrenzt, Query (Abo) darf weiterlaufen
-if (!queryToken) {
-  const exp = sessionRow.expiresAt ? new Date(sessionRow.expiresAt as any) : null;
-  if (exp && Date.now() > exp.getTime()) {
-    return res.status(401).json({ error: "Sitzung abgelaufen" });
-  }
-}
+        const sessionEmployee = await storage.getEmployee(employeeId);
+        if (!sessionEmployee) {
+          return res.status(401).json({
+            success: false,
+            error: "Ungültiges oder abgelaufenes Token",
+          });
+        }
 
-const sessionEmployee = await storage.getEmployee(sessionRow.employeeId);
-if (!sessionEmployee) {
-  return res.status(401).json({ error: "Benutzer nicht gefunden" });
-}
         const monthsParam = Number(req.query.months);
         const months = Number.isFinite(monthsParam)
           ? Math.min(Math.max(monthsParam, 1), 12)
