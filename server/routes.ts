@@ -2325,11 +2325,47 @@ export async function registerRoutes(
     },
   );
 
-  app.get(
-    "/api/roster/calendar",
-    requireAuth,
-    async (req: Request, res: Response) => {
+  app.get("/api/roster/calendar", async (req: Request, res: Response) => {
       try {
+        // iCal-Subscriptions schicken oft keine Bearer-Header → daher Token auch als ?token=
+// Für Abo-Token ignorieren wir das Ablaufdatum, damit macOS Kalender nicht nach Login fragt.
+const authHeader = req.headers.authorization;
+const bearerToken = authHeader?.startsWith("Bearer ")
+  ? authHeader.substring(7)
+  : null;
+
+const queryToken = typeof req.query.token === "string" ? req.query.token : null;
+const sessionToken = queryToken ?? bearerToken;
+
+if (!sessionToken) {
+  return res.status(401).json({ error: "Anmeldung erforderlich" });
+}
+
+const [sessionRow] = await db
+  .select({
+    employeeId: sessions.employeeId,
+    expiresAt: sessions.expiresAt,
+  })
+  .from(sessions)
+  .where(eq(sessions.token, sessionToken))
+  .limit(1);
+
+if (!sessionRow) {
+  return res.status(401).json({ error: "Sitzung abgelaufen" });
+}
+
+// Bearer (UI) bleibt zeitlich begrenzt, Query (Abo) darf weiterlaufen
+if (!queryToken) {
+  const exp = sessionRow.expiresAt ? new Date(sessionRow.expiresAt as any) : null;
+  if (exp && Date.now() > exp.getTime()) {
+    return res.status(401).json({ error: "Sitzung abgelaufen" });
+  }
+}
+
+const sessionEmployee = await storage.getEmployee(sessionRow.employeeId);
+if (!sessionEmployee) {
+  return res.status(401).json({ error: "Benutzer nicht gefunden" });
+}
         const monthsParam = Number(req.query.months);
         const months = Number.isFinite(monthsParam)
           ? Math.min(Math.max(monthsParam, 1), 12)
@@ -2362,7 +2398,7 @@ export async function registerRoutes(
           allShifts.push(...monthShifts);
         }
 
-        const clinicId = req.user?.clinicId;
+        const clinicId = sessionEmployee.clinicId;
         if (!clinicId) {
           return res.status(400).json({ error: "Klinik-ID fehlt" });
         }
@@ -2401,10 +2437,7 @@ export async function registerRoutes(
           {},
         );
 
-        const currentEmployeeId = req.user?.employeeId;
-        if (!currentEmployeeId) {
-          return res.status(401).json({ error: "Anmeldung erforderlich" });
-        }
+        const currentEmployeeId = sessionEmployee.id;
 
         const escapeIcs = (value: string) =>
           value
@@ -2415,6 +2448,17 @@ export async function registerRoutes(
 
         const dtStamp =
           new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+
+          const rosterSummaryForServiceType = (serviceType: string) => {
+            const key = (serviceType || "").toLowerCase();
+            if (key.includes("kreis") || key.includes("geb")) return "Nachtdienst (Geburtshilfe)";
+            if (key === "gyn" || key.includes("gyn")) return "Nachtdienst (Gyn)";
+            if (key.includes("turnus")) return "Turnusdienst";
+            if (key.includes("over") || key.includes("ueber") || key.includes("über") || key === OVERDUTY_KEY.toLowerCase())
+              return "Überdienst";
+            if (key.includes("long")) return "LongDay";
+            return serviceType;
+          };
 
         const events = allShifts
           .filter((shift) => shift.employeeId === currentEmployeeId)
@@ -2432,8 +2476,8 @@ export async function registerRoutes(
             const endDateTime = buildDateTime(shift.date, line.endTime);
             if (line.endsNextDay) {
               endDateTime.setDate(endDateTime.getDate() + 1);
-            }
-            const serviceLabel = line.label || shift.serviceType;
+            
+              const serviceLabel = rosterSummaryForServiceType(shift.serviceType);
 
             const others = (shiftsByDate[shift.date] || [])
               .filter((other) => other.employeeId !== currentEmployeeId)
@@ -2473,6 +2517,7 @@ export async function registerRoutes(
         const calendar = [
           "BEGIN:VCALENDAR",
           "VERSION:2.0",
+          X-PUBLISHED-TTL:PT1H
           "PRODID:-//MyCliniQ//Roster//DE",
           "CALSCALE:GREGORIAN",
           "METHOD:PUBLISH",
