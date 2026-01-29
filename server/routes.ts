@@ -1054,7 +1054,8 @@
         }),
       );
 
-      const shiftsByDate = allShifts.reduce<Record<string, typeof allShifts>>(
+      type ShiftsByDate = Record<string, RosterShift[]>;
+      const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
         (acc, shift) => {
           if (!acc[shift.date]) {
             acc[shift.date] = [];
