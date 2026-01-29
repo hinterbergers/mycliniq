@@ -2403,12 +2403,10 @@ export async function registerRoutes(
               error: "Serverkonfiguration fehlerhaft",
             });
           }
-          let payload: Record<string, unknown>;
-          try {
-            payload = jwt.verify(token, jwtSecret, {
-              ignoreExpiration: true,
-            }) as Record<string, unknown>;
-          } catch (error) {
+        let payload: Record<string, unknown>;
+        try {
+          payload = verifyJwtIgnoreExpiration(token, jwtSecret);
+        } catch (error) {
             return res.status(401).json({
               success: false,
               error: "Ungültiges oder abgelaufenes Token",
