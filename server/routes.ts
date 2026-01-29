@@ -29,6 +29,7 @@ import {
   insertLongTermAbsenceSchema,
   plannedAbsences,
   absences,
+  departments,
   employees,
   shiftSwapRequests,
   sessions,
@@ -60,7 +61,8 @@ import {
 
 const rosterShifts = rosterShiftsTable;
 
-const JWT_ALGORITHMS: Record<string, crypto.BinaryToTextEncoding> = {
+type HmacAlg = "sha256" | "sha384" | "sha512";
+const JWT_HS_TO_HMAC: Record<"HS256" | "HS384" | "HS512", HmacAlg> = {
   HS256: "sha256",
   HS384: "sha384",
   HS512: "sha512",
@@ -84,7 +86,7 @@ const verifyJwtIgnoreExpiration = (
     throw new Error("Ungültiger Token-Header");
   }
 
-  const digest = JWT_ALGORITHMS[alg];
+  const digest = JWT_HS_TO_HMAC[alg as keyof typeof JWT_HS_TO_HMAC];
   if (!digest) {
     throw new Error("Nicht unterstützter Token-Algorithmus");
   }
@@ -2475,8 +2477,12 @@ export async function registerRoutes(
         }
 
         const [empClinic] = await db
-          .select({ clinicId: employees.clinicId })
+          .select({ clinicId: departments.clinicId })
           .from(employees)
+          .leftJoin(
+            departments,
+            eq(departments.id, employees.departmentId),
+          )
           .where(eq(employees.id, employeeId ?? sessionEmployee.id))
           .limit(1);
         const clinicId = empClinic?.clinicId ?? null;
