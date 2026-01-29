@@ -2787,60 +2787,6 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
         });
       }
 
-      const weekFilters = weeksInfo.map(({ weekYear, weekNumber }) =>
-        and(
-          eq(weeklyAssignments.weekYear, weekYear),
-          eq(weeklyAssignments.weekNumber, weekNumber),
-        ),
-      );
-
-      const weekQuery = db
-        .select({
-          weekYear: weeklyAssignments.weekYear,
-          weekNumber: weeklyAssignments.weekNumber,
-          dayOfWeek: weeklyAssignments.dayOfWeek,
-          area: weeklyAssignments.area,
-          subArea: weeklyAssignments.subArea,
-          roleSlot: weeklyAssignments.roleSlot,
-          notes: weeklyAssignments.notes,
-          employeeId: weeklyAssignments.employeeId,
-          employeeFirstName: employees.firstName,
-          employeeLastName: employees.lastName,
-          employeeName: employees.name,
-        })
-        .from(weeklyAssignments)
-        .leftJoin(employees, eq(weeklyAssignments.employeeId, employees.id));
-
-      const assignmentRows =
-        weekFilters.length === 1
-          ? await weekQuery.where(weekFilters[0])
-          : await weekQuery.where(or(...weekFilters));
-
-      const employeeRows = await storage.getEmployees();
-      const employeeDisplayById = new Map(
-        employeeRows.map((emp) => [
-          emp.id,
-          buildDisplayName(
-            emp.firstName,
-            emp.lastName,
-            emp.name ?? emp.lastName,
-          ),
-        ]),
-      );
-
-      const assignmentsWithName = assignmentRows.map((row) => ({
-        ...row,
-        displayName: buildDisplayName(
-          row.employeeFirstName,
-          row.employeeLastName,
-          row.employeeName,
-        ),
-      }));
-
-      const assignmentsByDay = new Map<
-        string,
-        (typeof assignmentsWithName)[number][]
-      >();
       const weekStartByKey = new Map(
         weeksInfo.map((info) => [
           `${info.weekYear}-${info.weekNumber}`,
@@ -2848,192 +2794,176 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
         ]),
       );
 
-      for (const row of assignmentsWithName) {
-        const dayKey = `${row.weekYear}-${row.weekNumber}-${row.dayOfWeek}`;
-        const existing = assignmentsByDay.get(dayKey) ?? [];
-        existing.push(row);
-        assignmentsByDay.set(dayKey, existing);
-      }
+      const planKeyById = new Map<number, string>();
+      await Promise.all(
+        Array.from(weekStartByKey.keys()).map(async (weekKey) => {
+          const [weekYearStr, weekNumberStr] = weekKey.split("-");
+          const weekYear = Number(weekYearStr);
+          const weekNumber = Number(weekNumberStr);
+          const [planRow] = await db
+            .select({
+              id: weeklyPlans.id,
+              year: weeklyPlans.year,
+              weekNumber: weeklyPlans.weekNumber,
+            })
+            .from(weeklyPlans)
+            .where(
+              and(
+                eq(weeklyPlans.year, weekYear),
+                eq(weeklyPlans.weekNumber, weekNumber),
+              ),
+            )
+            .limit(1);
+          if (planRow?.id) {
+            planKeyById.set(planRow.id, weekKey);
+          }
+        }),
+      );
 
+      const planIds = Array.from(planKeyById.keys());
+
+      const assignments =
+        planIds.length > 0
+          ? await db
+              .select({
+                weeklyPlanId: weeklyPlanAssignments.weeklyPlanId,
+                weekday: weeklyPlanAssignments.weekday,
+                roomId: weeklyPlanAssignments.roomId,
+                roomName: rooms.name,
+                roomCategory: rooms.category,
+                employeeId: weeklyPlanAssignments.employeeId,
+                firstName: employees.firstName,
+                lastName: employees.lastName,
+                employeeName: employees.name,
+                roleLabel: weeklyPlanAssignments.roleLabel,
+              })
+              .from(weeklyPlanAssignments)
+              .leftJoin(rooms, eq(weeklyPlanAssignments.roomId, rooms.id))
+              .leftJoin(
+                employees,
+                eq(weeklyPlanAssignments.employeeId, employees.id),
+              )
+              .where(inArray(weeklyPlanAssignments.weeklyPlanId, planIds))
+          : [];
+
+      type AssignmentEntry = {
+        areaTitle: string;
+        areaKey: string;
+        isLongDay: boolean;
+        date: string;
+        employees: Array<{ id: number | null; name: string }>;
+      };
+
+      const containsLong = (value?: string | null) =>
+        typeof value === "string" && value.toLowerCase().includes("long");
+
+      const buildAreaTitle = (category?: string | null, name?: string | null) => {
+        const parts: string[] = [];
+        if (category) {
+          const trimmed = category.trim();
+          if (trimmed) parts.push(trimmed);
+        }
+        if (name) {
+          const trimmed = name.trim();
+          if (trimmed) parts.push(trimmed);
+        }
+        if (parts.length) {
+          return parts.join(" | ");
+        }
+        return name || category || "Wochenplan";
+      };
+
+      const assignmentsByDateArea = new Map<string, AssignmentEntry>();
+
+      assignments.forEach((assignment) => {
+        if (
+          !assignment.weeklyPlanId ||
+          !assignment.weekday ||
+          !planKeyById.has(assignment.weeklyPlanId)
+        ) {
+          return;
+        }
+        const weekKey = planKeyById.get(assignment.weeklyPlanId);
+        if (!weekKey) return;
+        const weekStart = weekStartByKey.get(weekKey);
+        if (!weekStart) return;
+
+        const eventDate = addDays(weekStart, assignment.weekday - 1);
+        const dateKey = format(eventDate, "yyyy-MM-dd");
+        const areaTitle = buildAreaTitle(
+          assignment.roomCategory,
+          assignment.roomName,
+        );
+        const areaIdKey = assignment.roomId
+          ? `room-${assignment.roomId}`
+          : `area-${areaTitle}`;
+        const mapKey = `${dateKey}|${areaIdKey}`;
+        const existing = assignmentsByDateArea.get(mapKey);
+        const isLongDay =
+          containsLong(areaTitle) ||
+          containsLong(assignment.roleLabel) ||
+          containsLong(assignment.roomCategory) ||
+          containsLong(assignment.roomName);
+        const entry: AssignmentEntry =
+          existing ?? {
+            areaTitle,
+            areaKey: areaIdKey,
+            isLongDay,
+            date: dateKey,
+            employees: [],
+          };
+        if (!existing) {
+          assignmentsByDateArea.set(mapKey, entry);
+        }
+
+        if (assignment.employeeId) {
+          entry.employees.push({
+            id: assignment.employeeId,
+            name: buildDisplayName(
+              assignment.firstName,
+              assignment.lastName,
+              assignment.employeeName,
+            ),
+          });
+        }
+      });
+
+      const events: string[] = [];
       const dtStamp =
         new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
 
-      const events: string[] = [];
-      const employeeAssignments = assignmentsWithName.filter(
-        (row) => row.employeeId === employeeId,
-      );
+      assignmentsByDateArea.forEach((entry) => {
+        const hasCurrent = entry.employees.some((emp) => emp.id === employeeId);
+        if (!hasCurrent) return;
 
-      employeeAssignments.forEach((row) => {
-        const weekKey = `${row.weekYear}-${row.weekNumber}`;
-        const weekStart = weekStartByKey.get(weekKey);
-        if (!weekStart || !row.dayOfWeek) return;
-
-        const eventDate = addDays(weekStart, row.dayOfWeek - 1);
-        const dayKey = `${weekKey}-${row.dayOfWeek}`;
-        const dayAssignments = assignmentsByDay.get(dayKey) ?? [];
-        const coworkers = dayAssignments
-          .filter(
-            (other) =>
-              other.employeeId &&
-              other.employeeId !== employeeId &&
-              other.area === row.area &&
-              (row.subArea ? other.subArea === row.subArea : true) &&
-              (row.roleSlot ? other.roleSlot === row.roleSlot : true),
-          )
-          .map((other) => other.displayName)
+        const coworkers = entry.employees
+          .filter((emp) => emp.id && emp.id !== employeeId)
+          .map((emp) => emp.name)
           .filter(
             (value, index, array) =>
               Boolean(value) && array.indexOf(value) === index,
           );
-
-        const summaryParts = [row.area];
-        if (row.subArea) summaryParts.push(row.subArea);
-        if (row.roleSlot) summaryParts.push(row.roleSlot);
-        const summary =
-          summaryParts.filter(Boolean).join(" / ") || "Wochenplan";
-
-        const descriptionLines = [
-          `Mit: ${
-            coworkers.length ? coworkers.join(", ") : "keine weiteren Personen"
-          }`,
-        ];
-        if (row.notes) {
-          descriptionLines.push(`Hinweis: ${row.notes}`);
-        }
-
-        const description = descriptionLines.join("\n");
-
-        const eventDateString = format(eventDate, "yyyy-MM-dd");
-        const startDateTime = buildDateTime(eventDateString, "07:30");
-        const endDateTime = buildDateTime(eventDateString, "13:30");
+        const description = coworkers.length
+          ? coworkers.join("\n")
+          : "Keine weiteren Personen";
+        const startTime = entry.isLongDay ? "13:30" : "07:30";
+        const endTime = entry.isLongDay ? "18:00" : "13:30";
+        const startDateTime = buildDateTime(entry.date, startTime);
+        const endDateTime = buildDateTime(entry.date, endTime);
 
         events.push(
           [
             "BEGIN:VEVENT",
-            `UID:weekly-${formatIcsDateOnly(eventDate)}-${employeeId}@mycliniq`,
+            `UID:weekly-${entry.date}-${entry.areaKey}-${employeeId}@mycliniq`,
             `DTSTAMP:${dtStamp}`,
             `DTSTART:${toIcsDateTimeLocal(startDateTime)}`,
             `DTEND:${toIcsDateTimeLocal(endDateTime)}`,
-            `SUMMARY:${escapeIcs(summary)}`,
+            `SUMMARY:${escapeIcs(entry.areaTitle)}`,
             `DESCRIPTION:${escapeIcs(description)}`,
             "END:VEVENT",
           ].join("\r\n"),
         );
       });
-
-      if (!events.length) {
-        const rangeStart = weeksInfo[0]?.startDate ?? currentWeekStart;
-        const rangeEnd = addDays(
-          weeksInfo[weeksInfo.length - 1]?.startDate ?? rangeStart,
-          6,
-        );
-        const serviceLineRows = await loadServiceLines(clinicId);
-        const serviceLineLabelByKey = new Map(
-          serviceLineRows.map((line) => [line.key, line.label]),
-        );
-        const months: Array<{ year: number; month: number }> = [];
-        let cursor = new Date(
-          rangeStart.getFullYear(),
-          rangeStart.getMonth(),
-          1,
-        );
-        const lastMonth = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), 1);
-        while (cursor <= lastMonth) {
-          months.push({
-            year: cursor.getFullYear(),
-            month: cursor.getMonth() + 1,
-          });
-          cursor.setMonth(cursor.getMonth() + 1);
-        }
-
-        const allShifts: RosterShift[] = [];
-        for (const { year, month } of months) {
-          const monthShifts = await storage.getRosterShiftsByMonth(year, month);
-          allShifts.push(...monthShifts);
-        }
-
-        const filteredShifts = allShifts.filter((shift) => {
-          const shiftDate = toDate(shift.date);
-          return (
-            !Number.isNaN(shiftDate.getTime()) &&
-            shiftDate >= rangeStart &&
-            shiftDate <= rangeEnd
-          );
-        });
-
-        const shiftsByDate = filteredShifts.reduce<Record<string, RosterShift[]>>(
-          (acc, shift) => {
-            if (!acc[shift.date]) acc[shift.date] = [];
-            acc[shift.date].push(shift);
-            return acc;
-          },
-          {},
-        );
-
-        const ourShifts = filteredShifts.filter(
-          (shift) => shift.employeeId === employeeId,
-        );
-
-        ourShifts.forEach((shift) => {
-          const shiftDate = toDate(shift.date);
-          if (Number.isNaN(shiftDate.getTime())) return;
-
-          const dayShifts = shiftsByDate[shift.date] ?? [];
-          const coworkers = dayShifts
-            .filter(
-              (other) =>
-                other.employeeId &&
-                other.employeeId !== employeeId &&
-                other.serviceType === shift.serviceType,
-            )
-            .map((other) => {
-              if (other.employeeId && employeeDisplayById.has(other.employeeId)) {
-                return employeeDisplayById.get(other.employeeId) as string;
-              }
-              return other.assigneeFreeText || "Unbekannt";
-            })
-            .filter(
-              (value, index, array) =>
-                Boolean(value) && array.indexOf(value) === index,
-            );
-
-          const serviceLabel =
-            serviceLineLabelByKey.get(shift.serviceType) ||
-            shift.serviceType ||
-            "Dienstplan";
-          const descriptionLines = [
-            `Mit: ${
-              coworkers.length ? coworkers.join(", ") : "keine weiteren Personen"
-            }`,
-          ];
-          const description = descriptionLines.join("\n");
-          const eventDateString = format(shiftDate, "yyyy-MM-dd");
-          const isLongDay =
-            typeof shift.serviceType === "string" &&
-            shift.serviceType.toLowerCase().includes("long");
-          const startDateTime = buildDateTime(
-            eventDateString,
-            isLongDay ? "13:30" : "07:30",
-          );
-          const endDateTime = buildDateTime(
-            eventDateString,
-            isLongDay ? "18:00" : "13:30",
-          );
-
-          events.push(
-            [
-              "BEGIN:VEVENT",
-              `UID:weekly-${formatIcsDateOnly(shiftDate)}-${employeeId}@mycliniq`,
-              `DTSTAMP:${dtStamp}`,
-              `DTSTART:${toIcsDateTimeLocal(startDateTime)}`,
-              `DTEND:${toIcsDateTimeLocal(endDateTime)}`,
-              `SUMMARY:${escapeIcs(`Dienstplan: ${serviceLabel}`)}`,
-              `DESCRIPTION:${escapeIcs(description)}`,
-              "END:VEVENT",
-            ].join("\r\n"),
-          );
-        });
-      }
 
       const calendar = [
         "BEGIN:VCALENDAR",
@@ -3049,7 +2979,7 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
       res.setHeader("Content-Type", "text/calendar; charset=utf-8");
       res.setHeader(
         "Content-Disposition",
-        'inline; filename="weekly-plan.ics"',
+        'inline; filename="wochenplan.ics"',
       );
       res.send(calendar);
     } catch (error: any) {
