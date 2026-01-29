@@ -2474,7 +2474,12 @@ export async function registerRoutes(
           allShifts.push(...monthShifts);
         }
 
-        const clinicId = sessionEmployee.clinicId;
+        const [empClinic] = await db
+          .select({ clinicId: employees.clinicId })
+          .from(employees)
+          .where(eq(employees.id, employeeId ?? sessionEmployee.id))
+          .limit(1);
+        const clinicId = empClinic?.clinicId ?? null;
         if (!clinicId) {
           return res.status(400).json({ error: "Klinik-ID fehlt" });
         }
