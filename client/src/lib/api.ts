@@ -1972,6 +1972,20 @@ export const shiftSwapApi = {
     return handleResponse<ShiftSwapRequest>(response);
   },
 
+  acceptRequest: async (id: number): Promise<ShiftSwapRequest> => {
+    const response = await apiFetch(`${API_BASE}/shift-swaps/${id}/accept`, {
+      method: "POST",
+    });
+    return handleResponse<ShiftSwapRequest>(response);
+  },
+
+  rejectRequest: async (id: number): Promise<ShiftSwapRequest> => {
+    const response = await apiFetch(`${API_BASE}/shift-swaps/${id}/reject`, {
+      method: "POST",
+    });
+    return handleResponse<ShiftSwapRequest>(response);
+  },
+
   delete: async (id: number): Promise<void> => {
     const response = await apiFetch(`${API_BASE}/shift-swaps/${id}`, {
       method: "DELETE",

@@ -34,6 +34,7 @@ import {
   messagesApi,
   employeeApi,
   plannedAbsencesAdminApi,
+  shiftSwapApi,
   type MessageThreadListItem,
   type MessageWithSender,
 } from "@/lib/api";
@@ -490,6 +491,90 @@ export default function Messages() {
     }
   };
 
+  type ShiftSwapMetadata = {
+    kind: "shift_swap_request";
+    swapId: number;
+  };
+
+  const getShiftSwapMetadata = (
+    note: Notification,
+  ): ShiftSwapMetadata | null => {
+    if (!note.metadata || typeof note.metadata !== "object") return null;
+    const meta = note.metadata as Record<string, unknown>;
+    if (meta.kind !== "shift_swap_request") return null;
+
+    const parseId = (value: unknown): number | undefined => {
+      if (typeof value === "number") return value;
+      if (typeof value === "string") {
+        const parsed = Number(value);
+        if (!Number.isNaN(parsed)) return parsed;
+      }
+      return undefined;
+    };
+
+    const swapId = [
+      meta.swapId,
+      meta.shiftSwapId,
+      meta.swap_id,
+      meta.shift_swap_id,
+      meta.requestId,
+      meta.request_id,
+    ]
+      .map(parseId)
+      .find((candidate): candidate is number => candidate !== undefined);
+
+    if (!swapId) return null;
+    return { kind: "shift_swap_request", swapId };
+  };
+
+  const handleShiftSwapResponse = async (
+    note: Notification,
+    action: "accept" | "reject",
+  ) => {
+    const meta = getShiftSwapMetadata(note);
+    if (!meta) return;
+
+    setProcessingNotificationIds((prev) => [...prev, note.id]);
+    try {
+      if (action === "accept") {
+        await shiftSwapApi.acceptRequest(meta.swapId);
+      } else {
+        await shiftSwapApi.rejectRequest(meta.swapId);
+      }
+
+      const updated = note.isRead
+        ? note
+        : await notificationsApi.markRead(note.id);
+      setNotifications((prev) =>
+        prev.map((item) => (item.id === note.id ? { ...item, ...updated } : item)),
+      );
+      toast({
+        title:
+          action === "accept"
+            ? "Diensttausch angenommen"
+            : "Diensttausch abgelehnt",
+        description:
+          action === "accept"
+            ? "Die Tausch-Anfrage wurde bestaetigt."
+            : "Die Anfrage wurde abgelehnt.",
+      });
+      await loadNotifications();
+    } catch (error) {
+      toast({
+        title: "Fehler",
+        description:
+          action === "accept"
+            ? "Diensttausch konnte nicht angenommen werden."
+            : "Die Anfrage konnte nicht abgelehnt werden.",
+        variant: "destructive",
+      });
+    } finally {
+      setProcessingNotificationIds((prev) =>
+        prev.filter((id) => id !== note.id),
+      );
+    }
+  };
+
   return (
     <Layout title="Nachrichten">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -540,6 +625,7 @@ export default function Messages() {
                   <div className="space-y-3">
                     {notifications.map((note) => {
                       const zeitausgleichMeta = getZeitausgleichMetadata(note);
+                      const shiftSwapMeta = getShiftSwapMetadata(note);
                       const isProcessing = processingNotificationIds.includes(
                         note.id,
                       );
@@ -621,6 +707,34 @@ export default function Messages() {
                               {isProcessing && (
                                 <span className="text-xs text-muted-foreground">
                                   Antwort wird gespeichert...
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          {shiftSwapMeta && (
+                            <div className="flex flex-wrap items-center gap-2 pt-2">
+                              <Button
+                                size="sm"
+                                onClick={() =>
+                                  handleShiftSwapResponse(note, "accept")
+                                }
+                                disabled={isProcessing}
+                              >
+                                Annehmen
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() =>
+                                  handleShiftSwapResponse(note, "reject")
+                                }
+                                disabled={isProcessing}
+                              >
+                                Ablehnen
+                              </Button>
+                              {isProcessing && (
+                                <span className="text-xs text-muted-foreground">
+                                  Antwort wird verarbeitet...
                                 </span>
                               )}
                             </div>
