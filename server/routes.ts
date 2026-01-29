@@ -952,222 +952,219 @@
   );
 
   app.get("/api/roster/calendar", async (req: Request, res: Response) => {
-      try {
-        // iCal-Subscriptions schicken oft keine Bearer-Header → daher Token auch als ?token=
-        // Für Abo-Token ignorieren wir das Ablaufdatum, damit macOS Kalender nicht nach Login fragt.
-        const authHeader = req.headers.authorization;
-        const bearerToken = authHeader?.startsWith("Bearer ")
-          ? authHeader.substring(7)
+    try {
+      // iCal-Subscriptions schicken oft keine Bearer-Header → daher Token auch als ?token=
+      // Für Abo-Token ignorieren wir das Ablaufdatum, damit macOS Kalender nicht nach Login fragt.
+      const authHeader = req.headers.authorization;
+      const bearerToken = authHeader?.startsWith("Bearer ")
+        ? authHeader.substring(7)
+        : null;
+
+      const queryToken = typeof req.query.token === "string" ? req.query.token : null;
+      const sessionToken = queryToken ?? bearerToken;
+
+      if (!sessionToken) {
+        return res.status(401).json({ error: "Anmeldung erforderlich" });
+      }
+
+      const [sessionRow] = await db
+        .select({
+          employeeId: sessions.employeeId,
+          expiresAt: sessions.expiresAt,
+        })
+        .from(sessions)
+        .where(eq(sessions.token, sessionToken))
+        .limit(1);
+
+      if (!sessionRow) {
+        return res.status(401).json({ error: "Sitzung abgelaufen" });
+      }
+
+      // Bearer (UI) bleibt zeitlich begrenzt, Query (Abo) darf weiterlaufen
+      if (!queryToken) {
+        const exp = sessionRow.expiresAt
+          ? new Date(sessionRow.expiresAt as any)
           : null;
-
-        const queryToken = typeof req.query.token === "string" ? req.query.token : null;
-        const sessionToken = queryToken ?? bearerToken;
-
-        if (!sessionToken) {
-          return res.status(401).json({ error: "Anmeldung erforderlich" });
-        }
-
-        const [sessionRow] = await db
-          .select({
-            employeeId: sessions.employeeId,
-            expiresAt: sessions.expiresAt,
-          })
-          .from(sessions)
-          .where(eq(sessions.token, sessionToken))
-          .limit(1);
-
-        if (!sessionRow) {
+        if (exp && Date.now() > exp.getTime()) {
           return res.status(401).json({ error: "Sitzung abgelaufen" });
         }
-
-        // Bearer (UI) bleibt zeitlich begrenzt, Query (Abo) darf weiterlaufen
-        if (!queryToken) {
-          const exp = sessionRow.expiresAt
-            ? new Date(sessionRow.expiresAt as any)
-            : null;
-          if (exp && Date.now() > exp.getTime()) {
-            return res.status(401).json({ error: "Sitzung abgelaufen" });
-          }
-        }
-
-        const sessionEmployee = await storage.getEmployee(sessionRow.employeeId);
-        if (!sessionEmployee) {
-          return res.status(401).json({ error: "Benutzer nicht gefunden" });
-        }
-        const monthsParam = Number(req.query.months);
-        const months = Number.isFinite(monthsParam)
-          ? Math.min(Math.max(monthsParam, 1), 12)
-          : 6;
-        const startParam =
-          typeof req.query.start === "string"
-            ? new Date(req.query.start)
-            : null;
-        const startDate =
-          startParam && !Number.isNaN(startParam.getTime())
-            ? new Date(startParam.getFullYear(), startParam.getMonth(), 1)
-            : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-
-        const monthStarts: Array<{ year: number; month: number }> = [];
-        for (let i = 0; i < months; i += 1) {
-          const date = new Date(
-            startDate.getFullYear(),
-            startDate.getMonth() + i,
-            1,
-          );
-          monthStarts.push({
-            year: date.getFullYear(),
-            month: date.getMonth() + 1,
-          });
-        }
-
-        const allShifts: RosterShift[] = [];
-        for (const { year, month } of monthStarts) {
-          const monthShifts = await storage.getRosterShiftsByMonth(year, month);
-          allShifts.push(...monthShifts);
-        }
-
-        const clinicId = sessionEmployee.clinicId;
-        if (!clinicId) {
-          return res.status(400).json({ error: "Klinik-ID fehlt" });
-        }
-
-        const serviceLineRows = await loadServiceLines(clinicId);
-        const serviceLineByKey = new Map(
-          serviceLineRows.map((line) => [line.key, line]),
-        );
-
-        const employees = await storage.getEmployees();
-        const employeesById = new Map(
-          employees.map((emp) => {
-            const displayName =
-              [emp.firstName, emp.lastName].filter(Boolean).join(" ").trim() ||
-              emp.name ||
-              emp.lastName ||
-              "Unbekannt";
-            return [
-              emp.id,
-              {
-                displayName,
-                phonePrivate: emp.phonePrivate || null,
-              },
-            ];
-          }),
-        );
-
-        const shiftsByDate = allShifts.reduce<Record<string, typeof allShifts>>(
-          (acc, shift) => {
-            if (!acc[shift.date]) {
-              acc[shift.date] = [];
-            }
-            acc[shift.date].push(shift);
-            return acc;
-          },
-          {},
-        );
-
-        const currentEmployeeId = sessionEmployee.id;
-
-        const escapeIcs = (value: string) =>
-          value
-            .replace(/\\/g, "\\\\")
-            .replace(/;/g, "\\;")
-            .replace(/,/g, "\\,")
-            .replace(/\n/g, "\\n");
-
-        const dtStamp =
-          new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
-
-          const rosterSummaryForServiceType = (serviceType: string) => {
-            const key = (serviceType || "").toLowerCase();
-            if (key.includes("kreis") || key.includes("geb")) return "Nachtdienst (Geburtshilfe)";
-            if (key === "gyn" || key.includes("gyn")) return "Nachtdienst (Gyn)";
-            if (key.includes("turnus")) return "Turnusdienst";
-            if (key.includes("over") || key.includes("ueber") || key.includes("über") || key === OVERDUTY_KEY.toLowerCase())
-              return "Überdienst";
-            if (key.includes("long")) return "LongDay";
-            return serviceType;
-          };
-
-        const events = allShifts
-          .filter((shift) => shift.employeeId === currentEmployeeId)
-          .map((shift) => {
-            const line = serviceLineByKey.get(shift.serviceType) || {
-              key: shift.serviceType,
-              label: shift.serviceType,
-              startTime: "07:30",
-              endTime: "08:00",
-              endsNextDay: true,
-              sortOrder: 0,
-              isActive: true,
-            };
-            const startDateTime = buildDateTime(shift.date, line.startTime);
-            const endDateTime = buildDateTime(shift.date, line.endTime);
-            if (line.endsNextDay) {
-              endDateTime.setDate(endDateTime.getDate() + 1);
-            }
-
-            const serviceLabel = rosterSummaryForServiceType(shift.serviceType);
-
-            const others = (shiftsByDate[shift.date] || [])
-              .filter((other) => other.employeeId !== currentEmployeeId)
-              .map((other) => {
-                const otherEmployee = other.employeeId
-                  ? employeesById.get(other.employeeId)
-                  : null;
-                const name =
-                  otherEmployee?.displayName ||
-                  other.assigneeFreeText ||
-                  "Unbekannt";
-                if (
-                  other.serviceType === OVERDUTY_KEY &&
-                  otherEmployee?.phonePrivate
-                ) {
-                  return `${name} (${otherEmployee.phonePrivate})`;
-                }
-                return name;
-              });
-
-            const description = others.length
-              ? others.join("\n")
-              : "Keine weiteren Dienste";
-
-            return [
-              "BEGIN:VEVENT",
-              `UID:roster-${shift.id}-${currentEmployeeId}@mycliniq`,
-              `DTSTAMP:${dtStamp}`,
-              `DTSTART:${toIcsDateTimeLocal(startDateTime)}`,
-              `DTEND:${toIcsDateTimeLocal(endDateTime)}`,
-              `SUMMARY:${escapeIcs(serviceLabel)}`,
-              `DESCRIPTION:${escapeIcs(description)}`,
-              "END:VEVENT",
-            ].join("\r\n");
-          });
-
-        const calendar = [
-          "BEGIN:VCALENDAR",
-          "VERSION:2.0",
-          "X-PUBLISHED-TTL:PT1H",
-          "PRODID:-//MyCliniQ//Roster//DE",
-          "CALSCALE:GREGORIAN",
-          "METHOD:PUBLISH",
-          ...events,
-          "END:VCALENDAR",
-        ].join("\r\n");
-
-        res.setHeader("Content-Type", "text/calendar; charset=utf-8");
-        res.setHeader(
-          "Content-Disposition",
-          'inline; filename="dienstplan.ics"',
-        );
-        res.send(calendar);
-      } catch (error: any) {
-        console.error("Roster calendar export error:", error);
-        res
-          .status(500)
-          .json({ error: "Kalender konnte nicht erstellt werden" });
       }
-    },
-  );
+
+      const sessionEmployee = await storage.getEmployee(sessionRow.employeeId);
+      if (!sessionEmployee) {
+        return res.status(401).json({ error: "Benutzer nicht gefunden" });
+      }
+      const monthsParam = Number(req.query.months);
+      const months = Number.isFinite(monthsParam)
+        ? Math.min(Math.max(monthsParam, 1), 12)
+        : 6;
+      const startParam =
+        typeof req.query.start === "string"
+          ? new Date(req.query.start)
+          : null;
+      const startDate =
+        startParam && !Number.isNaN(startParam.getTime())
+          ? new Date(startParam.getFullYear(), startParam.getMonth(), 1)
+          : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+
+      const monthStarts: Array<{ year: number; month: number }> = [];
+      for (let i = 0; i < months; i += 1) {
+        const date = new Date(
+          startDate.getFullYear(),
+          startDate.getMonth() + i,
+          1,
+        );
+        monthStarts.push({
+          year: date.getFullYear(),
+          month: date.getMonth() + 1,
+        });
+      }
+
+      const allShifts: RosterShift[] = [];
+      for (const { year, month } of monthStarts) {
+        const monthShifts = await storage.getRosterShiftsByMonth(year, month);
+        allShifts.push(...monthShifts);
+      }
+
+      const clinicId = sessionEmployee.clinicId;
+      if (!clinicId) {
+        return res.status(400).json({ error: "Klinik-ID fehlt" });
+      }
+
+      const serviceLineRows = await loadServiceLines(clinicId);
+      const serviceLineByKey = new Map(
+        serviceLineRows.map((line) => [line.key, line]),
+      );
+
+      const employees = await storage.getEmployees();
+      const employeesById = new Map(
+        employees.map((emp) => {
+          const displayName =
+            [emp.firstName, emp.lastName].filter(Boolean).join(" ").trim() ||
+            emp.name ||
+            emp.lastName ||
+            "Unbekannt";
+          return [
+            emp.id,
+            {
+              displayName,
+              phonePrivate: emp.phonePrivate || null,
+            },
+          ];
+        }),
+      );
+
+      const shiftsByDate = allShifts.reduce<Record<string, typeof allShifts>>(
+        (acc, shift) => {
+          if (!acc[shift.date]) {
+            acc[shift.date] = [];
+          }
+          acc[shift.date].push(shift);
+          return acc;
+        },
+        {},
+      );
+
+      const currentEmployeeId = sessionEmployee.id;
+
+      const escapeIcs = (value: string) =>
+        value
+          .replace(/\\/g, "\\\\")
+          .replace(/;/g, "\\;")
+          .replace(/,/g, "\\,")
+          .replace(/\n/g, "\\n");
+
+      const dtStamp =
+        new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+
+      const rosterSummaryForServiceType = (serviceType: string) => {
+        const key = (serviceType || "").toLowerCase();
+        if (key.includes("kreis") || key.includes("geb")) return "Nachtdienst (Geburtshilfe)";
+        if (key === "gyn" || key.includes("gyn")) return "Nachtdienst (Gyn)";
+        if (key.includes("turnus")) return "Turnusdienst";
+        if (key.includes("over") || key.includes("ueber") || key.includes("über") || key === OVERDUTY_KEY.toLowerCase())
+          return "Überdienst";
+        if (key.includes("long")) return "LongDay";
+        return serviceType;
+      };
+
+      const events = allShifts
+        .filter((shift) => shift.employeeId === currentEmployeeId)
+        .map((shift) => {
+          const line = serviceLineByKey.get(shift.serviceType) || {
+            key: shift.serviceType,
+            label: shift.serviceType,
+            startTime: "07:30",
+            endTime: "08:00",
+            endsNextDay: true,
+            sortOrder: 0,
+            isActive: true,
+          };
+          const startDateTime = buildDateTime(shift.date, line.startTime);
+          const endDateTime = buildDateTime(shift.date, line.endTime);
+          if (line.endsNextDay) {
+            endDateTime.setDate(endDateTime.getDate() + 1);
+          }
+
+          const serviceLabel = rosterSummaryForServiceType(shift.serviceType);
+
+          const others = (shiftsByDate[shift.date] || [])
+            .filter((other) => other.employeeId !== currentEmployeeId)
+            .map((other) => {
+              const otherEmployee = other.employeeId
+                ? employeesById.get(other.employeeId)
+                : null;
+              const name =
+                otherEmployee?.displayName ||
+                other.assigneeFreeText ||
+                "Unbekannt";
+              if (
+                other.serviceType === OVERDUTY_KEY &&
+                otherEmployee?.phonePrivate
+              ) {
+                return `${name} (${otherEmployee.phonePrivate})`;
+              }
+              return name;
+            });
+
+          const description = others.length
+            ? others.join("\n")
+            : "Keine weiteren Dienste";
+
+          return [
+            "BEGIN:VEVENT",
+            `UID:roster-${shift.id}-${currentEmployeeId}@mycliniq`,
+            `DTSTAMP:${dtStamp}`,
+            `DTSTART:${toIcsDateTimeLocal(startDateTime)}`,
+            `DTEND:${toIcsDateTimeLocal(endDateTime)}`,
+            `SUMMARY:${escapeIcs(serviceLabel)}`,
+            `DESCRIPTION:${escapeIcs(description)}`,
+            "END:VEVENT",
+          ].join("\r\n");
+        });
+
+      const calendar = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "X-PUBLISHED-TTL:PT1H",
+        "PRODID:-//MyCliniQ//Roster//DE",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        ...events,
+        "END:VCALENDAR",
+      ].join("\r\n");
+
+      res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+      res.setHeader(
+        "Content-Disposition",
+        'inline; filename="dienstplan.ics"',
+      );
+      res.send(calendar);
+    } catch (error: any) {
+      console.error("Roster calendar export error:", error);
+      res.status(500).json({ error: "Kalender konnte nicht erstellt werden" });
+    }
+  });
 
   app.get(
     "/api/roster/export",
