@@ -82,6 +82,11 @@ import {
   type PlannedAbsenceAdmin,
   type WeeklyPlanResponse,
 } from "@/lib/api";
+import {
+  getEmployeeServiceLineCandidate,
+  getEmployeeServiceLineKeys,
+  isEmployeeAllowedForServiceLine,
+} from "@/lib/serviceLineAccess";
 import type {
   DutyPlan,
   Employee,
@@ -614,151 +619,15 @@ function RosterView({
     );
   }, [employees, currentUser]);
 
-  const serviceLineKeyById = useMemo(() => {
-    const map = new Map<number, string>();
-    (serviceLines as any[]).forEach((line: any) => {
-      if (typeof line?.id === "number" && typeof line?.key === "string") {
-        map.set(line.id, line.key);
-      }
-    });
-    return map;
-  }, [serviceLines]);
+  const currentEmployeeServiceTypes = useMemo(
+    () => getEmployeeServiceLineKeys(currentEmployee, serviceLines),
+    [currentEmployee, serviceLines],
+  );
 
-  const serviceLineKeyByLabel = useMemo(() => {
-    const map = new Map<string, string>();
-    (serviceLines as any[]).forEach((line: any) => {
-      const key = typeof line?.key === "string" ? line.key : null;
-      const label =
-        typeof line?.label === "string"
-          ? line.label
-          : typeof line?.name === "string"
-          ? line.name
-          : null;
-      if (key && label) {
-        map.set(label.trim().toLowerCase(), key);
-      }
-    });
-    return map;
-  }, [serviceLines]);
-
-  const getEmployeeServiceTypeKeys = (employee: any) => {
-    const candidates =
-      employee?.serviceLineKeys ??
-      employee?.serviceLines ??
-      employee?.allowedServiceLines ??
-      employee?.dutyServiceLines ??
-      employee?.rosterServiceLines ??
-      employee?.serviceLineAccess ??
-      employee?.serviceLinePermissions ??
-      employee?.serviceTypes ??
-      employee?.dienstschienen ??
-      employee?.serviceLineIds ??
-      employee?.serviceLineIdsCsv ??
-      null;
-
-    const mapLabelToKey = (value: string) => {
-      const cleaned = value.replace(/\s*\([^)]*\)\s*$/, "").trim();
-      if (!cleaned) return "";
-      const normalized = cleaned.toLowerCase();
-      return serviceLineKeyByLabel.get(normalized) ?? cleaned;
-    };
-
-    const getLabelKeyFromObject = (obj: any) => {
-      const label =
-        typeof obj?.label === "string"
-          ? obj.label
-          : typeof obj?.name === "string"
-          ? obj.name
-          : undefined;
-      if (label) {
-        const normalized = label.trim().toLowerCase();
-        if (normalized) {
-          return serviceLineKeyByLabel.get(normalized) ?? label.trim();
-        }
-      }
-      return "";
-    };
-
-    const toKeys = (value: any): string[] => {
-      if (!value) return [];
-
-      if (Array.isArray(value)) {
-          return value
-            .map((v) => {
-              if (typeof v === "string") {
-                const s = v.trim();
-                if (!s) return "";
-                return (
-                  serviceLineKeyByLabel.get(s.toLowerCase()) ??
-                  mapLabelToKey(s)
-                );
-              }
-              if (typeof v === "number") return serviceLineKeyById.get(v) ?? "";
-              if (typeof v === "object" && v) {
-                if (typeof (v as any).key === "string") return (v as any).key;
-                if (typeof (v as any).serviceType === "string") return (v as any).serviceType;
-                if (typeof (v as any).serviceLineKey === "string") return (v as any).serviceLineKey;
-                const labelKey = getLabelKeyFromObject(v);
-                if (labelKey) return labelKey;
-                if (typeof (v as any).id === "number") return serviceLineKeyById.get((v as any).id) ?? "";
-              }
-              return "";
-            })
-            .filter(Boolean);
-      }
-
-      if (typeof value === "string") {
-        const trimmed = value.trim();
-        if (!trimmed) return [];
-        try {
-          const parsed = JSON.parse(trimmed);
-          return toKeys(parsed);
-        } catch {
-          const parts = trimmed
-            .split(/[;,\n]+/)
-            .map((p) => p.trim())
-            .filter(Boolean);
-
-          return parts
-            .flatMap((part) => {
-              const normalized = part.toLowerCase();
-              const mapped = serviceLineKeyByLabel.get(normalized);
-              if (mapped) return [mapped];
-
-              if (!part.includes(" ")) {
-                return [part];
-              }
-
-              return part
-                .split(/\s+/)
-                .map((t) => {
-                  const tt = t.trim();
-                  if (!tt) return "";
-                  return (
-                    serviceLineKeyByLabel.get(tt.toLowerCase()) ?? tt
-                  );
-                })
-                .filter(Boolean);
-            })
-            .filter(Boolean);
-        }
-      }
-
-      if (typeof value === "number") {
-        const key = serviceLineKeyById.get(value);
-        return key ? [key] : [];
-      }
-
-      return [];
-    };
-
-    return new Set(toKeys(candidates));
-  };
-
-  const currentEmployeeServiceTypes = useMemo(() => {
-    if (!currentEmployee) return new Set<string>();
-    return getEmployeeServiceTypeKeys(currentEmployee);
-  }, [currentEmployee, serviceLineKeyById, serviceLineKeyByLabel]);
+  const employeeServiceLineRaw = useMemo(
+    () => getEmployeeServiceLineCandidate(currentEmployee),
+    [currentEmployee],
+  );
 
   const currentUserRoleGroup = useMemo(() => {
     const fromEmployee = currentEmployee
@@ -775,12 +644,13 @@ function RosterView({
     if (!token) return false;
     if (!currentUser?.id) return false;
 
-    // Primary source of truth: service lines assigned in Personaleditor
-    if (currentEmployeeServiceTypes.size > 0) {
-      return currentEmployeeServiceTypes.has(shift.serviceType);
-    }
+    const explicit = isEmployeeAllowedForServiceLine(
+      currentEmployee,
+      shift.serviceType,
+      serviceLines,
+    );
+    if (explicit !== null) return explicit;
 
-    // Fallback: role-group heuristics
     if (!currentUserRoleGroup) return false;
     return allowedRoleGroupsForServiceType(shift.serviceType).includes(
       currentUserRoleGroup,
@@ -791,34 +661,33 @@ function RosterView({
     if (isExternalDuty) return [] as RosterShift[];
     if (!token) return [] as RosterShift[];
     if (!currentUser?.id) return [] as RosterShift[];
-
-    // Primary source of truth: service lines assigned in Personaleditor
-    if (currentEmployeeServiceTypes.size > 0) {
-      return visibleUnassignedShifts.filter((shift) =>
-        currentEmployeeServiceTypes.has(shift.serviceType),
+    return visibleUnassignedShifts.filter((shift) => {
+      const explicit = isEmployeeAllowedForServiceLine(
+        currentEmployee,
+        shift.serviceType,
+        serviceLines,
       );
-    }
-
-    // Fallback: role-group heuristics
-    if (!currentUserRoleGroup) return [] as RosterShift[];
-    return visibleUnassignedShifts.filter((shift) =>
-      allowedRoleGroupsForServiceType(shift.serviceType).includes(
+      if (explicit !== null) return explicit;
+      if (!currentUserRoleGroup) return false;
+      return allowedRoleGroupsForServiceType(shift.serviceType).includes(
         currentUserRoleGroup,
-      ),
-    );
+      );
+    });
   }, [
     isExternalDuty,
     token,
     currentUser?.id,
-    currentEmployeeServiceTypes,
+    currentEmployee,
     currentUserRoleGroup,
     visibleUnassignedShifts,
+    serviceLines,
   ]);
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
 
-    console.log("currentEmployee", currentEmployee);
+    console.log("currentEmployee.id", currentEmployee?.id ?? null);
+    console.log("serviceLine raw data", employeeServiceLineRaw);
     console.log(
       "currentEmployeeServiceTypes",
       Array.from(currentEmployeeServiceTypes),
@@ -836,6 +705,7 @@ function RosterView({
     );
   }, [
     currentEmployee,
+    employeeServiceLineRaw,
     currentEmployeeServiceTypes,
     shifts,
     claimableUnassignedShifts,

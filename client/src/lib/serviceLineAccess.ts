@@ -1,0 +1,190 @@
+import type { Employee, ServiceLine } from "@shared/schema";
+
+const SERVICE_LINE_FIELDS = [
+  "serviceLineKeys",
+  "serviceLines",
+  "allowedServiceLines",
+  "dutyServiceLines",
+  "rosterServiceLines",
+  "serviceLineAccess",
+  "serviceLinePermissions",
+  "serviceTypes",
+  "dienstschienen",
+  "serviceLineIds",
+  "serviceLineIdsCsv",
+] as const;
+
+type ServiceLineMaps = {
+  byId: Map<number, string>;
+  byLabel: Map<string, string>;
+};
+
+const normalizeLabelForLookup = (value: string): string => {
+  const cleaned = value.replace(/\s*\([^)]*\)\s*$/, "").trim();
+  return cleaned.toLowerCase();
+};
+
+const buildServiceLineMaps = (serviceLines?: ServiceLine[]): ServiceLineMaps => {
+  const byId = new Map<number, string>();
+  const byLabel = new Map<string, string>();
+  (serviceLines ?? []).forEach((line) => {
+    if (typeof line?.key !== "string") return;
+    const key = line.key;
+    if (typeof line?.id === "number") {
+      byId.set(line.id, key);
+    }
+    const label =
+      typeof line?.label === "string"
+        ? line.label
+        : typeof line?.name === "string"
+        ? line.name
+        : undefined;
+    if (label) {
+      const normalized = normalizeLabelForLookup(label);
+      if (normalized) {
+        byLabel.set(normalized, key);
+      }
+    }
+  });
+  return { byId, byLabel };
+};
+
+const extractCandidate = (employee: any): unknown => {
+  if (!employee) return null;
+  for (const field of SERVICE_LINE_FIELDS) {
+    if (field in employee) {
+      const value = employee[field as keyof typeof employee];
+      if (value != null) return value;
+    }
+  }
+  return null;
+};
+
+const mapLabelToken = (token: string, maps: ServiceLineMaps): string => {
+  const cleaned = token.trim();
+  if (!cleaned) return "";
+  const normalized = normalizeLabelForLookup(cleaned);
+  return maps.byLabel.get(normalized) ?? cleaned;
+};
+
+const getLabelKeyFromObject = (
+  obj: Record<string, unknown>,
+  maps: ServiceLineMaps,
+): string => {
+  const label =
+    typeof obj.label === "string"
+      ? obj.label
+      : typeof obj.name === "string"
+      ? obj.name
+      : undefined;
+  if (!label) return "";
+  const normalized = normalizeLabelForLookup(label);
+  return maps.byLabel.get(normalized) ?? label.trim();
+};
+
+const toKeys = (value: any, maps: ServiceLineMaps): string[] => {
+  if (!value) return [];
+
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => {
+        if (typeof entry === "string") {
+          const s = entry.trim();
+          if (!s) return "";
+          return mapLabelToken(s, maps);
+        }
+        if (typeof entry === "number") {
+          return maps.byId.get(entry) ?? "";
+        }
+        if (typeof entry === "object" && entry) {
+          if (typeof (entry as any).key === "string") {
+            return (entry as any).key;
+          }
+          if (typeof (entry as any).serviceType === "string") {
+            return (entry as any).serviceType;
+          }
+          if (typeof (entry as any).serviceLineKey === "string") {
+            return (entry as any).serviceLineKey;
+          }
+          const labelKey = getLabelKeyFromObject(
+            entry as Record<string, unknown>,
+            maps,
+          );
+          if (labelKey) return labelKey;
+          if (typeof (entry as any).id === "number") {
+            return maps.byId.get((entry as any).id) ?? "";
+          }
+        }
+        return "";
+      })
+      .filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      return toKeys(parsed, maps);
+    } catch {
+      const parts = trimmed
+        .split(/[;,\n]+/)
+        .map((p) => p.trim())
+        .filter(Boolean);
+
+      return parts
+        .flatMap((part) => {
+          const normalized = part.toLowerCase();
+          const mapped = maps.byLabel.get(normalized);
+          if (mapped) return [mapped];
+
+          if (!part.includes(" ")) {
+            return [part];
+          }
+
+          return part
+            .split(/\s+/)
+            .map((token) => {
+              const tt = token.trim();
+              if (!tt) return "";
+              const normalizedToken = tt.toLowerCase();
+              return maps.byLabel.get(normalizedToken) ?? tt;
+            })
+            .filter(Boolean);
+        })
+        .filter(Boolean);
+    }
+  }
+
+  if (typeof value === "number") {
+    const key = maps.byId.get(value);
+    return key ? [key] : [];
+  }
+
+  return [];
+};
+
+export function getEmployeeServiceLineCandidate(employee: any): unknown {
+  return extractCandidate(employee);
+}
+
+export function getEmployeeServiceLineKeys(
+  employee: any,
+  serviceLines?: ServiceLine[],
+): Set<string> {
+  const candidate = extractCandidate(employee);
+  if (candidate == null) return new Set();
+  const maps = buildServiceLineMaps(serviceLines);
+  const keys = toKeys(candidate, maps);
+  return new Set(keys);
+}
+
+export function isEmployeeAllowedForServiceLine(
+  employee: any,
+  serviceTypeKey: string,
+  serviceLines?: ServiceLine[],
+): boolean | null {
+  const keys = getEmployeeServiceLineKeys(employee, serviceLines);
+  if (keys.size === 0) return null;
+  return keys.has(serviceTypeKey);
+}
