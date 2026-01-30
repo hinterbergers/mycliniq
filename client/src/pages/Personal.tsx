@@ -685,7 +685,14 @@ function RosterView({
       if (Array.isArray(value)) {
           return value
             .map((v) => {
-              if (typeof v === "string") return mapLabelToKey(v);
+              if (typeof v === "string") {
+                const s = v.trim();
+                if (!s) return "";
+                return (
+                  serviceLineKeyByLabel.get(s.toLowerCase()) ??
+                  mapLabelToKey(s)
+                );
+              }
               if (typeof v === "number") return serviceLineKeyById.get(v) ?? "";
               if (typeof v === "object" && v) {
                 if (typeof (v as any).key === "string") return (v as any).key;
@@ -707,9 +714,32 @@ function RosterView({
           const parsed = JSON.parse(trimmed);
           return toKeys(parsed);
         } catch {
-          return trimmed
-            .split(/[;,\s]+/)
-            .map((token) => mapLabelToKey(token))
+          const parts = trimmed
+            .split(/[;,\n]+/)
+            .map((p) => p.trim())
+            .filter(Boolean);
+
+          return parts
+            .flatMap((part) => {
+              const normalized = part.toLowerCase();
+              const mapped = serviceLineKeyByLabel.get(normalized);
+              if (mapped) return [mapped];
+
+              if (!part.includes(" ")) {
+                return [part];
+              }
+
+              return part
+                .split(/\s+/)
+                .map((t) => {
+                  const tt = t.trim();
+                  if (!tt) return "";
+                  return (
+                    serviceLineKeyByLabel.get(tt.toLowerCase()) ?? tt
+                  );
+                })
+                .filter(Boolean);
+            })
             .filter(Boolean);
         }
       }
