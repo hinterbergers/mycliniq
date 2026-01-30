@@ -1,10 +1,11 @@
-import Ajv, { type ErrorObject, type ValidateFunction } from "ajv";
+import Ajv2020 from "ajv/dist/2020";
+import type { ErrorObject, ValidateFunction } from "ajv";
 import addFormats from "ajv-formats";
 
 import planningInputSchema from "../schemas/planning-input.v1.schema.json";
 import planningOutputSchema from "../schemas/planning-output.v1.schema.json";
 
-const ajv = new Ajv({ allErrors: true, strict: true });
+const ajv = new Ajv2020({ allErrors: true, strict: true });
 addFormats(ajv);
 
 export const validatePlanningInputV1 = ajv.compile(planningInputSchema);
