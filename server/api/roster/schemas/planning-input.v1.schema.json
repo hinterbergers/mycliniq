@@ -1,0 +1,233 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://mycliniq.info/schemas/planning-input.v1.schema.json",
+    "title": "PlanningInputV1",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["version", "meta", "period", "roles", "slots", "employees", "rules"],
+    "properties": {
+      "version": { "const": "v1" },
+  
+      "meta": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["timezone", "createdAt", "planningKind"],
+        "properties": {
+          "timezone": { "type": "string", "minLength": 1 },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "planningKind": { "type": "string", "enum": ["MONTHLY_DUTY", "WEEKLY_PLAN"] },
+          "orgId": { "type": "string" },
+          "source": { "type": "string", "enum": ["mycliniq", "import", "manual", "test"] }
+        }
+      },
+  
+      "period": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["startDate", "endDate"],
+        "properties": {
+          "startDate": { "type": "string", "format": "date" },
+          "endDate": { "type": "string", "format": "date" },
+          "year": { "type": "integer", "minimum": 2000, "maximum": 2100 },
+          "month": { "type": "integer", "minimum": 1, "maximum": 12 },
+          "weekIso": { "type": "integer", "minimum": 1, "maximum": 53 }
+        }
+      },
+  
+      "roles": {
+        "type": "array",
+        "minItems": 1,
+        "items": { "$ref": "#/$defs/Role" }
+      },
+  
+      "slots": {
+        "type": "array",
+        "minItems": 1,
+        "items": { "$ref": "#/$defs/Slot" }
+      },
+  
+      "employees": {
+        "type": "array",
+        "minItems": 1,
+        "items": { "$ref": "#/$defs/Employee" }
+      },
+  
+      "rules": { "$ref": "#/$defs/Ruleset" },
+  
+      "history": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "windowMonths": { "type": "integer", "minimum": 0, "maximum": 24 },
+          "weekendCountByEmployeeId": {
+            "type": "object",
+            "additionalProperties": { "type": "integer", "minimum": 0, "maximum": 999 }
+          },
+          "lastWeekendStreakByEmployeeId": {
+            "type": "object",
+            "additionalProperties": { "type": "integer", "minimum": 0, "maximum": 12 }
+          }
+        }
+      }
+    },
+  
+    "$defs": {
+      "Role": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "label"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "label": { "type": "string", "minLength": 1 },
+          "tags": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+  
+      "Slot": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "date", "roleId", "required"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "date": { "type": "string", "format": "date" },
+  
+          "startTime": { "type": "string", "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$" },
+          "endTime": { "type": "string", "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$" },
+  
+          "roleId": { "type": "string", "minLength": 1 },
+          "areaId": { "type": "string" },
+  
+          "required": { "type": "integer", "minimum": 1, "maximum": 10 },
+  
+          "tags": { "type": "array", "items": { "type": "string" } },
+  
+          "isWeekend": { "type": "boolean" },
+          "isoWeek": { "type": "integer", "minimum": 1, "maximum": 53 }
+        }
+      },
+  
+      "Employee": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "group", "capabilities", "constraints"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "name": { "type": "string", "minLength": 1 },
+  
+          "group": { "type": "string", "enum": ["OA", "ASS", "TA", "PRIM", "OTHER"] },
+  
+          "capabilities": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["canRoleIds"],
+            "properties": {
+              "canRoleIds": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+              "skillTags": { "type": "array", "items": { "type": "string" } }
+            }
+          },
+  
+          "constraints": { "$ref": "#/$defs/EmployeeConstraints" }
+        }
+      },
+  
+      "EmployeeConstraints": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["limits", "hard"],
+        "properties": {
+          "limits": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "maxSlotsInPeriod": { "type": "integer", "minimum": 0, "maximum": 31 },
+              "minSlotsInPeriod": { "type": "integer", "minimum": 0, "maximum": 31 },
+              "maxSlotsPerIsoWeek": { "type": "integer", "minimum": 0, "maximum": 7 }
+            }
+          },
+  
+          "hard": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "banDates": { "type": "array", "items": { "type": "string", "format": "date" } },
+              "banWeekdays": { "type": "array", "items": { "type": "integer", "minimum": 0, "maximum": 6 } },
+              "banSlotIds": { "type": "array", "items": { "type": "string" } },
+  
+              "hardRuleTags": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+  
+              "freeTextHard": { "type": "string" }
+            }
+          },
+  
+          "soft": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "preferDates": { "type": "array", "items": { "type": "string", "format": "date" } },
+              "avoidDates": { "type": "array", "items": { "type": "string", "format": "date" } },
+  
+              "preferSlotIds": { "type": "array", "items": { "type": "string" } },
+              "avoidSlotIds": { "type": "array", "items": { "type": "string" } },
+  
+              "softRuleTags": { "type": "array", "items": { "type": "string" } },
+              "freeTextSoft": { "type": "string" }
+            }
+          }
+        }
+      },
+  
+      "Ruleset": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["hardRules"],
+        "properties": {
+          "hardRules": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/Rule" }
+          },
+          "softRules": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/Rule" }
+          },
+          "weights": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "prefer": { "type": "number" },
+              "avoid": { "type": "number" },
+              "weekendFairness": { "type": "number" },
+              "avoidWeekendStreak": { "type": "number" },
+              "continuity": { "type": "number" }
+            }
+          }
+        }
+      },
+  
+      "Rule": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "hard"],
+        "properties": {
+          "id": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": [
+              "NO_CONSECUTIVE_DAYS",
+              "MAX_PER_PERIOD",
+              "MIN_PER_PERIOD",
+              "MAX_PER_ISO_WEEK",
+              "ROLE_REQUIRES_GROUP",
+              "ROLE_REQUIRES_SKILLTAG",
+              "COVERAGE_REQUIRED"
+            ]
+          },
+          "hard": { "type": "boolean" },
+          "params": { "type": "object" },
+          "freeText": { "type": "string" }
+        }
+      }
+    }
+  }

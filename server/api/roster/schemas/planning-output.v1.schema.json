@@ -1,0 +1,83 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://mycliniq.info/schemas/planning-output.v1.schema.json",
+    "title": "PlanningOutputV1",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["version", "meta", "assignments", "summary"],
+    "properties": {
+      "version": { "const": "v1" },
+  
+      "meta": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["createdAt", "planningKind"],
+        "properties": {
+          "createdAt": { "type": "string", "format": "date-time" },
+          "planningKind": { "type": "string", "enum": ["MONTHLY_DUTY", "WEEKLY_PLAN"] },
+          "engine": { "type": "string" },
+          "seed": { "type": "integer" }
+        }
+      },
+  
+      "assignments": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["slotId", "employeeId"],
+          "properties": {
+            "slotId": { "type": "string" },
+            "employeeId": { "type": "string" }
+          }
+        }
+      },
+  
+      "violations": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "hard", "message"],
+          "properties": {
+            "code": { "type": "string" },
+            "hard": { "type": "boolean" },
+            "employeeId": { "type": "string" },
+            "slotId": { "type": "string" },
+            "message": { "type": "string" }
+          }
+        }
+      },
+  
+      "unfilledSlots": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["slotId", "reasons"],
+          "properties": {
+            "slotId": { "type": "string" },
+            "reasons": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      },
+  
+      "summary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["score", "coverage"],
+        "properties": {
+          "score": { "type": "number" },
+          "coverage": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["filled", "required"],
+            "properties": {
+              "filled": { "type": "integer", "minimum": 0 },
+              "required": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      }
+    }
+  }

@@ -1769,6 +1769,71 @@ export const insertRosterSettingsSchema = createInsertSchema(
 export type InsertRosterSettings = z.infer<typeof insertRosterSettingsSchema>;
 export type RosterSettings = typeof rosterSettings.$inferSelect;
 
+// Roster planning locks persist manual corrections per slot.
+export const rosterPlanningLocks = pgTable("roster_planning_locks", {
+  id: serial("id").primaryKey(),
+  year: integer("year").notNull(),
+  month: integer("month").notNull(),
+  slotId: text("slot_id").notNull(),
+  employeeId: integer("employee_id").references(() => employees.id),
+  createdById: integer("created_by_id")
+    .references(() => employees.id)
+    .notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+},
+  (table) => [
+    index("roster_planning_locks_year_month_idx").on(table.year, table.month),
+    uniqueIndex("roster_planning_locks_slot_idx").on(
+      table.year,
+      table.month,
+      table.slotId,
+    ),
+  ],
+);
+
+export const insertRosterPlanningLockSchema =
+  createInsertSchema(rosterPlanningLocks).omit({
+    id: true,
+    createdAt: true,
+    updatedAt: true,
+  });
+
+export type InsertRosterPlanningLock =
+  z.infer<typeof insertRosterPlanningLockSchema>;
+export type RosterPlanningLock = typeof rosterPlanningLocks.$inferSelect;
+
+// Roster planning runs store the latest engine output along with the input hash.
+export const rosterPlanningRuns = pgTable("roster_planning_runs", {
+  id: serial("id").primaryKey(),
+  year: integer("year").notNull(),
+  month: integer("month").notNull(),
+  inputHash: text("input_hash").notNull(),
+  inputJson: jsonb("input_json").notNull(),
+  outputJson: jsonb("output_json").notNull(),
+  engine: text("engine").notNull(),
+  seed: integer("seed"),
+  createdById: integer("created_by_id")
+    .references(() => employees.id)
+    .notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+},
+  (table) => [
+    index("roster_planning_runs_year_month_idx").on(table.year, table.month),
+  ],
+);
+
+export const insertRosterPlanningRunSchema = createInsertSchema(
+  rosterPlanningRuns,
+).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertRosterPlanningRun =
+  z.infer<typeof insertRosterPlanningRunSchema>;
+export type RosterPlanningRun = typeof rosterPlanningRuns.$inferSelect;
+
 // Tool visibility settings (per department)
 export const toolVisibility = pgTable(
   "tool_visibility",
