@@ -552,7 +552,7 @@ function RosterView({
     return new Set(
       shifts
         .filter((shift) => shift.employeeId === currentUser.id)
-        .map((shift) => shift.date),
+        .map((shift) => format(parseISO(shift.date), "yyyy-MM-dd")),
     );
   }, [currentUser?.id, shifts]);
 
@@ -564,22 +564,82 @@ function RosterView({
     });
   }, [currentUser?.id, myDutyDates, unassignedShifts]);
 
-  useEffect(() => {
-    window.dispatchEvent(
-      new CustomEvent("mycliniq:unassignedCount", {
-        detail: visibleUnassignedShifts.length,
-      }),
-    );
-  }, [visibleUnassignedShifts.length]);
+  type DutyRoleGroup = "OA" | "ASS" | "TA";
+
+  const getDutyRoleGroup = (employee: Employee): DutyRoleGroup | null => {
+    const raw = String(
+      (employee as any).qualificationGroup ??
+        (employee as any).roleGroup ??
+        (employee as any).group ??
+        (employee as any).dutyRole ??
+        (employee as any).qualification ??
+        (employee as any).positionGroup ??
+        (employee as any).jobGroup ??
+        (employee as any).jobTitle ??
+        (employee as any).title ??
+        (employee as any).role ??
+        (employee as any).position ??
+        "",
+    )
+      .trim()
+      .toUpperCase();
+
+    if (!raw) return null;
+    if (raw.includes("OA") || raw.includes("OBER")) return "OA";
+    if (raw.includes("ASS") || raw.includes("ASSIST")) return "ASS";
+    if (raw.includes("TA") || raw.includes("TURNUS")) return "TA";
+    return null;
+  };
+
+  const allowedRoleGroupsForServiceType = (serviceType: string): DutyRoleGroup[] => {
+    const key = (serviceType ?? "").toLowerCase();
+
+    if (key.includes("turnus") || key === "turnus" || key.includes("ta")) {
+      return ["TA", "ASS"];
+    }
+
+    if (key.includes("kreis") || key.includes("kreiß") || key.includes("geb")) {
+      return ["ASS"];
+    }
+
+    return ["OA"];
+  };
+
+  const currentUserRoleGroup = useMemo(() => {
+    if (!currentUser) return null;
+    return getDutyRoleGroup(currentUser as unknown as Employee);
+  }, [currentUser]);
+
   const canCurrentUserTakeShift = (shift: RosterShift) => {
     if (isExternalDuty) return false;
     if (!token) return false;
     if (!currentUser?.id) return false;
-    const myGroup = getDutyRoleGroup(currentUser as unknown as Employee);
-    if (!myGroup) return false;
-    const allowed = allowedRoleGroupsForServiceType(shift.serviceType);
-    return allowed.includes(myGroup);
+    if (!currentUserRoleGroup) return false;
+    return allowedRoleGroupsForServiceType(shift.serviceType).includes(
+      currentUserRoleGroup,
+    );
   };
+
+  const claimableUnassignedShifts = useMemo(() => {
+    if (isExternalDuty) return [] as RosterShift[];
+    if (!token) return [] as RosterShift[];
+    if (!currentUser?.id) return [] as RosterShift[];
+    if (!currentUserRoleGroup) return [] as RosterShift[];
+
+    return visibleUnassignedShifts.filter((shift) =>
+      allowedRoleGroupsForServiceType(shift.serviceType).includes(
+        currentUserRoleGroup,
+      ),
+    );
+  }, [isExternalDuty, token, currentUser?.id, currentUserRoleGroup, visibleUnassignedShifts]);
+
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("mycliniq:unassignedCount", {
+        detail: claimableUnassignedShifts.length,
+      }),
+    );
+  }, [claimableUnassignedShifts.length]);
 
   const handleTakeShift = async (shift: RosterShift) => {
     if (!token) {
@@ -756,45 +816,6 @@ function RosterView({
     // Nur der eigene Dienst farbig, alle anderen schlicht grau – unabhängig vom Plan-Status.
     if (highlight) return style.cell;
     return "bg-slate-100 text-slate-500 border-slate-200";
-  };
-
-  type DutyRoleGroup = "OA" | "ASS" | "TA";
-
-  const getDutyRoleGroup = (employee: Employee): DutyRoleGroup | null => {
-    const raw = String(
-      (employee as any).qualificationGroup ??
-        (employee as any).roleGroup ??
-        (employee as any).group ??
-        (employee as any).dutyRole ??
-        "",
-    )
-      .trim()
-      .toUpperCase();
-
-    if (!raw) return null;
-    if (raw.includes("OA")) return "OA";
-    if (raw.includes("ASS")) return "ASS";
-    if (raw.includes("TA") || raw.includes("TURNUS")) return "TA";
-    return null;
-  };
-
-  const allowedRoleGroupsForServiceType = (
-    serviceType: string,
-  ): DutyRoleGroup[] => {
-    const key = (serviceType ?? "").toLowerCase();
-
-    // Turnus/TA: TA oder ASS
-    if (key.includes("turnus") || key === "turnus" || key.includes("ta")) {
-      return ["TA", "ASS"];
-    }
-
-    // Geburtshilfe/Kreißzimmer: nur ASS
-    if (key.includes("kreis") || key.includes("kreiß") || key.includes("geb")) {
-      return ["ASS"];
-    }
-
-    // Default (z.B. Gyn/OA/Überdienst): nur OA
-    return ["OA"];
   };
 
   const employeeLabel = (employee: Employee) => {
@@ -1125,55 +1146,29 @@ function RosterView({
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              Unbesetzte Dienste ({visibleUnassignedShifts.length})
+              Unbesetzte Dienste ({claimableUnassignedShifts.length})
             </DialogTitle>
             <DialogDescription>
               Offene Dienste im aktuellen Monat (Geburtshilfe/Kreißzimmer, Gynäkologie, Turnus)
-              inklusive geeigneter Personen (ASS/TA/OA).
+              die Sie übernehmen dürfen.
             </DialogDescription>
           </DialogHeader>
 
-          {visibleUnassignedShifts.length === 0 ? (
+          {claimableUnassignedShifts.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Alle Dienste sind besetzt.
+              Keine freien Dienste für Sie verfügbar.
             </p>
           ) : (
             <div className="space-y-3">
-              {visibleUnassignedShifts.map((shift) => {
+              {claimableUnassignedShifts.map((shift) => {
                 const serviceLabel =
                   serviceLineLookup.get(shift.serviceType)?.label ??
                   shift.serviceType;
-                const eligible = isExternalDuty
-                  ? []
-                  : eligibleEmployeesForUnassignedShift(shift);
 
                 return (
                   <div
                     key={shift.id}
-                    role={canCurrentUserTakeShift(shift) ? "button" : undefined}
-                    tabIndex={canCurrentUserTakeShift(shift) ? 0 : -1}
-                    onClick={() => {
-                      if (canCurrentUserTakeShift(shift) && claimingShiftId == null) {
-                        handleTakeShift(shift);
-                      }
-                    }}
-                    onKeyDown={(e) => {
-                      if (
-                        (e.key === "Enter" || e.key === " ") &&
-                        canCurrentUserTakeShift(shift) &&
-                        claimingShiftId == null
-                      ) {
-                        e.preventDefault();
-                        handleTakeShift(shift);
-                      }
-                    }}
-                    className={cn(
-                      "rounded-lg border border-border p-3",
-                      canCurrentUserTakeShift(shift)
-                        ? "cursor-pointer hover:bg-muted/30"
-                        : "opacity-70",
-                      claimingShiftId === shift.id && "opacity-80",
-                    )}
+                    className="rounded-lg border border-border p-3"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="space-y-1">
@@ -1184,47 +1179,21 @@ function RosterView({
                           {" · "}
                           {serviceLabel}
                         </div>
-
-                        <div className="text-xs text-muted-foreground">
-                          Geeignete Personen:
-                        </div>
-
-                        <div className="flex flex-wrap gap-1">
-                          {isExternalDuty ? (
-                            <span className="text-xs text-muted-foreground">
-                              Mitarbeiterliste nicht verfügbar.
-                            </span>
-                          ) : eligible.length === 0 ? (
-                            <Badge
-                              variant="outline"
-                              className="text-red-700 border-red-200 bg-red-50"
-                            >
-                              Keine passenden Personen
-                            </Badge>
-                          ) : (
-                            eligible.map((employee) => (
-                              <Badge
-                                key={employee.id}
-                                variant="outline"
-                                className="bg-slate-50"
-                              >
-                                {employeeLabel(employee)}
-                              </Badge>
-                            ))
-                          )}
-                        </div>
                       </div>
 
-                      {claimingShiftId === shift.id ? (
-                        <Badge variant="outline" className="gap-1">
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                          Übernehmen...
-                        </Badge>
-                      ) : canCurrentUserTakeShift(shift) ? (
-                        <Badge variant="outline">Klick zum Übernehmen</Badge>
-                      ) : (
-                        <Badge variant="outline">offen</Badge>
-                      )}
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          if (claimingShiftId == null) handleTakeShift(shift);
+                        }}
+                        disabled={claimingShiftId === shift.id}
+                        className="gap-2"
+                      >
+                        {claimingShiftId === shift.id && (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        )}
+                        {claimingShiftId === shift.id ? "Übernehme..." : "Übernehmen"}
+                      </Button>
                     </div>
                   </div>
                 );
