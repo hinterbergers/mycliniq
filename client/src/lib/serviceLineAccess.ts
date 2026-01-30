@@ -33,12 +33,7 @@ const buildServiceLineMaps = (serviceLines?: ServiceLine[]): ServiceLineMaps => 
     if (typeof line?.id === "number") {
       byId.set(line.id, key);
     }
-    const label =
-      typeof line?.label === "string"
-        ? line.label
-        : typeof line?.name === "string"
-        ? line.name
-        : undefined;
+    const label = typeof line?.label === "string" ? line.label : undefined;
     if (label) {
       const normalized = normalizeLabelForLookup(label);
       if (normalized) {
@@ -71,12 +66,7 @@ const getLabelKeyFromObject = (
   obj: Record<string, unknown>,
   maps: ServiceLineMaps,
 ): string => {
-  const label =
-    typeof obj.label === "string"
-      ? obj.label
-      : typeof obj.name === "string"
-      ? obj.name
-      : undefined;
+  const label = typeof obj.label === "string" ? obj.label : undefined;
   if (!label) return "";
   const normalized = normalizeLabelForLookup(label);
   return maps.byLabel.get(normalized) ?? label.trim();
