@@ -818,25 +818,6 @@ function RosterView({
     return "bg-slate-100 text-slate-500 border-slate-200";
   };
 
-  const employeeLabel = (employee: Employee) => {
-    const first = (employee as any).firstName as string | undefined;
-    const last = (employee as any).lastName as string | undefined;
-    if (first && last) return `${first} ${last}`;
-    if (employee.name) return employee.name;
-    if (employee.lastName) return employee.lastName;
-    return `#${employee.id}`;
-  };
-
-  const eligibleEmployeesForUnassignedShift = (shift: RosterShift) => {
-    const allowed = allowedRoleGroupsForServiceType(shift.serviceType);
-    return employees
-      .filter((employee) => {
-        const group = getDutyRoleGroup(employee);
-        return group ? allowed.includes(group) : false;
-      })
-      .sort((a, b) => employeeLabel(a).localeCompare(employeeLabel(b), "de"));
-  };
-
   type LegacyInactiveEmployeeLike = Pick<
     Employee,
     "inactiveFrom" | "inactiveUntil"
@@ -1173,7 +1154,7 @@ function RosterView({
                     <div className="flex items-start justify-between gap-3">
                       <div className="space-y-1">
                         <div className="font-medium">
-                          {format(parseISO(shift.date), "EEE, dd.MM.yyyy", {
+                          {format(parseISO(shift.date), "EEE, dd.MM", {
                             locale: de,
                           })}
                           {" · "}
