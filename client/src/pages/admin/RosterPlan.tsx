@@ -48,6 +48,11 @@ import {
   PopoverAnchor,
   PopoverContent,
 } from "@/components/ui/popover";
+import { PlanningDrawer } from "@/components/planning/PlanningDrawer";
+import {
+  PlanningInspector,
+  type SlotInspectorInfo,
+} from "@/components/planning/PlanningInspector";
 import {
   Download,
   ArrowLeft,
@@ -95,6 +100,7 @@ import {
 import { de } from "date-fns/locale";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
+import { usePlanning } from "@/hooks/usePlanning";
 import {
   getServiceTypesForEmployee,
   employeeDoesShifts,
@@ -323,6 +329,13 @@ const getLastNameFromText = (value?: string | null) => {
   return parts[parts.length - 1] || value;
 };
 
+const formatSlotId = (date: Date, type: ServiceType) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}-${type}`;
+};
+
 export default function RosterPlan() {
   const {
     employee: currentUser,
@@ -355,6 +368,11 @@ export default function RosterPlan() {
   >(null);
   const [isApplying, setIsApplying] = useState(false);
   const [manualEditMode, setManualEditMode] = useState(false);
+  const [planningDrawerOpen, setPlanningDrawerOpen] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [inspectorSlot, setInspectorSlot] = useState<SlotInspectorInfo | null>(
+    null,
+  );
   const [showLongTermAbsences, setShowLongTermAbsences] = useState(false);
   const [savingCellKey, setSavingCellKey] = useState<string | null>(null);
   const [manualDrafts, setManualDrafts] = useState<Record<string, string>>({});
@@ -397,6 +415,17 @@ export default function RosterPlan() {
   const planStatusLabel = PLAN_STATUS_LABELS[planStatus];
   const isDraftMode =
     planStatus === "Entwurf" || latestGenerationMode === "draft";
+
+  const currentPlanningYear = currentDate.getFullYear();
+  const currentPlanningMonth = currentDate.getMonth() + 1;
+  const {
+    input: planningInput,
+    state: planningState,
+    locks: planningLocks,
+    loading: planningLoading,
+    error: planningError,
+    refresh: refreshPlanning,
+  } = usePlanning(currentPlanningYear, currentPlanningMonth);
 
   const fetchRosterShifts = useCallback(
     async (draftFlag?: boolean) => {
@@ -581,6 +610,12 @@ export default function RosterPlan() {
   const getShiftForDay = (date: Date, type: ServiceType) => {
     const dateStr = format(date, "yyyy-MM-dd");
     return shifts.find((s) => s.date === dateStr && s.serviceType === type);
+  };
+
+  const handleSlotInspectorOpen = (slotInfo: SlotInspectorInfo | null) => {
+    if (!slotInfo) return;
+    setInspectorSlot(slotInfo);
+    setInspectorOpen(true);
   };
 
   const getEmployeeById = (id?: number | null) => {
@@ -880,9 +915,25 @@ export default function RosterPlan() {
             ? employee.name.split(" ").pop()
             : employee.name
           : freeText;
+        const slotInfo: SlotInspectorInfo = {
+          slotId: formatSlotId(date, type),
+          date: dateStr,
+          roleId: type,
+          employeeId: employee?.id ?? null,
+          employeeName: employee?.name ?? (freeText || null),
+        };
         return (
           <div
-            className={`relative ${hasConflict ? "border border-red-300 bg-red-50/60" : ""} rounded`}
+            className={`relative ${hasConflict ? "border border-red-300 bg-red-50/60" : ""} rounded cursor-pointer`}
+            onClick={() => handleSlotInspectorOpen(slotInfo)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                handleSlotInspectorOpen(slotInfo);
+              }
+            }}
           >
             <div
               className={`text-sm px-2 py-1.5 rounded font-medium text-center border shadow-sm ${
@@ -1758,7 +1809,18 @@ export default function RosterPlan() {
                 {manualEditMode
                   ? "Manuelle Eingabe aktiv"
                   : "Manuell bearbeiten"}
-           </Button>
+              </Button>
+            )}
+            {canEdit && (
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => setPlanningDrawerOpen(true)}
+                data-testid="button-planning-drawer"
+              >
+                <Brain className="w-4 h-4" />
+                Planung
+              </Button>
             )}
             {canEdit && (
               <Button
@@ -2047,13 +2109,13 @@ export default function RosterPlan() {
 
         {/* Main Roster Table */}
         <Card className="border-none kabeg-shadow overflow-hidden">
-          {manualEditMode && canEdit && (
-            <div className="px-4 py-3 bg-amber-50 border-b border-amber-200 text-sm text-amber-800 flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4" />
-              Manuelle Eingabe aktiv. Konflikte werden markiert, Speicherung
-              bleibt erlaubt.
-            </div>
-          )}
+  {manualEditMode && canEdit && (
+    <div className="px-4 py-3 bg-amber-50 border-b border-amber-200 text-sm text-amber-800 flex items-center gap-2">
+      <AlertTriangle className="w-4 h-4" />
+      Manuelle Eingabe aktiv. Konflikte werden markiert, Speicherung
+      bleibt erlaubt.
+    </div>
+  )}
         <div className="overflow-x-auto overflow-y-visible">
           {!shifts.length && !isLoading && (
             <div className="px-4 py-3 text-sm text-muted-foreground border-b border-border">
@@ -2117,17 +2179,17 @@ export default function RosterPlan() {
                       <TableCell
                         className={`border-r border-border ${isWeekendDay || isHoliday ? "text-rose-600 font-bold" : ""}`}
                       >
-                        {format(day, "dd.MM.")}
-                      </TableCell>
+            {format(day, "dd.MM.")}
+          </TableCell>
 
-                      {serviceLineDisplay.map((line) => (
-                        <TableCell
-                          key={line.key}
-                          className="border-r border-border p-1"
-                        >
-                          {renderAssignmentCell(day, line)}
-                        </TableCell>
-                      ))}
+          {serviceLineDisplay.map((line) => (
+            <TableCell
+              key={line.key}
+              className="border-r border-border p-1"
+            >
+              {renderAssignmentCell(day, line)}
+            </TableCell>
+          ))}
 
                       {/* Absences & Info */}
                       <TableCell className="p-1 text-muted-foreground">
@@ -2646,6 +2708,29 @@ export default function RosterPlan() {
           </DialogContent>
         </Dialog>
       </div>
+      <PlanningDrawer
+        open={planningDrawerOpen}
+        onOpenChange={setPlanningDrawerOpen}
+        year={currentPlanningYear}
+        month={currentPlanningMonth}
+        employees={employees}
+        input={planningInput}
+        state={planningState}
+        locks={planningLocks}
+        loading={planningLoading}
+        error={planningError}
+        refresh={refreshPlanning}
+      />
+      <PlanningInspector
+        open={inspectorOpen}
+        onOpenChange={setInspectorOpen}
+        year={currentPlanningYear}
+        month={currentPlanningMonth}
+        slot={inspectorSlot}
+        employees={employees}
+        locks={planningLocks}
+        onRefresh={refreshPlanning}
+      />
     </Layout>
   );
 }

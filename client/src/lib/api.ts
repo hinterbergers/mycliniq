@@ -125,6 +125,124 @@ export type DashboardAbsencesResponse = {
   days: DashboardAbsenceDay[];
 };
 
+export type PlanningStateResponse = {
+  submittedCount: number;
+  missingCount: number;
+  lastRunAt: string | null;
+  isDirty: boolean;
+};
+
+export type PlanningLock = {
+  id: number;
+  year: number;
+  month: number;
+  slotId: string;
+  employeeId: number | null;
+  createdById: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PlanningInputV1 = {
+  version: "v1";
+  meta: {
+    timezone: string;
+    createdAt: string;
+    planningKind: "MONTHLY_DUTY" | "WEEKLY_PLAN" | string;
+    source?: string;
+  };
+  period: {
+    startDate: string;
+    endDate: string;
+    year: number;
+    month: number;
+  };
+  roles: Array<{
+    id: string;
+    label: string;
+    tags?: string[];
+  }>;
+  slots: Array<{
+    id: string;
+    date: string;
+    roleId: string;
+    required: number;
+    startTime?: string;
+    endTime?: string;
+    isoWeek?: number;
+    isWeekend?: boolean;
+    tags?: string[];
+  }>;
+  employees: Array<{
+    id: string;
+    name: string;
+    group: string;
+    capabilities: {
+      canRoleIds: string[];
+      skillTags?: string[];
+    };
+    constraints: {
+      limits?: {
+        maxSlotsInPeriod?: number;
+        minSlotsInPeriod?: number;
+        maxSlotsPerIsoWeek?: number;
+      };
+      hard?: {
+        banDates?: string[];
+        banWeekdays?: number[];
+      };
+      soft?: {
+        preferDates?: string[];
+        avoidDates?: string[];
+      };
+    };
+  }>;
+  rules: {
+    hardRules: Array<{ id?: string; type: string; hard: boolean; params?: Record<string, unknown> }>;
+    softRules?: Array<{ id?: string; type: string; hard: boolean; params?: Record<string, unknown> }>;
+    weights?: {
+      prefer?: number;
+      avoid?: number;
+      weekendFairness?: number;
+      avoidWeekendStreak?: number;
+      continuity?: number;
+    };
+  };
+};
+
+export type PlanningOutputAssignment = {
+  slotId: string;
+  employeeId: string;
+};
+
+export type PlanningOutputViolation = {
+  code: string;
+  hard: boolean;
+  message: string;
+  slotId?: string;
+  employeeId?: string;
+};
+
+export type PlanningOutputV1 = {
+  version: "v1";
+  meta: {
+    createdAt: string;
+    planningKind: "MONTHLY_DUTY" | "WEEKLY_PLAN" | string;
+    engine: string;
+    seed: number;
+  };
+  assignments: PlanningOutputAssignment[];
+  violations: PlanningOutputViolation[];
+  unfilledSlots: Array<{ slotId: string; reasons: string[] }>;
+  summary: {
+    score: number;
+    coverage: {
+      filled: number;
+      required: number;
+    };
+  };
+};
+
 export type MeResponse = {
   user?: {
     id: number;
@@ -2453,5 +2571,95 @@ export const toolsApi = {
       body: JSON.stringify({ tools }),
     });
     return handleResponse<ToolVisibilitySetting[]>(response);
+  },
+};
+
+// Planning API
+export const planningRestApi = {
+  getInput: async (year: number, month: number): Promise<PlanningInputV1> => {
+    const response = await apiFetch(
+      `${API_BASE}/roster/planning/${year}/${month}/input`,
+    );
+    return handleResponse<PlanningInputV1>(response);
+  },
+
+  getState: async (year: number, month: number): Promise<PlanningStateResponse> => {
+    const response = await apiFetch(
+      `${API_BASE}/roster/planning/${year}/${month}/state`,
+    );
+    return handleResponse<PlanningStateResponse>(response);
+  },
+
+  getLocks: async (
+    year: number,
+    month: number,
+  ): Promise<PlanningLock[]> => {
+    const response = await apiFetch(
+      `${API_BASE}/roster/planning/${year}/${month}/locks`,
+    );
+    return handleResponse<PlanningLock[]>(response);
+  },
+
+  upsertLock: async (
+    year: number,
+    month: number,
+    slotId: string,
+    employeeId: number | null,
+  ): Promise<PlanningLock> => {
+    const response = await apiFetch(
+      `${API_BASE}/roster/planning/${year}/${month}/locks`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slotId, employeeId }),
+      },
+    );
+    return handleResponse<PlanningLock>(response);
+  },
+
+  deleteLock: async (
+    year: number,
+    month: number,
+    slotId: string,
+  ): Promise<void> => {
+    const response = await apiFetch(
+      `${API_BASE}/roster/planning/${year}/${month}/locks/${encodeURIComponent(
+        slotId,
+      )}`,
+      { method: "DELETE" },
+    );
+    return handleResponse<void>(response);
+  },
+
+  preview: async (
+    year: number,
+    month: number,
+    data: { seed?: number | null },
+  ): Promise<PlanningOutputV1> => {
+    const response = await apiFetch(
+      `${API_BASE}/roster/planning/${year}/${month}/preview`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      },
+    );
+    return handleResponse<PlanningOutputV1>(response);
+  },
+
+  run: async (
+    year: number,
+    month: number,
+    data: { seed?: number | null },
+  ): Promise<PlanningOutputV1> => {
+    const response = await apiFetch(
+      `${API_BASE}/roster/planning/${year}/${month}/run`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      },
+    );
+    return handleResponse<PlanningOutputV1>(response);
   },
 };
