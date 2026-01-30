@@ -52,6 +52,7 @@ import {
   subMonths,
   addWeeks,
   subWeeks,
+  subDays,
   getWeek,
   getMonth,
   getYear,
@@ -447,7 +448,7 @@ function RosterView({
   currentDate: Date;
   setCurrentDate: (d: Date) => void;
 }) {
-  const { employee: currentUser, user } = useAuth();
+  const { employee: currentUser, user, token } = useAuth();
   const { toast } = useToast();
   const [dutyPlan, setDutyPlan] = useState<DutyPlan | null>(null);
   const [planLoading, setPlanLoading] = useState(false);
@@ -463,6 +464,7 @@ function RosterView({
   );
   const isExternalDuty = user?.accessScope === "external_duty";
   const [unassignedDialogOpen, setUnassignedDialogOpen] = useState(false);
+  const [claimingShiftId, setClaimingShiftId] = useState<string | number | null>(null);
 
   const planStatus = dutyPlan?.status;
   const statusLabel = planStatus ? PLAN_STATUS_LABELS[planStatus] : "Vorschau";
@@ -492,6 +494,18 @@ function RosterView({
     [days],
   );
 
+  const isRelevantServiceType = (serviceType: string, label?: string) => {
+    const hay = `${serviceType ?? ""} ${label ?? ""}`.toLowerCase();
+    return (
+      hay.includes("turnus") ||
+      hay.includes("gyn") ||
+      hay.includes("geb") ||
+      hay.includes("geburt") ||
+      hay.includes("kreis") ||
+      hay.includes("kreiß")
+    );
+  };
+
   const unassignedShifts = useMemo(() => {
     const byKey = new Map<string, RosterShift>();
     for (const shift of shifts) {
@@ -504,6 +518,7 @@ function RosterView({
       const date = format(day, "yyyy-MM-dd", { locale: de });
 
       for (const line of serviceLineDisplay) {
+        if (!isRelevantServiceType(line.key, line.label)) continue;
         const key = `${date}|${line.key}`;
         const shift = byKey.get(key);
 
@@ -532,13 +547,109 @@ function RosterView({
     );
   }, [days, serviceLineDisplay, shifts]);
 
+  const myDutyDates = useMemo(() => {
+    if (!currentUser?.id) return new Set<string>();
+    return new Set(
+      shifts
+        .filter((shift) => shift.employeeId === currentUser.id)
+        .map((shift) => shift.date),
+    );
+  }, [currentUser?.id, shifts]);
+
+  const visibleUnassignedShifts = useMemo(() => {
+    if (!currentUser?.id) return unassignedShifts;
+    return unassignedShifts.filter((shift) => {
+      const prevDate = format(subDays(parseISO(shift.date), 1), "yyyy-MM-dd");
+      return !myDutyDates.has(prevDate);
+    });
+  }, [currentUser?.id, myDutyDates, unassignedShifts]);
+
   useEffect(() => {
     window.dispatchEvent(
       new CustomEvent("mycliniq:unassignedCount", {
-        detail: unassignedShifts.length,
+        detail: visibleUnassignedShifts.length,
       }),
     );
-  }, [unassignedShifts.length]);
+  }, [visibleUnassignedShifts.length]);
+  const canCurrentUserTakeShift = (shift: RosterShift) => {
+    if (isExternalDuty) return false;
+    if (!token) return false;
+    if (!currentUser?.id) return false;
+    const myGroup = getDutyRoleGroup(currentUser as unknown as Employee);
+    if (!myGroup) return false;
+    const allowed = allowedRoleGroupsForServiceType(shift.serviceType);
+    return allowed.includes(myGroup);
+  };
+
+  const handleTakeShift = async (shift: RosterShift) => {
+    if (!token) {
+      toast({
+        title: "Nicht angemeldet",
+        description: "Bitte melden Sie sich erneut an.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!currentUser?.id) return;
+    if (!canCurrentUserTakeShift(shift)) return;
+
+    setClaimingShiftId(shift.id);
+    try {
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      };
+
+      const isMissing = String(shift.id).startsWith("missing-");
+      let res: Response;
+
+      if (isMissing) {
+        // Create + assign (backend must support POST /api/roster)
+        res = await fetch("/api/roster", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            date: shift.date,
+            serviceType: shift.serviceType,
+            employeeId: currentUser.id,
+          }),
+        });
+      } else {
+        // Assign existing shift (backend must support PATCH /api/roster/shifts/:id)
+        res = await fetch(`/api/roster/shifts/${shift.id}`, {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({
+            employeeId: currentUser.id,
+            assigneeFreeText: null,
+          }),
+        });
+      }
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `HTTP ${res.status}`);
+      }
+
+      const serviceLabel =
+        serviceLineLookup.get(shift.serviceType)?.label ?? shift.serviceType;
+
+      toast({
+        title: "Dienst übernommen",
+        description: `${serviceLabel} am ${format(parseISO(shift.date), "dd.MM", { locale: de })} wurde übernommen.`,
+      });
+
+      await loadRoster();
+    } catch (error: any) {
+      toast({
+        title: "Übernahme fehlgeschlagen",
+        description: error?.message || "Bitte versuchen Sie es erneut.",
+        variant: "destructive",
+      });
+    } finally {
+      setClaimingShiftId(null);
+    }
+  };
   
   useEffect(() => {
     const handler = () => setUnassignedDialogOpen(true);
@@ -1014,21 +1125,21 @@ function RosterView({
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              Unbesetzte Dienste ({unassignedShifts.length})
+              Unbesetzte Dienste ({visibleUnassignedShifts.length})
             </DialogTitle>
             <DialogDescription>
-              Offene Dienste im aktuellen Monat, inklusive geeigneter Personen
-              (ASS/TA/OA-Regel).
+              Offene Dienste im aktuellen Monat (Geburtshilfe/Kreißzimmer, Gynäkologie, Turnus)
+              inklusive geeigneter Personen (ASS/TA/OA).
             </DialogDescription>
           </DialogHeader>
 
-          {unassignedShifts.length === 0 ? (
+          {visibleUnassignedShifts.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Alle Dienste sind besetzt.
             </p>
           ) : (
             <div className="space-y-3">
-              {unassignedShifts.map((shift) => {
+              {visibleUnassignedShifts.map((shift) => {
                 const serviceLabel =
                   serviceLineLookup.get(shift.serviceType)?.label ??
                   shift.serviceType;
@@ -1039,7 +1150,30 @@ function RosterView({
                 return (
                   <div
                     key={shift.id}
-                    className="rounded-lg border border-border p-3"
+                    role={canCurrentUserTakeShift(shift) ? "button" : undefined}
+                    tabIndex={canCurrentUserTakeShift(shift) ? 0 : -1}
+                    onClick={() => {
+                      if (canCurrentUserTakeShift(shift) && claimingShiftId == null) {
+                        handleTakeShift(shift);
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (
+                        (e.key === "Enter" || e.key === " ") &&
+                        canCurrentUserTakeShift(shift) &&
+                        claimingShiftId == null
+                      ) {
+                        e.preventDefault();
+                        handleTakeShift(shift);
+                      }
+                    }}
+                    className={cn(
+                      "rounded-lg border border-border p-3",
+                      canCurrentUserTakeShift(shift)
+                        ? "cursor-pointer hover:bg-muted/30"
+                        : "opacity-70",
+                      claimingShiftId === shift.id && "opacity-80",
+                    )}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="space-y-1">
@@ -1081,7 +1215,16 @@ function RosterView({
                         </div>
                       </div>
 
-                      <Badge variant="outline">offen</Badge>
+                      {claimingShiftId === shift.id ? (
+                        <Badge variant="outline" className="gap-1">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          Übernehmen...
+                        </Badge>
+                      ) : canCurrentUserTakeShift(shift) ? (
+                        <Badge variant="outline">Klick zum Übernehmen</Badge>
+                      ) : (
+                        <Badge variant="outline">offen</Badge>
+                      )}
                     </div>
                   </div>
                 );
