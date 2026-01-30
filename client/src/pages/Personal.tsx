@@ -183,13 +183,32 @@ type RosterAbsenceEntry = {
 export default function Personal() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [, setLocation] = useLocation();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { toast } = useToast();
   const [swapDialogOpen, setSwapDialogOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [planningMonth, setPlanningMonth] = useState<NextPlanningMonth | null>(
     null,
   );
+
+  const isExternalDuty = user?.accessScope === "external_duty";
+  const [unassignedCount, setUnassignedCount] = useState(0);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      setUnassignedCount(Number(detail ?? 0));
+    };
+    window.addEventListener(
+      "mycliniq:unassignedCount",
+      handler as unknown as EventListener,
+    );
+    return () =>
+      window.removeEventListener(
+        "mycliniq:unassignedCount",
+        handler as unknown as EventListener,
+      );
+  }, []);
 
   useEffect(() => {
     const loadPlanningMonth = async () => {
@@ -335,6 +354,21 @@ export default function Personal() {
               <RefreshCw className="w-4 h-4" />
               Diensttausch
             </Button>
+            {!isExternalDuty && unassignedCount > 0 && (
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() =>
+                  window.dispatchEvent(new Event("mycliniq:openUnassigned"))
+                }
+                data-testid="button-unassigned-shifts-top"
+              >
+                Unbesetzte Dienste
+                <Badge variant="outline" className="h-5 px-1.5">
+                  {unassignedCount}
+                </Badge>
+              </Button>
+            )}
             <Button
               className="gap-2"
               onClick={() => setLocation("/dienstwuensche")}
@@ -444,16 +478,73 @@ function RosterView({
     () => plannedAbsences.filter((absence) => absence.status !== "Abgelehnt"),
     [plannedAbsences],
   );
+
+  const days = useMemo(
+    () =>
+      eachDayOfInterval({
+        start: startOfMonth(currentDate),
+        end: endOfMonth(currentDate),
+      }),
+    [currentDate],
+  );
+  const dayStrings = useMemo(
+    () => days.map((day) => format(day, "yyyy-MM-dd")),
+    [days],
+  );
+
   const unassignedShifts = useMemo(() => {
-    return shifts
-      .filter(
-        (shift) =>
-          !shift.employeeId && !(shift.assigneeFreeText ?? "").trim(),
-      )
-      .sort((a, b) =>
-        (a.date + a.serviceType).localeCompare(b.date + b.serviceType),
-      );
-  }, [shifts]);
+    const byKey = new Map<string, RosterShift>();
+    for (const shift of shifts) {
+      byKey.set(`${shift.date}|${shift.serviceType}`, shift);
+    }
+
+    const out: RosterShift[] = [];
+
+    for (const day of days) {
+      const date = format(day, "yyyy-MM-dd", { locale: de });
+
+      for (const line of serviceLineDisplay) {
+        const key = `${date}|${line.key}`;
+        const shift = byKey.get(key);
+
+        if (shift) {
+          if (!shift.employeeId && !(shift.assigneeFreeText ?? "").trim()) {
+            out.push(shift);
+          }
+          continue;
+        }
+
+        // Kein Shift-Objekt -> UI zeigt "-" -> zählt als unbesetzt
+        out.push(
+          {
+            id: `missing-${key}`,
+            date,
+            serviceType: line.key,
+            employeeId: null,
+            assigneeFreeText: "",
+          } as unknown as RosterShift,
+        );
+      }
+    }
+
+    return out.sort((a, b) =>
+      (a.date + a.serviceType).localeCompare(b.date + b.serviceType),
+    );
+  }, [days, serviceLineDisplay, shifts]);
+
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("mycliniq:unassignedCount", {
+        detail: unassignedShifts.length,
+      }),
+    );
+  }, [unassignedShifts.length]);
+  
+  useEffect(() => {
+    const handler = () => setUnassignedDialogOpen(true);
+    window.addEventListener("mycliniq:openUnassigned", handler);
+    return () => window.removeEventListener("mycliniq:openUnassigned", handler);
+  }, []);
 
   const loadRoster = async () => {
     const year = currentDate.getFullYear();
@@ -526,14 +617,6 @@ function RosterView({
     return acc;
   }, {});
 
-  const days = eachDayOfInterval({
-    start: startOfMonth(currentDate),
-    end: endOfMonth(currentDate),
-  });
-  const dayStrings = useMemo(
-    () => days.map((day) => format(day, "yyyy-MM-dd")),
-    [days],
-  );
 
   const isPublished = planStatus === "Freigegeben";
   const getLastName = (value: string) => {
@@ -755,19 +838,6 @@ function RosterView({
           </div>
 
           <div className="flex items-center gap-2">
-            {!isExternalDuty && unassignedShifts.length > 0 && (
-              <Button
-                variant="outline"
-                className="gap-2"
-                onClick={() => setUnassignedDialogOpen(true)}
-                data-testid="button-unassigned-shifts"
-              >
-                Unbesetzte Dienste
-                <Badge variant="outline" className="h-5 px-1.5">
-                  {unassignedShifts.length}
-                </Badge>
-              </Button>
-            )}
             <Badge
               variant="outline"
               className={
