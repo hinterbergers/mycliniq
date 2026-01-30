@@ -365,7 +365,7 @@ export default function Personal() {
               <RefreshCw className="w-4 h-4" />
               Diensttausch
             </Button>
-            {showUnassignedButton && (
+            {!isExternalDuty && unassignedCount > 0 && (
               <Button
                 variant="outline"
                 className="gap-2"
@@ -376,7 +376,7 @@ export default function Personal() {
               >
                 Unbesetzte Dienste
                 <Badge variant="outline" className="h-5 px-1.5">
-                  {claimableUnassignedShifts.length}
+                  {unassignedCount}
                 </Badge>
               </Button>
             )}
@@ -650,8 +650,9 @@ function RosterView({
     unassignedShifts,
   ]);
 
-  const isPlanStatusAllowingUnassigned =
-    Boolean(planStatus) && UNASSIGNED_BUTTON_STATUSES.has(planStatus);
+  const isPlanStatusAllowingUnassigned = planStatus
+    ? UNASSIGNED_BUTTON_STATUSES.has(planStatus)
+    : false;
 
   const showUnassignedButton =
     !isExternalDuty &&
@@ -659,13 +660,17 @@ function RosterView({
     employeeAllowedKeys.size > 0 &&
     claimableUnassignedShifts.length > 0;
 
+  const unassignedCountForEvent = showUnassignedButton
+    ? claimableUnassignedShifts.length
+    : 0;
+
   useEffect(() => {
     window.dispatchEvent(
       new CustomEvent("mycliniq:unassignedCount", {
-        detail: claimableUnassignedShifts.length,
+        detail: unassignedCountForEvent,
       }),
     );
-  }, [claimableUnassignedShifts.length]);
+  }, [unassignedCountForEvent]);
 
   const handleTakeShift = async (shift: RosterShift) => {
     if (!token) {
