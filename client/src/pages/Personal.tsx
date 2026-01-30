@@ -428,6 +428,7 @@ function RosterView({
     [],
   );
   const isExternalDuty = user?.accessScope === "external_duty";
+  const [unassignedDialogOpen, setUnassignedDialogOpen] = useState(false);
 
   const planStatus = dutyPlan?.status;
   const statusLabel = planStatus ? PLAN_STATUS_LABELS[planStatus] : "Vorschau";
@@ -443,6 +444,16 @@ function RosterView({
     () => plannedAbsences.filter((absence) => absence.status !== "Abgelehnt"),
     [plannedAbsences],
   );
+  const unassignedShifts = useMemo(() => {
+    return shifts
+      .filter(
+        (shift) =>
+          !shift.employeeId && !(shift.assigneeFreeText ?? "").trim(),
+      )
+      .sort((a, b) =>
+        (a.date + a.serviceType).localeCompare(b.date + b.serviceType),
+      );
+  }, [shifts]);
 
   const loadRoster = async () => {
     const year = currentDate.getFullYear();
@@ -551,6 +562,64 @@ function RosterView({
     // Nur der eigene Dienst farbig, alle anderen schlicht grau – unabhängig vom Plan-Status.
     if (highlight) return style.cell;
     return "bg-slate-100 text-slate-500 border-slate-200";
+  };
+
+  type DutyRoleGroup = "OA" | "ASS" | "TA";
+
+  const getDutyRoleGroup = (employee: Employee): DutyRoleGroup | null => {
+    const raw = String(
+      (employee as any).qualificationGroup ??
+        (employee as any).roleGroup ??
+        (employee as any).group ??
+        (employee as any).dutyRole ??
+        "",
+    )
+      .trim()
+      .toUpperCase();
+
+    if (!raw) return null;
+    if (raw.includes("OA")) return "OA";
+    if (raw.includes("ASS")) return "ASS";
+    if (raw.includes("TA") || raw.includes("TURNUS")) return "TA";
+    return null;
+  };
+
+  const allowedRoleGroupsForServiceType = (
+    serviceType: string,
+  ): DutyRoleGroup[] => {
+    const key = (serviceType ?? "").toLowerCase();
+
+    // Turnus/TA: TA oder ASS
+    if (key.includes("turnus") || key === "turnus" || key.includes("ta")) {
+      return ["TA", "ASS"];
+    }
+
+    // Geburtshilfe/Kreißzimmer: nur ASS
+    if (key.includes("kreis") || key.includes("kreiß") || key.includes("geb")) {
+      return ["ASS"];
+    }
+
+    // Default (z.B. Gyn/OA/Überdienst): nur OA
+    return ["OA"];
+  };
+
+  const employeeLabel = (employee: Employee) => {
+    const first = (employee as any).firstName as string | undefined;
+    const last = (employee as any).lastName as string | undefined;
+    if (first && last) return `${first} ${last}`;
+    if (employee.name) return employee.name;
+    if (employee.lastName) return employee.lastName;
+    return `#${employee.id}`;
+  };
+
+  const eligibleEmployeesForUnassignedShift = (shift: RosterShift) => {
+    const allowed = allowedRoleGroupsForServiceType(shift.serviceType);
+    return employees
+      .filter((employee) => {
+        const group = getDutyRoleGroup(employee);
+        return group ? allowed.includes(group) : false;
+      })
+      .sort((a, b) => employeeLabel(a).localeCompare(employeeLabel(b), "de"));
   };
 
   type LegacyInactiveEmployeeLike = Pick<
@@ -686,6 +755,19 @@ function RosterView({
           </div>
 
           <div className="flex items-center gap-2">
+            {!isExternalDuty && unassignedShifts.length > 0 && (
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => setUnassignedDialogOpen(true)}
+                data-testid="button-unassigned-shifts"
+              >
+                Unbesetzte Dienste
+                <Badge variant="outline" className="h-5 px-1.5">
+                  {unassignedShifts.length}
+                </Badge>
+              </Button>
+            )}
             <Badge
               variant="outline"
               className={
@@ -756,7 +838,7 @@ function RosterView({
                     ".",
                     "",
                   );
-                  const dateLabel = format(day, "dd.MM.yyyy", { locale: de });
+                  const dateLabel = format(day, "dd.MM", { locale: de });
                   const dateKey = format(day, "yyyy-MM-dd");
                   const dayShifts = shiftsByDate[dateKey] || {};
                   const holiday = getAustrianHoliday(day);
@@ -802,7 +884,7 @@ function RosterView({
                                 variant="outline"
                                 className={cn(
                                   getBadgeClass(line.style, isMyShift(shift)),
-                                  "px-2 py-0.5 text-xs leading-4",
+                                  "px-2 py-0.5 text-sm leading-5",
                                 )}
                               >
                                 {label}
@@ -854,6 +936,90 @@ function RosterView({
           </table>
         </div>
       </Card>
+
+      <Dialog
+        open={unassignedDialogOpen}
+        onOpenChange={setUnassignedDialogOpen}
+      >
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Unbesetzte Dienste ({unassignedShifts.length})
+            </DialogTitle>
+            <DialogDescription>
+              Offene Dienste im aktuellen Monat, inklusive geeigneter Personen
+              (ASS/TA/OA-Regel).
+            </DialogDescription>
+          </DialogHeader>
+
+          {unassignedShifts.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Alle Dienste sind besetzt.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {unassignedShifts.map((shift) => {
+                const serviceLabel =
+                  serviceLineLookup.get(shift.serviceType)?.label ??
+                  shift.serviceType;
+                const eligible = isExternalDuty
+                  ? []
+                  : eligibleEmployeesForUnassignedShift(shift);
+
+                return (
+                  <div
+                    key={shift.id}
+                    className="rounded-lg border border-border p-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="font-medium">
+                          {format(parseISO(shift.date), "EEE, dd.MM.yyyy", {
+                            locale: de,
+                          })}
+                          {" · "}
+                          {serviceLabel}
+                        </div>
+
+                        <div className="text-xs text-muted-foreground">
+                          Geeignete Personen:
+                        </div>
+
+                        <div className="flex flex-wrap gap-1">
+                          {isExternalDuty ? (
+                            <span className="text-xs text-muted-foreground">
+                              Mitarbeiterliste nicht verfügbar.
+                            </span>
+                          ) : eligible.length === 0 ? (
+                            <Badge
+                              variant="outline"
+                              className="text-red-700 border-red-200 bg-red-50"
+                            >
+                              Keine passenden Personen
+                            </Badge>
+                          ) : (
+                            eligible.map((employee) => (
+                              <Badge
+                                key={employee.id}
+                                variant="outline"
+                                className="bg-slate-50"
+                              >
+                                {employeeLabel(employee)}
+                              </Badge>
+                            ))
+                          )}
+                        </div>
+                      </div>
+
+                      <Badge variant="outline">offen</Badge>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Card className="border-none kabeg-shadow">
         <CardHeader>
