@@ -85,7 +85,6 @@ import {
 import {
   getEmployeeServiceLineCandidate,
   getEmployeeServiceLineKeys,
-  isEmployeeAllowedForServiceLine,
 } from "@/lib/serviceLineAccess";
 import type {
   DutyPlan,
@@ -112,6 +111,12 @@ const PLAN_STATUS_LABELS: Record<DutyPlan["status"], string> = {
   Vorläufig: "Vorschau",
   Freigegeben: "Freigabe",
 };
+
+const UNASSIGNED_BUTTON_STATUSES = new Set<DutyPlan["status"]>([
+  "Entwurf",
+  "Vorläufig",
+  "Freigegeben",
+]);
 
 const SERVICE_LINE_PALETTE = [
   {
@@ -360,7 +365,7 @@ export default function Personal() {
               <RefreshCw className="w-4 h-4" />
               Diensttausch
             </Button>
-            {!isExternalDuty && unassignedCount > 0 && (
+            {showUnassignedButton && (
               <Button
                 variant="outline"
                 className="gap-2"
@@ -371,7 +376,7 @@ export default function Personal() {
               >
                 Unbesetzte Dienste
                 <Badge variant="outline" className="h-5 px-1.5">
-                  {unassignedCount}
+                  {claimableUnassignedShifts.length}
                 </Badge>
               </Button>
             )}
@@ -569,47 +574,6 @@ function RosterView({
     });
   }, [currentUser?.id, myDutyDates, unassignedShifts]);
 
-  type DutyRoleGroup = "OA" | "ASS" | "TA";
-
-  const getDutyRoleGroup = (employee: Employee): DutyRoleGroup | null => {
-    const raw = String(
-      (employee as any).qualificationGroup ??
-        (employee as any).roleGroup ??
-        (employee as any).group ??
-        (employee as any).dutyRole ??
-        (employee as any).qualification ??
-        (employee as any).positionGroup ??
-        (employee as any).jobGroup ??
-        (employee as any).jobTitle ??
-        (employee as any).title ??
-        (employee as any).role ??
-        (employee as any).position ??
-        "",
-    )
-      .trim()
-      .toUpperCase();
-
-    if (!raw) return null;
-    if (raw.includes("OA") || raw.includes("OBER")) return "OA";
-    if (raw.includes("ASS") || raw.includes("ASSIST")) return "ASS";
-    if (raw.includes("TA") || raw.includes("TURNUS")) return "TA";
-    return null;
-  };
-
-  const allowedRoleGroupsForServiceType = (serviceType: string): DutyRoleGroup[] => {
-    const key = (serviceType ?? "").toLowerCase();
-
-    if (key.includes("turnus") || key === "turnus" || key.includes("ta")) {
-      return ["TA", "ASS"];
-    }
-
-    if (key.includes("kreis") || key.includes("kreiß") || key.includes("geb")) {
-      return ["ASS"];
-    }
-
-    return ["OA"];
-  };
-
   // --- Service line helpers using employee record assignments ---
   const currentEmployee = useMemo(() => {
     if (!currentUser?.id) return null;
@@ -619,7 +583,7 @@ function RosterView({
     );
   }, [employees, currentUser]);
 
-  const currentEmployeeServiceTypes = useMemo(
+  const employeeAllowedKeys = useMemo(
     () => getEmployeeServiceLineKeys(currentEmployee, serviceLines),
     [currentEmployee, serviceLines],
   );
@@ -629,58 +593,28 @@ function RosterView({
     [currentEmployee],
   );
 
-  const currentUserRoleGroup = useMemo(() => {
-    const fromEmployee = currentEmployee
-      ? getDutyRoleGroup(currentEmployee as unknown as Employee)
-      : null;
-    const fromAuth = currentUser
-      ? getDutyRoleGroup(currentUser as unknown as Employee)
-      : null;
-    return fromEmployee ?? fromAuth;
-  }, [currentEmployee, currentUser]);
-
   const canCurrentUserTakeShift = (shift: RosterShift) => {
     if (isExternalDuty) return false;
     if (!token) return false;
     if (!currentUser?.id) return false;
-
-    const explicit = isEmployeeAllowedForServiceLine(
-      currentEmployee,
-      shift.serviceType,
-      serviceLines,
-    );
-    if (explicit !== null) return explicit;
-
-    if (!currentUserRoleGroup) return false;
-    return allowedRoleGroupsForServiceType(shift.serviceType).includes(
-      currentUserRoleGroup,
-    );
+    if (employeeAllowedKeys.size === 0) return false;
+    return employeeAllowedKeys.has(shift.serviceType);
   };
 
   const claimableUnassignedShifts = useMemo(() => {
     if (isExternalDuty) return [] as RosterShift[];
     if (!token) return [] as RosterShift[];
     if (!currentUser?.id) return [] as RosterShift[];
-    return visibleUnassignedShifts.filter((shift) => {
-      const explicit = isEmployeeAllowedForServiceLine(
-        currentEmployee,
-        shift.serviceType,
-        serviceLines,
-      );
-      if (explicit !== null) return explicit;
-      if (!currentUserRoleGroup) return false;
-      return allowedRoleGroupsForServiceType(shift.serviceType).includes(
-        currentUserRoleGroup,
-      );
-    });
+    if (employeeAllowedKeys.size === 0) return [];
+    return visibleUnassignedShifts.filter((shift) =>
+      employeeAllowedKeys.has(shift.serviceType),
+    );
   }, [
     isExternalDuty,
     token,
     currentUser?.id,
-    currentEmployee,
-    currentUserRoleGroup,
+    employeeAllowedKeys,
     visibleUnassignedShifts,
-    serviceLines,
   ]);
 
   useEffect(() => {
@@ -689,8 +623,8 @@ function RosterView({
     console.log("currentEmployee.id", currentEmployee?.id ?? null);
     console.log("serviceLine raw data", employeeServiceLineRaw);
     console.log(
-      "currentEmployeeServiceTypes",
-      Array.from(currentEmployeeServiceTypes),
+      "employeeAllowedKeys",
+      Array.from(employeeAllowedKeys),
     );
     console.log(
       "sample shift.serviceType",
@@ -703,13 +637,27 @@ function RosterView({
         serviceType: s.serviceType,
       })),
     );
+    console.log("planStatus", planStatus);
+    console.log("unassignedShifts.count", unassignedShifts.length);
+    console.log("claimableUnassignedShifts.count", claimableUnassignedShifts.length);
   }, [
     currentEmployee,
     employeeServiceLineRaw,
-    currentEmployeeServiceTypes,
+    employeeAllowedKeys,
     shifts,
     claimableUnassignedShifts,
+    planStatus,
+    unassignedShifts,
   ]);
+
+  const isPlanStatusAllowingUnassigned =
+    Boolean(planStatus) && UNASSIGNED_BUTTON_STATUSES.has(planStatus);
+
+  const showUnassignedButton =
+    !isExternalDuty &&
+    isPlanStatusAllowingUnassigned &&
+    employeeAllowedKeys.size > 0 &&
+    claimableUnassignedShifts.length > 0;
 
   useEffect(() => {
     window.dispatchEvent(

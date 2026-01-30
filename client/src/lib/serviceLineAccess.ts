@@ -1,4 +1,4 @@
-import type { Employee, ServiceLine } from "@shared/schema";
+import type { ServiceLine } from "@shared/schema";
 
 const SERVICE_LINE_FIELDS = [
   "serviceLineKeys",
