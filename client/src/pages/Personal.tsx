@@ -112,11 +112,21 @@ const PLAN_STATUS_LABELS: Record<DutyPlan["status"], string> = {
   Freigegeben: "Freigabe",
 };
 
-const UNASSIGNED_BUTTON_STATUSES = new Set<DutyPlan["status"]>([
-  "Entwurf",
+const ALLOWED_UNASSIGNED_STATUSES = new Set<DutyPlan["status"]>([
   "Vorläufig",
   "Freigegeben",
 ]);
+
+type UnassignedDebugDetail = {
+  planStatus: DutyPlan["status"] | null;
+  statusAllowed: boolean;
+  showUnassignedButton: boolean;
+  unassignedTotal: number;
+  visibleAfterPrevDayRule: number;
+  claimableCount: number;
+  allowedKeysCount: number;
+  allowedKeys: string[];
+};
 
 const SERVICE_LINE_PALETTE = [
   {
@@ -194,7 +204,7 @@ type RosterAbsenceEntry = {
 export default function Personal() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [, setLocation] = useLocation();
-  const { token, user } = useAuth();
+  const { token, user, isAdmin, isTechnicalAdmin } = useAuth();
   const { toast } = useToast();
   const [swapDialogOpen, setSwapDialogOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -204,10 +214,17 @@ export default function Personal() {
 
   const isExternalDuty = user?.accessScope === "external_duty";
   const [unassignedCount, setUnassignedCount] = useState(0);
+  const [unassignedDebug, setUnassignedDebug] =
+    useState<UnassignedDebugDetail | null>(null);
+
+  const debugEnabled = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    return new URLSearchParams(window.location.search).get("debug") === "1";
+  }, []);
 
   useEffect(() => {
     const handler = (event: Event) => {
-      const detail = (event as CustomEvent).detail;
+      const detail = (event as CustomEvent<number>).detail;
       setUnassignedCount(Number(detail ?? 0));
     };
     window.addEventListener(
@@ -217,6 +234,23 @@ export default function Personal() {
     return () =>
       window.removeEventListener(
         "mycliniq:unassignedCount",
+        handler as unknown as EventListener,
+      );
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<UnassignedDebugDetail>).detail;
+      setUnassignedDebug(detail ?? null);
+    };
+    window.addEventListener(
+      "mycliniq:unassignedDebug",
+      handler as unknown as EventListener,
+    );
+    return () =>
+      window.removeEventListener(
+        "mycliniq:unassignedDebug",
         handler as unknown as EventListener,
       );
   }, []);
@@ -390,6 +424,46 @@ export default function Personal() {
             </Button>
           </div>
         </div>
+
+        {debugEnabled && (isAdmin || isTechnicalAdmin) && (
+          <div className="rounded-lg border border-border bg-slate-50/60 p-3 text-xs text-muted-foreground space-y-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+              Unbesetzte Dienste Debug
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-[11px]">
+              <span className="font-medium">unassignedCount</span>
+              <span>{unassignedCount}</span>
+
+              <span className="font-medium">planStatus</span>
+              <span>{unassignedDebug?.planStatus ?? "—"}</span>
+
+              <span className="font-medium">statusAllowed</span>
+              <span>{String(unassignedDebug?.statusAllowed ?? false)}</span>
+
+              <span className="font-medium">showUnassignedButton</span>
+              <span>{String(unassignedDebug?.showUnassignedButton ?? false)}</span>
+
+              <span className="font-medium">unassignedTotal</span>
+              <span>{unassignedDebug?.unassignedTotal ?? "—"}</span>
+
+              <span className="font-medium">visibleAfterPrevDayRule</span>
+              <span>{unassignedDebug?.visibleAfterPrevDayRule ?? "—"}</span>
+
+              <span className="font-medium">claimableCount</span>
+              <span>{unassignedDebug?.claimableCount ?? "—"}</span>
+
+              <span className="font-medium">allowedKeysCount</span>
+              <span>{unassignedDebug?.allowedKeysCount ?? 0}</span>
+
+              <span className="font-medium">allowedKeys</span>
+              <span className="break-words">
+                {unassignedDebug?.allowedKeys?.length
+                  ? unassignedDebug.allowedKeys.join(", ")
+                  : "—"}
+              </span>
+            </div>
+          </div>
+        )}
 
         <Tabs defaultValue="roster" className="space-y-6">
           <TabsList className="bg-background border border-border p-1 h-12 rounded-xl shadow-sm">
@@ -617,15 +691,40 @@ function RosterView({
     visibleUnassignedShifts,
   ]);
 
+  const allowedKeysForDebug = useMemo(
+    () => Array.from(employeeAllowedKeys).slice(0, 30),
+    [employeeAllowedKeys],
+  );
+
+  const unassignedDebugDetail = useMemo<UnassignedDebugDetail>(
+    () => ({
+      planStatus: planStatus ?? null,
+      statusAllowed: isPlanStatusAllowingUnassigned,
+      showUnassignedButton,
+      unassignedTotal: unassignedShifts.length,
+      visibleAfterPrevDayRule: visibleUnassignedShifts.length,
+      claimableCount: claimableUnassignedShifts.length,
+      allowedKeysCount: employeeAllowedKeys.size,
+      allowedKeys: allowedKeysForDebug,
+    }),
+    [
+      planStatus,
+      isPlanStatusAllowingUnassigned,
+      showUnassignedButton,
+      unassignedShifts.length,
+      visibleUnassignedShifts.length,
+      claimableUnassignedShifts.length,
+      employeeAllowedKeys,
+      allowedKeysForDebug,
+    ],
+  );
+
   useEffect(() => {
     if (!import.meta.env.DEV) return;
 
     console.log("currentEmployee.id", currentEmployee?.id ?? null);
     console.log("serviceLine raw data", employeeServiceLineRaw);
-    console.log(
-      "employeeAllowedKeys",
-      Array.from(employeeAllowedKeys),
-    );
+    console.log("employeeAllowedKeys", allowedKeysForDebug);
     console.log(
       "sample shift.serviceType",
       shifts.slice(0, 10).map((s) => s.serviceType),
@@ -638,21 +737,27 @@ function RosterView({
       })),
     );
     console.log("planStatus", planStatus);
+    console.log("statusAllowed", isPlanStatusAllowingUnassigned);
     console.log("unassignedShifts.count", unassignedShifts.length);
+    console.log(
+      "visibleAfterPrevDayRule.count",
+      visibleUnassignedShifts.length,
+    );
     console.log("claimableUnassignedShifts.count", claimableUnassignedShifts.length);
   }, [
     currentEmployee,
     employeeServiceLineRaw,
-    employeeAllowedKeys,
+    allowedKeysForDebug,
     shifts,
-    claimableUnassignedShifts,
     planStatus,
-    unassignedShifts,
+    isPlanStatusAllowingUnassigned,
+    unassignedShifts.length,
+    visibleUnassignedShifts.length,
+    claimableUnassignedShifts.length,
   ]);
 
-  const isPlanStatusAllowingUnassigned = planStatus
-    ? UNASSIGNED_BUTTON_STATUSES.has(planStatus)
-    : false;
+  const isPlanStatusAllowingUnassigned =
+    Boolean(planStatus) && ALLOWED_UNASSIGNED_STATUSES.has(planStatus);
 
   const showUnassignedButton =
     !isExternalDuty &&
@@ -660,17 +765,23 @@ function RosterView({
     employeeAllowedKeys.size > 0 &&
     claimableUnassignedShifts.length > 0;
 
-  const unassignedCountForEvent = showUnassignedButton
-    ? claimableUnassignedShifts.length
-    : 0;
-
   useEffect(() => {
+    if (typeof window === "undefined") return;
     window.dispatchEvent(
       new CustomEvent("mycliniq:unassignedCount", {
-        detail: unassignedCountForEvent,
+        detail: showUnassignedButton ? claimableUnassignedShifts.length : 0,
       }),
     );
-  }, [unassignedCountForEvent]);
+  }, [showUnassignedButton, claimableUnassignedShifts.length]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(
+      new CustomEvent("mycliniq:unassignedDebug", {
+        detail: unassignedDebugDetail,
+      }),
+    );
+  }, [unassignedDebugDetail]);
 
   const handleTakeShift = async (shift: RosterShift) => {
     if (!token) {
