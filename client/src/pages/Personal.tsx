@@ -624,6 +624,23 @@ function RosterView({
     return map;
   }, [serviceLines]);
 
+  const serviceLineKeyByLabel = useMemo(() => {
+    const map = new Map<string, string>();
+    (serviceLines as any[]).forEach((line: any) => {
+      const key = typeof line?.key === "string" ? line.key : null;
+      const label =
+        typeof line?.label === "string"
+          ? line.label
+          : typeof line?.name === "string"
+          ? line.name
+          : null;
+      if (key && label) {
+        map.set(label.trim().toLowerCase(), key);
+      }
+    });
+    return map;
+  }, [serviceLines]);
+
   const getEmployeeServiceTypeKeys = (employee: any) => {
     const candidates =
       employee?.serviceLineKeys ??
@@ -639,23 +656,48 @@ function RosterView({
       employee?.serviceLineIdsCsv ??
       null;
 
+    const mapLabelToKey = (value: string) => {
+      const cleaned = value.replace(/\s*\([^)]*\)\s*$/, "").trim();
+      if (!cleaned) return "";
+      const normalized = cleaned.toLowerCase();
+      return serviceLineKeyByLabel.get(normalized) ?? cleaned;
+    };
+
+    const getLabelKeyFromObject = (obj: any) => {
+      const label =
+        typeof obj?.label === "string"
+          ? obj.label
+          : typeof obj?.name === "string"
+          ? obj.name
+          : undefined;
+      if (label) {
+        const normalized = label.trim().toLowerCase();
+        if (normalized) {
+          return serviceLineKeyByLabel.get(normalized) ?? label.trim();
+        }
+      }
+      return "";
+    };
+
     const toKeys = (value: any): string[] => {
       if (!value) return [];
 
       if (Array.isArray(value)) {
-        return value
-          .map((v) => {
-            if (typeof v === "string") return v;
-            if (typeof v === "number") return serviceLineKeyById.get(v) ?? "";
-            if (typeof v === "object" && v) {
-              if (typeof (v as any).key === "string") return (v as any).key;
-              if (typeof (v as any).serviceType === "string") return (v as any).serviceType;
-              if (typeof (v as any).serviceLineKey === "string") return (v as any).serviceLineKey;
-              if (typeof (v as any).id === "number") return serviceLineKeyById.get((v as any).id) ?? "";
-            }
-            return "";
-          })
-          .filter(Boolean);
+          return value
+            .map((v) => {
+              if (typeof v === "string") return mapLabelToKey(v);
+              if (typeof v === "number") return serviceLineKeyById.get(v) ?? "";
+              if (typeof v === "object" && v) {
+                if (typeof (v as any).key === "string") return (v as any).key;
+                if (typeof (v as any).serviceType === "string") return (v as any).serviceType;
+                if (typeof (v as any).serviceLineKey === "string") return (v as any).serviceLineKey;
+                const labelKey = getLabelKeyFromObject(v);
+                if (labelKey) return labelKey;
+                if (typeof (v as any).id === "number") return serviceLineKeyById.get((v as any).id) ?? "";
+              }
+              return "";
+            })
+            .filter(Boolean);
       }
 
       if (typeof value === "string") {
@@ -665,7 +707,10 @@ function RosterView({
           const parsed = JSON.parse(trimmed);
           return toKeys(parsed);
         } catch {
-          return trimmed.split(/[;,\s]+/).filter(Boolean);
+          return trimmed
+            .split(/[;,\s]+/)
+            .map((token) => mapLabelToKey(token))
+            .filter(Boolean);
         }
       }
 
@@ -683,12 +728,17 @@ function RosterView({
   const currentEmployeeServiceTypes = useMemo(() => {
     if (!currentEmployee) return new Set<string>();
     return getEmployeeServiceTypeKeys(currentEmployee);
-  }, [currentEmployee, serviceLineKeyById]);
+  }, [currentEmployee, serviceLineKeyById, serviceLineKeyByLabel]);
 
   const currentUserRoleGroup = useMemo(() => {
-    if (!currentEmployee) return null;
-    return getDutyRoleGroup(currentEmployee as unknown as Employee);
-  }, [currentEmployee]);
+    const fromEmployee = currentEmployee
+      ? getDutyRoleGroup(currentEmployee as unknown as Employee)
+      : null;
+    const fromAuth = currentUser
+      ? getDutyRoleGroup(currentUser as unknown as Employee)
+      : null;
+    return fromEmployee ?? fromAuth;
+  }, [currentEmployee, currentUser]);
 
   const canCurrentUserTakeShift = (shift: RosterShift) => {
     if (isExternalDuty) return false;
