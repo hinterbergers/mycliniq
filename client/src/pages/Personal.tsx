@@ -605,15 +605,102 @@ function RosterView({
     return ["OA"];
   };
 
+  // --- Service line helpers using employee record assignments ---
+  const currentEmployee = useMemo(() => {
+    if (!currentUser?.id) return null;
+    return (
+      employees.find((emp) => emp.id === currentUser.id) ??
+      (currentUser as unknown as Employee)
+    );
+  }, [employees, currentUser]);
+
+  const serviceLineKeyById = useMemo(() => {
+    const map = new Map<number, string>();
+    (serviceLines as any[]).forEach((line: any) => {
+      if (typeof line?.id === "number" && typeof line?.key === "string") {
+        map.set(line.id, line.key);
+      }
+    });
+    return map;
+  }, [serviceLines]);
+
+  const getEmployeeServiceTypeKeys = (employee: any) => {
+    const candidates =
+      employee?.serviceLineKeys ??
+      employee?.serviceLines ??
+      employee?.allowedServiceLines ??
+      employee?.dutyServiceLines ??
+      employee?.rosterServiceLines ??
+      employee?.serviceLineAccess ??
+      employee?.serviceLinePermissions ??
+      employee?.serviceTypes ??
+      employee?.dienstschienen ??
+      employee?.serviceLineIds ??
+      employee?.serviceLineIdsCsv ??
+      null;
+
+    const toKeys = (value: any): string[] => {
+      if (!value) return [];
+
+      if (Array.isArray(value)) {
+        return value
+          .map((v) => {
+            if (typeof v === "string") return v;
+            if (typeof v === "number") return serviceLineKeyById.get(v) ?? "";
+            if (typeof v === "object" && v) {
+              if (typeof (v as any).key === "string") return (v as any).key;
+              if (typeof (v as any).serviceType === "string") return (v as any).serviceType;
+              if (typeof (v as any).serviceLineKey === "string") return (v as any).serviceLineKey;
+              if (typeof (v as any).id === "number") return serviceLineKeyById.get((v as any).id) ?? "";
+            }
+            return "";
+          })
+          .filter(Boolean);
+      }
+
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (!trimmed) return [];
+        try {
+          const parsed = JSON.parse(trimmed);
+          return toKeys(parsed);
+        } catch {
+          return trimmed.split(/[;,\s]+/).filter(Boolean);
+        }
+      }
+
+      if (typeof value === "number") {
+        const key = serviceLineKeyById.get(value);
+        return key ? [key] : [];
+      }
+
+      return [];
+    };
+
+    return new Set(toKeys(candidates));
+  };
+
+  const currentEmployeeServiceTypes = useMemo(() => {
+    if (!currentEmployee) return new Set<string>();
+    return getEmployeeServiceTypeKeys(currentEmployee);
+  }, [currentEmployee, serviceLineKeyById]);
+
   const currentUserRoleGroup = useMemo(() => {
-    if (!currentUser) return null;
-    return getDutyRoleGroup(currentUser as unknown as Employee);
-  }, [currentUser]);
+    if (!currentEmployee) return null;
+    return getDutyRoleGroup(currentEmployee as unknown as Employee);
+  }, [currentEmployee]);
 
   const canCurrentUserTakeShift = (shift: RosterShift) => {
     if (isExternalDuty) return false;
     if (!token) return false;
     if (!currentUser?.id) return false;
+
+    // Primary source of truth: service lines assigned in Personaleditor
+    if (currentEmployeeServiceTypes.size > 0) {
+      return currentEmployeeServiceTypes.has(shift.serviceType);
+    }
+
+    // Fallback: role-group heuristics
     if (!currentUserRoleGroup) return false;
     return allowedRoleGroupsForServiceType(shift.serviceType).includes(
       currentUserRoleGroup,
@@ -624,14 +711,55 @@ function RosterView({
     if (isExternalDuty) return [] as RosterShift[];
     if (!token) return [] as RosterShift[];
     if (!currentUser?.id) return [] as RosterShift[];
-    if (!currentUserRoleGroup) return [] as RosterShift[];
 
+    // Primary source of truth: service lines assigned in Personaleditor
+    if (currentEmployeeServiceTypes.size > 0) {
+      return visibleUnassignedShifts.filter((shift) =>
+        currentEmployeeServiceTypes.has(shift.serviceType),
+      );
+    }
+
+    // Fallback: role-group heuristics
+    if (!currentUserRoleGroup) return [] as RosterShift[];
     return visibleUnassignedShifts.filter((shift) =>
       allowedRoleGroupsForServiceType(shift.serviceType).includes(
         currentUserRoleGroup,
       ),
     );
-  }, [isExternalDuty, token, currentUser?.id, currentUserRoleGroup, visibleUnassignedShifts]);
+  }, [
+    isExternalDuty,
+    token,
+    currentUser?.id,
+    currentEmployeeServiceTypes,
+    currentUserRoleGroup,
+    visibleUnassignedShifts,
+  ]);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+
+    console.log("currentEmployee", currentEmployee);
+    console.log(
+      "currentEmployeeServiceTypes",
+      Array.from(currentEmployeeServiceTypes),
+    );
+    console.log(
+      "sample shift.serviceType",
+      shifts.slice(0, 10).map((s) => s.serviceType),
+    );
+    console.log(
+      "sample claimable (serviceType/date)",
+      claimableUnassignedShifts.slice(0, 10).map((s) => ({
+        date: s.date,
+        serviceType: s.serviceType,
+      })),
+    );
+  }, [
+    currentEmployee,
+    currentEmployeeServiceTypes,
+    shifts,
+    claimableUnassignedShifts,
+  ]);
 
   useEffect(() => {
     window.dispatchEvent(
