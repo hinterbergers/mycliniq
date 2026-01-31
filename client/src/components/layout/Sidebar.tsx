@@ -7,7 +7,6 @@ import {
   LogOut,
   Stethoscope,
   CalendarDays,
-  Calendar as CalendarIcon,
   FileText,
   Wrench,
   MessageCircle,
@@ -82,11 +81,6 @@ export function Sidebar({
 
   const navItems: NavItem[] = [
     { href: "/dienstplaene", label: "Dienstpläne", icon: CalendarDays },
-    {
-      href: "/dienstwuensche",
-      label: "Dienstwünsche",
-      icon: CalendarIcon,
-    },
     { href: "/wissen", label: "SOPs", icon: FileText },
     { href: "/aufgaben", label: "Aufgaben", icon: ListCheck },
     { href: "/tools", label: "Tools", icon: Wrench },

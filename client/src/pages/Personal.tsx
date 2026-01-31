@@ -30,6 +30,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   ArrowRightLeft,
   Calendar as CalendarIcon,
+  CalendarDays,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -359,20 +360,29 @@ export default function Personal() {
               <Download className="w-4 h-4" />
               {exporting ? "Export läuft..." : "Export"}
             </Button>
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={() => setSwapDialogOpen(true)}
+            data-testid="button-swap"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Diensttausch
+          </Button>
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={() => setLocation("/dienstwuensche")}
+            data-testid="button-shift-wishes"
+          >
+            <CalendarDays className="w-4 h-4" />
+            Dienstwünsche
+          </Button>
+          {!isExternalDuty && unassignedCount > 0 && (
             <Button
               variant="outline"
               className="gap-2"
-              onClick={() => setSwapDialogOpen(true)}
-              data-testid="button-swap"
-            >
-              <RefreshCw className="w-4 h-4" />
-              Diensttausch
-            </Button>
-            {!isExternalDuty && unassignedCount > 0 && (
-              <Button
-                variant="outline"
-                className="gap-2"
-                onClick={() =>
+              onClick={() =>
                   window.dispatchEvent(new Event("mycliniq:openUnassigned"))
                 }
                 data-testid="button-unassigned-shifts-top"
@@ -870,7 +880,7 @@ function RosterView({
         });
       } else {
         // Assign existing shift (backend must support PATCH /api/roster/shifts/:id)
-        res = await fetch(`/api/roster/shifts/${shift.id}`, {
+        res = await fetch(`/api/roster/${shift.id}`, {
           method: "PATCH",
           headers,
           body: JSON.stringify({

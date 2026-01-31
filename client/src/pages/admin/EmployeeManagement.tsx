@@ -381,6 +381,7 @@ export default function EmployeeManagement() {
     phonePrivate: "",
     showPrivateContact: false,
     vacationEntitlement: "",
+    trainingEnabled: false,
   };
 
   const [editFormData, setEditFormData] = useState({ ...emptyForm });
@@ -614,6 +615,7 @@ export default function EmployeeManagement() {
         emp.vacationEntitlement !== undefined
           ? String(emp.vacationEntitlement)
           : "",
+      trainingEnabled: Boolean(emp.trainingEnabled),
     });
     setEditBirthdayInput(formatBirthdayDisplay(birthdayIso || emp.birthday));
     setEditRoleValue(normalizeRoleValue(emp.role));
@@ -1026,6 +1028,7 @@ export default function EmployeeManagement() {
         phoneWork: editFormData.phoneWork.trim() || null,
         phonePrivate: editFormData.phonePrivate.trim() || null,
         showPrivateContact: editFormData.showPrivateContact,
+        trainingEnabled: editFormData.trainingEnabled,
         role: (editRoleValue || editingEmployee.role) as Employee["role"],
         appRole: (editAppRoleValue ||
           editingEmployee.appRole) as Employee["appRole"],
@@ -1299,6 +1302,7 @@ export default function EmployeeManagement() {
         phoneWork: newFormData.phoneWork.trim() || null,
         phonePrivate: newFormData.phonePrivate.trim() || null,
         showPrivateContact: newFormData.showPrivateContact,
+        trainingEnabled: newFormData.trainingEnabled,
         role: newRoleValue as Employee["role"],
         appRole: (newAppRoleValue || "User") as Employee["appRole"],
         systemRole: "employee",
@@ -2299,6 +2303,23 @@ export default function EmployeeManagement() {
                                 setNewFormData((prev) => ({
                                   ...prev,
                                   showPrivateContact: Boolean(checked),
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="flex items-center justify-between rounded-lg border border-border p-4">
+                            <div>
+                              <Label>Fortbildungen anzeigen</Label>
+                              <p className="text-xs text-muted-foreground">
+                                Schaltet das Fortbildungsmenü frei.
+                              </p>
+                            </div>
+                            <Switch
+                              checked={newFormData.trainingEnabled}
+                              onCheckedChange={(checked) =>
+                                setNewFormData((prev) => ({
+                                  ...prev,
+                                  trainingEnabled: Boolean(checked),
                                 }))
                               }
                             />
@@ -3403,6 +3424,25 @@ export default function EmployeeManagement() {
                             showPrivateContact: Boolean(checked),
                           }))
                         }
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-lg border border-border p-4">
+                      <div>
+                        <Label>Fortbildungen anzeigen</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Schaltet das Fortbildungsmenü (nur für Admins sichtbar).
+                        </p>
+                      </div>
+                      <Switch
+                        checked={editFormData.trainingEnabled}
+                        onCheckedChange={(checked) =>
+                          setEditFormData((prev) => ({
+                            ...prev,
+                            trainingEnabled: Boolean(checked),
+                          }))
+                        }
+                        disabled={!canManageEmployees}
                       />
                     </div>
                   </div>
