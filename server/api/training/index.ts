@@ -322,6 +322,19 @@ export function registerTrainingRoutes(router: Router) {
         .values(payload)
         .returning();
 
+      if (!createdVideo) {
+        return res
+          .status(500)
+          .json({ success: false, error: "Video konnte nicht gespeichert werden" });
+      }
+
+      console.info(
+        "[training] created video",
+        createdVideo.id,
+        createdVideo.title,
+        createdVideo.platform,
+      );
+
       return created(res, createdVideo);
     }),
   );
