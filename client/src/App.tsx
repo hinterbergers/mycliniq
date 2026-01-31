@@ -24,7 +24,10 @@ import Tools from "@/pages/Tools";
 import Messages from "@/pages/Messages";
 import NotFound from "@/pages/not-found";
 import Tasks from "@/pages/Tasks";
+import TrainingVideos from "@/pages/training/TrainingVideos";
+import TrainingPresentations from "@/pages/training/TrainingPresentations";
 import { Loader2 } from "lucide-react";
+import { TrainingRoute } from "@/components/training/TrainingRoute";
 
 function ProtectedRoute({
   component: Component,
@@ -74,6 +77,14 @@ function Router() {
       <Route path="/tools">{() => <ProtectedRoute component={Tools} />}</Route>
       <Route path="/nachrichten">
         {() => <ProtectedRoute component={Messages} />}
+      </Route>
+      <Route path="/fortbildung/videos">
+        {() => <TrainingRoute component={TrainingVideos} />}
+      </Route>
+      <Route path="/fortbildung/presentations">
+        {() => (
+          <TrainingRoute component={TrainingPresentations} />
+        )}
       </Route>
       <Route path="/projekte/:id">
         {(params) => <Redirect to={`/admin/projects/${params.id}`} />}

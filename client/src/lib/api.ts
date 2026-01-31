@@ -47,6 +47,8 @@ import type {
   MessageThread,
   MessageThreadMember,
   Message,
+  TrainingVideo,
+  TrainingPresentation,
 } from "@shared/schema";
 import { readAuthToken } from "./authToken";
 import {
@@ -675,6 +677,31 @@ export const serviceLinesApi = {
       method: "DELETE",
     });
     return handleResponse<void>(response);
+  },
+};
+
+const buildTrainingUrl = (endpoint: string, includeInactive?: boolean) => {
+  const params = new URLSearchParams();
+  if (includeInactive) {
+    params.set("includeInactive", "1");
+  }
+  const query = params.toString();
+  return `${API_BASE}/training${endpoint}${query ? `?${query}` : ""}`;
+};
+
+export const trainingApi = {
+  getVideos: async (includeInactive = false): Promise<TrainingVideo[]> => {
+    const response = await apiFetch(buildTrainingUrl("/videos", includeInactive));
+    return handleResponse<TrainingVideo[]>(response);
+  },
+
+  getPresentations: async (
+    includeInactive = false,
+  ): Promise<TrainingPresentation[]> => {
+    const response = await apiFetch(
+      buildTrainingUrl("/presentations", includeInactive),
+    );
+    return handleResponse<TrainingPresentation[]>(response);
   },
 };
 

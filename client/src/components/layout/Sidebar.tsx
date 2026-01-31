@@ -7,12 +7,15 @@ import {
   LogOut,
   Stethoscope,
   CalendarDays,
+  Calendar as CalendarIcon,
   FileText,
   Wrench,
   MessageCircle,
   ListCheck,
-  Calendar as CalendarIcon,
+  GraduationCap,
+  Video,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Search } from "lucide-react";
 
@@ -37,6 +40,7 @@ export function Sidebar({
     logout,
     canAny,
     isSuperuser,
+    canViewTraining,
   } = useAuth();
   const isExternalDuty = user?.accessScope === "external_duty";
 
@@ -61,18 +65,50 @@ export function Sidebar({
   // OR has at least one admin capability.
   const hasAdminAccess = isSuperuser || canAny(adminCaps);
 
-  const navItems = [
+  type NavChild = {
+    href: string;
+    label: string;
+    icon?: LucideIcon;
+  };
+
+  type NavItem = {
+    label: string;
+    href?: string;
+    icon?: LucideIcon;
+    adminOnly?: boolean;
+    trainingOnly?: boolean;
+    children?: NavChild[];
+  };
+
+  const navItems: NavItem[] = [
     { href: "/dienstplaene", label: "Dienstpläne", icon: CalendarDays },
-    { href: "/dienstwuensche", label: "Dienstwünsche", icon: CalendarIcon },
+    {
+      href: "/dienstwuensche",
+      label: "Dienstwünsche",
+      icon: CalendarIcon,
+    },
     { href: "/wissen", label: "SOPs", icon: FileText },
     { href: "/aufgaben", label: "Aufgaben", icon: ListCheck },
     { href: "/tools", label: "Tools", icon: Wrench },
     { href: "/nachrichten", label: "Nachrichten", icon: MessageCircle },
+    {
+      label: "Fortbildung",
+      icon: GraduationCap,
+      trainingOnly: true,
+      children: [
+        { href: "/fortbildung/videos", label: "Videos", icon: Video },
+        {
+          href: "/fortbildung/presentations",
+          label: "PowerPoint",
+          icon: FileText,
+        },
+      ],
+    },
     { href: "/admin", label: "Verwaltung", icon: Users, adminOnly: true },
     { href: "/einstellungen", label: "Einstellungen", icon: Settings },
   ];
 
-  const externalDutyNav = new Set(["/dienstplaene", "/dienstwuensche"]);
+  const externalDutyNav = new Set(["/dienstplaene"]);
 
   const getInitials = (name: string) => {
     if (!name) return "?";
@@ -140,22 +176,86 @@ export function Sidebar({
       <nav className="flex-1 px-3 py-4 space-y-1">
         {navItems
           .filter((item) => {
+            if (item.adminOnly && !hasAdminAccess) return false;
+            if (item.trainingOnly && !canViewTraining) return false;
             if (isExternalDuty) {
-              return externalDutyNav.has(item.href);
+              const href = item.href;
+              if (!href) return false;
+              return externalDutyNav.has(href);
             }
-            return item.adminOnly ? hasAdminAccess : true;
+            return true;
           })
           .map((item) => {
+            if (item.children && item.children.length) {
+              const isGroupActive = item.children.some(
+                (child) =>
+                  location === child.href ||
+                  (child.href !== "/" && location.startsWith(child.href)),
+              );
+              return (
+                <div
+                  key={item.label}
+                  className="rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200"
+                >
+                  <div
+                    className={cn(
+                      "flex items-center gap-3",
+                      isGroupActive
+                        ? "bg-sidebar-accent text-white"
+                        : "text-white/80",
+                    )}
+                  >
+                    {item.icon && (
+                      <item.icon className="w-5 h-5" aria-hidden />
+                    )}
+                    <span>{item.label}</span>
+                  </div>
+                  <div className="mt-2 space-y-1 pl-8">
+                    {item.children.map((child) => {
+                      const isActive =
+                        location === child.href ||
+                        (child.href !== "/" && location.startsWith(child.href));
+                      return (
+                        <a
+                          key={child.href}
+                          href={child.href}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setLocation(child.href);
+                            onNavigate?.();
+                          }}
+                          className={cn(
+                            "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200",
+                            isActive
+                              ? "bg-sidebar-accent text-white"
+                              : "text-white/70 hover:bg-white/10 hover:text-white",
+                          )}
+                          data-testid={`nav-${child.href
+                            .replace(/\//g, "-")
+                            .slice(1)}`}
+                        >
+                          {child.icon && (
+                            <child.icon className="w-4 h-4" aria-hidden />
+                          )}
+                          {child.label}
+                        </a>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            }
+            const href = item.href;
+            if (!href) return null;
             const isActive =
-              location === item.href ||
-              (item.href !== "/" && location.startsWith(item.href));
+              location === href || (href !== "/" && location.startsWith(href));
             return (
               <a
-                key={item.href}
-                href={item.href}
+                key={href}
+                href={href}
                 onClick={(e) => {
                   e.preventDefault();
-                  setLocation(item.href);
+                  setLocation(href);
                   onNavigate?.();
                 }}
                 className={cn(
@@ -164,9 +264,9 @@ export function Sidebar({
                     ? "bg-sidebar-accent text-white"
                     : "text-white/80 hover:bg-white/10 hover:text-white",
                 )}
-                data-testid={`nav-${item.href.replace(/\//g, "-").slice(1) || "home"}`}
+                data-testid={`nav-${href.replace(/\//g, "-").slice(1) || "home"}`}
               >
-                <item.icon className="w-5 h-5" />
+                {item.icon && <item.icon className="w-5 h-5" aria-hidden />}
                 {item.label}
               </a>
             );

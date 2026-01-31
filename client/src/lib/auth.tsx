@@ -11,7 +11,7 @@ import {
 import type { Employee } from "@shared/schema";
 import { clearAuthToken, readAuthToken, writeAuthToken } from "./authToken";
 
-type SystemRole =
+type SystemRole = 
   | "employee"
   | "department_admin"
   | "clinic_admin"
@@ -27,6 +27,7 @@ export interface UserData {
   appRole: string;
   isAdmin: boolean;
   accessScope?: "full" | "external_duty";
+  trainingEnabled: boolean;
 }
 
 const CAPABILITY_ALIASES: Record<string, string[]> = {
@@ -67,6 +68,8 @@ export interface AuthContextType {
   // Admin-Ansicht als Benutzer simulieren
   viewAsUser: boolean;
   setViewAsUser: (value: boolean) => void;
+
+  canViewTraining: boolean;
 
   capabilities: string[];
   can: (capability: string) => boolean;
@@ -110,6 +113,7 @@ function buildUserFromEmployee(emp: any): UserData {
     systemRole: (emp.systemRole ?? "employee") as SystemRole,
     appRole: emp.appRole ?? "User",
     isAdmin: !!emp.isAdmin,
+    trainingEnabled: Boolean(emp.trainingEnabled),
   };
 }
 
@@ -157,6 +161,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const actual = user.isAdmin || user.systemRole !== "employee";
     return actual && !viewAsUser;
   }, [user, viewAsUser]);
+
+  const trainingEnabledFromEmployee = useMemo(
+    () => Boolean(employee?.trainingEnabled),
+    [employee],
+  );
+
+  const trainingEnabledFromUser = useMemo(
+    () => Boolean(user?.trainingEnabled),
+    [user],
+  );
+
+  const canViewTraining = useMemo(
+    () =>
+      isSuperuser ||
+      trainingEnabledFromEmployee ||
+      trainingEnabledFromUser,
+    [isSuperuser, trainingEnabledFromEmployee, trainingEnabledFromUser],
+  );
 
   const can = useCallback(
     (capability: string) => {
@@ -465,6 +487,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       can,
       canAny,
       isSuperuser,
+      canViewTraining,
       login,
       logout,
       refreshAuth,
@@ -485,6 +508,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       can,
       canAny,
       isSuperuser,
+      canViewTraining,
       login,
       logout,
       refreshAuth,
