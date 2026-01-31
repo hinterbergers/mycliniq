@@ -656,10 +656,25 @@ function RosterView({
   // --- Service line helpers using employee record assignments ---
   const currentEmployee = useMemo(() => {
     if (!currentUser?.id) return null;
-    return (
-      employees.find((emp) => emp.id === currentUser.id) ??
-      (currentUser as unknown as Employee)
-    );
+
+    const fromList = employees.find((emp) => emp.id === currentUser.id) ?? null;
+    const fromAuth = (currentUser as unknown as Employee) ?? null;
+
+    const hasCandidate = (value: unknown) => {
+      if (value == null) return false;
+      if (Array.isArray(value)) return value.length > 0;
+      if (typeof value === "string") return value.trim().length > 0;
+      if (typeof value === "object") return true;
+      return Boolean(value);
+    };
+
+    const candList = fromList ? getEmployeeServiceLineCandidate(fromList) : null;
+    const candAuth = fromAuth ? getEmployeeServiceLineCandidate(fromAuth) : null;
+
+    if (hasCandidate(candList)) return fromList;
+    if (hasCandidate(candAuth)) return fromAuth;
+
+    return fromList ?? fromAuth;
   }, [employees, currentUser]);
 
   const employeeAllowedKeys = useMemo(
