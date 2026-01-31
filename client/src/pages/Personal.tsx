@@ -107,7 +107,7 @@ import {
 } from "@/lib/weeklyPlanUtils";
 
 const PLAN_STATUS_LABELS: Record<DutyPlan["status"], string> = {
-  Entwurf: "Vorschau",
+  Entwurf: "Bearbeitung",
   Vorläufig: "Vorschau",
   Freigegeben: "Freigabe",
 };
@@ -425,7 +425,7 @@ export default function Personal() {
           </div>
         </div>
 
-        {debugEnabled && (isAdmin || isTechnicalAdmin) && (
+        {debugEnabled && token && (
           <div className="rounded-lg border border-border bg-slate-50/60 p-3 text-xs text-muted-foreground space-y-2">
             <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
               Unbesetzte Dienste Debug
@@ -457,9 +457,11 @@ export default function Personal() {
 
               <span className="font-medium">allowedKeys</span>
               <span className="break-words">
-                {unassignedDebug?.allowedKeys?.length
-                  ? unassignedDebug.allowedKeys.join(", ")
-                  : "—"}
+                {isAdmin || isTechnicalAdmin
+                  ? (unassignedDebug?.allowedKeys?.length
+                      ? unassignedDebug.allowedKeys.join(", ")
+                      : "—")
+                  : `(${unassignedDebug?.allowedKeysCount ?? 0})`}
               </span>
             </div>
           </div>
@@ -670,39 +672,87 @@ function RosterView({
     [currentEmployee],
   );
 
+  // --- Begin: helpers for effective allowed keys with fallback ---
+  const hasServiceLineCandidate = useMemo(() => {
+    if (employeeServiceLineRaw == null) return false;
+    if (Array.isArray(employeeServiceLineRaw)) return employeeServiceLineRaw.length > 0;
+    if (typeof employeeServiceLineRaw === "string") return employeeServiceLineRaw.trim().length > 0;
+    if (typeof employeeServiceLineRaw === "object") return true;
+    return Boolean(employeeServiceLineRaw);
+  }, [employeeServiceLineRaw]);
+
+  type DutyRoleGroup = "OA" | "ASS" | "TA";
+
+  const getDutyRoleGroup = (employee: any): DutyRoleGroup | null => {
+    const raw = String(
+      employee?.qualificationGroup ??
+        employee?.roleGroup ??
+        employee?.group ??
+        employee?.dutyRole ??
+        employee?.qualification ??
+        employee?.positionGroup ??
+        employee?.jobGroup ??
+        employee?.jobTitle ??
+        employee?.title ??
+        employee?.role ??
+        employee?.position ??
+        "",
+    )
+      .trim()
+      .toUpperCase();
+
+    if (!raw) return null;
+    if (raw.includes("OA") || raw.includes("OBER")) return "OA";
+    if (raw.includes("ASS") || raw.includes("ASSIST")) return "ASS";
+    if (raw.includes("TA") || raw.includes("TURNUS")) return "TA";
+    return null;
+  };
+
+  const roleFallbackAllowedKeys = useMemo(() => {
+    const group = getDutyRoleGroup(currentEmployee ?? currentUser);
+    if (!group) return new Set<string>();
+    return new Set(
+      serviceLines
+        .filter((line) => String((line as any).roleGroup ?? "").toUpperCase() === group)
+        .map((line) => line.key),
+    );
+  }, [currentEmployee, currentUser, serviceLines]);
+
+  const effectiveAllowedKeys = useMemo(() => {
+    if (employeeAllowedKeys.size > 0) return employeeAllowedKeys;
+    // If we have a raw candidate but couldn't parse keys, fall back to role-group based service lines.
+    if (hasServiceLineCandidate && roleFallbackAllowedKeys.size > 0) return roleFallbackAllowedKeys;
+    return employeeAllowedKeys;
+  }, [employeeAllowedKeys, hasServiceLineCandidate, roleFallbackAllowedKeys]);
+  // --- End: helpers for effective allowed keys with fallback ---
+
   const canCurrentUserTakeShift = (shift: RosterShift) => {
     if (isExternalDuty) return false;
     if (!token) return false;
     if (!currentUser?.id) return false;
-    if (employeeAllowedKeys.size === 0) return false;
-    return employeeAllowedKeys.has(shift.serviceType);
+    if (effectiveAllowedKeys.size === 0) return false;
+    return effectiveAllowedKeys.has(shift.serviceType);
   };
 
   const claimableUnassignedShifts = useMemo(() => {
     if (isExternalDuty) return [] as RosterShift[];
     if (!token) return [] as RosterShift[];
     if (!currentUser?.id) return [] as RosterShift[];
-    if (employeeAllowedKeys.size === 0) return [];
+    if (effectiveAllowedKeys.size === 0) return [];
     return visibleUnassignedShifts.filter((shift) =>
-      employeeAllowedKeys.has(shift.serviceType),
+      effectiveAllowedKeys.has(shift.serviceType),
     );
-  }, [
-    isExternalDuty,
-    token,
-    currentUser?.id,
-    employeeAllowedKeys,
-    visibleUnassignedShifts,
-  ]);
+  }, [isExternalDuty, token, currentUser?.id, effectiveAllowedKeys, visibleUnassignedShifts]);
 
   const showUnassignedButton =
     !isExternalDuty &&
     isPlanStatusAllowingUnassigned &&
-    employeeAllowedKeys.size > 0 &&
+    effectiveAllowedKeys.size > 0 &&
     claimableUnassignedShifts.length > 0;
 
   const allowedKeysForDebug = useMemo(
-    () => Array.from(employeeAllowedKeys).slice(0, 30),
-    [employeeAllowedKeys],
+    () => Array.from(effectiveAllowedKeys).slice(0, 30),
+    [effectiveAllowedKeys],
   );
 
   const unassignedDebugDetail = useMemo<UnassignedDebugDetail>(
@@ -713,7 +763,7 @@ function RosterView({
       unassignedTotal: unassignedShifts.length,
       visibleAfterPrevDayRule: visibleUnassignedShifts.length,
       claimableCount: claimableUnassignedShifts.length,
-      allowedKeysCount: employeeAllowedKeys.size,
+      allowedKeysCount: effectiveAllowedKeys.size,
       allowedKeys: allowedKeysForDebug,
     }),
     [
@@ -723,7 +773,7 @@ function RosterView({
       unassignedShifts.length,
       visibleUnassignedShifts.length,
       claimableUnassignedShifts.length,
-      employeeAllowedKeys,
+      effectiveAllowedKeys,
       allowedKeysForDebug,
     ],
   );
