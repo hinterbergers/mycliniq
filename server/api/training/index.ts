@@ -29,6 +29,7 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { spawn } from "child_process";
+import multer from "multer";
 
 const videoBaseShape = {
   title: z.string().min(1, "Titel erforderlich"),
@@ -165,6 +166,8 @@ const selectPresentationFields = {
   updatedAt: trainingPresentations.updatedAt,
 };
 
+const upload = multer({ storage: multer.memoryStorage() });
+
 const trainingUploadsDir = path.join(process.cwd(), "uploads", "training");
 fs.mkdirSync(trainingUploadsDir, { recursive: true });
 
@@ -173,15 +176,6 @@ const ALLOWED_PRESENTATION_MIMES = new Set([
   "application/vnd.ms-powerpoint",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 ]);
-
-type ParsedMultipartResult = {
-  fields: Record<string, string>;
-  file: {
-    buffer: Buffer;
-    originalName: string;
-    mimeType: string;
-  } | null;
-};
 
 const buildDownloadUrl = (id: number) =>
   `/api/training/presentations/${id}/download`;
@@ -200,90 +194,6 @@ function normalizeKeywords(value: unknown): string[] {
     .filter(Boolean);
 }
 
-async function parseMultipartPresentation(
-  req: Request,
-): Promise<ParsedMultipartResult> {
-  const contentType = req.headers["content-type"];
-  if (!contentType || typeof contentType !== "string") {
-    throw new Error("Ungültiger Content-Type");
-  }
-
-  const boundaryMatch = contentType.match(/boundary=(.+)$/);
-  if (!boundaryMatch) {
-    throw new Error("Boundary fehlt im Content-Type");
-  }
-
-  const boundary = `--${boundaryMatch[1]}`;
-  const chunks: Buffer[] = [];
-  return new Promise((resolve, reject) => {
-    req.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
-    req.on("end", () => {
-      const buffer = Buffer.concat(chunks);
-      const text = buffer.toString("latin1");
-      const segments = text
-        .split(boundary)
-        .slice(1)
-        .filter((segment) => segment.trim() !== "--" && segment.trim() !== "");
-      const fields: Record<string, string> = {};
-      let file: ParsedMultipartResult["file"] = null;
-
-      for (const segment of segments) {
-        const trimmed = segment.replace(/^[\r\n]+/, "").replace(/[\r\n]+$/, "");
-        if (!trimmed) continue;
-
-        const headerEnd = trimmed.indexOf("\r\n\r\n");
-        if (headerEnd < 0) continue;
-
-        const headerText = trimmed.slice(0, headerEnd);
-        const bodyText = trimmed.slice(headerEnd + 4);
-        const contentBuffer = Buffer.from(bodyText, "latin1");
-        const finalBuffer = trimTrailingNewline(contentBuffer);
-
-        const headerLines = headerText.split("\r\n");
-        const dispositionLine = headerLines.find((line) =>
-          line.toLowerCase().startsWith("content-disposition"),
-        );
-        if (!dispositionLine) continue;
-
-        const nameMatch = dispositionLine.match(/name="([^"]+)"/);
-        if (!nameMatch) continue;
-        const fieldName = nameMatch[1];
-
-        const filenameMatch = dispositionLine.match(/filename="([^"]+)"/);
-        if (filenameMatch) {
-          const contentTypeLine = headerLines.find((line) =>
-            line.toLowerCase().startsWith("content-type"),
-          );
-          const mimeType =
-            contentTypeLine?.split(":")[1]?.trim() ||
-            "application/octet-stream";
-          file = {
-            buffer: finalBuffer,
-            originalName: filenameMatch[1],
-            mimeType,
-          };
-        } else {
-          fields[fieldName] = finalBuffer.toString("latin1");
-        }
-      }
-
-      resolve({ fields, file });
-    });
-
-    req.on("error", (err) => reject(err));
-  });
-}
-
-function trimTrailingNewline(buffer: Buffer): Buffer {
-  if (
-    buffer.length >= 2 &&
-    buffer[buffer.length - 2] === 13 &&
-    buffer[buffer.length - 1] === 10
-  ) {
-    return buffer.slice(0, buffer.length - 2);
-  }
-  return buffer;
-}
 
 async function convertPresentationToPdf(inputPath: string): Promise<string> {
   const outputDir = path.dirname(inputPath);
@@ -514,51 +424,60 @@ export function registerTrainingRoutes(router: Router) {
   router.post(
     "/presentations/upload",
     requireAuth,
+    requireTrainingEnabled,
     requireAdmin,
+    upload.single("file"),
     asyncHandler(async (req, res) => {
-      const { fields, file } = await parseMultipartPresentation(req);
+      const file = req.file;
       if (!file) {
         return validationError(res, "Datei erforderlich");
       }
-      const mime = (file.mimeType ?? "").toLowerCase();
+
+      const mime = (file.mimetype ?? "application/octet-stream").toLowerCase();
       if (!ALLOWED_PRESENTATION_MIMES.has(mime)) {
-        return validationError(
-          res,
-          "Nur PDF oder PowerPoint-Dateien sind erlaubt",
-        );
+        res
+          .status(415)
+          .json({ success: false, error: "Nur PDF oder PowerPoint-Dateien sind erlaubt" });
+        return;
       }
 
-      const title = (fields.title ?? "").trim();
+      const title = (req.body.title ?? "").trim();
       if (!title) {
         return validationError(res, "Titel erforderlich");
       }
 
-      const keywords = normalizeKeywords(fields.keywords);
-      const originalStorageName = `${crypto.randomUUID()}${path.extname(
-        file.originalName,
-      ) || ".bin"}`;
-      const rawPath = path.join(trainingUploadsDir, originalStorageName);
-      fs.writeFileSync(rawPath, file.buffer);
+      const keywords = normalizeKeywords(req.body.keywords);
+      const extension =
+        path.extname(file.originalname || "").toLowerCase() ||
+        (mime === "application/pdf" ? ".pdf" : "");
+      const originalStorageName = `${crypto.randomUUID()}${extension || ".bin"}`;
+      const originalPath = path.join(trainingUploadsDir, originalStorageName);
+      fs.writeFileSync(originalPath, file.buffer);
 
       let finalStorageName = originalStorageName;
-      let finalMimeType = mime || "application/octet-stream";
-      try {
-        if ([".ppt", ".pptx"].includes(path.extname(file.originalName).toLowerCase())) {
-          const convertedPath = await convertPresentationToPdf(rawPath);
+      let finalMimeType = mime;
+      let originalMimeType: string | null = null;
+      let originalStoredName: string | null = null;
+
+      if ([".ppt", ".pptx"].includes(extension)) {
+        originalMimeType = file.mimetype;
+        originalStoredName = originalStorageName;
+        try {
+          const convertedPath = await convertPresentationToPdf(originalPath);
           finalStorageName = path.basename(convertedPath);
           finalMimeType = "application/pdf";
+        } catch (error: any) {
+          if (error.code === "ENOENT") {
+            return validationError(
+              res,
+              "LibreOffice ist auf dem Server nicht installiert.",
+            );
+          }
+          const message =
+            error?.message || "Konvertierung der PowerPoint-Datei fehlgeschlagen.";
+          res.status(500).json({ success: false, error: message });
+          return;
         }
-      } catch (error: any) {
-        if (error.code === "ENOENT") {
-          return validationError(
-            res,
-            "LibreOffice ist auf dem Server nicht installiert.",
-          );
-        }
-        return validationError(
-          res,
-          error?.message || "Konvertierung fehlgeschlagen",
-        );
       }
 
       const [inserted] = await db
@@ -570,8 +489,8 @@ export function registerTrainingRoutes(router: Router) {
           fileUrl: "",
           isActive: true,
           storageName: finalStorageName,
-          originalStorageName,
-          originalMimeType: file.mimeType,
+          originalStorageName: originalStoredName,
+          originalMimeType,
         })
         .returning();
 
