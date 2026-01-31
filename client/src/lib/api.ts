@@ -695,6 +695,18 @@ export const trainingApi = {
     return handleResponse<TrainingVideo[]>(response);
   },
 
+  createYouTubeVideo: async (payload: {
+    title: string;
+    youtubeUrlOrId: string;
+    keywords?: string[];
+  }): Promise<TrainingVideo> => {
+    const response = await apiFetch(`${API_BASE}/training/videos/youtube`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<TrainingVideo>(response);
+  },
+
   getPresentations: async (
     includeInactive = false,
   ): Promise<TrainingPresentation[]> => {

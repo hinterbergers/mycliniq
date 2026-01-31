@@ -52,6 +52,22 @@ const videoBaseSchema = z
 
 const videoUpdateSchema = z.object(videoBaseShape).partial();
 
+const newYouTubeVideoSchema = z.object({
+  title: z.string().min(1, "Titel erforderlich"),
+  youtubeUrlOrId: z.string().min(1, "YouTube-Link oder ID erforderlich"),
+  keywords: z.array(z.string()).optional(),
+});
+
+const YOUTUBE_MATCH =
+  /(?:https?:\\/\\/(?:www\\.)?youtube\\.com\\/watch\\?v=|https?:\\/\\/(?:www\\.)?youtu\\.be\\/)?([\\w-]{11})/i;
+
+const extractYoutubeId = (value: string): string | null => {
+  const match = value.match(YOUTUBE_MATCH);
+  if (match && match[1]) return match[1];
+  if (/^[\w-]{11}$/.test(value)) return value;
+  return null;
+};
+
 const presentationBaseSchema = z.object({
   title: z.string().min(1, "Titel erforderlich"),
   keywords: z.array(z.string()).optional(),
@@ -332,6 +348,41 @@ export function registerTrainingRoutes(router: Router) {
       return created(res, createdVideo);
     }),
   );
+
+  router.post(
+    "/videos/youtube",
+    requireAuth,
+    requireAdmin,
+    validateBody(newYouTubeVideoSchema),
+    asyncHandler(async (req, res) => {
+      const { title, youtubeUrlOrId, keywords } = req.body;
+      const videoId = extractYoutubeId(youtubeUrlOrId);
+      if (!videoId) {
+        return validationError(
+          res,
+          "Keine gültige YouTube-ID oder URL im Format https://youtu.be/<ID> oder https://www.youtube.com/watch?v=<ID>",
+        );
+      }
+
+      const payload = buildVideoPayload({
+        title,
+        keywords,
+        platform: "YouTube",
+        videoId,
+        url: `https://www.youtube.com/watch?v=${videoId}`,
+        embedUrl: `https://www.youtube-nocookie.com/embed/${videoId}`,
+        isActive: true,
+      });
+
+      const [createdVideo] = await db
+        .insert(trainingVideos)
+        .values(payload)
+        .returning();
+
+      return created(res, createdVideo);
+    }),
+  );
+
 
   router.patch(
     "/videos/:id",
