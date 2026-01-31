@@ -87,6 +87,7 @@ async function getAuthUserByEmployeeId(
     name: employee.name,
     lastName: employee.lastName || "",
     accessScope: "full",
+    trainingEnabled: Boolean(employee.trainingEnabled),
   };
 }
 

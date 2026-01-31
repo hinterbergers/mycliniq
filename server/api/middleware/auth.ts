@@ -8,6 +8,7 @@ import {
   userPermissions,
   permissions,
 } from "@shared/schema";
+import { forbidden, unauthorized } from "../../lib/api-response";
 
 /**
  * User context attached to authenticated requests
@@ -25,6 +26,7 @@ export interface AuthUser {
   clinicId?: number;
   capabilities: string[]; // Permission keys for current department
   accessScope: "full" | "external_duty";
+  trainingEnabled: boolean;
 }
 
 /**
@@ -268,6 +270,7 @@ async function getAuthUserByEmployeeId(
       clinicId,
       capabilities,
       accessScope,
+      trainingEnabled: Boolean(employee.trainingEnabled),
     };
   } catch (error) {
     if (error instanceof AccessDeniedError) {
@@ -551,6 +554,28 @@ export function isTechnicalAdmin(req: Request): boolean {
     req.user.systemRole === "clinic_admin" ||
     req.user.systemRole === "system_admin"
   );
+}
+
+export function requireTrainingEnabled(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  if (!req.user) {
+    unauthorized(res, "Anmeldung erforderlich");
+    return;
+  }
+
+  if (
+    req.user.trainingEnabled ||
+    req.user.isAdmin ||
+    req.user.systemRole !== "employee"
+  ) {
+    next();
+    return;
+  }
+
+  forbidden(res, "Fortbildungen sind nicht freigeschaltet");
 }
 
 /**

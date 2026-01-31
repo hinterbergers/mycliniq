@@ -286,6 +286,66 @@ export const insertServiceLineSchema = createInsertSchema(serviceLines).omit({
 export type InsertServiceLine = z.infer<typeof insertServiceLineSchema>;
 export type ServiceLine = typeof serviceLines.$inferSelect;
 
+export const trainingVideos = pgTable(
+  "training_videos",
+  {
+    id: serial("id").primaryKey(),
+    title: text("title").notNull(),
+    keywords: text("keywords")
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::text[]`),
+    platform: text("platform").notNull(),
+    videoId: text("video_id"),
+    url: text("url"),
+    embedUrl: text("embed_url"),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("training_videos_is_active_idx").on(table.isActive)],
+);
+
+export const insertTrainingVideoSchema = createInsertSchema(trainingVideos).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertTrainingVideo = z.infer<typeof insertTrainingVideoSchema>;
+export type TrainingVideo = typeof trainingVideos.$inferSelect;
+
+export const trainingPresentations = pgTable(
+  "training_presentations",
+  {
+    id: serial("id").primaryKey(),
+    title: text("title").notNull(),
+    keywords: text("keywords")
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::text[]`),
+    fileUrl: text("file_url").notNull(),
+    mimeType: text("mime_type").notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("training_presentations_is_active_idx").on(table.isActive)],
+);
+
+export const insertTrainingPresentationSchema = createInsertSchema(
+  trainingPresentations,
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertTrainingPresentation = z.infer<
+  typeof insertTrainingPresentationSchema
+>;
+export type TrainingPresentation = typeof trainingPresentations.$inferSelect;
+
 // Employees table
 export const employees = pgTable(
   "employees",
@@ -326,6 +386,7 @@ export const employees = pgTable(
     employmentFrom: date("employment_from"),
     employmentUntil: date("employment_until"),
     isAdmin: boolean("is_admin").notNull().default(false),
+    trainingEnabled: boolean("training_enabled").notNull().default(false),
     inactiveFrom: date("inactive_from"),
     inactiveUntil: date("inactive_until"),
     inactiveReason: text("inactive_reason"),

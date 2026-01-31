@@ -70,7 +70,6 @@ import {
   dutyPlansApi,
   employeeApi,
   rosterApi,
-  rosterSettingsApi,
   serviceLinesApi,
   getServiceLineContextFromEmployee,
   shiftSwapApi,
@@ -78,7 +77,6 @@ import {
   longTermAbsencesApi,
   roomApi,
   weeklyPlanApi,
-  type NextPlanningMonth,
   type PlannedAbsenceAdmin,
   type WeeklyPlanResponse,
 } from "@/lib/api";
@@ -208,10 +206,6 @@ export default function Personal() {
   const { toast } = useToast();
   const [swapDialogOpen, setSwapDialogOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [planningMonth, setPlanningMonth] = useState<NextPlanningMonth | null>(
-    null,
-  );
-
   const isExternalDuty = user?.accessScope === "external_duty";
   const [unassignedCount, setUnassignedCount] = useState(0);
   const [unassignedDebug, setUnassignedDebug] =
@@ -254,31 +248,6 @@ export default function Personal() {
         handler as unknown as EventListener,
       );
   }, []);
-
-  useEffect(() => {
-    const loadPlanningMonth = async () => {
-      try {
-        const data = await rosterSettingsApi.getNextPlanningMonth();
-        setPlanningMonth(data);
-      } catch (error) {
-        toast({
-          title: "Dienstwünsche",
-          description: "Planungsmonat konnte nicht geladen werden.",
-          variant: "destructive",
-        });
-      }
-    };
-    loadPlanningMonth();
-  }, [toast]);
-
-
-  const wishLabel = planningMonth
-    ? format(
-        new Date(planningMonth.year, planningMonth.month - 1, 1),
-        "MMMM yyyy",
-        { locale: de },
-      )
-    : format(addMonths(new Date(), 1), "MMMM", { locale: de });
 
   const handleSubscribe = async () => {
     if (!token) {
@@ -414,14 +383,6 @@ export default function Personal() {
                 </Badge>
               </Button>
             )}
-            <Button
-              className="gap-2"
-              onClick={() => setLocation("/dienstwuensche")}
-              data-testid="button-wishes"
-            >
-              <Heart className="w-4 h-4" />
-              Dienstwünsche für {wishLabel}
-            </Button>
           </div>
         </div>
 
@@ -733,12 +694,37 @@ function RosterView({
     );
   }, [currentEmployee, currentUser, serviceLines]);
 
+  // Fallback: infer allowed keys from the displayed service lines if role-based fallback is empty
+  const labelFallbackAllowedKeys = useMemo(() => {
+    const group = getDutyRoleGroup(currentEmployee ?? currentUser);
+    if (!group) return new Set<string>();
+
+    const rx =
+      group === "OA"
+        ? /gyn/i
+        : group === "ASS"
+          ? /(krei|kreiß|kreis|geb|geburt)/i
+          : /turnus/i;
+
+    return new Set(
+      serviceLineDisplay
+        .filter((line) => rx.test(`${line.label} ${line.key}`))
+        .map((line) => line.key),
+    );
+  }, [currentEmployee, currentUser, serviceLineDisplay]);
+
   const effectiveAllowedKeys = useMemo(() => {
+    // Primary: Personaleditor keys
     if (employeeAllowedKeys.size > 0) return employeeAllowedKeys;
-    // If we have a raw candidate but couldn't parse keys, fall back to role-group based service lines.
-    if (hasServiceLineCandidate && roleFallbackAllowedKeys.size > 0) return roleFallbackAllowedKeys;
+
+    // Fallback 1: roleGroup field on serviceLines (if available)
+    if (roleFallbackAllowedKeys.size > 0) return roleFallbackAllowedKeys;
+
+    // Fallback 2: infer from displayed service line labels/keys
+    if (labelFallbackAllowedKeys.size > 0) return labelFallbackAllowedKeys;
+
     return employeeAllowedKeys;
-  }, [employeeAllowedKeys, hasServiceLineCandidate, roleFallbackAllowedKeys]);
+  }, [employeeAllowedKeys, roleFallbackAllowedKeys, labelFallbackAllowedKeys]);
   // --- End: helpers for effective allowed keys with fallback ---
 
   const canCurrentUserTakeShift = (shift: RosterShift) => {
