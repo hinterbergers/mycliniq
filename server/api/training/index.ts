@@ -51,11 +51,20 @@ const videoBaseSchema = z
     },
   );
 
-const videoUpdateSchema = z.object(videoBaseShape).partial();
+const videoUpdateSchema = z.object({
+  title: z.string().min(1, "Titel erforderlich").optional(),
+  keywords: z.array(z.string()).optional(),
+  platform: z.string().min(1, "Plattform erforderlich").optional(),
+  videoId: z.string().optional(),
+  url: z.string().optional(),
+  embedUrl: z.string().optional(),
+  isActive: z.boolean().optional(),
+});
 
-const newYouTubeVideoSchema = z.object({
+const embedVideoSchema = z.object({
   title: z.string().min(1, "Titel erforderlich"),
-  youtubeUrlOrId: z.string().min(1, "YouTube-Link oder ID erforderlich"),
+  platform: z.enum(["youtube", "vimeo"]),
+  videoUrlOrId: z.string().min(1, "Link oder ID erforderlich"),
   keywords: z.array(z.string()).optional(),
 });
 
@@ -99,6 +108,26 @@ const extractYoutubeId = (value: string): string | null => {
   }
 
   return null;
+};
+
+const extractVimeoId = (value: string): string | null => {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  try {
+    const normalized = trimmed.includes("://") ? trimmed : `https://${trimmed}`;
+    const url = new URL(normalized);
+    const hostname = url.hostname.toLowerCase();
+    if (hostname.includes("vimeo.com")) {
+      const match = url.pathname.match(/\/(?:video\/)?(\d+)/);
+      if (match && match[1]) {
+        return match[1];
+      }
+    }
+  } catch {
+    // ignore
+  }
+  const digits = trimmed.match(/^(\d+)$/);
+  return digits ? digits[1] : null;
 };
 
 const presentationBaseSchema = z.object({
@@ -292,30 +321,51 @@ export function registerTrainingRoutes(router: Router) {
   );
 
   router.post(
-    "/videos/youtube",
+    "/videos/embed",
     requireAuth,
     requireTrainingEnabled,
     requireAdmin,
-    validateBody(newYouTubeVideoSchema),
+    validateBody(embedVideoSchema),
     asyncHandler(async (req, res) => {
-      const { title, youtubeUrlOrId, keywords } = req.body;
-      const videoId = extractYoutubeId(youtubeUrlOrId);
-      if (!videoId) {
-        return validationError(
-          res,
-          "Keine gültige YouTube-ID oder URL (https://youtu.be/<ID> oder https://www.youtube.com/watch?v=<ID>).",
-        );
+      const { title, platform, videoUrlOrId, keywords } = req.body;
+      let payload: InsertTrainingVideo | null = null;
+
+      if (platform === "youtube") {
+        const videoId = extractYoutubeId(videoUrlOrId);
+        if (!videoId) {
+          return validationError(
+            res,
+            "Keine gültige YouTube-ID oder URL (https://youtu.be/<ID> oder https://www.youtube.com/watch?v=<ID>).",
+          );
+        }
+        payload = buildVideoPayload({
+          title,
+          keywords,
+          platform: "YouTube",
+          videoId,
+          url: videoUrlOrId,
+          embedUrl: `https://www.youtube-nocookie.com/embed/${videoId}`,
+          isActive: true,
+        });
+      } else if (platform === "vimeo") {
+        const videoId = extractVimeoId(videoUrlOrId);
+        if (!videoId) {
+          return validationError(res, "Keine gültige Vimeo-ID oder URL.");
+        }
+        payload = buildVideoPayload({
+          title,
+          keywords,
+          platform: "Vimeo",
+          videoId,
+          url: videoUrlOrId,
+          embedUrl: `https://player.vimeo.com/video/${videoId}`,
+          isActive: true,
+        });
       }
 
-      const payload = buildVideoPayload({
-        title,
-        keywords,
-        platform: "YouTube",
-        videoId,
-        url: youtubeUrlOrId,
-        embedUrl: `https://www.youtube-nocookie.com/embed/${videoId}`,
-        isActive: true,
-      });
+      if (!payload) {
+        return validationError(res, "Plattform nicht unterstützt.");
+      }
 
       const [createdVideo] = await db
         .insert(trainingVideos)
@@ -376,6 +426,64 @@ export function registerTrainingRoutes(router: Router) {
       }
 
       return ok(res, updated);
+    }),
+  );
+
+  router.delete(
+    "/videos/:id",
+    requireAuth,
+    requireAdmin,
+    validateParams(idParamSchema),
+    asyncHandler(async (req, res) => {
+      const { id } = req.params;
+      const deleted = await db
+        .delete(trainingVideos)
+        .where(eq(trainingVideos.id, id));
+
+      if (!deleted) {
+        return notFound(res, "Video");
+      }
+
+      return okMessage(res, "Video gelöscht");
+    }),
+  );
+
+  router.patch(
+    "/videos/:id",
+    requireAuth,
+    requireAdmin,
+    validateParams(idParamSchema),
+    validateBody(videoUpdateSchema),
+    asyncHandler(async (req, res) => {
+      const { id } = req.params;
+      const updateData: Partial<InsertTrainingVideo> = {};
+      if (req.body.title !== undefined) updateData.title = req.body.title;
+      if (req.body.keywords !== undefined)
+        updateData.keywords = req.body.keywords ?? [];
+      if (req.body.platform !== undefined) updateData.platform = req.body.platform;
+      if (req.body.videoId !== undefined)
+        updateData.videoId = req.body.videoId;
+      if (req.body.url !== undefined) updateData.url = req.body.url;
+      if (req.body.embedUrl !== undefined)
+        updateData.embedUrl = req.body.embedUrl;
+      if (req.body.isActive !== undefined)
+        updateData.isActive = req.body.isActive;
+
+      if (!Object.keys(updateData).length) {
+        return validationError(res, "Keine Felder zum Aktualisieren übergeben");
+      }
+
+      const [updatedVideo] = await db
+        .update(trainingVideos)
+        .set(updateData)
+        .where(eq(trainingVideos.id, id))
+        .returning();
+
+      if (!updatedVideo) {
+        return notFound(res, "Video");
+      }
+
+      return ok(res, updatedVideo);
     }),
   );
 

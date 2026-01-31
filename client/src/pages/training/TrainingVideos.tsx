@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, Play, Plus } from "lucide-react";
+import { Loader2, Play, Plus, Trash2, Edit3 } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
 import {
   Card,
@@ -11,6 +11,14 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -24,6 +32,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { trainingApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useToast } from "@/hooks/use-toast";
 import type { TrainingVideo } from "@shared/schema";
 
 type FilterTag = string | "all";
@@ -52,11 +61,22 @@ export default function TrainingVideos() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newVideoForm, setNewVideoForm] = useState({
     title: "",
-    youtubeUrlOrId: "",
+    videoUrlOrId: "",
     keywords: "",
+    platform: "youtube",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [creationError, setCreationError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [editingVideo, setEditingVideo] = useState<TrainingVideo | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editForm, setEditForm] = useState({
+    title: "",
+    keywords: "",
+    youtubeUrlOrId: "",
+    isActive: true,
+  });
+  const { toast } = useToast();
 
   const { data: videos = [], isLoading, error, refetch } = useQuery({
     queryKey: ["training", "videos"],
@@ -129,16 +149,17 @@ export default function TrainingVideos() {
     setCreationError(null);
     setNewVideoForm({
       title: "",
-      youtubeUrlOrId: "",
+      videoUrlOrId: "",
       keywords: "",
+      platform: "youtube",
     });
   };
 
   const handleCreateVideo = async () => {
     const title = newVideoForm.title.trim();
-    const youtube = newVideoForm.youtubeUrlOrId.trim();
-    if (!title || !youtube) {
-      setCreationError("Titel und YouTube-Link oder ID sind erforderlich.");
+    const reference = newVideoForm.videoUrlOrId.trim();
+    if (!title || !reference) {
+      setCreationError("Titel und Link oder ID sind erforderlich.");
       return;
     }
 
@@ -151,9 +172,10 @@ export default function TrainingVideos() {
       .filter(Boolean);
 
     try {
-      const created = await trainingApi.createYouTubeVideo({
+      const created = await trainingApi.createEmbedVideo({
         title,
-        youtubeUrlOrId: youtube,
+        platform: newVideoForm.platform as "youtube" | "vimeo",
+        videoUrlOrId: reference,
         keywords: keywords.length ? keywords : undefined,
       });
       await refetch();
@@ -169,6 +191,108 @@ export default function TrainingVideos() {
       setIsSubmitting(false);
     }
   };
+
+  const handleDeleteVideo = async (video: TrainingVideo) => {
+    if (!canManageTraining) return;
+    const message = `Video "${video.title}" wirklich löschen?`;
+    if (!window.confirm(message)) return;
+
+    setDeletingId(video.id);
+    try {
+      await trainingApi.deleteVideo(video.id);
+      toast({
+        title: "Video gelöscht",
+        description: `"${video.title}" wurde entfernt.`,
+      });
+      setSelectedVideo((current) =>
+        current?.id === video.id ? null : current,
+      );
+      void refetch();
+    } catch (submissionError) {
+      toast({
+        title: "Löschen fehlgeschlagen",
+        description:
+          submissionError instanceof Error
+            ? submissionError.message
+            : "Das Video konnte nicht gelöscht werden.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!editingVideo) return;
+    setEditForm({
+      title: editingVideo.title,
+      keywords: (editingVideo.keywords ?? []).join(", "),
+      youtubeUrlOrId: editingVideo.videoId ?? "",
+      isActive: editingVideo.isActive,
+    });
+  }, [editingVideo]);
+
+  const openEditDialog = (video: TrainingVideo) => {
+    setEditingVideo(video);
+    setEditDialogOpen(true);
+  };
+
+  const closeEditDialog = () => {
+    setEditDialogOpen(false);
+    setEditingVideo(null);
+    setEditForm({
+      title: "",
+      keywords: "",
+      youtubeUrlOrId: "",
+      isActive: true,
+    });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingVideo) return;
+    const body: Parameters<typeof trainingApi.updateVideo>[1] = {
+      title: editForm.title.trim(),
+      keywords: editForm.keywords
+        .split(/[;,]+/)
+        .map((keyword) => keyword.trim())
+        .filter(Boolean),
+      isActive: editForm.isActive,
+    };
+    if (editingVideo.platform?.toLowerCase().includes("youtube")) {
+      const youtubeId = editForm.youtubeUrlOrId.trim();
+      body.videoId = youtubeId || null;
+    }
+
+    try {
+      const updated = await trainingApi.updateVideo(editingVideo.id, body);
+      toast({
+        title: "Video aktualisiert",
+        description: `"${updated.title}" wurde gespeichert.`,
+      });
+      await refetch();
+      setSelectedVideo(updated);
+      closeEditDialog();
+    } catch (updateError) {
+      toast({
+        title: "Aktualisierung fehlgeschlagen",
+        description:
+          updateError instanceof Error
+            ? updateError.message
+            : "Das Video konnte nicht gespeichert werden.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (!editingVideo) return;
+    setEditForm({
+      title: editingVideo.title,
+      keywords: (editingVideo.keywords ?? []).join(", "),
+      youtubeUrlOrId: editingVideo.videoId ?? "",
+      isActive: editingVideo.isActive,
+    });
+  }, [editingVideo]);
 
   return (
     <Layout title="Fortbildung – Videos">
@@ -265,27 +389,57 @@ export default function TrainingVideos() {
                           : "border-border",
                       )}
                     >
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-sm">
-                          <Play className="w-4 h-4 text-primary" />
-                          {video.title}
-                        </CardTitle>
-                        <CardDescription className="text-xs text-muted-foreground">
-                          {video.platform} ·{" "}
-                          {video.isActive ? "Aktiv" : "Inaktiv"}
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="flex flex-wrap gap-1">
-                          {(video.keywords ?? []).map((keyword) => (
-                            <Badge key={keyword} variant="secondary">
-                              {keyword}
-                            </Badge>
-                          ))}
+                    <CardHeader className="space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <CardTitle className="flex items-center gap-2 text-sm">
+                            <Play className="w-4 h-4 text-primary" />
+                            {video.title}
+                          </CardTitle>
+                          <CardDescription className="text-xs text-muted-foreground">
+                            {video.platform} ·{" "}
+                            {video.isActive ? "Aktiv" : "Inaktiv"}
+                          </CardDescription>
                         </div>
-                        {video.url && (
-                          <p className="mt-3 text-xs text-muted-foreground line-clamp-2">
-                            {video.url}
+                        {canManageTraining && (
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openEditDialog(video);
+                              }}
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              className="text-destructive"
+                              disabled={deletingId === video.id}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleDeleteVideo(video);
+                              }}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {(video.keywords ?? []).map((keyword) => (
+                          <Badge key={keyword} variant="secondary">
+                            {keyword}
+                          </Badge>
+                        ))}
+                      </div>
+                    </CardHeader>
+                      <CardContent>
+                      {video.url && (
+                        <p className="mt-3 text-xs text-muted-foreground line-clamp-2">
+                          {video.url}
                           </p>
                         )}
                       </CardContent>
@@ -384,16 +538,37 @@ export default function TrainingVideos() {
               />
             </div>
             <div className="space-y-1">
-              <Label>YouTube-Link oder ID</Label>
+              <Label>Plattform</Label>
+              <Select
+                value={newVideoForm.platform}
+                onValueChange={(value) =>
+                  setNewVideoForm((prev) => ({ ...prev, platform: value }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Plattform wählen" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="youtube">YouTube</SelectItem>
+                  <SelectItem value="vimeo">Vimeo</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label>Link oder ID</Label>
               <Input
-                value={newVideoForm.youtubeUrlOrId}
+                value={newVideoForm.videoUrlOrId}
                 onChange={(event) =>
                   setNewVideoForm((prev) => ({
                     ...prev,
-                    youtubeUrlOrId: event.target.value,
+                    videoUrlOrId: event.target.value,
                   }))
                 }
               />
+              <p className="text-xs text-muted-foreground">
+                Für YouTube verwenden Sie den normalen Link oder die ID, für Vimeo die
+                normale URL oder die Zahlen-ID.
+              </p>
             </div>
             <div className="space-y-1">
               <Label>Schlagworte (kommagetrennt)</Label>
@@ -424,10 +599,91 @@ export default function TrainingVideos() {
               disabled={
                 isSubmitting ||
                 !newVideoForm.title.trim() ||
-                !newVideoForm.youtubeUrlOrId.trim()
+                !newVideoForm.videoUrlOrId.trim()
               }
             >
               {isSubmitting ? "Speichert…" : "Speichern"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={editDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeEditDialog();
+            return;
+          }
+          setEditDialogOpen(true);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {editingVideo ? `Bearbeite ${editingVideo.title}` : "Video bearbeiten"}
+            </DialogTitle>
+            <DialogDescription>
+              Aktualisieren Sie Titel, Schlagworte oder Aktivitätsstatus.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <Label>Titel</Label>
+              <Input
+                value={editForm.title}
+                onChange={(event) =>
+                  setEditForm((prev) => ({ ...prev, title: event.target.value }))
+                }
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Schlagworte (kommagetrennt)</Label>
+              <Input
+                value={editForm.keywords}
+                onChange={(event) =>
+                  setEditForm((prev) => ({ ...prev, keywords: event.target.value }))
+                }
+              />
+            </div>
+            {editingVideo?.platform?.toLowerCase().includes("youtube") && (
+              <div className="space-y-1">
+                <Label>Video-ID</Label>
+                <Input
+                  value={editForm.youtubeUrlOrId}
+                  onChange={(event) =>
+                    setEditForm((prev) => ({
+                      ...prev,
+                      youtubeUrlOrId: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>Aktiv</Label>
+                <p className="text-xs text-muted-foreground">
+                  Deaktivierte Videos werden in der Liste ausgegraut.
+                </p>
+              </div>
+              <Switch
+                checked={editForm.isActive}
+                onCheckedChange={(checked) =>
+                  setEditForm((prev) => ({ ...prev, isActive: Boolean(checked) }))
+                }
+              />
+            </div>
+          </div>
+          <div className="mt-6 flex justify-end gap-2">
+            <Button variant="outline" onClick={closeEditDialog}>
+              Abbrechen
+            </Button>
+            <Button
+              onClick={handleSaveEdit}
+              disabled={!editForm.title.trim()}
+            >
+              Speichern
             </Button>
           </div>
         </DialogContent>

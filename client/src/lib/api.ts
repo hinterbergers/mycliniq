@@ -695,13 +695,40 @@ export const trainingApi = {
     return handleResponse<TrainingVideo[]>(response);
   },
 
-  createYouTubeVideo: async (payload: {
+  createEmbedVideo: async (payload: {
     title: string;
-    youtubeUrlOrId: string;
+    platform: "youtube" | "vimeo";
+    videoUrlOrId: string;
     keywords?: string[];
   }): Promise<TrainingVideo> => {
-    const response = await apiFetch(`${API_BASE}/training/videos/youtube`, {
+    const response = await apiFetch(`${API_BASE}/training/videos/embed`, {
       method: "POST",
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<TrainingVideo>(response);
+  },
+
+  deleteVideo: async (id: number): Promise<void> => {
+    const response = await apiFetch(`${API_BASE}/training/videos/${id}`, {
+      method: "DELETE",
+    });
+    return handleResponse<void>(response);
+  },
+
+  updateVideo: async (
+    id: number,
+    payload: Partial<{
+      title: string;
+      keywords: string[];
+      platform: string;
+      videoId: string | null;
+      url: string;
+      embedUrl: string;
+      isActive: boolean;
+    }>,
+  ): Promise<TrainingVideo> => {
+    const response = await apiFetch(`${API_BASE}/training/videos/${id}`, {
+      method: "PATCH",
       body: JSON.stringify(payload),
     });
     return handleResponse<TrainingVideo>(response);
