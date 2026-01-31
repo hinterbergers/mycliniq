@@ -58,13 +58,45 @@ const newYouTubeVideoSchema = z.object({
   keywords: z.array(z.string()).optional(),
 });
 
-const YOUTUBE_MATCH =
-  /(?:https?:\\/\\/(?:www\\.)?youtube\\.com\\/watch\\?v=|https?:\\/\\/(?:www\\.)?youtu\\.be\\/)?([\\w-]{11})/i;
+const ID_REGEX = /^[A-Za-z0-9_-]{11}$/;
 
 const extractYoutubeId = (value: string): string | null => {
-  const match = value.match(YOUTUBE_MATCH);
-  if (match && match[1]) return match[1];
-  if (/^[\w-]{11}$/.test(value)) return value;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  try {
+    const normalizedUrl = trimmed.includes("://")
+      ? trimmed
+      : `https://${trimmed}`;
+    const url = new URL(normalizedUrl);
+    const hostname = url.hostname.toLowerCase();
+
+    if (hostname.includes("youtube.com")) {
+      const vParam = url.searchParams.get("v");
+      if (vParam && ID_REGEX.test(vParam)) {
+        return vParam;
+      }
+      const pathMatch = url.pathname.match(/\/(embed|shorts)\/([A-Za-z0-9_-]{11})/);
+      if (pathMatch && pathMatch[2]) {
+        return pathMatch[2];
+      }
+    }
+
+    if (hostname === "youtu.be") {
+      const pathId = url.pathname.replace(/^\//, "");
+      if (ID_REGEX.test(pathId)) {
+        return pathId;
+      }
+    }
+  } catch {
+    // fall through to regex fallback
+  }
+
+  const directMatch = trimmed.match(ID_REGEX);
+  if (directMatch) {
+    return directMatch[0];
+  }
+
   return null;
 };
 
@@ -352,6 +384,7 @@ export function registerTrainingRoutes(router: Router) {
   router.post(
     "/videos/youtube",
     requireAuth,
+    requireTrainingEnabled,
     requireAdmin,
     validateBody(newYouTubeVideoSchema),
     asyncHandler(async (req, res) => {
@@ -360,7 +393,7 @@ export function registerTrainingRoutes(router: Router) {
       if (!videoId) {
         return validationError(
           res,
-          "Keine gültige YouTube-ID oder URL im Format https://youtu.be/<ID> oder https://www.youtube.com/watch?v=<ID>",
+          "Keine gültige YouTube-ID oder URL (https://youtu.be/<ID> oder https://www.youtube.com/watch?v=<ID>).",
         );
       }
 
@@ -369,7 +402,7 @@ export function registerTrainingRoutes(router: Router) {
         keywords,
         platform: "YouTube",
         videoId,
-        url: `https://www.youtube.com/watch?v=${videoId}`,
+        url: youtubeUrlOrId,
         embedUrl: `https://www.youtube-nocookie.com/embed/${videoId}`,
         isActive: true,
       });
