@@ -39,7 +39,11 @@ const buildEmbedUrl = (video: TrainingVideo | null): string => {
 };
 
 export default function TrainingVideos() {
-  const { employee, isAdmin, isTechnicalAdmin } = useAuth();
+  const {
+    employee,
+    isAdmin: authIsAdmin,
+    isTechnicalAdmin: authIsTechAdmin,
+  } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTag, setActiveTag] = useState<FilterTag>("all");
   const [selectedVideo, setSelectedVideo] = useState<TrainingVideo | null>(
@@ -113,8 +117,8 @@ export default function TrainingVideos() {
     error instanceof Error ? error.message : "Videos konnten nicht geladen werden.";
 
   const canManageTraining = Boolean(
-    isAdmin ||
-      isTechnicalAdmin ||
+    authIsAdmin ||
+      authIsTechAdmin ||
       employee?.isAdmin ||
       employee?.systemRole === "system_admin" ||
       employee?.appRole === "Admin",
