@@ -552,6 +552,9 @@ function RosterView({
 
   const planStatus = dutyPlan?.status;
   const statusLabel = planStatus ? PLAN_STATUS_LABELS[planStatus] : "Vorschau";
+  const isPlanStatusAllowingUnassigned = planStatus
+    ? ALLOWED_UNASSIGNED_STATUSES.has(planStatus)
+    : false;
   const serviceLineDisplay = useMemo(
     () => buildServiceLineDisplay(serviceLines, shifts),
     [serviceLines, shifts],
@@ -691,6 +694,12 @@ function RosterView({
     visibleUnassignedShifts,
   ]);
 
+  const showUnassignedButton =
+    !isExternalDuty &&
+    isPlanStatusAllowingUnassigned &&
+    employeeAllowedKeys.size > 0 &&
+    claimableUnassignedShifts.length > 0;
+
   const allowedKeysForDebug = useMemo(
     () => Array.from(employeeAllowedKeys).slice(0, 30),
     [employeeAllowedKeys],
@@ -756,14 +765,6 @@ function RosterView({
     claimableUnassignedShifts.length,
   ]);
 
-  const isPlanStatusAllowingUnassigned =
-    Boolean(planStatus) && ALLOWED_UNASSIGNED_STATUSES.has(planStatus);
-
-  const showUnassignedButton =
-    !isExternalDuty &&
-    isPlanStatusAllowingUnassigned &&
-    employeeAllowedKeys.size > 0 &&
-    claimableUnassignedShifts.length > 0;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
