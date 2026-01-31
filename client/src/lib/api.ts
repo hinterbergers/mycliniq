@@ -703,6 +703,25 @@ export const trainingApi = {
     );
     return handleResponse<TrainingPresentation[]>(response);
   },
+
+  uploadPresentation: async (
+    formData: FormData,
+  ): Promise<TrainingPresentation> => {
+    const headers: Record<string, string> = {};
+    const token = readAuthToken();
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    const response = await fetch(
+      `${API_BASE}/training/presentations/upload`,
+      {
+        method: "POST",
+        headers,
+        body: formData,
+      },
+    );
+    return handleResponse<TrainingPresentation>(response);
+  },
 };
 
 // Duty Plans API

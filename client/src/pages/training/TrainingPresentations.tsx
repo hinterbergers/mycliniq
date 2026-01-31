@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState, type FormEvent } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Download, FileText } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
 import {
@@ -23,6 +23,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { trainingApi } from "@/lib/api";
 import type { TrainingPresentation } from "@shared/schema";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/auth";
+import { Label } from "@/components/ui/label";
 
 type FilterTag = string | "all";
 
@@ -31,6 +34,16 @@ export default function TrainingPresentations() {
   const [activeTag, setActiveTag] = useState<FilterTag>("all");
   const [selectedPresentation, setSelectedPresentation] =
     useState<TrainingPresentation | null>(null);
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [uploadTitle, setUploadTitle] = useState("");
+  const [uploadKeywords, setUploadKeywords] = useState("");
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { isAdmin, isTechnicalAdmin } = useAuth();
+  const canManageTraining = isAdmin || isTechnicalAdmin;
 
   const { data: presentations = [], isLoading, error } = useQuery({
     queryKey: ["training", "presentations"],
@@ -69,6 +82,42 @@ export default function TrainingPresentations() {
     });
   }, [presentations, normalizedSearch, activeTag]);
 
+  const handleUploadSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!uploadFile) {
+      setUploadError("Bitte eine Datei auswählen.");
+      return;
+    }
+    if (!uploadTitle.trim()) {
+      setUploadError("Titel ist erforderlich.");
+      return;
+    }
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const formData = new FormData();
+      formData.append("title", uploadTitle.trim());
+      formData.append("keywords", uploadKeywords);
+      formData.append("file", uploadFile);
+      await trainingApi.uploadPresentation(formData);
+      toast({
+        title: "Hochgeladen",
+        description: "Die Präsentation wurde gespeichert.",
+      });
+      setUploadDialogOpen(false);
+      setUploadTitle("");
+      setUploadKeywords("");
+      setUploadFile(null);
+      queryClient.invalidateQueries({
+        queryKey: ["training", "presentations"],
+      });
+    } catch (error: any) {
+      setUploadError(error?.message || "Upload fehlgeschlagen.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const isPdf = Boolean(
     selectedPresentation?.mimeType
       ?.toLowerCase()
@@ -78,42 +127,53 @@ export default function TrainingPresentations() {
   return (
     <Layout title="Fortbildung – PowerPoint / Vorträge">
       <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-          <Input
-            placeholder="Suche nach Titel oder Schlagwort"
-            value={searchTerm}
-            onChange={(event) => setSearchTerm(event.target.value)}
-            className="flex-1"
-          />
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setActiveTag("all")}
-              className={cn(
-                "rounded-full border px-3 py-1 text-xs font-semibold transition",
-                activeTag === "all"
-                  ? "border-primary bg-primary text-white"
-                  : "border-border text-muted-foreground hover:border-primary",
-              )}
-            >
-              Alle
-            </button>
-            {tags.map((tag) => (
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex-1">
+            <Input
+              placeholder="Suche nach Titel oder Schlagwort"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              className="w-full"
+            />
+            <div className="mt-3 flex flex-wrap gap-2">
               <button
                 type="button"
-                key={tag}
-                onClick={() => setActiveTag(tag)}
+                onClick={() => setActiveTag("all")}
                 className={cn(
                   "rounded-full border px-3 py-1 text-xs font-semibold transition",
-                  activeTag === tag
+                  activeTag === "all"
                     ? "border-primary bg-primary text-white"
                     : "border-border text-muted-foreground hover:border-primary",
                 )}
               >
-                {tag}
+                Alle
               </button>
-            ))}
+              {tags.map((tag) => (
+                <button
+                  type="button"
+                  key={tag}
+                  onClick={() => setActiveTag(tag)}
+                  className={cn(
+                    "rounded-full border px-3 py-1 text-xs font-semibold transition",
+                    activeTag === tag
+                      ? "border-primary bg-primary text-white"
+                      : "border-border text-muted-foreground hover:border-primary",
+                  )}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
           </div>
+          {canManageTraining && (
+            <Button
+              variant="outline"
+              onClick={() => setUploadDialogOpen(true)}
+              className="whitespace-nowrap"
+            >
+              Präsentation hochladen
+            </Button>
+          )}
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -180,16 +240,16 @@ export default function TrainingPresentations() {
         </ScrollArea>
       </div>
 
-      <Dialog
-        open={Boolean(selectedPresentation)}
-        onOpenChange={(open) => {
-          if (!open) {
-            setSelectedPresentation(null);
-          }
-        }}
-      >
-        <DialogContent className="max-w-5xl">
-          <DialogHeader>
+          <Dialog
+            open={Boolean(selectedPresentation)}
+            onOpenChange={(open) => {
+              if (!open) {
+                setSelectedPresentation(null);
+              }
+            }}
+          >
+            <DialogContent className="max-w-5xl">
+              <DialogHeader>
             <DialogTitle>{selectedPresentation?.title}</DialogTitle>
             <DialogDescription>
               {selectedPresentation?.mimeType}
@@ -215,24 +275,90 @@ export default function TrainingPresentations() {
               Die Datei konnte nicht geladen werden.
             </p>
           )}
-          <div className="mt-4 flex items-center gap-2">
-            <Button asChild>
-              <a
-                href={selectedPresentation?.fileUrl}
-                target="_blank"
-                rel="noreferrer"
+            <div className="mt-4 flex items-center gap-2">
+              <Button asChild>
+                <a
+                  href={selectedPresentation?.fileUrl}
+                  target="_blank"
+                  rel="noreferrer"
                 className="flex items-center gap-2"
               >
                 <Download className="w-4 h-4" />
                 Download
-              </a>
-            </Button>
-            {!isPdf && (
-              <p className="text-xs text-muted-foreground">
-                Für Inline-Ansicht bitte als PDF hochladen.
-              </p>
+                </a>
+              </Button>
+            {selectedPresentation?.originalMimeType &&
+              selectedPresentation.originalMimeType !== "application/pdf" && (
+                <p className="text-xs text-muted-foreground">
+                  Originaldatei: {selectedPresentation.originalMimeType}. Die
+                  Ansicht basiert auf der konvertierten PDF-Datei.
+                </p>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+      <Dialog
+        open={uploadDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setUploadDialogOpen(false);
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Präsentation hochladen</DialogTitle>
+            <DialogDescription>
+              Akzeptierte Formate: PDF, PPT, PPTX. PPTX werden zu PDF
+              konvertiert.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleUploadSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Title</Label>
+              <Input
+                value={uploadTitle}
+                onChange={(event) => setUploadTitle(event.target.value)}
+                placeholder="Titel eingeben"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Schlagworte (Komma getrennt)</Label>
+              <Input
+                value={uploadKeywords}
+                onChange={(event) => setUploadKeywords(event.target.value)}
+                placeholder="z.B. Schulung, SOP"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Datei (PDF, PPT, PPTX)</Label>
+              <Input
+                type="file"
+                accept=".pdf,.ppt,.pptx"
+                onChange={(event) =>
+                  setUploadFile(event.target.files?.[0] ?? null)
+                }
+                required
+              />
+            </div>
+            {uploadError && (
+              <p className="text-sm text-destructive">{uploadError}</p>
             )}
-          </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="ghost"
+                type="button"
+                onClick={() => setUploadDialogOpen(false)}
+              >
+                Abbrechen
+              </Button>
+              <Button type="submit" disabled={uploading}>
+                {uploading ? "Hochladen…" : "Hochladen"}
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
     </Layout>

@@ -1,6 +1,14 @@
 import { Loader2 } from "lucide-react";
 import { Redirect } from "wouter";
 import type { ComponentType } from "react";
+import { Layout } from "@/components/layout/Layout";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { useAuth } from "@/lib/auth";
 
 type TrainingRouteProps = {
@@ -30,7 +38,23 @@ export function TrainingRoute({ component: Component }: TrainingRouteProps) {
   }
 
   if (!canViewTraining) {
-    return <Redirect to="/dienstplaene" />;
+    return (
+      <Layout title="Fortbildung">
+        <Card className="mx-auto max-w-lg">
+          <CardHeader>
+            <CardTitle>Keine Berechtigung</CardTitle>
+            <CardDescription>
+              Ihr Account ist nicht für die Fortbildungsinhalte freigeschaltet.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              Wenden Sie sich an Ihren Administrator, wenn Sie Zugriff benötigen.
+            </p>
+          </CardContent>
+        </Card>
+      </Layout>
+    );
   }
 
   return <Component />;
