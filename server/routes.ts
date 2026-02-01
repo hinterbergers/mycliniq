@@ -279,8 +279,8 @@ async function ensureRequiredDailyShifts({
     .where(
       and(
         eq(serviceLines.clinicId, clinicId),
-        eq(serviceLines.requiredDaily, true),
         eq(serviceLines.isActive, true),
+        sql`${serviceLines.requiredDaily} > 0`,
       ),
     );
 
@@ -1416,12 +1416,27 @@ export async function registerRoutes(
 
       const yearParam = parseNumberParam(req.query.year);
       const monthParam = parseNumberParam(req.query.month);
-      const year = Number.isFinite(yearParam ?? NaN)
+
+      const fromIso = parseIsoDateParam(req.query.from);
+      const toIso = parseIsoDateParam(req.query.to);
+      const fallbackIso = fromIso ?? toIso;
+
+      let year = Number.isFinite(yearParam ?? NaN)
         ? (yearParam as number)
         : now.getFullYear();
-      const month = Number.isFinite(monthParam ?? NaN)
+      let month = Number.isFinite(monthParam ?? NaN)
         ? (monthParam as number)
         : now.getMonth() + 1;
+
+      if (!Number.isFinite(yearParam ?? NaN) || !Number.isFinite(monthParam ?? NaN)) {
+        if (fallbackIso) {
+          const parsedFallback = parseISO(fallbackIso);
+          if (!Number.isNaN(parsedFallback.getTime())) {
+            year = parsedFallback.getFullYear();
+            month = parsedFallback.getMonth() + 1;
+          }
+        }
+      }
 
       if (month < 1 || month > 12) {
         return res
