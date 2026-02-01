@@ -78,6 +78,8 @@ import {
   longTermAbsencesApi,
   roomApi,
   weeklyPlanApi,
+  type UnassignedSlot,
+  type UnassignedResponse,
   type PlannedAbsenceAdmin,
   type WeeklyPlanResponse,
 } from "@/lib/api";
@@ -125,6 +127,9 @@ type UnassignedDebugDetail = {
   claimableCount: number;
   allowedKeysCount: number;
   allowedKeys: string[];
+  requiredDaily: Record<string, number>;
+  countsByDay: Record<string, Record<string, number>>;
+  missingCounts: Record<string, number>;
 };
 
 const SERVICE_LINE_PALETTE = [
@@ -219,8 +224,16 @@ export default function Personal() {
 
   useEffect(() => {
     const handler = (event: Event) => {
-      const detail = (event as CustomEvent<number>).detail;
-      setUnassignedCount(Number(detail ?? 0));
+      const detail = (event as CustomEvent<
+        number | { count?: number }
+      >).detail;
+      const count =
+        typeof detail === "number"
+          ? detail
+          : typeof detail?.count === "number"
+            ? detail.count
+            : 0;
+      setUnassignedCount(Number(count));
     };
     window.addEventListener(
       "mycliniq:unassignedCount",
@@ -434,6 +447,14 @@ export default function Personal() {
                       : "—")
                   : `(${unassignedDebug?.allowedKeysCount ?? 0})`}
               </span>
+              <span className="font-medium">missingCounts</span>
+              <span className="break-words">
+                {JSON.stringify(unassignedDebug?.missingCounts ?? {})}
+              </span>
+              <span className="font-medium">requiredDaily</span>
+              <span className="break-words">
+                {JSON.stringify(unassignedDebug?.requiredDaily ?? {})}
+              </span>
             </div>
           </div>
         )}
@@ -513,6 +534,8 @@ function RosterView({
   const [shifts, setShifts] = useState<RosterShift[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [serviceLines, setServiceLines] = useState<ServiceLine[]>([]);
+  const [unassignedSlots, setUnassignedSlots] = useState<UnassignedSlot[]>([]);
+  const [unassignedMeta, setUnassignedMeta] = useState<UnassignedResponse | null>(null);
   const [plannedAbsences, setPlannedAbsences] = useState<PlannedAbsenceAdmin[]>(
     [],
   );
@@ -566,47 +589,6 @@ function RosterView({
     );
   };
 
-  const unassignedShifts = useMemo(() => {
-    const byKey = new Map<string, RosterShift>();
-    for (const shift of shifts) {
-      byKey.set(`${shift.date}|${shift.serviceType}`, shift);
-    }
-
-    const out: RosterShift[] = [];
-
-    for (const day of days) {
-      const date = format(day, "yyyy-MM-dd", { locale: de });
-
-      for (const line of serviceLineDisplay) {
-        if (!isRelevantServiceType(line.key, line.label)) continue;
-        const key = `${date}|${line.key}`;
-        const shift = byKey.get(key);
-
-        if (shift) {
-          if (!shift.employeeId && !(shift.assigneeFreeText ?? "").trim()) {
-            out.push(shift);
-          }
-          continue;
-        }
-
-        // Kein Shift-Objekt -> UI zeigt "-" -> zählt als unbesetzt
-        out.push(
-          {
-            id: `missing-${key}`,
-            date,
-            serviceType: line.key,
-            employeeId: null,
-            assigneeFreeText: "",
-          } as unknown as RosterShift,
-        );
-      }
-    }
-
-    return out.sort((a, b) =>
-      (a.date + a.serviceType).localeCompare(b.date + b.serviceType),
-    );
-  }, [days, serviceLineDisplay, shifts]);
-
   const myDutyDates = useMemo(() => {
     if (!currentUser?.id) return new Set<string>();
     return new Set(
@@ -616,13 +598,13 @@ function RosterView({
     );
   }, [currentUser?.id, shifts]);
 
-  const visibleUnassignedShifts = useMemo(() => {
-    if (!currentUser?.id) return unassignedShifts;
-    return unassignedShifts.filter((shift) => {
-      const prevDate = format(subDays(parseISO(shift.date), 1), "yyyy-MM-dd");
+  const visibleUnassignedSlots = useMemo(() => {
+    if (!currentUser?.id) return unassignedSlots;
+    return unassignedSlots.filter((slot) => {
+      const prevDate = format(subDays(parseISO(slot.date), 1), "yyyy-MM-dd");
       return !myDutyDates.has(prevDate);
     });
-  }, [currentUser?.id, myDutyDates, unassignedShifts]);
+  }, [currentUser?.id, myDutyDates, unassignedSlots]);
 
   // --- Service line helpers using employee record assignments ---
   const currentEmployee = useMemo(() => {
@@ -653,7 +635,7 @@ function RosterView({
     return getEffectiveServiceLineKeys(employeeContext, serviceLines);
   }, [currentEmployee, currentUser, serviceLines]);
 
-  const canCurrentUserTakeShift = (shift: RosterShift) => {
+  const canCurrentUserTakeShift = (shift: { serviceType: string }) => {
     if (isExternalDuty) return false;
     if (!token) return false;
     if (!currentUser?.id) return false;
@@ -661,21 +643,27 @@ function RosterView({
     return effectiveAllowedKeys.has(shift.serviceType);
   };
 
-  const claimableUnassignedShifts = useMemo(() => {
-    if (isExternalDuty) return [] as RosterShift[];
-    if (!token) return [] as RosterShift[];
-    if (!currentUser?.id) return [] as RosterShift[];
+  const claimableUnassignedSlots = useMemo(() => {
+    if (isExternalDuty) return [] as UnassignedSlot[];
+    if (!token) return [] as UnassignedSlot[];
+    if (!currentUser?.id) return [] as UnassignedSlot[];
     if (effectiveAllowedKeys.size === 0) return [];
-    return visibleUnassignedShifts.filter((shift) =>
-      effectiveAllowedKeys.has(shift.serviceType),
+    return visibleUnassignedSlots.filter((slot) =>
+      effectiveAllowedKeys.has(slot.serviceType),
     );
-  }, [isExternalDuty, token, currentUser?.id, effectiveAllowedKeys, visibleUnassignedShifts]);
+  }, [
+    isExternalDuty,
+    token,
+    currentUser?.id,
+    effectiveAllowedKeys,
+    visibleUnassignedSlots,
+  ]);
 
   const showUnassignedButton =
     !isExternalDuty &&
     isPlanStatusAllowingUnassigned &&
     effectiveAllowedKeys.size > 0 &&
-    claimableUnassignedShifts.length > 0;
+    claimableUnassignedSlots.length > 0;
 
   const allowedKeysForDebug = useMemo(
     () => Array.from(effectiveAllowedKeys).slice(0, 30),
@@ -687,21 +675,25 @@ function RosterView({
       planStatus: planStatus ?? null,
       statusAllowed: isPlanStatusAllowingUnassigned,
       showUnassignedButton,
-      unassignedTotal: unassignedShifts.length,
-      visibleAfterPrevDayRule: visibleUnassignedShifts.length,
-      claimableCount: claimableUnassignedShifts.length,
+      unassignedTotal: unassignedSlots.length,
+      visibleAfterPrevDayRule: visibleUnassignedSlots.length,
+      claimableCount: claimableUnassignedSlots.length,
       allowedKeysCount: effectiveAllowedKeys.size,
       allowedKeys: allowedKeysForDebug,
+      requiredDaily: unassignedMeta?.requiredDaily ?? {},
+      countsByDay: unassignedMeta?.countsByDay ?? {},
+      missingCounts: unassignedMeta?.missingCounts ?? {},
     }),
     [
       planStatus,
       isPlanStatusAllowingUnassigned,
       showUnassignedButton,
-      unassignedShifts.length,
-      visibleUnassignedShifts.length,
-      claimableUnassignedShifts.length,
+      unassignedSlots.length,
+      visibleUnassignedSlots.length,
+      claimableUnassignedSlots.length,
       effectiveAllowedKeys,
       allowedKeysForDebug,
+      unassignedMeta,
     ],
   );
 
@@ -714,40 +706,50 @@ function RosterView({
       "sample shift.serviceType",
       shifts.slice(0, 10).map((s) => s.serviceType),
     );
-    console.log(
-      "sample claimable (serviceType/date)",
-      claimableUnassignedShifts.slice(0, 10).map((s) => ({
-        date: s.date,
-        serviceType: s.serviceType,
-      })),
-    );
+      console.log(
+        "sample claimable (serviceType/date)",
+        claimableUnassignedSlots.slice(0, 10).map((s) => ({
+          date: s.date,
+          serviceType: s.serviceType,
+        })),
+      );
     console.log("planStatus", planStatus);
     console.log("statusAllowed", isPlanStatusAllowingUnassigned);
-    console.log("unassignedShifts.count", unassignedShifts.length);
+    console.log("unassignedSlots.count", unassignedSlots.length);
     console.log(
       "visibleAfterPrevDayRule.count",
-      visibleUnassignedShifts.length,
+      visibleUnassignedSlots.length,
     );
-    console.log("claimableUnassignedShifts.count", claimableUnassignedShifts.length);
+    console.log("claimableUnassignedSlots.count", claimableUnassignedSlots.length);
   }, [
     allowedKeysForDebug,
     shifts,
     planStatus,
     isPlanStatusAllowingUnassigned,
-    unassignedShifts.length,
-    visibleUnassignedShifts.length,
-    claimableUnassignedShifts.length,
+    unassignedSlots.length,
+    visibleUnassignedSlots.length,
+    claimableUnassignedSlots.length,
   ]);
 
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const detail = {
+      count: showUnassignedButton ? claimableUnassignedSlots.length : 0,
+      missingCounts: unassignedDebugDetail.missingCounts,
+      requiredDaily: unassignedDebugDetail.requiredDaily,
+      countsByDay: unassignedDebugDetail.countsByDay,
+    };
     window.dispatchEvent(
       new CustomEvent("mycliniq:unassignedCount", {
-        detail: showUnassignedButton ? claimableUnassignedShifts.length : 0,
+        detail,
       }),
     );
-  }, [showUnassignedButton, claimableUnassignedShifts.length]);
+  }, [
+    showUnassignedButton,
+    claimableUnassignedSlots.length,
+    unassignedDebugDetail,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -758,7 +760,7 @@ function RosterView({
     );
   }, [unassignedDebugDetail]);
 
-  const handleTakeShift = async (shift: RosterShift) => {
+  const handleTakeShift = async (slot: UnassignedSlot) => {
     if (!token) {
       toast({
         title: "Nicht angemeldet",
@@ -768,48 +770,44 @@ function RosterView({
       return;
     }
     if (!currentUser?.id) return;
-    if (!canCurrentUserTakeShift(shift)) return;
+    if (!canCurrentUserTakeShift(slot)) return;
 
-    setClaimingShiftId(shift.id);
+    const shiftKey = slot.isSynthetic ? slot.syntheticId : slot.id;
+    setClaimingShiftId(shiftKey ?? null);
     try {
-      const headers: Record<string, string> = {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      };
-
-      const isMissing = String(shift.id).startsWith("missing-");
-      let res: Response;
-
-      if (isMissing) {
-        // Create + assign (backend must support POST /api/roster)
-        res = await fetch("/api/roster", {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            date: shift.date,
-            serviceType: shift.serviceType,
-            employeeId: currentUser.id,
-          }),
+      if (slot.isSynthetic) {
+        await rosterApi.claimUnassignedSlot({
+          date: slot.date,
+          serviceType: slot.serviceType,
+          slotIndex: slot.slotIndex,
         });
       } else {
-        // Claim unassigned shift via dedicated endpoint
-        res = await fetch(`/api/roster/${shift.id}/claim`, {
+        if (!slot.id) {
+          throw new Error("Ungültiger Dienst");
+        }
+        const headers: Record<string, string> = {
+          Authorization: `Bearer ${token}`,
+        };
+        const response = await fetch(`/api/roster/${slot.id}/claim`, {
           method: "POST",
-          headers: { Authorization: headers.Authorization ?? "" },
+          headers,
         });
-      }
-
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(text || `HTTP ${res.status}`);
+        if (!response.ok) {
+          const text = await response.text().catch(() => "");
+          throw new Error(text || `HTTP ${response.status}`);
+        }
       }
 
       const serviceLabel =
-        serviceLineLookup.get(shift.serviceType)?.label ?? shift.serviceType;
+        serviceLineLookup.get(slot.serviceType)?.label ?? slot.serviceType;
 
       toast({
         title: "Dienst übernommen",
-        description: `${serviceLabel} am ${format(parseISO(shift.date), "dd.MM", { locale: de })} wurde übernommen.`,
+        description: `${serviceLabel} am ${format(
+          parseISO(slot.date),
+          "dd.MM",
+          { locale: de },
+        )} wurde übernommen.`,
       });
 
       await loadRoster();
@@ -838,14 +836,20 @@ function RosterView({
     setPlanLoading(true);
     setRosterLoading(true);
     try {
-    const [plan, rosterData, employeeData, plannedAbsenceData] =
-        await Promise.all([
+      const [
+        plan,
+        rosterData,
+        employeeData,
+        plannedAbsenceData,
+        unassignedData,
+      ] = await Promise.all([
         dutyPlansApi.getByMonth(year, month),
         rosterApi.getByMonth(year, month),
         isExternalDuty ? Promise.resolve([]) : employeeApi.getAll(),
         isExternalDuty
           ? Promise.resolve([])
           : plannedAbsencesAdminApi.getRange({ from: startDate, to: endDate }),
+        rosterApi.getUnassigned(year, month),
       ]);
       let serviceLineData: ServiceLine[] = [];
       try {
@@ -871,7 +875,11 @@ function RosterView({
       setServiceLines(serviceLineData);
       setPlannedAbsences(plannedAbsenceData);
       setLongTermAbsences(longTermAbsenceData);
+      setUnassignedSlots(unassignedData.slots);
+      setUnassignedMeta(unassignedData);
     } catch (error: any) {
+      setUnassignedSlots([]);
+      setUnassignedMeta(null);
       toast({
         title: "Fehler",
         description: error.message || "Dienstplan konnte nicht geladen werden",
@@ -1240,7 +1248,7 @@ function RosterView({
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              Unbesetzte Dienste ({claimableUnassignedShifts.length})
+              Unbesetzte Dienste ({claimableUnassignedSlots.length})
             </DialogTitle>
             <DialogDescription>
               Offene Dienste im aktuellen Monat (Geburtshilfe/Kreißzimmer, Gynäkologie, Turnus)
@@ -1248,26 +1256,29 @@ function RosterView({
             </DialogDescription>
           </DialogHeader>
 
-          {claimableUnassignedShifts.length === 0 ? (
+          {claimableUnassignedSlots.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Keine freien Dienste für Sie verfügbar.
             </p>
           ) : (
             <div className="space-y-3">
-              {claimableUnassignedShifts.map((shift) => {
+              {claimableUnassignedSlots.map((slot) => {
+                const slotKey = slot.isSynthetic
+                  ? slot.syntheticId
+                  : slot.id ?? `${slot.date}:${slot.serviceType}`;
                 const serviceLabel =
-                  serviceLineLookup.get(shift.serviceType)?.label ??
-                  shift.serviceType;
+                  serviceLineLookup.get(slot.serviceType)?.label ??
+                  slot.serviceType;
 
                 return (
                   <div
-                    key={shift.id}
+                    key={slotKey}
                     className="rounded-lg border border-border p-3"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="space-y-1">
                         <div className="font-medium">
-                          {format(parseISO(shift.date), "EEE, dd.MM", {
+                          {format(parseISO(slot.date), "EEE, dd.MM", {
                             locale: de,
                           })}
                           {" · "}
@@ -1278,15 +1289,15 @@ function RosterView({
                       <Button
                         size="sm"
                         onClick={() => {
-                          if (claimingShiftId == null) handleTakeShift(shift);
+                          if (claimingShiftId == null) handleTakeShift(slot);
                         }}
-                        disabled={claimingShiftId === shift.id}
+                        disabled={claimingShiftId === slotKey}
                         className="gap-2"
                       >
-                        {claimingShiftId === shift.id && (
+                        {claimingShiftId === slotKey && (
                           <Loader2 className="w-4 h-4 animate-spin" />
                         )}
-                        {claimingShiftId === shift.id ? "Übernehme..." : "Übernehmen"}
+                        {claimingShiftId === slotKey ? "Übernehme..." : "Übernehmen"}
                       </Button>
                     </div>
                   </div>

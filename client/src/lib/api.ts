@@ -64,6 +64,24 @@ type ApiEnvelope<T> = {
   message?: string;
 };
 
+export type UnassignedSlot = {
+  id: number | null;
+  syntheticId?: string;
+  date: string;
+  serviceType: string;
+  slotIndex?: number;
+  isSynthetic: boolean;
+};
+
+export type UnassignedResponse = {
+  slots: UnassignedSlot[];
+  planStatus: DutyPlan["status"] | null;
+  statusAllowed: boolean;
+  requiredDaily: Record<string, number>;
+  countsByDay: Record<string, Record<string, number>>;
+  missingCounts: Record<string, number>;
+};
+
 export type DashboardTeammate = {
   firstName: string | null;
   lastName: string | null;
@@ -514,6 +532,20 @@ export const rosterApi = {
     return handleResponse<RosterShift[]>(response);
   },
 
+  getUnassigned: async (
+    year: number,
+    month: number,
+  ): Promise<UnassignedResponse> => {
+    const params = new URLSearchParams({
+      year: String(year),
+      month: String(month),
+    });
+    const response = await apiFetch(
+      `${API_BASE}/roster/unassigned?${params.toString()}`,
+    );
+    return handleResponse<UnassignedResponse>(response);
+  },
+
   getByDate: async (date: string): Promise<RosterShift[]> => {
     const response = await apiFetch(`${API_BASE}/roster/date/${date}`);
     return handleResponse<RosterShift[]>(response);
@@ -529,6 +561,19 @@ export const rosterApi = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
+    });
+    return handleResponse<RosterShift>(response);
+  },
+
+  claimUnassignedSlot: async (payload: {
+    date: string;
+    serviceType: string;
+    slotIndex?: number;
+  }): Promise<RosterShift> => {
+    const response = await apiFetch(`${API_BASE}/roster/unassigned/claim`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
     });
     return handleResponse<RosterShift>(response);
   },
