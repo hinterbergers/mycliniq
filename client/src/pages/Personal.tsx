@@ -78,8 +78,8 @@ import {
   longTermAbsencesApi,
   roomApi,
   weeklyPlanApi,
-  type UnassignedSlot,
-  type UnassignedResponse,
+  type OpenShiftSlot,
+  type OpenShiftResponse,
   type PlannedAbsenceAdmin,
   type WeeklyPlanResponse,
 } from "@/lib/api";
@@ -118,7 +118,7 @@ const ALLOWED_UNASSIGNED_STATUSES = new Set<DutyPlan["status"]>([
   "Freigegeben",
 ]);
 
-type UnassignedDebugDetail = {
+type OpenShiftDebugDetail = {
   planStatus: DutyPlan["status"] | null;
   statusAllowed: boolean;
   showUnassignedButton: boolean;
@@ -215,7 +215,7 @@ export default function Personal() {
   const isExternalDuty = user?.accessScope === "external_duty";
   const [unassignedCount, setUnassignedCount] = useState(0);
   const [unassignedDebug, setUnassignedDebug] =
-    useState<UnassignedDebugDetail | null>(null);
+    useState<OpenShiftDebugDetail | null>(null);
 
   const debugEnabled = useMemo(() => {
     if (typeof window === "undefined") return false;
@@ -249,7 +249,7 @@ export default function Personal() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const handler = (event: Event) => {
-      const detail = (event as CustomEvent<UnassignedDebugDetail>).detail;
+      const detail = (event as CustomEvent<OpenShiftDebugDetail>).detail;
       setUnassignedDebug(detail ?? null);
     };
     window.addEventListener(
@@ -534,8 +534,8 @@ function RosterView({
   const [shifts, setShifts] = useState<RosterShift[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [serviceLines, setServiceLines] = useState<ServiceLine[]>([]);
-  const [unassignedSlots, setUnassignedSlots] = useState<UnassignedSlot[]>([]);
-  const [unassignedMeta, setUnassignedMeta] = useState<UnassignedResponse | null>(null);
+  const [openShiftSlots, setOpenShiftSlots] = useState<OpenShiftSlot[]>([]);
+  const [openShiftMeta, setOpenShiftMeta] = useState<OpenShiftResponse | null>(null);
   const [plannedAbsences, setPlannedAbsences] = useState<PlannedAbsenceAdmin[]>(
     [],
   );
@@ -598,13 +598,13 @@ function RosterView({
     );
   }, [currentUser?.id, shifts]);
 
-  const visibleUnassignedSlots = useMemo(() => {
-    if (!currentUser?.id) return unassignedSlots;
-    return unassignedSlots.filter((slot) => {
+  const visibleOpenShiftSlots = useMemo(() => {
+    if (!currentUser?.id) return openShiftSlots;
+    return openShiftSlots.filter((slot) => {
       const prevDate = format(subDays(parseISO(slot.date), 1), "yyyy-MM-dd");
       return !myDutyDates.has(prevDate);
     });
-  }, [currentUser?.id, myDutyDates, unassignedSlots]);
+  }, [currentUser?.id, myDutyDates, openShiftSlots]);
 
   // --- Service line helpers using employee record assignments ---
   const currentEmployee = useMemo(() => {
@@ -643,12 +643,12 @@ function RosterView({
     return effectiveAllowedKeys.has(shift.serviceType);
   };
 
-  const claimableUnassignedSlots = useMemo(() => {
-    if (isExternalDuty) return [] as UnassignedSlot[];
-    if (!token) return [] as UnassignedSlot[];
-    if (!currentUser?.id) return [] as UnassignedSlot[];
+  const claimableOpenShiftSlots = useMemo(() => {
+    if (isExternalDuty) return [] as OpenShiftSlot[];
+    if (!token) return [] as OpenShiftSlot[];
+    if (!currentUser?.id) return [] as OpenShiftSlot[];
     if (effectiveAllowedKeys.size === 0) return [];
-    return visibleUnassignedSlots.filter((slot) =>
+    return visibleOpenShiftSlots.filter((slot) =>
       effectiveAllowedKeys.has(slot.serviceType),
     );
   }, [
@@ -656,44 +656,44 @@ function RosterView({
     token,
     currentUser?.id,
     effectiveAllowedKeys,
-    visibleUnassignedSlots,
+    visibleOpenShiftSlots,
   ]);
 
   const showUnassignedButton =
     !isExternalDuty &&
     isPlanStatusAllowingUnassigned &&
     effectiveAllowedKeys.size > 0 &&
-    claimableUnassignedSlots.length > 0;
+    claimableOpenShiftSlots.length > 0;
 
   const allowedKeysForDebug = useMemo(
     () => Array.from(effectiveAllowedKeys).slice(0, 30),
     [effectiveAllowedKeys],
   );
 
-  const unassignedDebugDetail = useMemo<UnassignedDebugDetail>(
+  const openShiftDebugDetail = useMemo<OpenShiftDebugDetail>(
     () => ({
       planStatus: planStatus ?? null,
       statusAllowed: isPlanStatusAllowingUnassigned,
       showUnassignedButton,
-      unassignedTotal: unassignedSlots.length,
-      visibleAfterPrevDayRule: visibleUnassignedSlots.length,
-      claimableCount: claimableUnassignedSlots.length,
+      unassignedTotal: openShiftSlots.length,
+      visibleAfterPrevDayRule: visibleOpenShiftSlots.length,
+      claimableCount: claimableOpenShiftSlots.length,
       allowedKeysCount: effectiveAllowedKeys.size,
       allowedKeys: allowedKeysForDebug,
-      requiredDaily: unassignedMeta?.requiredDaily ?? {},
-      countsByDay: unassignedMeta?.countsByDay ?? {},
-      missingCounts: unassignedMeta?.missingCounts ?? {},
+      requiredDaily: openShiftMeta?.requiredDaily ?? {},
+      countsByDay: openShiftMeta?.countsByDay ?? {},
+      missingCounts: openShiftMeta?.missingCounts ?? {},
     }),
     [
       planStatus,
       isPlanStatusAllowingUnassigned,
       showUnassignedButton,
-      unassignedSlots.length,
-      visibleUnassignedSlots.length,
-      claimableUnassignedSlots.length,
+      openShiftSlots.length,
+      visibleOpenShiftSlots.length,
+      claimableOpenShiftSlots.length,
       effectiveAllowedKeys,
       allowedKeysForDebug,
-      unassignedMeta,
+      openShiftMeta,
     ],
   );
 
@@ -706,39 +706,42 @@ function RosterView({
       "sample shift.serviceType",
       shifts.slice(0, 10).map((s) => s.serviceType),
     );
-      console.log(
-        "sample claimable (serviceType/date)",
-        claimableUnassignedSlots.slice(0, 10).map((s) => ({
-          date: s.date,
-          serviceType: s.serviceType,
-        })),
-      );
+    console.log(
+      "sample claimable (serviceType/date)",
+      claimableOpenShiftSlots.slice(0, 10).map((s) => ({
+        date: s.date,
+        serviceType: s.serviceType,
+      })),
+    );
     console.log("planStatus", planStatus);
     console.log("statusAllowed", isPlanStatusAllowingUnassigned);
-    console.log("unassignedSlots.count", unassignedSlots.length);
+    console.log("openShiftSlots.count", openShiftSlots.length);
     console.log(
       "visibleAfterPrevDayRule.count",
-      visibleUnassignedSlots.length,
+      visibleOpenShiftSlots.length,
     );
-    console.log("claimableUnassignedSlots.count", claimableUnassignedSlots.length);
+    console.log(
+      "claimableOpenShiftSlots.count",
+      claimableOpenShiftSlots.length,
+    );
   }, [
     allowedKeysForDebug,
     shifts,
     planStatus,
     isPlanStatusAllowingUnassigned,
-    unassignedSlots.length,
-    visibleUnassignedSlots.length,
-    claimableUnassignedSlots.length,
+    openShiftSlots.length,
+    visibleOpenShiftSlots.length,
+    claimableOpenShiftSlots.length,
   ]);
 
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const detail = {
-      count: showUnassignedButton ? claimableUnassignedSlots.length : 0,
-      missingCounts: unassignedDebugDetail.missingCounts,
-      requiredDaily: unassignedDebugDetail.requiredDaily,
-      countsByDay: unassignedDebugDetail.countsByDay,
+      count: showUnassignedButton ? claimableOpenShiftSlots.length : 0,
+      missingCounts: openShiftDebugDetail.missingCounts,
+      requiredDaily: openShiftDebugDetail.requiredDaily,
+      countsByDay: openShiftDebugDetail.countsByDay,
     };
     window.dispatchEvent(
       new CustomEvent("mycliniq:unassignedCount", {
@@ -747,20 +750,20 @@ function RosterView({
     );
   }, [
     showUnassignedButton,
-    claimableUnassignedSlots.length,
-    unassignedDebugDetail,
+    claimableOpenShiftSlots.length,
+    openShiftDebugDetail,
   ]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     window.dispatchEvent(
       new CustomEvent("mycliniq:unassignedDebug", {
-        detail: unassignedDebugDetail,
+        detail: openShiftDebugDetail,
       }),
     );
-  }, [unassignedDebugDetail]);
+  }, [openShiftDebugDetail]);
 
-  const handleTakeShift = async (slot: UnassignedSlot) => {
+  const handleTakeShift = async (slot: OpenShiftSlot) => {
     if (!token) {
       toast({
         title: "Nicht angemeldet",
@@ -776,7 +779,7 @@ function RosterView({
     setClaimingShiftId(shiftKey ?? null);
     try {
       if (slot.isSynthetic) {
-        await rosterApi.claimUnassignedSlot({
+        await rosterApi.claimOpenShift({
           date: slot.date,
           serviceType: slot.serviceType,
           slotIndex: slot.slotIndex,
@@ -841,7 +844,7 @@ function RosterView({
         rosterData,
         employeeData,
         plannedAbsenceData,
-        unassignedData,
+        openShiftData,
       ] = await Promise.all([
         dutyPlansApi.getByMonth(year, month),
         rosterApi.getByMonth(year, month),
@@ -849,7 +852,7 @@ function RosterView({
         isExternalDuty
           ? Promise.resolve([])
           : plannedAbsencesAdminApi.getRange({ from: startDate, to: endDate }),
-        rosterApi.getUnassigned(year, month),
+        rosterApi.getOpenShifts(year, month),
       ]);
       let serviceLineData: ServiceLine[] = [];
       try {
@@ -875,11 +878,11 @@ function RosterView({
       setServiceLines(serviceLineData);
       setPlannedAbsences(plannedAbsenceData);
       setLongTermAbsences(longTermAbsenceData);
-      setUnassignedSlots(unassignedData.slots);
-      setUnassignedMeta(unassignedData);
+      setOpenShiftSlots(openShiftData.slots);
+      setOpenShiftMeta(openShiftData);
     } catch (error: any) {
-      setUnassignedSlots([]);
-      setUnassignedMeta(null);
+      setOpenShiftSlots([]);
+      setOpenShiftMeta(null);
       toast({
         title: "Fehler",
         description: error.message || "Dienstplan konnte nicht geladen werden",
@@ -1248,7 +1251,7 @@ function RosterView({
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              Unbesetzte Dienste ({claimableUnassignedSlots.length})
+              Unbesetzte Dienste ({claimableOpenShiftSlots.length})
             </DialogTitle>
             <DialogDescription>
               Offene Dienste im aktuellen Monat (Geburtshilfe/Kreißzimmer, Gynäkologie, Turnus)
@@ -1256,13 +1259,13 @@ function RosterView({
             </DialogDescription>
           </DialogHeader>
 
-          {claimableUnassignedSlots.length === 0 ? (
+          {claimableOpenShiftSlots.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Keine freien Dienste für Sie verfügbar.
             </p>
           ) : (
             <div className="space-y-3">
-              {claimableUnassignedSlots.map((slot) => {
+              {claimableOpenShiftSlots.map((slot) => {
                 const slotKey = slot.isSynthetic
                   ? slot.syntheticId
                   : slot.id ?? `${slot.date}:${slot.serviceType}`;

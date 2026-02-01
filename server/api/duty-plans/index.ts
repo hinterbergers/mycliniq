@@ -24,6 +24,7 @@ import {
   rosterShifts,
 } from "@shared/schema";
 import { requireEditor } from "../middleware/auth";
+import { syncDraftFromFinal } from "../../lib/roster";
 
 /**
  * Schema for creating a new duty plan
@@ -444,6 +445,7 @@ export function registerDutyPlanRoutes(router: Router) {
             });
           }
         }
+        await syncDraftFromFinal(existing.year, existing.month);
       }
 
       return ok(res, plan);

@@ -64,17 +64,18 @@ type ApiEnvelope<T> = {
   message?: string;
 };
 
-export type UnassignedSlot = {
+export type OpenShiftSlot = {
   id: number | null;
   syntheticId?: string;
   date: string;
   serviceType: string;
   slotIndex?: number;
   isSynthetic: boolean;
+  source: "final" | "draft";
 };
 
-export type UnassignedResponse = {
-  slots: UnassignedSlot[];
+export type OpenShiftResponse = {
+  slots: OpenShiftSlot[];
   planStatus: DutyPlan["status"] | null;
   statusAllowed: boolean;
   requiredDaily: Record<string, number>;
@@ -532,20 +533,6 @@ export const rosterApi = {
     return handleResponse<RosterShift[]>(response);
   },
 
-  getUnassigned: async (
-    year: number,
-    month: number,
-  ): Promise<UnassignedResponse> => {
-    const params = new URLSearchParams({
-      year: String(year),
-      month: String(month),
-    });
-    const response = await apiFetch(
-      `${API_BASE}/roster/unassigned?${params.toString()}`,
-    );
-    return handleResponse<UnassignedResponse>(response);
-  },
-
   getByDate: async (date: string): Promise<RosterShift[]> => {
     const response = await apiFetch(`${API_BASE}/roster/date/${date}`);
     return handleResponse<RosterShift[]>(response);
@@ -565,12 +552,30 @@ export const rosterApi = {
     return handleResponse<RosterShift>(response);
   },
 
-  claimUnassignedSlot: async (payload: {
+  getOpenShifts: async (
+    year: number,
+    month: number,
+    opts?: { includeDraft?: boolean },
+  ): Promise<OpenShiftResponse> => {
+    const params = new URLSearchParams({
+      year: String(year),
+      month: String(month),
+    });
+    if (opts?.includeDraft) {
+      params.set("includeDraft", "1");
+    }
+    const response = await apiFetch(
+      `${API_BASE}/roster/open-shifts?${params.toString()}`,
+    );
+    return handleResponse<OpenShiftResponse>(response);
+  },
+
+  claimOpenShift: async (payload: {
     date: string;
     serviceType: string;
     slotIndex?: number;
   }): Promise<RosterShift> => {
-    const response = await apiFetch(`${API_BASE}/roster/unassigned/claim`, {
+    const response = await apiFetch(`${API_BASE}/roster/open-shifts/claim`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
