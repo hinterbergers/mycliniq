@@ -35,6 +35,7 @@ import {
   shiftSwapRequests,
   sessions,
   serviceLines,
+  dutyPlans,
   rosterShifts as rosterShiftsTable,
   rooms,
   weeklyPlans,
@@ -42,6 +43,7 @@ import {
   weeklyAssignments,
   dailyOverrides,
   type RosterShift,
+  type DutyPlan,
 } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
 import bcrypt from "bcryptjs";
@@ -53,6 +55,7 @@ import {
 } from "./services/rosterGenerator";
 import { registerModularApiRoutes } from "./api";
 import { employeeDoesShifts, OVERDUTY_KEY } from "@shared/shiftTypes";
+import { getEffectiveServiceLineKeys } from "@shared/serviceLineAccess";
 import { requireAuth, hasCapability } from "./api/middleware/auth";
 import {
   addDays,
@@ -60,7 +63,9 @@ import {
   format,
   getWeek,
   getWeekYear,
+  parseISO,
   startOfWeek,
+  subDays,
 } from "date-fns";
 import {
   type AbsenceCategory,
@@ -69,6 +74,90 @@ import {
 } from "./lib/absence-categories";
 
 const rosterShifts = rosterShiftsTable;
+const ALLOWED_CLAIM_STATUSES = new Set<DutyPlan["status"]>([
+  "Vorläufig",
+  "Freigegeben",
+]);
+
+const padTwo = (value: number) => String(value).padStart(2, "0");
+
+async function ensureRequiredDailyShifts({
+  clinicId,
+  year,
+  month,
+  isDraftFlag,
+}: {
+  clinicId: number | null | undefined;
+  year: number;
+  month: number;
+  isDraftFlag: boolean;
+}): Promise<number> {
+  if (!clinicId) return 0;
+
+  const lastDay = new Date(year, month, 0).getDate();
+  const monthStart = `${year}-${padTwo(month)}-01`;
+  const monthEnd = `${year}-${padTwo(month)}-${padTwo(lastDay)}`;
+
+  const requiredLines = await db
+    .select({ key: serviceLines.key })
+    .from(serviceLines)
+    .where(
+      and(
+        eq(serviceLines.clinicId, clinicId),
+        eq(serviceLines.requiredDaily, true),
+        eq(serviceLines.isActive, true),
+      ),
+    );
+
+  if (!requiredLines.length) return 0;
+
+  const requiredKeys = requiredLines.map((line) => line.key);
+  const existingRows = await db
+    .select({
+      date: rosterShifts.date,
+      serviceType: rosterShifts.serviceType,
+    })
+    .from(rosterShifts)
+    .where(
+      and(
+        gte(rosterShifts.date, monthStart),
+        lte(rosterShifts.date, monthEnd),
+        eq(rosterShifts.isDraft, isDraftFlag),
+        inArray(rosterShifts.serviceType, requiredKeys),
+      ),
+    );
+
+  const existingSet = new Set(
+    existingRows.map((row) => `${row.date}|${row.serviceType}`),
+  );
+
+  const toInsert: Array<{
+    date: string;
+    serviceType: string;
+    employeeId: null;
+    isDraft: boolean;
+  }> = [];
+
+  for (let day = 1; day <= lastDay; day += 1) {
+    const currentDate = `${year}-${padTwo(month)}-${padTwo(day)}`;
+    for (const key of requiredKeys) {
+      const combination = `${currentDate}|${key}`;
+      if (existingSet.has(combination)) continue;
+      existingSet.add(combination);
+      toInsert.push({
+        date: currentDate,
+        serviceType: key,
+        employeeId: null,
+        isDraft: isDraftFlag,
+      });
+    }
+  }
+
+  if (!toInsert.length) return 0;
+
+  await db.insert(rosterShifts).values(toInsert);
+  return toInsert.length;
+}
 
 type HmacAlg = "sha256" | "sha384" | "sha512";
 const JWT_HS_TO_HMAC: Record<"HS256" | "HS384" | "HS512", HmacAlg> = {
@@ -1239,6 +1328,120 @@ export async function registerRoutes(
     }
   });
 
+  app.post(
+    "/api/roster/:id/claim",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const shiftId = Number(req.params.id);
+        if (!Number.isFinite(shiftId)) {
+          return res.status(400).json({ error: "Ungültige Shift-ID" });
+        }
+        const shift = await storage.getRosterShift(shiftId);
+        if (!shift) {
+          return res.status(404).json({ error: "Shift nicht gefunden" });
+        }
+        if (shift.employeeId) {
+          return res.status(400).json({ error: "Shift bereits besetzt" });
+        }
+        if ((shift.assigneeFreeText ?? "").trim()) {
+          return res.status(400).json({ error: "Shift ist einem Freitext zugeordnet" });
+        }
+        if (shift.isDraft) {
+          return res.status(400).json({ error: "Claim für Draft-Shifts nicht erlaubt" });
+        }
+        const employeeId = req.user?.employeeId;
+        if (!employeeId) {
+          return res.status(400).json({ error: "EmployeeId fehlt" });
+        }
+        if (!shift.date) {
+          return res.status(400).json({ error: "Shift-Datum fehlt" });
+        }
+        const parsedDate = parseISO(shift.date);
+        if (Number.isNaN(parsedDate.getTime())) {
+          return res.status(400).json({ error: "Ungültiges Shift-Datum" });
+        }
+        const year = parsedDate.getFullYear();
+        const month = parsedDate.getMonth() + 1;
+        const [planRow] = await db
+          .select({ status: dutyPlans.status })
+          .from(dutyPlans)
+          .where(
+            and(
+              eq(dutyPlans.year, year),
+              eq(dutyPlans.month, month),
+            ),
+          );
+        if (!planRow || !ALLOWED_CLAIM_STATUSES.has(planRow.status)) {
+          return res.status(400).json({ error: "Dienstplan noch nicht freigegeben" });
+        }
+        const clinicId = req.user?.clinicId;
+        if (!clinicId) {
+          return res.status(400).json({ error: "Klinik-Kontext fehlt" });
+        }
+        const [employee] = await db
+          .select()
+          .from(employees)
+          .where(eq(employees.id, employeeId));
+        if (!employee) {
+          return res.status(404).json({ error: "Mitarbeiter nicht gefunden" });
+        }
+
+        const serviceLineRows = await db
+          .select()
+          .from(serviceLines)
+          .where(
+            and(eq(serviceLines.clinicId, clinicId), eq(serviceLines.isActive, true)),
+          );
+        const allowedKeys = getEffectiveServiceLineKeys(
+          employee,
+          serviceLineRows,
+        );
+        if (!allowedKeys.has(shift.serviceType)) {
+          return res.status(403).json({ error: "Diensttyp nicht erlaubt" });
+        }
+
+        const prevDate = format(subDays(parsedDate, 1), "yyyy-MM-dd");
+        const [prevShift] = await db
+          .select()
+          .from(rosterShifts)
+          .where(
+            and(
+              eq(rosterShifts.date, prevDate),
+              eq(rosterShifts.employeeId, employeeId),
+            ),
+          )
+          .limit(1);
+        if (prevShift) {
+          return res
+            .status(400)
+            .json({ error: "Übernahme nicht erlaubt: Dienst am Vortag vorhanden" });
+        }
+
+        const [updated] = await db
+          .update(rosterShifts)
+          .set({
+            employeeId,
+            assigneeFreeText: null,
+          })
+          .where(
+            and(
+              eq(rosterShifts.id, shiftId),
+              eq(rosterShifts.employeeId, null),
+            ),
+          )
+          .returning();
+        if (!updated) {
+          return res.status(409).json({ error: "Shift konnte nicht übernommen werden" });
+        }
+        res.json(updated);
+      } catch (error) {
+        console.error("Claim shift error:", error);
+        res.status(500).json({ error: "Shift konnte nicht übernommen werden" });
+      }
+    },
+  );
+
   app.post("/api/roster/bulk", async (req: Request, res: Response) => {
     try {
       const shifts = req.body.shifts;
@@ -1606,11 +1809,21 @@ export async function registerRoutes(
         }));
 
         const results = await storage.bulkCreateRosterShifts(shiftData);
-
+        const clinicId = (req as any).user?.clinicId ?? null;
+        const requiredInserted = await ensureRequiredDailyShifts({
+          clinicId,
+          year,
+          month,
+          isDraftFlag,
+        });
+        const savedCount = results.length + requiredInserted;
+        const message = requiredInserted
+          ? `${savedCount} Dienste gespeichert (${requiredInserted} Pflichtdienste ohne Zuordnung hinzugefügt)`
+          : `${results.length} Dienste erfolgreich gespeichert`;
         res.json({
           success: true,
-          savedShifts: results.length,
-          message: `${results.length} Dienste erfolgreich gespeichert`,
+          savedShifts: savedCount,
+          message,
         });
       } catch (error: any) {
         console.error("Apply generated roster error:", error);

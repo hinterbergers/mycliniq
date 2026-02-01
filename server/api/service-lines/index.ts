@@ -33,6 +33,7 @@ const DEFAULT_SERVICE_LINES = [
     endTime: "08:00",
     endsNextDay: true,
     sortOrder: 1,
+    requiredDaily: false,
   },
   {
     key: "gyn",
@@ -42,6 +43,7 @@ const DEFAULT_SERVICE_LINES = [
     endTime: "08:00",
     endsNextDay: true,
     sortOrder: 2,
+    requiredDaily: false,
   },
   {
     key: "turnus",
@@ -51,6 +53,7 @@ const DEFAULT_SERVICE_LINES = [
     endTime: "08:00",
     endsNextDay: true,
     sortOrder: 3,
+    requiredDaily: false,
   },
   {
     key: "overduty",
@@ -60,6 +63,7 @@ const DEFAULT_SERVICE_LINES = [
     endTime: "08:00",
     endsNextDay: true,
     sortOrder: 4,
+    requiredDaily: false,
   },
 ];
 
@@ -72,6 +76,7 @@ const createServiceLineSchema = z.object({
   endsNextDay: z.boolean().optional(),
   sortOrder: z.number().int().optional(),
   isActive: z.boolean().optional(),
+  requiredDaily: z.boolean().optional(),
 });
 
 const updateServiceLineSchema = createServiceLineSchema.partial();
@@ -235,6 +240,7 @@ export function registerServiceLineRoutes(router: Router) {
         endsNextDay,
         sortOrder,
         isActive,
+        requiredDaily,
       } = req.body;
       const normalizedKey = typeof key === "string" ? key.trim() : "";
       if (!normalizedKey) {
@@ -259,9 +265,10 @@ export function registerServiceLineRoutes(router: Router) {
           startTime,
           endTime,
           endsNextDay: Boolean(endsNextDay),
-          sortOrder: typeof sortOrder === "number" ? sortOrder : 0,
-          isActive: isActive !== false,
-        })
+        sortOrder: typeof sortOrder === "number" ? sortOrder : 0,
+        isActive: isActive !== false,
+        requiredDaily: requiredDaily === true,
+      })
         .returning();
 
       return created(res, createdLine);

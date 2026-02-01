@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { KeyboardEvent, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, Play, Plus, Trash2, Edit3 } from "lucide-react";
+import { Loader2, Play, Plus, Trash2, Edit3, X } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
 import {
   Card,
@@ -35,6 +35,12 @@ import { useToast } from "@/hooks/use-toast";
 import type { TrainingVideo } from "@shared/schema";
 
 type FilterTag = string | "all";
+
+const splitKeywords = (value?: string | null): string[] =>
+  (value ?? "")
+    .split(/[;,]+/)
+    .map((keyword) => keyword.trim())
+    .filter(Boolean);
 
 const buildEmbedUrl = (video: TrainingVideo | null): string => {
   if (!video) return "";
@@ -71,10 +77,42 @@ export default function TrainingVideos() {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editForm, setEditForm] = useState({
     title: "",
-    keywords: "",
     youtubeUrlOrId: "",
     isActive: true,
   });
+  const [editKeywords, setEditKeywords] = useState<string[]>([]);
+  const [tagInputValue, setTagInputValue] = useState("");
+
+  const addEditKeyword = (value: string) => {
+    const keywordsToAdd = splitKeywords(value);
+    if (!keywordsToAdd.length) return;
+    setEditKeywords((prev) => {
+      const next = [...prev];
+      keywordsToAdd.forEach((keyword) => {
+        if (!next.includes(keyword)) {
+          next.push(keyword);
+        }
+      });
+      return next;
+    });
+  };
+
+  const removeEditKeyword = (keywordToRemove: string) => {
+    setEditKeywords((prev) =>
+      prev.filter((keyword) => keyword !== keywordToRemove),
+    );
+  };
+
+  const handleTagInputKeyDown = (
+    event: KeyboardEvent<HTMLInputElement>,
+  ) => {
+    const shouldAdd =
+      event.key === "Enter" || event.key === "," || event.key === ";";
+    if (!shouldAdd) return;
+    event.preventDefault();
+    addEditKeyword(tagInputValue);
+    setTagInputValue("");
+  };
   const { toast } = useToast();
 
   const { data: videos = [], isLoading, error, refetch } = useQuery({
@@ -165,10 +203,7 @@ export default function TrainingVideos() {
     setIsSubmitting(true);
     setCreationError(null);
 
-    const keywords = newVideoForm.keywords
-      .split(/[;,]+/)
-      .map((keyword) => keyword.trim())
-      .filter(Boolean);
+    const keywords = splitKeywords(newVideoForm.keywords);
 
     try {
       const created = await trainingApi.createEmbedVideo({
@@ -225,10 +260,15 @@ export default function TrainingVideos() {
     if (!editingVideo) return;
     setEditForm({
       title: editingVideo.title,
-      keywords: (editingVideo.keywords ?? []).join(", "),
       youtubeUrlOrId: editingVideo.videoId ?? "",
       isActive: editingVideo.isActive,
     });
+    setEditKeywords(
+      (editingVideo.keywords ?? [])
+        .map((keyword) => keyword.trim())
+        .filter(Boolean),
+    );
+    setTagInputValue("");
   }, [editingVideo]);
 
   const openEditDialog = (video: TrainingVideo) => {
@@ -241,20 +281,18 @@ export default function TrainingVideos() {
     setEditingVideo(null);
     setEditForm({
       title: "",
-      keywords: "",
       youtubeUrlOrId: "",
       isActive: true,
     });
+    setEditKeywords([]);
+    setTagInputValue("");
   };
 
   const handleSaveEdit = async () => {
     if (!editingVideo) return;
     const body: Parameters<typeof trainingApi.updateVideo>[1] = {
       title: editForm.title.trim(),
-      keywords: editForm.keywords
-        .split(/[;,]+/)
-        .map((keyword) => keyword.trim())
-        .filter(Boolean),
+      keywords: editKeywords.length ? editKeywords : undefined,
       isActive: editForm.isActive,
     };
     if (editingVideo.platform?.toLowerCase().includes("youtube")) {
@@ -282,16 +320,6 @@ export default function TrainingVideos() {
       });
     }
   };
-
-  useEffect(() => {
-    if (!editingVideo) return;
-    setEditForm({
-      title: editingVideo.title,
-      keywords: (editingVideo.keywords ?? []).join(", "),
-      youtubeUrlOrId: editingVideo.videoId ?? "",
-      isActive: editingVideo.isActive,
-    });
-  }, [editingVideo]);
 
   return (
     <Layout title="Fortbildung – Videos">
@@ -635,14 +663,48 @@ export default function TrainingVideos() {
                 }
               />
             </div>
-            <div className="space-y-1">
-              <Label>Schlagworte (kommagetrennt)</Label>
-              <Input
-                value={editForm.keywords}
-                onChange={(event) =>
-                  setEditForm((prev) => ({ ...prev, keywords: event.target.value }))
-                }
-              />
+            <div className="space-y-2">
+              <Label>Schlagworte</Label>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Input
+                  placeholder="Schlagwort hinzufügen"
+                  value={tagInputValue}
+                  onChange={(event) => setTagInputValue(event.target.value)}
+                  onKeyDown={handleTagInputKeyDown}
+                />
+                <Button
+                  variant="outline"
+                  className="self-end sm:self-auto"
+                  onClick={() => {
+                    addEditKeyword(tagInputValue);
+                    setTagInputValue("");
+                  }}
+                  disabled={!tagInputValue.trim()}
+                >
+                  Hinzufügen
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Trennen Sie mehrere Schlagworte mit Komma oder Enter.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {editKeywords.map((keyword) => (
+                  <Badge
+                    key={keyword}
+                    variant="secondary"
+                    className="flex items-center gap-1 whitespace-normal"
+                  >
+                    <span>{keyword}</span>
+                    <button
+                      type="button"
+                      className="flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground transition hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      onClick={() => removeEditKeyword(keyword)}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
             </div>
             {editingVideo?.platform?.toLowerCase().includes("youtube") && (
               <div className="space-y-1">

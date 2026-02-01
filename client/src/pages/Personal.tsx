@@ -82,8 +82,8 @@ import {
   type WeeklyPlanResponse,
 } from "@/lib/api";
 import {
+  getEffectiveServiceLineKeys,
   getEmployeeServiceLineCandidate,
-  getEmployeeServiceLineKeys,
 } from "@/lib/serviceLineAccess";
 import type {
   DutyPlan,
@@ -648,94 +648,10 @@ function RosterView({
     return fromList ?? fromAuth;
   }, [employees, currentUser]);
 
-  const employeeAllowedKeys = useMemo(
-    () => getEmployeeServiceLineKeys(currentEmployee, serviceLines),
-    [currentEmployee, serviceLines],
-  );
-
-  const employeeServiceLineRaw = useMemo(
-    () => getEmployeeServiceLineCandidate(currentEmployee),
-    [currentEmployee],
-  );
-
-  // --- Begin: helpers for effective allowed keys with fallback ---
-  const hasServiceLineCandidate = useMemo(() => {
-    if (employeeServiceLineRaw == null) return false;
-    if (Array.isArray(employeeServiceLineRaw)) return employeeServiceLineRaw.length > 0;
-    if (typeof employeeServiceLineRaw === "string") return employeeServiceLineRaw.trim().length > 0;
-    if (typeof employeeServiceLineRaw === "object") return true;
-    return Boolean(employeeServiceLineRaw);
-  }, [employeeServiceLineRaw]);
-
-  type DutyRoleGroup = "OA" | "ASS" | "TA";
-
-  const getDutyRoleGroup = (employee: any): DutyRoleGroup | null => {
-    const raw = String(
-      employee?.qualificationGroup ??
-        employee?.roleGroup ??
-        employee?.group ??
-        employee?.dutyRole ??
-        employee?.qualification ??
-        employee?.positionGroup ??
-        employee?.jobGroup ??
-        employee?.jobTitle ??
-        employee?.title ??
-        employee?.role ??
-        employee?.position ??
-        "",
-    )
-      .trim()
-      .toUpperCase();
-
-    if (!raw) return null;
-    if (raw.includes("OA") || raw.includes("OBER")) return "OA";
-    if (raw.includes("ASS") || raw.includes("ASSIST")) return "ASS";
-    if (raw.includes("TA") || raw.includes("TURNUS")) return "TA";
-    return null;
-  };
-
-  const roleFallbackAllowedKeys = useMemo(() => {
-    const group = getDutyRoleGroup(currentEmployee ?? currentUser);
-    if (!group) return new Set<string>();
-    return new Set(
-      serviceLines
-        .filter((line) => String((line as any).roleGroup ?? "").toUpperCase() === group)
-        .map((line) => line.key),
-    );
-  }, [currentEmployee, currentUser, serviceLines]);
-
-  // Fallback: infer allowed keys from the displayed service lines if role-based fallback is empty
-  const labelFallbackAllowedKeys = useMemo(() => {
-    const group = getDutyRoleGroup(currentEmployee ?? currentUser);
-    if (!group) return new Set<string>();
-
-    const rx =
-      group === "OA"
-        ? /gyn/i
-        : group === "ASS"
-          ? /(krei|kreiß|kreis|geb|geburt)/i
-          : /turnus/i;
-
-    return new Set(
-      serviceLineDisplay
-        .filter((line) => rx.test(`${line.label} ${line.key}`))
-        .map((line) => line.key),
-    );
-  }, [currentEmployee, currentUser, serviceLineDisplay]);
-
   const effectiveAllowedKeys = useMemo(() => {
-    // Primary: Personaleditor keys
-    if (employeeAllowedKeys.size > 0) return employeeAllowedKeys;
-
-    // Fallback 1: roleGroup field on serviceLines (if available)
-    if (roleFallbackAllowedKeys.size > 0) return roleFallbackAllowedKeys;
-
-    // Fallback 2: infer from displayed service line labels/keys
-    if (labelFallbackAllowedKeys.size > 0) return labelFallbackAllowedKeys;
-
-    return employeeAllowedKeys;
-  }, [employeeAllowedKeys, roleFallbackAllowedKeys, labelFallbackAllowedKeys]);
-  // --- End: helpers for effective allowed keys with fallback ---
+    const employeeContext = currentEmployee ?? currentUser;
+    return getEffectiveServiceLineKeys(employeeContext, serviceLines);
+  }, [currentEmployee, currentUser, serviceLines]);
 
   const canCurrentUserTakeShift = (shift: RosterShift) => {
     if (isExternalDuty) return false;
@@ -793,7 +709,6 @@ function RosterView({
     if (!import.meta.env.DEV) return;
 
     console.log("currentEmployee.id", currentEmployee?.id ?? null);
-    console.log("serviceLine raw data", employeeServiceLineRaw);
     console.log("employeeAllowedKeys", allowedKeysForDebug);
     console.log(
       "sample shift.serviceType",
@@ -815,8 +730,6 @@ function RosterView({
     );
     console.log("claimableUnassignedShifts.count", claimableUnassignedShifts.length);
   }, [
-    currentEmployee,
-    employeeServiceLineRaw,
     allowedKeysForDebug,
     shifts,
     planStatus,
@@ -879,14 +792,10 @@ function RosterView({
           }),
         });
       } else {
-        // Assign existing shift (backend must support PATCH /api/roster/shifts/:id)
-        res = await fetch(`/api/roster/${shift.id}`, {
-          method: "PATCH",
-          headers,
-          body: JSON.stringify({
-            employeeId: currentUser.id,
-            assigneeFreeText: null,
-          }),
+        // Claim unassigned shift via dedicated endpoint
+        res = await fetch(`/api/roster/${shift.id}/claim`, {
+          method: "POST",
+          headers: { Authorization: headers.Authorization ?? "" },
         });
       }
 

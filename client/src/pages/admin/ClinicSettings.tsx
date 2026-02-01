@@ -45,6 +45,7 @@ type ServiceLineForm = Pick<
   | "endsNextDay"
   | "sortOrder"
   | "isActive"
+  | "requiredDaily"
 >;
 
 const normalizeTime = (value?: string | null) => {
@@ -110,6 +111,7 @@ export default function ClinicSettings() {
     endsNextDay: true,
     sortOrder: 0,
     isActive: true,
+    requiredDaily: false,
   });
 
   useEffect(() => {
@@ -133,6 +135,7 @@ export default function ClinicSettings() {
         endsNextDay: Boolean(line.endsNextDay),
         sortOrder: line.sortOrder ?? 0,
         isActive: line.isActive !== false,
+        requiredDaily: line.requiredDaily ?? false,
       }));
       setServiceLines(normalized);
     } catch (error) {
@@ -248,6 +251,7 @@ export default function ClinicSettings() {
         endsNextDay: line.endsNextDay,
         sortOrder: Number(line.sortOrder) || 0,
         isActive: line.isActive,
+        requiredDaily: line.requiredDaily,
       });
       toast({
         title: "Gespeichert",
@@ -308,6 +312,7 @@ export default function ClinicSettings() {
         endsNextDay: newServiceLine.endsNextDay,
         sortOrder: Number(newServiceLine.sortOrder) || 0,
         isActive: newServiceLine.isActive,
+        requiredDaily: newServiceLine.requiredDaily,
       });
       setServiceLines((prev) => [
         ...prev,
@@ -321,6 +326,7 @@ export default function ClinicSettings() {
           endsNextDay: Boolean(created.endsNextDay),
           sortOrder: created.sortOrder ?? 0,
           isActive: created.isActive !== false,
+          requiredDaily: created.requiredDaily ?? false,
         },
       ]);
       setNewServiceLine({
@@ -332,6 +338,7 @@ export default function ClinicSettings() {
         endsNextDay: true,
         sortOrder: serviceLines.length + 1,
         isActive: true,
+        requiredDaily: false,
       });
       toast({
         title: "Erstellt",
@@ -655,19 +662,34 @@ export default function ClinicSettings() {
                       </div>
 
                       <div className="flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-2">
-                          <Checkbox
-                            checked={line.isActive}
-                            onCheckedChange={(checked) =>
-                              updateServiceLineField(
-                                line.id,
-                                "isActive",
-                                Boolean(checked),
-                              )
-                            }
-                          />
-                          <span className="text-sm text-gray-600">Aktiv</span>
-                        </div>
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          checked={line.isActive}
+                          onCheckedChange={(checked) =>
+                            updateServiceLineField(
+                              line.id,
+                              "isActive",
+                              Boolean(checked),
+                            )
+                          }
+                        />
+                        <span className="text-sm text-gray-600">Aktiv</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          checked={line.requiredDaily}
+                          onCheckedChange={(checked) =>
+                            updateServiceLineField(
+                              line.id,
+                              "requiredDaily",
+                              Boolean(checked),
+                            )
+                          }
+                        />
+                        <span className="text-sm text-gray-600">
+                          Täglich erforderlich
+                        </span>
+                      </div>
                         <div className="flex items-center gap-2">
                           <Button
                             variant="outline"
@@ -797,18 +819,32 @@ export default function ClinicSettings() {
                   </div>
 
                   <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        checked={newServiceLine.isActive}
-                        onCheckedChange={(checked) =>
-                          setNewServiceLine((prev) => ({
-                            ...prev,
-                            isActive: Boolean(checked),
-                          }))
-                        }
-                      />
-                      <span className="text-sm text-gray-600">Aktiv</span>
-                    </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    checked={newServiceLine.isActive}
+                    onCheckedChange={(checked) =>
+                      setNewServiceLine((prev) => ({
+                        ...prev,
+                        isActive: Boolean(checked),
+                      }))
+                    }
+                  />
+                  <span className="text-sm text-gray-600">Aktiv</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    checked={newServiceLine.requiredDaily}
+                    onCheckedChange={(checked) =>
+                      setNewServiceLine((prev) => ({
+                        ...prev,
+                        requiredDaily: Boolean(checked),
+                      }))
+                    }
+                  />
+                  <span className="text-sm text-gray-600">
+                    Täglich erforderlich
+                  </span>
+                </div>
                     <Button onClick={handleAddServiceLine}>
                       <Plus className="w-4 h-4 mr-2" />
                       Dienstschiene hinzufügen
