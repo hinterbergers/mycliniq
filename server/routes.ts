@@ -13,6 +13,7 @@ import {
   inArray,
   isNotNull,
   sql,
+  isNull,
 } from "./lib/db";
 import {
   insertEmployeeSchema,
@@ -1427,7 +1428,7 @@ export async function registerRoutes(
           .where(
             and(
               eq(rosterShifts.id, shiftId),
-              eq(rosterShifts.employeeId, null),
+              isNull(rosterShifts.employeeId),
             ),
           )
           .returning();
