@@ -28,7 +28,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { trainingApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -371,7 +370,7 @@ export default function TrainingVideos() {
                 <Loader2 className="w-6 h-6 animate-spin text-primary" />
               </div>
             ) : (
-              <ScrollArea className="max-h-[70vh]">
+              <div className="max-h-[65vh] overflow-y-auto">
                 <div className="space-y-2 p-3">
                   {!filteredVideos.length && (
                     <p className="text-sm text-muted-foreground">
@@ -389,64 +388,61 @@ export default function TrainingVideos() {
                           : "border-border",
                       )}
                     >
-                    <CardHeader className="space-y-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <CardTitle className="flex items-center gap-2 text-sm">
-                            <Play className="w-4 h-4 text-primary" />
-                            {video.title}
-                          </CardTitle>
-                          <CardDescription className="text-xs text-muted-foreground">
-                            {video.platform} ·{" "}
-                            {video.isActive ? "Aktiv" : "Inaktiv"}
-                          </CardDescription>
-                        </div>
-                        {canManageTraining && (
-                          <div className="flex items-center gap-2">
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                openEditDialog(video);
-                              }}
-                            >
-                              <Edit3 className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              className="text-destructive"
-                              disabled={deletingId === video.id}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                handleDeleteVideo(video);
-                              }}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
+                      <CardHeader className="space-y-1 p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <CardTitle className="flex items-center gap-2 text-sm">
+                              <Play className="w-4 h-4 text-primary" />
+                              {video.title}
+                            </CardTitle>
+                            <CardDescription className="text-[0.7rem] text-muted-foreground">
+                              {video.platform} ·{" "}
+                              {video.isActive ? "Aktiv" : "Inaktiv"}
+                            </CardDescription>
                           </div>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        {(video.keywords ?? []).map((keyword) => (
-                          <Badge key={keyword} variant="secondary">
-                            {keyword}
-                          </Badge>
-                        ))}
-                      </div>
-                    </CardHeader>
-                      <CardContent>
-                      {video.url && (
-                        <p className="mt-3 text-xs text-muted-foreground line-clamp-2">
-                          {video.url}
-                          </p>
-                        )}
-                      </CardContent>
+                          {canManageTraining && (
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openEditDialog(video);
+                                }}
+                              >
+                                <Edit3 className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="text-destructive"
+                                disabled={deletingId === video.id}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  handleDeleteVideo(video);
+                                }}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {(video.keywords ?? []).map((keyword) => (
+                            <Badge
+                              key={keyword}
+                              variant="secondary"
+                              className="whitespace-normal"
+                            >
+                              {keyword}
+                            </Badge>
+                          ))}
+                        </div>
+                      </CardHeader>
                     </Card>
                   ))}
                 </div>
-              </ScrollArea>
+              </div>
             )}
           </div>
         </div>
@@ -497,7 +493,9 @@ export default function TrainingVideos() {
               {selectedVideo?.keywords?.length ? (
                 <div className="mt-4 flex flex-wrap gap-2">
                   {selectedVideo.keywords.map((keyword) => (
-                    <Badge key={keyword}>{keyword}</Badge>
+                    <Badge key={keyword} className="whitespace-normal">
+                      {keyword}
+                    </Badge>
                   ))}
                 </div>
               ) : null}
