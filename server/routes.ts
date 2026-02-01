@@ -3,9 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import {
   db,
-  eq,
   asc,
-  and,
   or,
   gte,
   lte,
@@ -13,8 +11,8 @@ import {
   inArray,
   isNotNull,
   sql,
-  isNull,
 } from "./lib/db";
+import { and, eq, isNull } from "drizzle-orm";
 import {
   insertEmployeeSchema,
   insertRosterShiftSchema,
