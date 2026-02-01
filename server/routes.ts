@@ -2578,14 +2578,7 @@ export async function registerRoutes(
           // Turnus
           if (r.includes("turnus")) return 4;
 
-          // KPJ / Student / Famulatur
-          if (r.includes("kpj") || r.includes("student") || r.includes("famul"))
-            return 5;
-
-          // Sekretariat (falls es je drin wäre) ganz nach hinten
-          if (r.includes("sekret")) return 98;
-
-          return 90;
+          return 99;
         };
 
         const buildAttendanceMembers = (
@@ -2599,4 +2592,4 @@ export async function registerRoutes(
           const members: AttendanceMember[] = [];
 
           for (const assignment of effectiveAssignments) {
-            const employeeId = assignment.employe<truncated__content/>
+            const employeeId = assignment.employeeId;
