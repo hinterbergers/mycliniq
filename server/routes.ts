@@ -1406,7 +1406,6 @@ export async function registerRoutes(
       }
 
       const now = new Date();
-
       const parseNumberParam = (value: unknown) => {
         if (typeof value === "string") {
           const parsed = Number(value);
@@ -1415,45 +1414,35 @@ export async function registerRoutes(
         return null;
       };
 
-      // Backward compatible: some clients send `from`/`to` instead of `year`/`month`.
-      // If `from` is provided, we derive the month from it (and require `to` to be within the same month if provided).
-      const fromParam = parseIsoDateParam(req.query.from);
-      const toParam = parseIsoDateParam(req.query.to);
+      const yearParam = parseNumberParam(req.query.year);
+      const monthParam = parseNumberParam(req.query.month);
 
-      let year: number;
-      let month: number;
+      const rawFrom = typeof req.query.from === "string" ? req.query.from.trim() : "";
+      const rawTo = typeof req.query.to === "string" ? req.query.to.trim() : "";
 
-      if (fromParam) {
-        const fromDate = parseISO(fromParam);
-        if (Number.isNaN(fromDate.getTime())) {
-          return res.status(400).json({ error: "Ungültiges Datum (from)" });
-        }
-        year = fromDate.getFullYear();
-        month = fromDate.getMonth() + 1;
+      const tryParseIso = (value: string) => {
+        if (!value) return null;
+        const iso = parseIsoDateParam(value);
+        if (!iso) return null;
+        const parsed = parseISO(iso);
+        if (Number.isNaN(parsed.getTime())) return null;
+        return parsed;
+      };
 
-        if (toParam) {
-          const toDate = parseISO(toParam);
-          if (Number.isNaN(toDate.getTime())) {
-            return res.status(400).json({ error: "Ungültiges Datum (to)" });
-          }
-          const toYear = toDate.getFullYear();
-          const toMonth = toDate.getMonth() + 1;
-          if (toYear !== year || toMonth !== month) {
-            return res.status(400).json({
-              error: "from/to müssen im selben Monat liegen",
-            });
-          }
-        }
-      } else {
-        const yearParam = parseNumberParam(req.query.year);
-        const monthParam = parseNumberParam(req.query.month);
-        year = Number.isFinite(yearParam ?? NaN)
-          ? (yearParam as number)
+      // Fallback to ISO range only when BOTH year and month are missing.
+      const fallbackDate = tryParseIso(rawFrom) ?? tryParseIso(rawTo);
+
+      const year = Number.isFinite(yearParam ?? NaN)
+        ? (yearParam as number)
+        : yearParam === null && monthParam === null && fallbackDate
+          ? fallbackDate.getFullYear()
           : now.getFullYear();
-        month = Number.isFinite(monthParam ?? NaN)
-          ? (monthParam as number)
+
+      const month = Number.isFinite(monthParam ?? NaN)
+        ? (monthParam as number)
+        : yearParam === null && monthParam === null && fallbackDate
+          ? fallbackDate.getMonth() + 1
           : now.getMonth() + 1;
-      }
 
       if (month < 1 || month > 12) {
         return res
