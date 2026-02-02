@@ -34,6 +34,8 @@ const DEFAULT_SERVICE_LINES = [
     endsNextDay: true,
     sortOrder: 1,
     requiredDaily: false,
+    allowsSwap: true,
+    allowsClaim: true,
   },
   {
     key: "gyn",
@@ -44,6 +46,8 @@ const DEFAULT_SERVICE_LINES = [
     endsNextDay: true,
     sortOrder: 2,
     requiredDaily: false,
+    allowsSwap: true,
+    allowsClaim: true,
   },
   {
     key: "turnus",
@@ -54,6 +58,8 @@ const DEFAULT_SERVICE_LINES = [
     endsNextDay: true,
     sortOrder: 3,
     requiredDaily: false,
+    allowsSwap: true,
+    allowsClaim: true,
   },
   {
     key: "overduty",
@@ -64,6 +70,8 @@ const DEFAULT_SERVICE_LINES = [
     endsNextDay: true,
     sortOrder: 4,
     requiredDaily: false,
+    allowsSwap: true,
+    allowsClaim: true,
   },
 ];
 
@@ -77,6 +85,8 @@ const createServiceLineSchema = z.object({
   sortOrder: z.number().int().optional(),
   isActive: z.boolean().optional(),
   requiredDaily: z.boolean().optional(),
+  allowsSwap: z.boolean().optional(),
+  allowsClaim: z.boolean().optional(),
 });
 
 const updateServiceLineSchema = createServiceLineSchema.partial();

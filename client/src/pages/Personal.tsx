@@ -635,12 +635,42 @@ function RosterView({
     return getEffectiveServiceLineKeys(employeeContext, serviceLines);
   }, [currentEmployee, currentUser, serviceLines]);
 
+  const claimableServiceLineKeySet = useMemo(
+    () =>
+      new Set(
+        serviceLines
+          .filter((line) => line.isActive !== false && line.allowsClaim)
+          .map((line) => line.key),
+      ),
+    [serviceLines],
+  );
+
+  const swapableServiceLineKeySet = useMemo(
+    () =>
+      new Set(
+        serviceLines
+          .filter((line) => line.isActive !== false && line.allowsSwap)
+          .map((line) => line.key),
+      ),
+    [serviceLines],
+  );
+
+  const effectiveClaimKeys = useMemo(
+    () =>
+      new Set(
+        [...effectiveAllowedKeys].filter((key) =>
+          claimableServiceLineKeySet.has(key),
+        ),
+      ),
+    [claimableServiceLineKeySet, effectiveAllowedKeys],
+  );
+
   const canCurrentUserTakeShift = (shift: { serviceType: string }) => {
     if (isExternalDuty) return false;
     if (!token) return false;
     if (!currentUser?.id) return false;
-    if (effectiveAllowedKeys.size === 0) return false;
-    return effectiveAllowedKeys.has(shift.serviceType);
+    if (effectiveClaimKeys.size === 0) return false;
+    return effectiveClaimKeys.has(shift.serviceType);
   };
 
   const claimableOpenShiftSlots = useMemo(() => {
@@ -649,25 +679,25 @@ function RosterView({
     if (!currentUser?.id) return [] as OpenShiftSlot[];
     if (effectiveAllowedKeys.size === 0) return [];
     return visibleOpenShiftSlots.filter((slot) =>
-      effectiveAllowedKeys.has(slot.serviceType),
+      effectiveClaimKeys.has(slot.serviceType),
     );
   }, [
     isExternalDuty,
     token,
     currentUser?.id,
-    effectiveAllowedKeys,
+    effectiveClaimKeys,
     visibleOpenShiftSlots,
   ]);
 
   const showUnassignedButton =
     !isExternalDuty &&
     isPlanStatusAllowingUnassigned &&
-    effectiveAllowedKeys.size > 0 &&
+    effectiveClaimKeys.size > 0 &&
     claimableOpenShiftSlots.length > 0;
 
   const allowedKeysForDebug = useMemo(
-    () => Array.from(effectiveAllowedKeys).slice(0, 30),
-    [effectiveAllowedKeys],
+    () => Array.from(effectiveClaimKeys).slice(0, 30),
+    [effectiveClaimKeys],
   );
 
   const openShiftDebugDetail = useMemo<OpenShiftDebugDetail>(
@@ -678,7 +708,7 @@ function RosterView({
       unassignedTotal: openShiftSlots.length,
       visibleAfterPrevDayRule: visibleOpenShiftSlots.length,
       claimableCount: claimableOpenShiftSlots.length,
-      allowedKeysCount: effectiveAllowedKeys.size,
+      allowedKeysCount: effectiveClaimKeys.size,
       allowedKeys: allowedKeysForDebug,
       requiredDaily: openShiftMeta?.requiredDaily ?? {},
       countsByDay: openShiftMeta?.countsByDay ?? {},
@@ -691,7 +721,7 @@ function RosterView({
       openShiftSlots.length,
       visibleOpenShiftSlots.length,
       claimableOpenShiftSlots.length,
-      effectiveAllowedKeys,
+      effectiveClaimKeys,
       allowedKeysForDebug,
       openShiftMeta,
     ],
@@ -1427,13 +1457,34 @@ function ShiftSwapRosterDialog({
     if (!isCurrentMonth) return true;
     return parseISO(shift.date) >= remainingMonthStart;
   };
+  const swapableServiceLineKeySet = useMemo(
+    () =>
+      new Set(
+        serviceLines
+          .filter((line) => line.isActive !== false && line.allowsSwap)
+          .map((line) => line.key),
+      ),
+    [serviceLines],
+  );
+
+  const effectiveSwapKeys = useMemo(() => {
+    const allowed = getEffectiveServiceLineKeys(currentUser, serviceLines);
+    return new Set(
+      [...allowed].filter((key) => swapableServiceLineKeySet.has(key)),
+    );
+  }, [currentUser, serviceLines, swapableServiceLineKeySet]);
+  const isSwapEligibleShift = (shift: RosterShift) =>
+    Boolean(shift.serviceType) &&
+    effectiveSwapKeys.has(shift.serviceType);
   const myShifts = shifts
     .filter((shift) => shift.employeeId === currentUser?.id)
     .filter(isShiftInRemainingMonth)
+    .filter(isSwapEligibleShift)
     .sort((a, b) => a.date.localeCompare(b.date));
   const targetShifts = shifts
     .filter((shift) => shift.employeeId && shift.employeeId !== currentUser?.id)
     .filter(isShiftInRemainingMonth)
+    .filter(isSwapEligibleShift)
     .sort((a, b) => a.date.localeCompare(b.date));
 
   const formatShiftOption = (shift: RosterShift) => {

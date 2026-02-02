@@ -46,6 +46,8 @@ type ServiceLineForm = Pick<
   | "sortOrder"
   | "isActive"
   | "requiredDaily"
+  | "allowsSwap"
+  | "allowsClaim"
 >;
 
 const normalizeTime = (value?: string | null) => {
@@ -112,6 +114,8 @@ export default function ClinicSettings() {
     sortOrder: 0,
     isActive: true,
     requiredDaily: false,
+    allowsSwap: true,
+    allowsClaim: true,
   });
 
   useEffect(() => {
@@ -125,18 +129,20 @@ export default function ClinicSettings() {
       const lines = await serviceLinesApi.getAll(
         getServiceLineContextFromEmployee(currentUser),
       );
-      const normalized = lines.map((line) => ({
-        id: line.id,
-        key: line.key,
-        label: line.label,
-        roleGroup: line.roleGroup || "ALL",
-        startTime: normalizeTime(line.startTime),
-        endTime: normalizeTime(line.endTime),
-        endsNextDay: Boolean(line.endsNextDay),
-        sortOrder: line.sortOrder ?? 0,
-        isActive: line.isActive !== false,
-        requiredDaily: line.requiredDaily ?? false,
-      }));
+        const normalized = lines.map((line) => ({
+          id: line.id,
+          key: line.key,
+          label: line.label,
+          roleGroup: line.roleGroup || "ALL",
+          startTime: normalizeTime(line.startTime),
+          endTime: normalizeTime(line.endTime),
+          endsNextDay: Boolean(line.endsNextDay),
+          sortOrder: line.sortOrder ?? 0,
+          isActive: line.isActive !== false,
+          requiredDaily: line.requiredDaily ?? false,
+          allowsSwap: line.allowsSwap ?? true,
+          allowsClaim: line.allowsClaim ?? true,
+        }));
       setServiceLines(normalized);
     } catch (error) {
       console.error("Error loading service lines:", error);
@@ -252,6 +258,8 @@ export default function ClinicSettings() {
         sortOrder: Number(line.sortOrder) || 0,
         isActive: line.isActive,
         requiredDaily: line.requiredDaily,
+        allowsSwap: line.allowsSwap,
+        allowsClaim: line.allowsClaim,
       });
       toast({
         title: "Gespeichert",
@@ -313,6 +321,8 @@ export default function ClinicSettings() {
         sortOrder: Number(newServiceLine.sortOrder) || 0,
         isActive: newServiceLine.isActive,
         requiredDaily: newServiceLine.requiredDaily,
+        allowsSwap: newServiceLine.allowsSwap,
+        allowsClaim: newServiceLine.allowsClaim,
       });
       setServiceLines((prev) => [
         ...prev,
@@ -327,6 +337,8 @@ export default function ClinicSettings() {
           sortOrder: created.sortOrder ?? 0,
           isActive: created.isActive !== false,
           requiredDaily: created.requiredDaily ?? false,
+          allowsSwap: created.allowsSwap ?? true,
+          allowsClaim: created.allowsClaim ?? true,
         },
       ]);
       setNewServiceLine({
@@ -339,6 +351,8 @@ export default function ClinicSettings() {
         sortOrder: serviceLines.length + 1,
         isActive: true,
         requiredDaily: false,
+        allowsSwap: true,
+        allowsClaim: true,
       });
       toast({
         title: "Erstellt",
@@ -661,35 +675,65 @@ export default function ClinicSettings() {
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-2">
-                        <Checkbox
-                          checked={line.isActive}
-                          onCheckedChange={(checked) =>
-                            updateServiceLineField(
-                              line.id,
-                              "isActive",
-                              Boolean(checked),
-                            )
-                          }
-                        />
-                        <span className="text-sm text-gray-600">Aktiv</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Checkbox
-                          checked={line.requiredDaily}
-                          onCheckedChange={(checked) =>
-                            updateServiceLineField(
-                              line.id,
-                              "requiredDaily",
-                              Boolean(checked),
-                            )
-                          }
-                        />
-                        <span className="text-sm text-gray-600">
-                          Täglich erforderlich
-                        </span>
-                      </div>
+                      <div className="flex flex-wrap items-center gap-4 justify-between">
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            checked={line.isActive}
+                            onCheckedChange={(checked) =>
+                              updateServiceLineField(
+                                line.id,
+                                "isActive",
+                                Boolean(checked),
+                              )
+                            }
+                          />
+                          <span className="text-sm text-gray-600">Aktiv</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            checked={line.requiredDaily}
+                            onCheckedChange={(checked) =>
+                              updateServiceLineField(
+                                line.id,
+                                "requiredDaily",
+                                Boolean(checked),
+                              )
+                            }
+                          />
+                          <span className="text-sm text-gray-600">
+                            Täglich erforderlich
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            checked={line.allowsSwap}
+                            onCheckedChange={(checked) =>
+                              updateServiceLineField(
+                                line.id,
+                                "allowsSwap",
+                                Boolean(checked),
+                              )
+                            }
+                          />
+                          <span className="text-sm text-gray-600">
+                            Diensttausch
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            checked={line.allowsClaim}
+                            onCheckedChange={(checked) =>
+                              updateServiceLineField(
+                                line.id,
+                                "allowsClaim",
+                                Boolean(checked),
+                              )
+                            }
+                          />
+                          <span className="text-sm text-gray-600">
+                            Dienst übernehmen
+                          </span>
+                        </div>
                         <div className="flex items-center gap-2">
                           <Button
                             variant="outline"
@@ -818,33 +862,61 @@ export default function ClinicSettings() {
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    checked={newServiceLine.isActive}
-                    onCheckedChange={(checked) =>
-                      setNewServiceLine((prev) => ({
-                        ...prev,
-                        isActive: Boolean(checked),
-                      }))
-                    }
-                  />
-                  <span className="text-sm text-gray-600">Aktiv</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    checked={newServiceLine.requiredDaily}
-                    onCheckedChange={(checked) =>
-                      setNewServiceLine((prev) => ({
-                        ...prev,
-                        requiredDaily: Boolean(checked),
-                      }))
-                    }
-                  />
-                  <span className="text-sm text-gray-600">
-                    Täglich erforderlich
-                  </span>
-                </div>
+                  <div className="flex flex-wrap items-center gap-4 justify-between">
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        checked={newServiceLine.isActive}
+                        onCheckedChange={(checked) =>
+                          setNewServiceLine((prev) => ({
+                            ...prev,
+                            isActive: Boolean(checked),
+                          }))
+                        }
+                      />
+                      <span className="text-sm text-gray-600">Aktiv</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        checked={newServiceLine.requiredDaily}
+                        onCheckedChange={(checked) =>
+                          setNewServiceLine((prev) => ({
+                            ...prev,
+                            requiredDaily: Boolean(checked),
+                          }))
+                        }
+                      />
+                      <span className="text-sm text-gray-600">
+                        Täglich erforderlich
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        checked={newServiceLine.allowsSwap}
+                        onCheckedChange={(checked) =>
+                          setNewServiceLine((prev) => ({
+                            ...prev,
+                            allowsSwap: Boolean(checked),
+                          }))
+                        }
+                      />
+                      <span className="text-sm text-gray-600">
+                        Diensttausch
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        checked={newServiceLine.allowsClaim}
+                        onCheckedChange={(checked) =>
+                          setNewServiceLine((prev) => ({
+                            ...prev,
+                            allowsClaim: Boolean(checked),
+                          }))
+                        }
+                      />
+                      <span className="text-sm text-gray-600">
+                        Dienst übernehmen
+                      </span>
+                    </div>
                     <Button onClick={handleAddServiceLine}>
                       <Plus className="w-4 h-4 mr-2" />
                       Dienstschiene hinzufügen

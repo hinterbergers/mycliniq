@@ -44,6 +44,7 @@ import {
   dailyOverrides,
   type RosterShift,
   type DutyPlan,
+  type ServiceLine,
 } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
 import bcrypt from "bcryptjs";
@@ -104,6 +105,24 @@ type OpenShiftPayload = {
   missingCounts: Record<string, number>;
 };
 
+const getServiceLineKeysByFlag = (
+  lines: ServiceLine[],
+  flag: "allowsClaim" | "allowsSwap",
+): Set<string> => {
+  return new Set(
+    lines.filter((line) => line[flag]).map((line) => line.key),
+  );
+};
+
+const filterKeysByFlag = (
+  keys: Set<string>,
+  lines: ServiceLine[],
+  flag: "allowsClaim" | "allowsSwap",
+): Set<string> => {
+  const filteredKeys = getServiceLineKeysByFlag(lines, flag);
+  return new Set([...keys].filter((key) => filteredKeys.has(key)));
+};
+
 const parseBoolQueryFlag = (value?: string | string[]): boolean => {
   if (!value) return false;
   const normalized =
@@ -137,8 +156,15 @@ const buildOpenShiftPayload = async ({
       ),
     );
 
+  const claimableServiceLines = serviceLineRows.filter(
+    (line) => line.allowsClaim,
+  );
+  const claimableServiceLineKeys = new Set(
+    claimableServiceLines.map((line) => line.key),
+  );
+
   const requiredDailyMap = new Map<string, number>();
-  for (const line of serviceLineRows) {
+  for (const line of claimableServiceLines) {
     const rawValue =
       typeof line.requiredDaily === "number"
         ? line.requiredDaily
@@ -162,48 +188,46 @@ const buildOpenShiftPayload = async ({
   }
 
   const slots: OpenShiftSlot[] = [];
-  if (serviceKeys.length > 0) {
-    const conditions = [
-      gte(rosterShifts.date, monthStart),
-      lte(rosterShifts.date, monthEnd),
-    ];
-    if (!includeDraft) {
-      conditions.push(eq(rosterShifts.isDraft, false));
+  const conditions = [
+    gte(rosterShifts.date, monthStart),
+    lte(rosterShifts.date, monthEnd),
+  ];
+  if (!includeDraft) {
+    conditions.push(eq(rosterShifts.isDraft, false));
+  }
+
+  const shiftRows = await db
+    .select({
+      id: rosterShifts.id,
+      date: rosterShifts.date,
+      serviceType: rosterShifts.serviceType,
+      employeeId: rosterShifts.employeeId,
+      assigneeFreeText: rosterShifts.assigneeFreeText,
+      isDraft: rosterShifts.isDraft,
+    })
+    .from(rosterShifts)
+    .where(and(...conditions));
+
+  for (const shift of shiftRows) {
+    if (!shift.serviceType || !claimableServiceLineKeys.has(shift.serviceType)) {
+      continue;
+    }
+    const dayEntry = countsByDay[shift.date];
+    if (dayEntry && dayEntry[shift.serviceType] !== undefined) {
+      dayEntry[shift.serviceType] += 1;
     }
 
-    const shiftRows = await db
-      .select({
-        id: rosterShifts.id,
-        date: rosterShifts.date,
-        serviceType: rosterShifts.serviceType,
-        employeeId: rosterShifts.employeeId,
-        assigneeFreeText: rosterShifts.assigneeFreeText,
-        isDraft: rosterShifts.isDraft,
-      })
-      .from(rosterShifts)
-      .where(and(...conditions));
+    const isOpen =
+      !shift.employeeId && !(shift.assigneeFreeText ?? "").trim();
 
-    for (const shift of shiftRows) {
-      if (
-        !shift.serviceType ||
-        countsByDay[shift.date]?.[shift.serviceType] === undefined
-      ) {
-        continue;
-      }
-      countsByDay[shift.date][shift.serviceType] += 1;
-
-      const isOpen =
-        !shift.employeeId && !(shift.assigneeFreeText ?? "").trim();
-
-      if (isOpen) {
-        slots.push({
-          id: shift.id,
-          date: shift.date,
-          serviceType: shift.serviceType,
-          isSynthetic: false,
-          source: shift.isDraft ? "draft" : "final",
-        });
-      }
+    if (isOpen) {
+      slots.push({
+        id: shift.id,
+        date: shift.date,
+        serviceType: shift.serviceType,
+        isSynthetic: false,
+        source: shift.isDraft ? "draft" : "final",
+      });
     }
   }
 
@@ -1691,7 +1715,12 @@ export async function registerRoutes(
           employee,
           serviceLineRows,
         );
-        if (!allowedKeys.has(shift.serviceType)) {
+        const allowedClaimKeys = filterKeysByFlag(
+          allowedKeys,
+          serviceLineRows,
+          "allowsClaim",
+        );
+        if (!allowedClaimKeys.has(shift.serviceType)) {
           return res.status(403).json({ error: "Diensttyp nicht erlaubt" });
         }
 
@@ -1799,7 +1828,12 @@ export async function registerRoutes(
           ),
         );
       const allowedKeys = getEffectiveServiceLineKeys(employee, serviceLineRows);
-      if (!allowedKeys.has(serviceType)) {
+      const allowedClaimKeys = filterKeysByFlag(
+        allowedKeys,
+        serviceLineRows,
+        "allowsClaim",
+      );
+      if (!allowedClaimKeys.has(serviceType)) {
         return res.status(403).json({ error: "Diensttyp nicht erlaubt" });
       }
 
@@ -3816,6 +3850,133 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
 
   app.post("/api/shift-swaps", async (req: Request, res: Response) => {
     try {
+      const {
+        requesterShiftId,
+        targetShiftId,
+        requesterId,
+        targetEmployeeId,
+      } = req.body;
+      if (
+        !requesterShiftId ||
+        !targetShiftId ||
+        !requesterId ||
+        !targetEmployeeId
+      ) {
+        return res
+          .status(400)
+          .json({ error: "Requester/Target shift and employees are required" });
+      }
+
+      const [requesterShift, targetShift] = await Promise.all([
+        storage.getRosterShift(requesterShiftId),
+        storage.getRosterShift(targetShiftId),
+      ]);
+      if (!requesterShift || !targetShift) {
+        return res.status(404).json({ error: "Dienst nicht gefunden" });
+      }
+      if (requesterShift.employeeId !== requesterId) {
+        return res
+          .status(400)
+          .json({ error: "RequesterShift fehlt oder falsch zugeordnet" });
+      }
+      if (targetShift.employeeId !== targetEmployeeId) {
+        return res
+          .status(400)
+          .json({ error: "TargetShift stimmt nicht mit Zielperson überein" });
+      }
+
+      const currentEmployeeId = req.user?.employeeId;
+      if (currentEmployeeId !== requesterShift.employeeId) {
+        return res
+          .status(403)
+          .json({ error: "Nur eigene Dienste können getauscht werden" });
+      }
+
+      const requesterShiftEmployeeId = requesterShift.employeeId;
+      const targetShiftEmployeeId = targetShift.employeeId;
+      if (!requesterShiftEmployeeId || !targetShiftEmployeeId) {
+        return res
+          .status(400)
+          .json({ error: "Dienst ohne zugeordnete Person" });
+      }
+
+      const clinicId = await resolveClinicIdFromUser(req.user);
+      if (!clinicId) {
+        return res
+          .status(400)
+          .json({ error: "Klinik-Kontext fehlt" });
+      }
+
+      const serviceLineRows = await db
+        .select()
+        .from(serviceLines)
+        .where(
+          and(
+            eq(serviceLines.clinicId, clinicId),
+            eq(serviceLines.isActive, true),
+          ),
+        );
+      const swapableKeys = getServiceLineKeysByFlag(
+        serviceLineRows,
+        "allowsSwap",
+      );
+
+      if (
+        !requesterShift.serviceType ||
+        !swapableKeys.has(requesterShift.serviceType)
+      ) {
+        return res
+          .status(403)
+          .json({ error: "RequesterShift erlaubt keinen Tausch" });
+      }
+      if (
+        !targetShift.serviceType ||
+        !swapableKeys.has(targetShift.serviceType)
+      ) {
+        return res
+          .status(403)
+          .json({ error: "TargetShift erlaubt keinen Tausch" });
+      }
+
+      const [requesterEmployee] = await db
+        .select()
+        .from(employees)
+        .where(eq(employees.id, requesterShiftEmployeeId));
+      const [targetEmployee] = await db
+        .select()
+        .from(employees)
+        .where(eq(employees.id, targetShiftEmployeeId));
+
+      if (!requesterEmployee || !targetEmployee) {
+        return res.status(404).json({ error: "Mitarbeiter nicht gefunden" });
+      }
+
+      const allowedRequesterSwapKeys = filterKeysByFlag(
+        getEffectiveServiceLineKeys(requesterEmployee, serviceLineRows),
+        serviceLineRows,
+        "allowsSwap",
+      );
+      if (!allowedRequesterSwapKeys.has(requesterShift.serviceType)) {
+        return res
+          .status(403)
+          .json({
+            error: "Sie dürfen diesen Diensttyp nicht tauschen",
+          });
+      }
+
+      const allowedTargetSwapKeys = filterKeysByFlag(
+        getEffectiveServiceLineKeys(targetEmployee, serviceLineRows),
+        serviceLineRows,
+        "allowsSwap",
+      );
+      if (!allowedTargetSwapKeys.has(targetShift.serviceType)) {
+        return res
+          .status(403)
+          .json({
+            error: "Zielperson darf diesen Diensttyp nicht tauschen",
+          });
+      }
+
       const request = await storage.createShiftSwapRequest(req.body);
       res.status(201).json(request);
     } catch (error) {

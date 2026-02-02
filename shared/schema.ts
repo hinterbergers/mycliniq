@@ -269,6 +269,8 @@ export const serviceLines = pgTable(
   sortOrder: integer("sort_order").notNull().default(0),
   isActive: boolean("is_active").notNull().default(true),
   requiredDaily: boolean("required_daily").notNull().default(false),
+  allowsSwap: boolean("allows_swap").notNull().default(true),
+  allowsClaim: boolean("allows_claim").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
