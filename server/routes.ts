@@ -2557,14 +2557,14 @@ export async function registerRoutes(
         const getRoleRank = (role?: string | null) => {
           const r = (role ?? "").toLowerCase();
           if (!r) return 99;
-        
+
           // Top: Primar/Primaria
           if (r.includes("primar")) return 0;
-        
+
           // 1. OA
           if (r.includes("1.") && r.includes("ober")) return 1;
           if (r.includes("erster") && r.includes("ober")) return 1;
-        
+
           // OA / Facharzt (gemeinsamer Block)
           if (
             r.includes("oberarzt") ||
@@ -2573,15 +2573,25 @@ export async function registerRoutes(
             r.includes("fachärzt") ||
             r.includes("funktionsober") ||
             r.includes("ausbildungsober")
-          )
+          ) {
             return 2;
-        
+          }
+
           // Assistenz
           if (r.includes("assistenz")) return 3;
-        
+
+          // Turnus
+          if (r.includes("turnus")) return 4;
+
+          // Sekretariat / Pflege / Sonstige
+          if (r.includes("sekret")) return 10;
+          if (r.includes("pflege")) return 20;
+
+          return 90;
+        };
           // Turnus
           if (r.includes("turnus")) return 4;
         
           // Default
           return 99;
-        };
+        }
