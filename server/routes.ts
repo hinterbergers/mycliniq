@@ -2589,9 +2589,2909 @@ export async function registerRoutes(
 
           return 90;
         };
-          // Turnus
-          if (r.includes("turnus")) return 4;
-        
-          // Default
-          return 99;
+
+const buildAttendanceMembers = (
+          meta: { date: string; weekKey: string; isoDay: number },
+          absentIds: Set<number>,
+        ): AttendanceMember[] => {
+          const effectiveAssignments = buildEffectiveAssignmentsForMeta(meta);
+          const dutyIdsForDay = dutyEmployeeIdsForDate(meta.date);
+
+          const seen = new Set<number>();
+          const members: AttendanceMember[] = [];
+
+          for (const assignment of effectiveAssignments) {
+            const employeeId = assignment.employeeId ?? null;
+            if (!employeeId) continue;
+            if (absentIds.has(employeeId)) continue;
+            if (seen.has(employeeId)) continue;
+            seen.add(employeeId);
+
+            const employeeData = employeeMetaMap.get(employeeId);
+            const firstName =
+              employeeData?.firstName ?? normalizeName(assignment.firstName) ?? null;
+            const lastName =
+              employeeData?.lastName ?? normalizeName(assignment.lastName) ?? null;
+            if (!firstName && !lastName) continue;
+
+            const role = employeeData?.role ?? null;
+
+            const isDuty = dutyIdsForDay.has(employeeId);
+
+            const workplace = buildWeeklyPlanWorkplaceLabel({
+              roomName: assignment.roomName,
+              roleLabel: assignment.roleLabel,
+            });
+
+            members.push({ employeeId, firstName, lastName, workplace, role, isDuty });
+          }
+
+          // Sortierung: zuerst Hierarchie, dann alphabetisch (wenn Rang gleich)
+          members.sort((a, b) => {
+            const aRank = getRoleRank(a.role);
+            const bRank = getRoleRank(b.role);
+            if (aRank !== bRank) return aRank - bRank;
+
+            const aLast = a.lastName ?? "";
+            const bLast = b.lastName ?? "";
+            const lastCmp = aLast.localeCompare(bLast, "de");
+            if (lastCmp !== 0) return lastCmp;
+
+            const aFirst = a.firstName ?? "";
+            const bFirst = b.firstName ?? "";
+            const firstCmp = aFirst.localeCompare(bFirst, "de");
+            if (firstCmp !== 0) return firstCmp;
+
+            // (optional stabil) Arbeitsplatz als letzter Tie-Breaker
+            const aWork = a.workplace ?? "";
+            const bWork = b.workplace ?? "";
+            return aWork.localeCompare(bWork, "de");
+          });
+
+          return members;
+        };
+
+        const weekPreview = previewMeta.map(({ date, weekKey, isoDay }) => {
+          const absenceReason = absenceReasonForDate(date);
+
+          const dayKey = `${weekKey}-${isoDay}`;
+          const assignmentsForDay = assignmentsByDayKey.get(dayKey) ?? [];
+          const overridesForDay = overridesByDate.get(date) ?? [];
+          const effectiveAssignments = assignmentsForDay.map((assignment) => {
+            const matchingOverride = overridesForDay.find(
+              (override) =>
+                override.roomId === assignment.roomId &&
+                override.originalEmployeeId === assignment.employeeId,
+            );
+
+            return {
+              ...assignment,
+              employeeId: matchingOverride
+                ? (matchingOverride.newEmployeeId ?? null)
+                : assignment.employeeId,
+            };
+          });
+
+          const userAssignment = user.employeeId
+            ? effectiveAssignments.find(
+                (assignment) => assignment.employeeId === user.employeeId,
+              )
+            : undefined;
+
+          let workplace: string | null = null;
+          const teammates: Array<{
+            firstName: string | null;
+            lastName: string | null;
+          }> = [];
+
+          if (userAssignment) {
+            const roomName = normalizeName(userAssignment.roomName);
+            workplace =
+              roomName && roomName !== "Diensthabende" ? roomName : null;
+
+            if (userAssignment.roomId) {
+              const seen = new Set<number>();
+              for (const assignment of effectiveAssignments) {
+                if (
+                  !assignment.employeeId ||
+                  assignment.employeeId === user.employeeId
+                )
+                  continue;
+                if (assignment.roomId !== userAssignment.roomId) continue;
+                if (seen.has(assignment.employeeId)) continue;
+                seen.add(assignment.employeeId);
+
+                const employeeData = employeeMetaMap.get(assignment.employeeId);
+                const firstName = employeeData?.firstName ?? null;
+                const lastName = employeeData?.lastName ?? null;
+                if (!firstName && !lastName) continue;
+
+                teammates.push({ firstName, lastName });
+              }
+
+              teammates.sort((a, b) => {
+                const aLast = a.lastName ?? "";
+                const bLast = b.lastName ?? "";
+                const lastCompare = aLast.localeCompare(bLast);
+                if (lastCompare !== 0) return lastCompare;
+                const aFirst = a.firstName ?? "";
+                const bFirst = b.firstName ?? "";
+                return aFirst.localeCompare(bFirst);
+              });
+            }
+          }
+
+          const shift = userShifts.get(date);
+          const statusLabel = shift ? getServiceLabel(shift.serviceType) : null;
+
+          return {
+            date,
+            statusLabel,
+            workplace,
+            teammates,
+            absenceReason,
+          };
+        });
+        // --- Attendance widget (Heute / Morgen) -----------------------------------
+        const todayMeta = previewMeta[0];
+        const tomorrowMeta = previewMeta[1];
+
+        // For the dashboard we only treat *approved* absences as “absent”,
+        // otherwise the widget can become empty if many requests are still planned.
+        const approvedAbsentEmployeeIdsForDate = (date: string) => {
+          const set = new Set<number>();
+          plannedAbsenceRowsForPreview.forEach((row) => {
+            if (row.status !== "Genehmigt") return;
+            const employeeId = row.employeeId;
+            if (!employeeId) return;
+            const rowStart = String(row.startDate);
+            const rowEnd = String(row.endDate);
+            if (rowStart <= date && rowEnd >= date) set.add(employeeId);
+          });
+          return set;
+        };
+
+        const todayAbsentIds = todayMeta
+          ? approvedAbsentEmployeeIdsForDate(todayMeta.date)
+          : new Set<number>();
+
+        const tomorrowAbsentIds = tomorrowMeta
+          ? approvedAbsentEmployeeIdsForDate(tomorrowMeta.date)
+          : new Set<number>();
+
+        const attendanceWidget =
+          todayMeta && tomorrowMeta
+            ? {
+                today: {
+                  members: buildAttendanceMembers(todayMeta, todayAbsentIds),
+                  absentCount: todayAbsentIds.size,
+                },
+                tomorrow: {
+                  members: buildAttendanceMembers(
+                    tomorrowMeta,
+                    tomorrowAbsentIds,
+                  ),
+                  absentCount: tomorrowAbsentIds.size,
+                },
+              }
+            : null;
+        const todayEntry = weekPreview[0];
+        let todayZe: { id: number; possible: true; accepted: boolean } | null =
+          null;
+        if (user.employeeId) {
+          const [zeEntry] = await db
+            .select({
+              id: plannedAbsences.id,
+              accepted: plannedAbsences.accepted,
+            })
+            .from(plannedAbsences)
+            .where(
+              and(
+                eq(plannedAbsences.employeeId, user.employeeId),
+                eq(plannedAbsences.reason, "Zeitausgleich"),
+                lte(plannedAbsences.startDate, todayVienna),
+                gte(plannedAbsences.endDate, todayVienna),
+                ne(plannedAbsences.status, "Abgelehnt"),
+              ),
+            )
+            .limit(1);
+          if (zeEntry) {
+            todayZe = {
+              id: zeEntry.id,
+              possible: true,
+              accepted: Boolean(zeEntry.accepted),
+            };
+          }
         }
+        const targetDate = parseIsoDateUtc(todayVienna);
+        const birthdayCandidates = await db
+          .select({
+            firstName: employees.firstName,
+            lastName: employees.lastName,
+          })
+          .from(employees)
+          .where(
+            and(
+              eq(employees.isActive, true),
+              ne(employees.role, "Sekretariat"),
+              isNotNull(employees.birthday),
+              sql`EXTRACT(MONTH FROM ${employees.birthday}) = ${targetDate.getUTCMonth() + 1}`,
+              sql`EXTRACT(DAY FROM ${employees.birthday}) = ${targetDate.getUTCDate()}`,
+            ),
+          )
+          .orderBy(asc(employees.lastName))
+          .limit(1);
+
+        const birthdayPerson = birthdayCandidates[0];
+        const birthday = birthdayPerson
+          ? {
+              firstName: normalize(birthdayPerson.firstName),
+              lastName: normalize(birthdayPerson.lastName),
+            }
+          : null;
+
+          res.json({
+            today: {
+              date: todayEntry.date,
+              statusLabel: todayEntry.statusLabel,
+              workplace: todayEntry.workplace,
+              teammates: todayEntry.teammates,
+              absenceReason: todayEntry.absenceReason ?? null,
+              ze: todayZe,
+            },
+            birthday,
+            weekPreview,
+            attendanceWidget,
+          });
+        } catch (error) {
+          console.error("[Dashboard] Error:", error);
+          res.status(500).json({ error: "Fehler beim Laden des Dashboards" });
+        }
+      },
+    );
+
+    app.get(
+      "/api/dashboard/absences",
+      requireAuth,
+      async (req: Request, res: Response) => {
+        try {
+          const user = req.user!;
+          const todayVienna = VIENNA_DATE_FORMAT.format(new Date());
+          const fromParam = parseIsoDateParam(req.query.from);
+          const toParam = parseIsoDateParam(req.query.to);
+          const from = fromParam ?? todayVienna;
+          const to =
+            toParam ?? addDaysToIso(todayVienna, DASHBOARD_PREVIEW_DAYS - 1);
+          const departmentId = user.departmentId;
+
+          if (!departmentId) {
+            return res.json({
+              success: true,
+              data: { from, to, days: [] },
+            });
+          }
+
+          // Planned absences (Urlaub, Zeitausgleich, Ruhezeit, Fortbildung, ...)
+          const plannedRows = await db
+            .select({
+              startDate: plannedAbsences.startDate,
+              endDate: plannedAbsences.endDate,
+              reason: plannedAbsences.reason,
+              firstName: employees.firstName,
+              lastName: employees.lastName,
+            })
+            .from(plannedAbsences)
+            .innerJoin(employees, eq(plannedAbsences.employeeId, employees.id))
+            .where(
+              and(
+                eq(employees.departmentId, departmentId),
+                ne(plannedAbsences.status, "Abgelehnt"),
+                gte(plannedAbsences.endDate, from),
+                lte(plannedAbsences.startDate, to),
+              ),
+            );
+
+          // Recorded absences (optional) – e.g. Krankenstand
+          const recordedRows = await db
+            .select({
+              startDate: absences.startDate,
+              endDate: absences.endDate,
+              reason: absences.reason,
+              firstName: employees.firstName,
+              lastName: employees.lastName,
+            })
+            .from(absences)
+            .innerJoin(employees, eq(absences.employeeId, employees.id))
+            .where(
+              and(
+                eq(employees.departmentId, departmentId),
+                gte(absences.endDate, from),
+                lte(absences.startDate, to),
+              ),
+            );
+
+          const rows = [...plannedRows, ...recordedRows];
+
+          const fromDateObj = parseIsoDateUtc(from);
+          const toDateObj = parseIsoDateUtc(to);
+          const rangeEndDate =
+            toDateObj < fromDateObj ? fromDateObj : toDateObj;
+          const adjustedTo = toDateObj < fromDateObj ? from : to;
+          const totalDays =
+            Math.floor(
+              (rangeEndDate.getTime() - fromDateObj.getTime()) / DAY_MS,
+            ) + 1;
+          const dayCount = Math.max(totalDays, 1);
+          const dayRange = buildPreviewDateRange(from, dayCount);
+
+          const dayMap = new Map<
+            string,
+            Map<AbsenceCategory, Set<string>>
+          >();
+
+          rows.forEach((row) => {
+            const name = formatDisplayName(row.firstName, row.lastName);
+            if (!name) return;
+
+            const type = mapAbsenceCategory(row.reason);
+            const entryStart = parseIsoDateUtc(
+              typeof row.startDate === "string"
+                ? row.startDate
+                : formatDate(row.startDate),
+            );
+            const entryEnd = parseIsoDateUtc(
+              typeof row.endDate === "string"
+                ? row.endDate
+                : formatDate(row.endDate),
+            );
+
+            if (entryEnd < fromDateObj || entryStart > rangeEndDate) {
+              return;
+            }
+
+            const iterationStart =
+              entryStart < fromDateObj
+                ? new Date(fromDateObj)
+                : new Date(entryStart);
+            const iterationEnd =
+              entryEnd > rangeEndDate
+                ? new Date(rangeEndDate)
+                : new Date(entryEnd);
+
+            const cursor = new Date(iterationStart);
+            while (cursor <= iterationEnd) {
+              const dateKey = formatDateUtc(cursor);
+              const typeMap = dayMap.get(dateKey) ?? new Map();
+              const nameSet = typeMap.get(type) ?? new Set<string>();
+              nameSet.add(name);
+              typeMap.set(type, nameSet);
+              dayMap.set(dateKey, typeMap);
+              cursor.setUTCDate(cursor.getUTCDate() + 1);
+            }
+          });
+
+          const days = dayRange.map((date) => {
+            const typeMap = dayMap.get(date);
+            if (!typeMap) {
+              return { date, types: [] };
+            }
+
+            const types = Array.from(typeMap.entries())
+              .map(([type, names]) => ({
+                type,
+                names: Array.from(names).sort((a, b) =>
+                  a.localeCompare(b, "de"),
+                ),
+              }))
+              .sort((a, b) => {
+                const rankA = ABSENCE_CATEGORY_ORDER.indexOf(
+                  a.type as AbsenceCategory,
+                );
+                const rankB = ABSENCE_CATEGORY_ORDER.indexOf(
+                  b.type as AbsenceCategory,
+                );
+                const orderA =
+                  rankA >= 0 ? rankA : ABSENCE_CATEGORY_ORDER.length;
+                const orderB =
+                  rankB >= 0 ? rankB : ABSENCE_CATEGORY_ORDER.length;
+                return orderA - orderB;
+              });
+
+            return { date, types };
+          });
+
+          res.json({
+            success: true,
+            data: { from, to: adjustedTo, days },
+          });
+        } catch (error) {
+          console.error("[Dashboard] Absences error:", error);
+          res.status(500).json({
+            success: false,
+            error: "Fehler beim Laden der Abwesenheiten",
+          });
+        }
+      },
+    );
+
+    app.post(
+      "/api/zeitausgleich/:id/accept",
+      requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const zeId = Number(req.params.id);
+        if (Number.isNaN(zeId)) {
+          return res
+            .status(400)
+            .json({ success: false, error: "Ungültige Zeitausgleich-ID" });
+        }
+
+        const [entry] = await db
+          .select()
+          .from(plannedAbsences)
+          .where(eq(plannedAbsences.id, zeId));
+
+        if (!entry) {
+          return res
+            .status(404)
+            .json({ success: false, error: "Zeitausgleich nicht gefunden" });
+        }
+
+        if (entry.reason !== "Zeitausgleich") {
+          return res.status(400).json({
+            success: false,
+            error: "Nur Zeitausgleich-Einträge können akzeptiert werden",
+          });
+        }
+
+        const currentEmployeeId = req.user?.employeeId;
+        if (!currentEmployeeId || entry.employeeId !== currentEmployeeId) {
+          return res.status(403).json({
+            success: false,
+            error: "Keine Berechtigung für diesen Zeitausgleich",
+          });
+        }
+
+        if (entry.status === "Abgelehnt") {
+          return res.status(400).json({
+            success: false,
+            error: "Dieser Zeitausgleich wurde bereits abgelehnt",
+          });
+        }
+
+        const [updated] = await db
+          .update(plannedAbsences)
+          .set({
+            accepted: true,
+            acceptedAt: new Date(),
+            acceptedById: currentEmployeeId,
+            updatedAt: new Date(),
+          })
+          .where(eq(plannedAbsences.id, zeId))
+          .returning();
+
+        return res.json({
+          success: true,
+          data: {
+            id: updated.id,
+            accepted: Boolean(updated.accepted),
+            acceptedAt: updated.acceptedAt,
+            acceptedById: updated.acceptedById,
+          },
+        });
+      } catch (error) {
+        console.error("[Zeitausgleich] Accept error:", error);
+        res.status(500).json({
+          success: false,
+          error: "Zeitausgleich konnte nicht akzeptiert werden",
+        });
+      }
+    },
+  );
+
+  app.get("/api/roster/calendar", async (req: Request, res: Response) => {
+      try {
+      const token = getAuthTokenFromRequest(req);
+
+      if (!token) {
+        return res.status(401).json({
+          success: false,
+          error: "Ungültiges oder abgelaufenes Token",
+        });
+      }
+
+      const sessionToken = token;
+
+      const [sessionRow] = await db
+        .select({ employeeId: sessions.employeeId })
+        .from(sessions)
+        .where(eq(sessions.token, sessionToken))
+        .limit(1);
+
+        let employeeId: number | undefined;
+        if (sessionRow) {
+          employeeId = sessionRow.employeeId;
+        } else {
+          const jwtSecret = process.env.JWT_SECRET;
+          if (!jwtSecret) {
+            console.error("JWT_SECRET fehlt für Kalender-Token");
+            return res.status(500).json({
+              success: false,
+              error: "Serverkonfiguration fehlerhaft",
+            });
+          }
+        let payload: Record<string, unknown>;
+        try {
+          payload = verifyJwtIgnoreExpiration(sessionToken, jwtSecret);
+        } catch (error) {
+            return res.status(401).json({
+              success: false,
+              error: "Ungültiges oder abgelaufenes Token",
+            });
+          }
+          const candidate =
+            (typeof payload.employeeId === "number" && payload.employeeId) ||
+            (typeof payload.userId === "number" && payload.userId) ||
+            (typeof payload.id === "number" && payload.id) ||
+            (typeof payload.sub === "number" && payload.sub) ||
+            (typeof payload.employeeId === "string" &&
+              Number(payload.employeeId)) ||
+            (typeof payload.userId === "string" && Number(payload.userId)) ||
+            (typeof payload.id === "string" && Number(payload.id)) ||
+            (typeof payload.sub === "string" && Number(payload.sub));
+          if (Number.isFinite(candidate)) {
+            employeeId = Number(candidate);
+          }
+        }
+
+        if (!employeeId) {
+          return res.status(401).json({
+            success: false,
+            error: "Ungültiges oder abgelaufenes Token",
+          });
+        }
+
+        const sessionEmployee = await storage.getEmployee(employeeId);
+        if (!sessionEmployee) {
+          return res.status(401).json({
+            success: false,
+            error: "Ungültiges oder abgelaufenes Token",
+          });
+        }
+
+        const monthsParam = Number(
+          typeof req.query.months === "string" ? req.query.months : undefined,
+        );
+        const months = Number.isFinite(monthsParam)
+          ? Math.min(Math.max(monthsParam, 1), 12)
+          : 6;
+        const startParam =
+          typeof req.query.start === "string"
+            ? new Date(req.query.start)
+            : null;
+        const startDate =
+          startParam && !Number.isNaN(startParam.getTime())
+            ? new Date(startParam.getFullYear(), startParam.getMonth(), 1)
+            : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+
+        const monthStarts: Array<{ year: number; month: number }> = [];
+        for (let i = 0; i < months; i += 1) {
+          const date = new Date(
+            startDate.getFullYear(),
+            startDate.getMonth() + i,
+            1,
+          );
+          monthStarts.push({
+            year: date.getFullYear(),
+            month: date.getMonth() + 1,
+          });
+        }
+
+        const allShifts: RosterShift[] = [];
+        for (const { year, month } of monthStarts) {
+          const monthShifts = await storage.getRosterShiftsByMonth(year, month);
+          allShifts.push(...monthShifts);
+        }
+
+        const [empClinic] = await db
+          .select({ clinicId: departments.clinicId })
+          .from(employees)
+          .leftJoin(
+            departments,
+            eq(departments.id, employees.departmentId),
+          )
+          .where(eq(employees.id, employeeId ?? sessionEmployee.id))
+          .limit(1);
+        const clinicId = empClinic?.clinicId ?? null;
+        if (!clinicId) {
+          return res.status(400).json({ error: "Klinik-ID fehlt" });
+        }
+
+        const serviceLineRows = await loadServiceLines(clinicId);
+        const serviceLineByKey = new Map(
+          serviceLineRows.map((line) => [line.key, line]),
+        );
+
+        const employeeRows = await storage.getEmployees();
+        const employeesById = new Map(
+          employeeRows.map((emp) => [
+            emp.id,
+            {
+              displayName: buildDisplayName(
+                emp.firstName,
+                emp.lastName,
+                emp.name ?? emp.lastName,
+              ),
+              phonePrivate: emp.phonePrivate || null,
+            },
+          ]),
+        );
+
+        type ShiftsByDate = Record<string, RosterShift[]>;
+const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
+  (acc, shift) => {
+    if (!acc[shift.date]) acc[shift.date] = [];
+    acc[shift.date].push(shift);
+    return acc;
+  },
+  {},
+);
+
+        const currentEmployeeId = sessionEmployee.id;
+
+        const dtStamp =
+          new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+
+          const rosterSummaryForServiceType = (serviceType: string) => {
+            const key = (serviceType || "").toLowerCase();
+            if (key.includes("kreis") || key.includes("geb")) return "Nachtdienst (Geburtshilfe)";
+            if (key === "gyn" || key.includes("gyn")) return "Nachtdienst (Gyn)";
+            if (key.includes("turnus")) return "Turnusdienst";
+            if (key.includes("over") || key.includes("ueber") || key.includes("über") || key === OVERDUTY_KEY.toLowerCase())
+              return "Überdienst";
+            if (key.includes("long")) return "LongDay";
+            return serviceType;
+          };
+
+        const events = allShifts
+          .filter((shift) => shift.employeeId === currentEmployeeId)
+          .map((shift) => {
+            const line = serviceLineByKey.get(shift.serviceType) || {
+              key: shift.serviceType,
+              label: shift.serviceType,
+              startTime: "07:30",
+              endTime: "08:00",
+              endsNextDay: true,
+              sortOrder: 0,
+              isActive: true,
+            };
+            const startDateTime = buildDateTime(shift.date, line.startTime);
+            const endDateTime = buildDateTime(shift.date, line.endTime);
+            if (line.endsNextDay) {
+              endDateTime.setDate(endDateTime.getDate() + 1);
+            }
+              const serviceLabel = rosterSummaryForServiceType(shift.serviceType);
+
+            const others = (shiftsByDate[shift.date] || [])
+              .filter((other) => other.employeeId !== currentEmployeeId)
+              .map((other) => {
+                const otherEmployee = other.employeeId
+                  ? employeesById.get(other.employeeId)
+                  : null;
+                const name =
+                  otherEmployee?.displayName ||
+                  other.assigneeFreeText ||
+                  "Unbekannt";
+                if (
+                  other.serviceType === OVERDUTY_KEY &&
+                  otherEmployee?.phonePrivate
+                ) {
+                  return `${name} (${otherEmployee.phonePrivate})`;
+                }
+                return name;
+              });
+
+            const description = others.length
+              ? others.join("\n")
+              : "Keine weiteren Dienste";
+
+            return [
+              "BEGIN:VEVENT",
+              `UID:roster-${shift.id}-${currentEmployeeId}@mycliniq`,
+              `DTSTAMP:${dtStamp}`,
+              `DTSTART:${toIcsDateTimeLocal(startDateTime)}`,
+              `DTEND:${toIcsDateTimeLocal(endDateTime)}`,
+              `SUMMARY:${escapeIcs(serviceLabel)}`,
+              `DESCRIPTION:${escapeIcs(description)}`,
+              "END:VEVENT",
+            ].join("\r\n");
+          });
+
+        const calendar = [
+          "BEGIN:VCALENDAR",
+          "VERSION:2.0",
+          "X-PUBLISHED-TTL:PT1H",
+          "PRODID:-//MyCliniQ//Roster//DE",
+          "CALSCALE:GREGORIAN",
+          "METHOD:PUBLISH",
+          ...events,
+          "END:VCALENDAR",
+        ].join("\r\n");
+
+        res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+        res.setHeader(
+          "Content-Disposition",
+          'inline; filename="dienstplan.ics"',
+        );
+        res.send(calendar);
+      } catch (error: any) {
+        console.error("Roster calendar export error:", error);
+        res
+          .status(500)
+          .json({ error: "Kalender konnte nicht erstellt werden" });
+      }
+    },
+  );
+
+  app.get("/api/weekly/calendar", async (req: Request, res: Response) => {
+    try {
+      const token = getAuthTokenFromRequest(req);
+      if (!token) {
+        return res.status(401).json({
+          success: false,
+          error: "Ungültiges oder abgelaufenes Token",
+        });
+      }
+      const sessionToken = token;
+
+      const [sessionRow] = await db
+        .select({ employeeId: sessions.employeeId })
+        .from(sessions)
+        .where(eq(sessions.token, sessionToken))
+        .limit(1);
+
+      let employeeId: number | undefined;
+      if (sessionRow) {
+        employeeId = sessionRow.employeeId;
+      } else {
+        const jwtSecret = process.env.JWT_SECRET;
+        if (!jwtSecret) {
+          console.error("JWT_SECRET fehlt für Kalender-Token");
+          return res.status(500).json({
+            success: false,
+            error: "Serverkonfiguration fehlerhaft",
+          });
+        }
+        let payload: Record<string, unknown>;
+        try {
+          payload = verifyJwtIgnoreExpiration(sessionToken, jwtSecret);
+        } catch (error) {
+          return res.status(401).json({
+            success: false,
+            error: "Ungültiges oder abgelaufenes Token",
+          });
+        }
+        const candidate =
+          (typeof payload.employeeId === "number" && payload.employeeId) ||
+          (typeof payload.userId === "number" && payload.userId) ||
+          (typeof payload.id === "number" && payload.id) ||
+          (typeof payload.sub === "number" && payload.sub) ||
+          (typeof payload.employeeId === "string" &&
+            Number(payload.employeeId)) ||
+          (typeof payload.userId === "string" && Number(payload.userId)) ||
+          (typeof payload.id === "string" && Number(payload.id)) ||
+          (typeof payload.sub === "string" && Number(payload.sub));
+        if (Number.isFinite(candidate)) {
+          employeeId = Number(candidate);
+        }
+      }
+
+      if (!employeeId) {
+        return res.status(401).json({
+          success: false,
+          error: "Ungültiges oder abgelaufenes Token",
+        });
+      }
+
+      const sessionEmployee = await storage.getEmployee(employeeId);
+      if (!sessionEmployee) {
+        return res.status(401).json({
+          success: false,
+          error: "Ungültiges oder abgelaufenes Token",
+        });
+      }
+
+      const [empClinic] = await db
+        .select({ clinicId: departments.clinicId })
+        .from(employees)
+        .leftJoin(
+          departments,
+          eq(departments.id, employees.departmentId),
+        )
+        .where(eq(employees.id, employeeId))
+        .limit(1);
+      const clinicId = empClinic?.clinicId ?? null;
+      if (!clinicId) {
+        return res.status(400).json({ error: "Klinik-ID fehlt" });
+      }
+
+      const weeksParamValue =
+        typeof req.query.weeks === "string"
+          ? req.query.weeks
+          : Array.isArray(req.query.weeks)
+          ? req.query.weeks[0]
+          : undefined;
+      const weeksParam = Number(weeksParamValue);
+      const weeks = Number.isFinite(weeksParam)
+        ? Math.min(Math.max(Math.floor(weeksParam), 1), 26)
+        : 8;
+
+      const today = new Date();
+      const currentWeekStart = startOfWeek(today, { weekStartsOn: 1 });
+      const weekOptions = {
+        weekStartsOn: 1 as const,
+        firstWeekContainsDate: 4 as const,
+      };
+      const weeksInfo: Array<{
+        weekYear: number;
+        weekNumber: number;
+        startDate: Date;
+      }> = [];
+      for (let i = 0; i < weeks; i += 1) {
+        const weekStart = addWeeks(currentWeekStart, i);
+        weeksInfo.push({
+          weekYear: getWeekYear(weekStart),
+          weekNumber: getWeek(weekStart, weekOptions),
+          startDate: weekStart,
+        });
+      }
+
+      const weekStartByKey = new Map(
+        weeksInfo.map((info) => [
+          `${info.weekYear}-${info.weekNumber}`,
+          info.startDate,
+        ]),
+      );
+
+      const planKeyById = new Map<number, string>();
+      await Promise.all(
+        Array.from(weekStartByKey.keys()).map(async (weekKey) => {
+          const [weekYearStr, weekNumberStr] = weekKey.split("-");
+          const weekYear = Number(weekYearStr);
+          const weekNumber = Number(weekNumberStr);
+          const [planRow] = await db
+            .select({
+              id: weeklyPlans.id,
+              year: weeklyPlans.year,
+              weekNumber: weeklyPlans.weekNumber,
+            })
+            .from(weeklyPlans)
+            .where(
+              and(
+                eq(weeklyPlans.year, weekYear),
+                eq(weeklyPlans.weekNumber, weekNumber),
+              ),
+            )
+            .limit(1);
+          if (planRow?.id) {
+            planKeyById.set(planRow.id, weekKey);
+          }
+        }),
+      );
+
+      const planIds = Array.from(planKeyById.keys());
+
+      const assignments =
+        planIds.length > 0
+          ? await db
+              .select({
+                weeklyPlanId: weeklyPlanAssignments.weeklyPlanId,
+                weekday: weeklyPlanAssignments.weekday,
+                roomId: weeklyPlanAssignments.roomId,
+                roomName: rooms.name,
+                roomCategory: rooms.category,
+                employeeId: weeklyPlanAssignments.employeeId,
+                firstName: employees.firstName,
+                lastName: employees.lastName,
+                employeeName: employees.name,
+                roleLabel: weeklyPlanAssignments.roleLabel,
+              })
+              .from(weeklyPlanAssignments)
+              .leftJoin(rooms, eq(weeklyPlanAssignments.roomId, rooms.id))
+              .leftJoin(
+                employees,
+                eq(weeklyPlanAssignments.employeeId, employees.id),
+              )
+              .where(inArray(weeklyPlanAssignments.weeklyPlanId, planIds))
+          : [];
+
+      type AssignmentEntry = {
+        areaTitle: string;
+        areaKey: string;
+        isLongDay: boolean;
+        date: string;
+        employees: Array<{ id: number | null; name: string }>;
+      };
+
+      const containsLong = (value?: string | null) =>
+        typeof value === "string" && value.toLowerCase().includes("long");
+
+      const buildAreaTitle = (category?: string | null, name?: string | null) => {
+        const parts: string[] = [];
+        if (category) {
+          const trimmed = category.trim();
+          if (trimmed) parts.push(trimmed);
+        }
+        if (name) {
+          const trimmed = name.trim();
+          if (trimmed) parts.push(trimmed);
+        }
+        if (parts.length) {
+          return parts.join(" | ");
+        }
+        return name || category || "Wochenplan";
+      };
+
+      const assignmentsByDateArea = new Map<string, AssignmentEntry>();
+
+      assignments.forEach((assignment) => {
+        if (
+          !assignment.weeklyPlanId ||
+          !assignment.weekday ||
+          !planKeyById.has(assignment.weeklyPlanId)
+        ) {
+          return;
+        }
+        const weekKey = planKeyById.get(assignment.weeklyPlanId);
+        if (!weekKey) return;
+        const weekStart = weekStartByKey.get(weekKey);
+        if (!weekStart) return;
+
+        const eventDate = addDays(weekStart, assignment.weekday - 1);
+        const dateKey = format(eventDate, "yyyy-MM-dd");
+        const areaTitle = buildAreaTitle(
+          assignment.roomCategory,
+          assignment.roomName,
+        );
+        const areaIdKey = assignment.roomId
+          ? `room-${assignment.roomId}`
+          : `area-${areaTitle}`;
+        const mapKey = `${dateKey}|${areaIdKey}`;
+        const existing = assignmentsByDateArea.get(mapKey);
+        const isLongDay =
+          containsLong(areaTitle) ||
+          containsLong(assignment.roleLabel) ||
+          containsLong(assignment.roomCategory) ||
+          containsLong(assignment.roomName);
+        const entry: AssignmentEntry =
+          existing ?? {
+            areaTitle,
+            areaKey: areaIdKey,
+            isLongDay,
+            date: dateKey,
+            employees: [],
+          };
+        if (!existing) {
+          assignmentsByDateArea.set(mapKey, entry);
+        }
+
+        if (assignment.employeeId) {
+          entry.employees.push({
+            id: assignment.employeeId,
+            name: buildDisplayName(
+              assignment.firstName,
+              assignment.lastName,
+              assignment.employeeName,
+            ),
+          });
+        }
+      });
+
+      const events: string[] = [];
+      const dtStamp =
+        new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+
+      assignmentsByDateArea.forEach((entry) => {
+        const hasCurrent = entry.employees.some((emp) => emp.id === employeeId);
+        if (!hasCurrent) return;
+
+        const coworkers = entry.employees
+          .filter((emp) => emp.id && emp.id !== employeeId)
+          .map((emp) => emp.name)
+          .filter(
+            (value, index, array) =>
+              Boolean(value) && array.indexOf(value) === index,
+          );
+        const description = coworkers.length
+          ? coworkers.join("\n")
+          : "Keine weiteren Personen";
+        const startTime = entry.isLongDay ? "13:30" : "07:30";
+        const endTime = entry.isLongDay ? "18:00" : "13:30";
+        const startDateTime = buildDateTime(entry.date, startTime);
+        const endDateTime = buildDateTime(entry.date, endTime);
+
+        const normalizedTitle = normalizeWorkplaceTitle(entry.areaTitle);
+        events.push(
+          [
+            "BEGIN:VEVENT",
+            `UID:weekly-${entry.date}-${entry.areaKey}-${employeeId}@mycliniq`,
+            `DTSTAMP:${dtStamp}`,
+            `DTSTART:${toIcsDateTimeLocal(startDateTime)}`,
+            `DTEND:${toIcsDateTimeLocal(endDateTime)}`,
+            `SUMMARY:${escapeIcs(normalizedTitle)}`,
+            `DESCRIPTION:${escapeIcs(description)}`,
+            "END:VEVENT",
+          ].join("\r\n"),
+        );
+      });
+
+      const calendar = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "X-PUBLISHED-TTL:PT1H",
+        "PRODID:-//MyCliniQ//WeeklyPlan//DE",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        ...events,
+        "END:VCALENDAR",
+      ].join("\r\n");
+
+      res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+      res.setHeader(
+        "Content-Disposition",
+        'inline; filename="wochenplan.ics"',
+      );
+      res.send(calendar);
+    } catch (error: any) {
+      console.error("Weekly calendar export error:", error);
+      res.status(500).json({ error: "Kalender konnte nicht erstellt werden" });
+    }
+  });
+
+  app.get(
+    "/api/roster/export",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const year = Number(req.query.year) || new Date().getFullYear();
+        const month = Number(req.query.month) || new Date().getMonth() + 1;
+
+        const shifts = await storage.getRosterShiftsByMonth(year, month);
+        const employeeRows = await storage.getEmployees();
+        const employeesById = new Map(
+          employeeRows.map((emp) => [emp.id, emp.name]),
+        );
+        const clinicId = req.user?.clinicId;
+        if (!clinicId) {
+          return res.status(400).json({ error: "Klinik-ID fehlt" });
+        }
+
+        const serviceLineRows = await loadServiceLines(clinicId);
+        const serviceLineMap = new Map(
+          serviceLineRows.map((line) => [line.key, line]),
+        );
+        const keysWithShifts = new Set(
+          shifts.map((shift) => shift.serviceType),
+        );
+        const extraKeys = Array.from(keysWithShifts).filter(
+          (key) => !serviceLineMap.has(key),
+        );
+        const extraLines = extraKeys
+          .sort((a, b) => a.localeCompare(b))
+          .map((key) => ({
+            key,
+            label: key,
+            startTime: "07:30",
+            endTime: "08:00",
+            endsNextDay: true,
+            sortOrder: 999,
+            isActive: true,
+          }));
+        const allLines = [...serviceLineRows, ...extraLines].filter(
+          (line) => line.isActive || keysWithShifts.has(line.key),
+        );
+
+        const shiftsByDate = shifts.reduce<
+          Record<string, Record<string, RosterShift>>
+        >((acc, shift) => {
+          if (!acc[shift.date]) {
+            acc[shift.date] = {};
+          }
+          acc[shift.date][shift.serviceType] = shift;
+          return acc;
+        }, {});
+
+        const toLabel = (shift?: RosterShift) => {
+          if (!shift) return "-";
+          if (shift.employeeId) {
+            return employeesById.get(shift.employeeId) || "-";
+          }
+          return shift.assigneeFreeText || "-";
+        };
+
+        const startDate = new Date(year, month - 1, 1);
+        const endDate = new Date(year, month, 0);
+
+        const rows = [
+          ["Datum", "KW", "Tag", ...allLines.map((line) => line.label)],
+        ];
+
+        for (
+          let date = new Date(startDate);
+          date <= endDate;
+          date.setDate(date.getDate() + 1)
+        ) {
+          const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+            date.getDate(),
+          ).padStart(2, "0")}`;
+          const weekNumber = getWeek(date, {
+            weekStartsOn: 1,
+            firstWeekContainsDate: 4,
+          });
+          const weekday = date
+            .toLocaleDateString("de-DE", { weekday: "short" })
+            .replace(".", "");
+          const dayShifts = shiftsByDate[dateKey] || {};
+          rows.push([
+            date.toLocaleDateString("de-DE"),
+            String(weekNumber),
+            weekday,
+            ...allLines.map((line) => toLabel(dayShifts[line.key])),
+          ]);
+        }
+
+        const escapeCsv = (value: string) => {
+          if (
+            value.includes(";") ||
+            value.includes('"') ||
+            value.includes("\n")
+          ) {
+            return `"${value.replace(/\"/g, '""')}"`;
+          }
+          return value;
+        };
+
+        const csv =
+          "\uFEFF" +
+          rows.map((row) => row.map(escapeCsv).join(";")).join("\r\n");
+        res.setHeader(
+          "Content-Type",
+          "application/vnd.ms-excel; charset=utf-8",
+        );
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="dienstplan-${year}-${String(month).padStart(2, "0")}.xls"`,
+        );
+        res.send(csv);
+      } catch (error: any) {
+        console.error("Roster export error:", error);
+        res.status(500).json({ error: "Export fehlgeschlagen" });
+      }
+    },
+  );
+
+  // Shift swap request routes
+  app.get("/api/shift-swaps", async (req: Request, res: Response) => {
+    try {
+      const { status, employeeId, targetEmployeeId } = req.query;
+
+      if (status === "Ausstehend") {
+        const requests = await storage.getPendingShiftSwapRequests();
+        return res.json(requests);
+      }
+
+      if (employeeId) {
+        const requests = await storage.getShiftSwapRequestsByEmployee(
+          parseInt(employeeId as string),
+        );
+        return res.json(requests);
+      }
+
+      if (targetEmployeeId) {
+        const requests = await storage.getShiftSwapRequestsByTargetEmployee(
+          parseInt(targetEmployeeId as string),
+        );
+        return res.json(requests);
+      }
+
+      const requests = await storage.getShiftSwapRequests();
+      res.json(requests);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch shift swap requests" });
+    }
+  });
+
+  app.get("/api/shift-swaps/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const request = await storage.getShiftSwapRequest(id);
+      if (!request) {
+        return res.status(404).json({ error: "Shift swap request not found" });
+      }
+      res.json(request);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch shift swap request" });
+    }
+  });
+
+  app.post("/api/shift-swaps", async (req: Request, res: Response) => {
+    try {
+      const request = await storage.createShiftSwapRequest(req.body);
+      res.status(201).json(request);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create shift swap request" });
+    }
+  });
+
+  app.patch("/api/shift-swaps/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const request = await storage.updateShiftSwapRequest(id, req.body);
+      if (!request) {
+        return res.status(404).json({ error: "Shift swap request not found" });
+      }
+      res.json(request);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update shift swap request" });
+    }
+  });
+
+  app.post(
+    "/api/shift-swaps/:id/approve",
+    async (req: Request, res: Response) => {
+      try {
+        const id = parseInt(req.params.id);
+        const { approverId, notes } = req.body;
+
+        const request = await storage.updateShiftSwapRequest(id, {
+          status: "Genehmigt",
+          approverId,
+          approverNotes: notes,
+          decidedAt: new Date(),
+        });
+
+        if (!request) {
+          return res
+            .status(404)
+            .json({ error: "Shift swap request not found" });
+        }
+
+        // If approved, swap the employees in the shifts
+        if (request.targetShiftId && request.targetEmployeeId) {
+          const requesterShift = await storage.getRosterShift(
+            request.requesterShiftId,
+          );
+          const targetShift = await storage.getRosterShift(
+            request.targetShiftId,
+          );
+
+          if (requesterShift && targetShift) {
+            await storage.updateRosterShift(request.requesterShiftId, {
+              employeeId: request.targetEmployeeId,
+            });
+            await storage.updateRosterShift(request.targetShiftId, {
+              employeeId: request.requesterId,
+            });
+          }
+        }
+
+        await db
+          .update(shiftSwapRequests)
+          .set({
+            status: "Abgelehnt",
+            approverId: approverId ?? null,
+            approverNotes:
+              "Automatisch abgelehnt (anderer Tausch wurde angenommen).",
+            decidedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(shiftSwapRequests.requesterShiftId, request.requesterShiftId),
+              eq(shiftSwapRequests.status, "Ausstehend"),
+              ne(shiftSwapRequests.id, request.id),
+            ),
+          );
+
+        res.json(request);
+      } catch (error) {
+        res.status(500).json({ error: "Failed to approve shift swap request" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/shift-swaps/:id/reject",
+    async (req: Request, res: Response) => {
+      try {
+        const id = parseInt(req.params.id);
+        const { approverId, notes } = req.body;
+
+        const request = await storage.updateShiftSwapRequest(id, {
+          status: "Abgelehnt",
+          approverId,
+          approverNotes: notes,
+          decidedAt: new Date(),
+        });
+
+        if (!request) {
+          return res
+            .status(404)
+            .json({ error: "Shift swap request not found" });
+        }
+
+        res.json(request);
+      } catch (error) {
+        res.status(500).json({ error: "Failed to reject shift swap request" });
+      }
+    },
+  );
+
+  app.delete("/api/shift-swaps/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteShiftSwapRequest(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete shift swap request" });
+    }
+  });
+
+  // Absence routes
+  app.get("/api/absences", async (req: Request, res: Response) => {
+    try {
+      const { startDate, endDate, employeeId } = req.query;
+
+      if (employeeId) {
+        const absences = await storage.getAbsencesByEmployee(
+          parseInt(employeeId as string),
+        );
+        return res.json(absences);
+      }
+
+      if (startDate && endDate) {
+        const absences = await storage.getAbsencesByDateRange(
+          startDate as string,
+          endDate as string,
+        );
+        return res.json(absences);
+      }
+
+      res.status(400).json({ error: "Missing required query parameters" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch absences" });
+    }
+  });
+
+  app.post("/api/absences", async (req: Request, res: Response) => {
+    try {
+      const validatedData = insertAbsenceSchema.parse(req.body);
+      const absence = await storage.createAbsence(validatedData);
+      res.status(201).json(absence);
+    } catch (error: any) {
+      if (error.name === "ZodError") {
+        const validationError = fromZodError(error);
+        return res.status(400).json({ error: validationError.message });
+      }
+      res.status(500).json({ error: "Failed to create absence" });
+    }
+  });
+
+  app.delete("/api/absences/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteAbsence(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete absence" });
+    }
+  });
+
+  // Resource routes
+  app.get("/api/resources", async (req: Request, res: Response) => {
+    try {
+      const resources = await storage.getResources();
+      res.json(resources);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch resources" });
+    }
+  });
+
+  app.patch("/api/resources/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const resource = await storage.updateResource(id, req.body);
+      if (!resource) {
+        return res.status(404).json({ error: "Resource not found" });
+      }
+      res.json(resource);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update resource" });
+    }
+  });
+
+  // Weekly assignment routes
+  app.get(
+    "/api/weekly-assignments/:year/:week",
+    async (req: Request, res: Response) => {
+      try {
+        const year = parseInt(req.params.year);
+        const week = parseInt(req.params.week);
+        const assignments = await storage.getWeeklyAssignments(year, week);
+        res.json(assignments);
+      } catch (error) {
+        res.status(500).json({ error: "Failed to fetch weekly assignments" });
+      }
+    },
+  );
+
+  app.post("/api/weekly-assignments", async (req: Request, res: Response) => {
+    try {
+      const validatedData = insertWeeklyAssignmentSchema.parse(req.body);
+      const assignment = await storage.upsertWeeklyAssignment(validatedData);
+      res.status(201).json(assignment);
+    } catch (error: any) {
+      if (error.name === "ZodError") {
+        const validationError = fromZodError(error);
+        return res.status(400).json({ error: validationError.message });
+      }
+      res.status(500).json({ error: "Failed to create weekly assignment" });
+    }
+  });
+
+  app.post(
+    "/api/weekly-assignments/bulk",
+    async (req: Request, res: Response) => {
+      try {
+        const assignments = req.body.assignments;
+        if (!Array.isArray(assignments)) {
+          return res
+            .status(400)
+            .json({ error: "Assignments must be an array" });
+        }
+        const results = await storage.bulkUpsertWeeklyAssignments(assignments);
+        res.status(201).json(results);
+      } catch (error) {
+        res.status(500).json({ error: "Failed to save weekly assignments" });
+      }
+    },
+  );
+
+  app.delete(
+    "/api/weekly-assignments/:id",
+    async (req: Request, res: Response) => {
+      try {
+        const id = parseInt(req.params.id);
+        await storage.deleteWeeklyAssignment(id);
+        res.status(204).send();
+      } catch (error) {
+        res.status(500).json({ error: "Failed to delete weekly assignment" });
+      }
+    },
+  );
+
+  // Project Initiative routes
+  app.get("/api/projects", async (req: Request, res: Response) => {
+    try {
+      const projects = await storage.getProjectInitiatives();
+      res.json(projects);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch projects" });
+    }
+  });
+
+  app.get("/api/projects/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const project = await storage.getProjectInitiative(id);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      res.json(project);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch project" });
+    }
+  });
+
+  app.post("/api/projects", async (req: Request, res: Response) => {
+    try {
+      const validatedData = insertProjectInitiativeSchema.parse(req.body);
+      const project = await storage.createProjectInitiative(validatedData);
+      res.status(201).json(project);
+    } catch (error: any) {
+      if (error.name === "ZodError") {
+        const validationError = fromZodError(error);
+        return res.status(400).json({ error: validationError.message });
+      }
+      res.status(500).json({ error: "Failed to create project" });
+    }
+  });
+
+  app.patch("/api/projects/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const project = await storage.updateProjectInitiative(id, req.body);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      res.json(project);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update project" });
+    }
+  });
+
+  app.delete("/api/projects/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteProjectInitiative(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete project" });
+    }
+  });
+
+  // Project Tasks routes
+  app.get(
+    "/api/projects/:projectId/tasks",
+    async (req: Request, res: Response) => {
+      try {
+        const projectId = parseInt(req.params.projectId);
+        const tasks = await storage.getProjectTasks(projectId);
+        res.json(tasks);
+      } catch (error) {
+        res.status(500).json({ error: "Failed to fetch tasks" });
+      }
+    },
+  );
+
+  app.get("/api/tasks/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const task = await storage.getProjectTask(id);
+      if (!task) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+      res.json(task);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch task" });
+    }
+  });
+
+  app.post(
+    "/api/projects/:projectId/tasks",
+    async (req: Request, res: Response) => {
+      try {
+        const projectId = parseInt(req.params.projectId);
+        const validatedData = insertProjectTaskSchema.parse({
+          ...req.body,
+          initiativeId: projectId,
+        });
+        const task = await storage.createProjectTask(validatedData);
+        res.status(201).json(task);
+      } catch (error: any) {
+        if (error.name === "ZodError") {
+          const validationError = fromZodError(error);
+          return res.status(400).json({ error: validationError.message });
+        }
+        res.status(500).json({ error: "Failed to create task" });
+      }
+    },
+  );
+
+  app.patch("/api/tasks/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const task = await storage.updateProjectTask(id, req.body);
+      if (!task) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+      res.json(task);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update task" });
+    }
+  });
+
+  app.delete("/api/tasks/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteProjectTask(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete task" });
+    }
+  });
+
+  // Task Activities routes
+  app.get(
+    "/api/tasks/:taskId/activities",
+    async (req: Request, res: Response) => {
+      try {
+        const taskId = parseInt(req.params.taskId);
+        const activities = await storage.getTaskActivities(taskId);
+        res.json(activities);
+      } catch (error) {
+        res.status(500).json({ error: "Failed to fetch activities" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/tasks/:taskId/activities",
+    async (req: Request, res: Response) => {
+      try {
+        const taskId = parseInt(req.params.taskId);
+        const validatedData = insertTaskActivitySchema.parse({
+          ...req.body,
+          taskId,
+        });
+        const activity = await storage.createTaskActivity(validatedData);
+        res.status(201).json(activity);
+      } catch (error: any) {
+        if (error.name === "ZodError") {
+          const validationError = fromZodError(error);
+          return res.status(400).json({ error: validationError.message });
+        }
+        res.status(500).json({ error: "Failed to create activity" });
+      }
+    },
+  );
+
+  // Project Documents routes
+  app.get(
+    "/api/projects/:projectId/documents",
+    async (req: Request, res: Response) => {
+      try {
+        const projectId = parseInt(req.params.projectId);
+        const documents = await storage.getProjectDocuments(projectId);
+        res.json(documents);
+      } catch (error) {
+        res.status(500).json({ error: "Failed to fetch documents" });
+      }
+    },
+  );
+
+  app.get("/api/documents/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const document = await storage.getProjectDocument(id);
+      if (!document) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+      res.json(document);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch document" });
+    }
+  });
+
+  app.post(
+    "/api/projects/:projectId/documents",
+    async (req: Request, res: Response) => {
+      try {
+        const projectId = parseInt(req.params.projectId);
+        const validatedData = insertProjectDocumentSchema.parse({
+          ...req.body,
+          initiativeId: projectId,
+        });
+        const document = await storage.createProjectDocument(validatedData);
+        res.status(201).json(document);
+      } catch (error: any) {
+        if (error.name === "ZodError") {
+          const validationError = fromZodError(error);
+          return res.status(400).json({ error: validationError.message });
+        }
+        res.status(500).json({ error: "Failed to create document" });
+      }
+    },
+  );
+
+  app.patch("/api/documents/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const document = await storage.updateProjectDocument(id, req.body);
+      if (!document) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+      res.json(document);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update document" });
+    }
+  });
+
+  app.delete("/api/documents/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteProjectDocument(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete document" });
+    }
+  });
+
+  // Document publish to knowledge base
+  app.post(
+    "/api/documents/:id/publish",
+    async (req: Request, res: Response) => {
+      try {
+        const id = parseInt(req.params.id);
+        const document = await storage.updateProjectDocument(id, {
+          isPublished: true,
+          publishedAt: new Date(),
+          status: "Veröffentlicht",
+        });
+        if (!document) {
+          return res.status(404).json({ error: "Document not found" });
+        }
+        res.json(document);
+      } catch (error) {
+        res.status(500).json({ error: "Failed to publish document" });
+      }
+    },
+  );
+
+  // Approvals routes
+  app.get(
+    "/api/documents/:documentId/approvals",
+    async (req: Request, res: Response) => {
+      try {
+        const documentId = parseInt(req.params.documentId);
+        const approvalList = await storage.getApprovals(documentId);
+        res.json(approvalList);
+      } catch (error) {
+        res.status(500).json({ error: "Failed to fetch approvals" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/documents/:documentId/approvals",
+    async (req: Request, res: Response) => {
+      try {
+        const documentId = parseInt(req.params.documentId);
+        const validatedData = insertApprovalSchema.parse({
+          ...req.body,
+          documentId,
+        });
+        const approval = await storage.createApproval(validatedData);
+
+        // Update document status to "Zur Prüfung"
+        await storage.updateProjectDocument(documentId, {
+          status: "Zur Prüfung",
+        });
+
+        res.status(201).json(approval);
+      } catch (error: any) {
+        if (error.name === "ZodError") {
+          const validationError = fromZodError(error);
+          return res.status(400).json({ error: validationError.message });
+        }
+        res.status(500).json({ error: "Failed to create approval request" });
+      }
+    },
+  );
+
+  app.patch("/api/approvals/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const approval = await storage.updateApproval(id, {
+        ...req.body,
+        decidedAt: new Date(),
+      });
+      if (!approval) {
+        return res.status(404).json({ error: "Approval not found" });
+      }
+
+      // Update document status based on decision
+      if (approval.decision === "Genehmigt") {
+        await storage.updateProjectDocument(approval.documentId, {
+          status: "Genehmigt",
+        });
+      } else if (
+        approval.decision === "Abgelehnt" ||
+        approval.decision === "Überarbeitung nötig"
+      ) {
+        await storage.updateProjectDocument(approval.documentId, {
+          status: "In Bearbeitung",
+        });
+      }
+
+      res.json(approval);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update approval" });
+    }
+  });
+
+  // Published documents for knowledge base
+  app.get("/api/knowledge/documents", async (req: Request, res: Response) => {
+    try {
+      const documents = await storage.getPublishedDocuments();
+      res.json(documents);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch published documents" });
+    }
+  });
+
+  // Roster Settings routes
+  app.get("/api/roster-settings", async (req: Request, res: Response) => {
+    try {
+      const settings = await storage.getRosterSettings();
+      if (!settings) {
+        // Default: January 2026 as last approved month
+        return res.json({
+          lastApprovedYear: 2026,
+          lastApprovedMonth: 1,
+          wishYear: null,
+          wishMonth: null,
+          vacationLockFrom: null,
+          vacationLockUntil: null,
+        });
+      }
+      res.json(settings);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch roster settings" });
+    }
+  });
+
+  app.post("/api/roster-settings", async (req: Request, res: Response) => {
+    try {
+      const {
+        lastApprovedYear,
+        lastApprovedMonth,
+        updatedById,
+        vacationLockFrom,
+        vacationLockUntil,
+      } = req.body;
+      const settings = await storage.upsertRosterSettings({
+        lastApprovedYear,
+        lastApprovedMonth,
+        updatedById,
+        vacationLockFrom,
+        vacationLockUntil,
+      });
+      res.json(settings);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update roster settings" });
+    }
+  });
+
+  app.get(
+    "/api/online-users",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        if (!req.user?.isAdmin) {
+          return res.status(403).json({ error: "Keine Berechtigung" });
+        }
+
+        const now = new Date();
+        const windowStart = new Date(now.getTime() - 5 * 60 * 1000);
+        const activeSessions = await db
+          .select({
+            employeeId: sessions.employeeId,
+            lastSeenAt: sessions.lastSeenAt,
+          })
+          .from(sessions)
+          .where(
+            and(
+              gte(sessions.lastSeenAt, windowStart),
+              gte(sessions.expiresAt, now),
+            ),
+          );
+
+        const latestByEmployee = new Map<number, Date>();
+        for (const session of activeSessions) {
+          const lastSeen = session.lastSeenAt
+            ? new Date(session.lastSeenAt)
+            : null;
+          if (!lastSeen) continue;
+          const current = latestByEmployee.get(session.employeeId);
+          if (!current || lastSeen > current) {
+            latestByEmployee.set(session.employeeId, lastSeen);
+          }
+        }
+
+        const employeeIds = [...latestByEmployee.keys()];
+        if (employeeIds.length === 0) {
+          return res.json({ count: 0, users: [] });
+        }
+
+        const rows = await db
+          .select({
+            id: employees.id,
+            name: employees.name,
+            lastName: employees.lastName,
+            isActive: employees.isActive,
+          })
+          .from(employees)
+          .where(inArray(employees.id, employeeIds));
+
+        const users = rows
+          .filter((row) => row.isActive)
+          .map((row) => ({
+            id: row.id,
+            name: row.name,
+            lastName: row.lastName || "",
+            lastSeenAt: latestByEmployee.get(row.id)?.toISOString() ?? null,
+          }))
+          .sort((a, b) => {
+            const lastNameCmp = a.lastName.localeCompare(b.lastName);
+            if (lastNameCmp !== 0) return lastNameCmp;
+            return a.name.localeCompare(b.name);
+          });
+
+        return res.json({ count: users.length, users });
+      } catch (error) {
+        res.status(500).json({ error: "Failed to fetch online users" });
+      }
+    },
+  );
+
+  // Get the next planning month (month after last approved)
+  app.get(
+    "/api/roster-settings/next-planning-month",
+    async (req: Request, res: Response) => {
+      try {
+        if (!req.user) {
+          return res
+            .status(401)
+            .json({ success: false, error: "Anmeldung erforderlich" });
+        }
+        if (
+          req.user.accessScope === "external_duty" &&
+          !hasCapability(req, "duty_plan.read")
+        ) {
+          return res
+            .status(403)
+            .json({ success: false, error: "Eingeschränkter Zugriff" });
+        }
+        const { settings, lastApproved, auto, current, shouldPersist } =
+          await resolvePlanningMonth();
+        const year = current.year;
+        const month = current.month;
+
+        if (shouldPersist) {
+          await storage.upsertRosterSettings({
+            lastApprovedYear: lastApproved.year,
+            lastApprovedMonth: lastApproved.month,
+            wishYear: auto.year,
+            wishMonth: auto.month,
+            updatedById: settings?.updatedById ?? null,
+          });
+        }
+
+        // Get eligible employees and submitted wishes count
+        const employeeRows = await storage.getEmployees();
+        const clinicId = (req as any).user?.clinicId;
+        const serviceLineMeta = clinicId
+          ? await db
+              .select({
+                key: serviceLines.key,
+                roleGroup: serviceLines.roleGroup,
+                label: serviceLines.label,
+              })
+              .from(serviceLines)
+              .where(eq(serviceLines.clinicId, clinicId))
+              .orderBy(asc(serviceLines.sortOrder), asc(serviceLines.label))
+          : [];
+        const eligibleEmployees = employeeRows
+          .filter((employee) => employeeDoesShifts(employee, serviceLineMeta))
+          .filter((employee) => isEligibleForWishMonth(employee, year, month));
+        const eligibleEmployeeIds = new Set(
+          eligibleEmployees.map((emp) => emp.id),
+        );
+        const wishes = await storage.getShiftWishesByMonth(year, month);
+        const submittedCount = wishes.filter(
+          (wish) =>
+            wish.status === "Eingereicht" &&
+            eligibleEmployeeIds.has(wish.employeeId),
+        ).length;
+        const totalEmployees = eligibleEmployees.length;
+        const allSubmitted =
+          totalEmployees > 0 && submittedCount >= totalEmployees;
+        const rosterShifts = await storage.getRosterShiftsByMonth(year, month);
+        const draftShiftCount = rosterShifts.length;
+
+        res.json({
+          year,
+          month,
+          totalEmployees,
+          submittedCount,
+          allSubmitted,
+          draftShiftCount,
+          hasDraft: draftShiftCount > 0,
+          eligibleEmployeeIds: eligibleEmployees.map((emp) => emp.id),
+        });
+      } catch (error) {
+        res.status(500).json({ error: "Failed to get next planning month" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/roster-settings/wishes",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        if (!canViewPlanningData(req)) {
+          return res.status(403).json({ error: "Keine Berechtigung" });
+        }
+
+        const { year, month } = req.body;
+        if (
+          !Number.isInteger(year) ||
+          !Number.isInteger(month) ||
+          month < 1 ||
+          month > 12
+        ) {
+          return res.status(400).json({ error: "Ungültiger Monat" });
+        }
+
+        const { settings, lastApproved } = await resolvePlanningMonth();
+        const minAllowed = addMonth(lastApproved.year, lastApproved.month);
+        if (compareYearMonth(year, month, minAllowed.year, minAllowed.month) < 0) {
+          return res.status(400).json({
+            error: "Wunschmonat darf nicht vor dem Monat nach dem letzten freigegebenen Plan liegen",
+          });
+        }
+
+        const updated = await storage.upsertRosterSettings({
+          lastApprovedYear: lastApproved.year,
+          lastApprovedMonth: lastApproved.month,
+          wishYear: year,
+          wishMonth: month,
+          updatedById: req.user?.employeeId ?? settings?.updatedById ?? null,
+        });
+
+        res.json(updated);
+      } catch (error) {
+        res.status(500).json({ error: "Failed to update wish month" });
+      }
+    },
+  );
+
+  // Shift Wishes routes
+    app.get("/api/shift-wishes", requireAuth, async (req: Request, res: Response) => {
+      try {
+      if (!req.user) {
+        return res
+          .status(401)
+          .json({ success: false, error: "Anmeldung erforderlich" });
+      }
+      if (
+        req.user.accessScope === "external_duty" &&
+        !hasCapability(req, "shift_wishes.read")
+      ) {
+        return res
+          .status(403)
+          .json({ success: false, error: "Eingeschränkter Zugriff" });
+      }
+
+      const { year, month, employeeId } = req.query;
+
+      if (employeeId && year && month) {
+        const targetId = parseInt(employeeId as string);
+        if (!req.user?.isAdmin && req.user?.appRole !== "Admin" && req.user?.employeeId !== targetId) {
+          return res.status(403).json({ error: "Zugriff nur auf eigene Daten erlaubt" });
+        }
+        const wish = await storage.getShiftWishByEmployeeAndMonth(
+          targetId,
+          parseInt(year as string),
+          parseInt(month as string),
+        );
+        return res.json(wish || null);
+      }
+
+      if (year && month) {
+        if (!canViewPlanningData(req)) {
+          return res.status(403).json({ error: "Keine Berechtigung" });
+        }
+        const wishes = await storage.getShiftWishesByMonth(
+          parseInt(year as string),
+          parseInt(month as string),
+        );
+        return res.json(wishes);
+      }
+
+      res.status(400).json({ error: "Jahr und Monat sind erforderlich" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch shift wishes" });
+    }
+  });
+
+  app.post("/api/shift-wishes", requireAuth, async (req: Request, res: Response) => {
+    try {
+      if (!req.user) {
+        return res
+          .status(401)
+          .json({ success: false, error: "Anmeldung erforderlich" });
+      }
+      if (
+        req.user.accessScope === "external_duty" &&
+        !hasCapability(req, "shift_wishes.write")
+      ) {
+        return res
+          .status(403)
+          .json({ success: false, error: "Eingeschränkter Zugriff" });
+      }
+
+      const payload = req.body as any;
+      const currentEmployeeId = req.user?.employeeId;
+      const isAdmin = Boolean(req.user?.isAdmin || req.user?.appRole === "Admin");
+
+      if (!isAdmin && currentEmployeeId && payload?.employeeId !== currentEmployeeId) {
+        return res.status(403).json({ error: "Zugriff nur auf eigene Daten erlaubt" });
+      }
+
+      const targetEmployeeId = Number(payload?.employeeId ?? currentEmployeeId);
+      if (!targetEmployeeId) {
+        return res.status(400).json({ error: "EmployeeId fehlt" });
+      }
+      const employee = await storage.getEmployee(targetEmployeeId);
+      if (!employee) {
+        return res.status(404).json({ error: "Mitarbeiter nicht gefunden" });
+      }
+      const year = Number(payload?.year);
+      const month = Number(payload?.month);
+      if (!year || !month) {
+        return res.status(400).json({ error: "Jahr und Monat sind erforderlich" });
+      }
+      if (!isEligibleForWishMonth(employee, year, month)) {
+        return res.status(400).json({
+          error:
+            "Wunschmonat liegt außerhalb Beschäftigungszeit / Langzeit-Deaktivierung.",
+        });
+      }
+
+      // Force draft fields on create (server is source of truth)
+      const wish = await storage.createShiftWish({
+        ...payload,
+        status: "Entwurf",
+        submittedAt: null,
+      });
+
+      res.status(201).json(wish);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create shift wish" });
+    }
+  });
+
+  app.patch("/api/shift-wishes/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      if (!req.user) {
+        return res
+          .status(401)
+          .json({ success: false, error: "Anmeldung erforderlich" });
+      }
+      if (
+        req.user.accessScope === "external_duty" &&
+        !hasCapability(req, "shift_wishes.write")
+      ) {
+        return res
+          .status(403)
+          .json({ success: false, error: "Eingeschränkter Zugriff" });
+      }
+
+      const id = parseInt(req.params.id);
+      const existing = await storage.getShiftWish(id);
+      if (!existing) {
+        return res.status(404).json({ error: "Shift wish not found" });
+      }
+
+      const currentEmployeeId = req.user?.employeeId;
+      const isAdmin = Boolean(req.user?.isAdmin || req.user?.appRole === "Admin");
+      if (!isAdmin && existing.employeeId !== currentEmployeeId) {
+        return res.status(403).json({ error: "Keine Berechtigung" });
+      }
+
+      if (existing.status === "Eingereicht") {
+        return res.status(400).json({ error: "Eingereichte Wünsche können nicht bearbeitet werden" });
+      }
+
+      const payload = { ...(req.body as any) };
+      delete payload.status;
+      delete payload.submittedAt;
+      delete payload.employeeId;
+
+      const wish = await storage.updateShiftWish(id, payload);
+      if (!wish) {
+        return res.status(404).json({ error: "Shift wish not found" });
+      }
+
+      res.json(wish);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update shift wish" });
+    }
+  });
+
+  app.post(
+    "/api/shift-wishes/:id/submit",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        if (!req.user) {
+          return res
+            .status(401)
+            .json({ success: false, error: "Anmeldung erforderlich" });
+        }
+        if (
+          req.user.accessScope === "external_duty" &&
+          !hasCapability(req, "shift_wishes.write")
+        ) {
+          return res
+            .status(403)
+            .json({ success: false, error: "Eingeschränkter Zugriff" });
+        }
+
+        const id = parseInt(req.params.id);
+        const existing = await storage.getShiftWish(id);
+        if (!existing) {
+          return res.status(404).json({ error: "Shift wish not found" });
+        }
+
+        const currentEmployeeId = req.user?.employeeId;
+        const isAdmin = Boolean(req.user?.isAdmin || req.user?.appRole === "Admin");
+        if (!isAdmin && existing.employeeId !== currentEmployeeId) {
+          return res.status(403).json({ error: "Keine Berechtigung" });
+        }
+
+        if (existing.status === "Eingereicht") {
+          return res.status(400).json({ error: "Wunsch ist bereits eingereicht" });
+        }
+
+        const employee = await storage.getEmployee(existing.employeeId);
+        if (!employee) {
+          return res.status(404).json({ error: "Mitarbeiter nicht gefunden" });
+        }
+        if (!isEligibleForWishMonth(employee, existing.year, existing.month)) {
+          return res.status(400).json({
+            error:
+              "Wunschmonat liegt außerhalb Beschäftigungszeit / Langzeit-Deaktivierung.",
+          });
+        }
+
+        const wish = await storage.updateShiftWish(id, {
+          status: "Eingereicht",
+          submittedAt: new Date(),
+        });
+        if (!wish) {
+          return res.status(404).json({ error: "Shift wish not found" });
+        }
+        res.json(wish);
+      } catch (error) {
+        res.status(500).json({ error: "Failed to submit shift wish" });
+      }
+    },
+  );
+  app.post(
+    "/api/shift-wishes/:id/reopen",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const id = Number(req.params.id);
+        if (Number.isNaN(id)) {
+          return res.status(400).json({ error: "Invalid shift wish id" });
+        }
+
+        const wish = await storage.getShiftWish(id);
+        if (!wish) {
+          return res.status(404).json({ error: "Shift wish not found" });
+        }
+
+        const currentEmployeeId = req.user?.employeeId;
+        if (!currentEmployeeId) {
+          return res.status(401).json({ error: "Nicht authentifiziert" });
+        }
+
+        const isAdmin = Boolean(req.user?.isAdmin || req.user?.appRole === "Admin");
+        if (!isAdmin && wish.employeeId !== currentEmployeeId) {
+          return res.status(403).json({ error: "Keine Berechtigung" });
+        }
+
+        if (wish.status !== "Eingereicht") {
+          return res.status(400).json({ error: "Nur eingereichte Wünsche können wieder geöffnet werden" });
+        }
+
+        const updatedWish = await storage.updateShiftWish(id, {
+          status: "Entwurf",
+          submittedAt: null,
+        });
+
+        if (!updatedWish) {
+          return res.status(404).json({ error: "Shift wish not found" });
+        }
+
+        res.json(updatedWish);
+      } catch (error) {
+        console.error("Reopen shift wish error:", error);
+        res.status(500).json({ error: "Bearbeiten fehlgeschlagen" });
+      }
+    },
+  );
+  app.delete("/api/shift-wishes/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      if (!req.user) {
+        return res
+          .status(401)
+          .json({ success: false, error: "Anmeldung erforderlich" });
+      }
+      if (
+        req.user.accessScope === "external_duty" &&
+        !hasCapability(req, "shift_wishes.write")
+      ) {
+        return res
+          .status(403)
+          .json({ success: false, error: "Eingeschränkter Zugriff" });
+      }
+
+      const id = parseInt(req.params.id);
+      const existing = await storage.getShiftWish(id);
+      if (!existing) {
+        return res.status(404).json({ error: "Shift wish not found" });
+      }
+
+      const currentEmployeeId = req.user?.employeeId;
+      const isAdmin = Boolean(req.user?.isAdmin || req.user?.appRole === "Admin");
+      if (!isAdmin && existing.employeeId !== currentEmployeeId) {
+        return res.status(403).json({ error: "Keine Berechtigung" });
+      }
+
+      if (existing.status === "Eingereicht") {
+        return res.status(400).json({ error: "Eingereichte Wünsche können nicht gelöscht werden" });
+      }
+      await storage.deleteShiftWish(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete shift wish" });
+    }
+  });
+
+  // Long-term shift wishes routes
+  app.get("/api/long-term-wishes", async (req: Request, res: Response) => {
+    try {
+      const { employeeId, status } = req.query;
+
+      if (employeeId) {
+        const targetId = parseInt(employeeId as string);
+        if (req.user && !req.user.isAdmin && req.user.employeeId !== targetId) {
+          return res
+            .status(403)
+            .json({ error: "Zugriff nur auf eigene Daten erlaubt" });
+        }
+        const wish = await storage.getLongTermShiftWishByEmployee(targetId);
+        return res.json(wish || null);
+      }
+
+      if (status) {
+        const allowed = await canApproveLongTermWishes(req);
+        if (!allowed) {
+          return res
+            .status(403)
+            .json({ error: "Keine Berechtigung für diese Aktion" });
+        }
+        const wishes = await storage.getLongTermShiftWishesByStatus(
+          status as string,
+        );
+        return res.json(wishes);
+      }
+
+      res
+        .status(400)
+        .json({ error: "employeeId oder status ist erforderlich" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch long-term wishes" });
+    }
+  });
+
+  app.post("/api/long-term-wishes", async (req: Request, res: Response) => {
+    try {
+      const payload = insertLongTermShiftWishSchema.parse(req.body);
+      if (
+        req.user &&
+        !req.user.isAdmin &&
+        req.user.employeeId !== payload.employeeId
+      ) {
+        return res
+          .status(403)
+          .json({ error: "Zugriff nur auf eigene Daten erlaubt" });
+      }
+      const wish = await storage.upsertLongTermShiftWish(payload);
+      res.json(wish);
+    } catch (error: any) {
+      if (error.name === "ZodError") {
+        const validationError = fromZodError(error);
+        return res.status(400).json({ error: validationError.message });
+      }
+      res.status(500).json({ error: "Failed to save long-term wish" });
+    }
+  });
+
+  app.post(
+    "/api/long-term-wishes/:id/submit",
+    async (req: Request, res: Response) => {
+      try {
+        const id = parseInt(req.params.id);
+        const existing = await storage.getLongTermShiftWish(id);
+        if (!existing) {
+          return res.status(404).json({ error: "Long-term wish not found" });
+        }
+        if (
+          req.user &&
+          !req.user.isAdmin &&
+          req.user.employeeId !== existing.employeeId
+        ) {
+          return res
+            .status(403)
+            .json({ error: "Zugriff nur auf eigene Daten erlaubt" });
+        }
+        const wish = await storage.updateLongTermShiftWish(id, {
+          status: "Eingereicht",
+          submittedAt: new Date(),
+        });
+        res.json(wish);
+      } catch (error) {
+        res.status(500).json({ error: "Failed to submit long-term wish" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/long-term-wishes/:id/approve",
+    async (req: Request, res: Response) => {
+      try {
+        const id = parseInt(req.params.id);
+        const allowed = await canApproveLongTermWishes(req);
+        if (!allowed) {
+          return res
+            .status(403)
+            .json({ error: "Keine Berechtigung für diese Aktion" });
+        }
+        const existing = await storage.getLongTermShiftWish(id);
+        if (!existing) {
+          return res.status(404).json({ error: "Long-term wish not found" });
+        }
+        const wish = await storage.updateLongTermShiftWish(id, {
+          status: "Genehmigt",
+          approvedAt: new Date(),
+          approvedById: req.user?.employeeId,
+          approvalNotes: req.body?.notes || null,
+        });
+        res.json(wish);
+      } catch (error) {
+        res.status(500).json({ error: "Failed to approve long-term wish" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/long-term-wishes/:id/reject",
+    async (req: Request, res: Response) => {
+      try {
+        const id = parseInt(req.params.id);
+        const allowed = await canApproveLongTermWishes(req);
+        if (!allowed) {
+          return res
+            .status(403)
+            .json({ error: "Keine Berechtigung für diese Aktion" });
+        }
+        const existing = await storage.getLongTermShiftWish(id);
+        if (!existing) {
+          return res.status(404).json({ error: "Long-term wish not found" });
+        }
+        const wish = await storage.updateLongTermShiftWish(id, {
+          status: "Abgelehnt",
+          approvedAt: new Date(),
+          approvedById: req.user?.employeeId,
+          approvalNotes: req.body?.notes || null,
+        });
+        res.json(wish);
+      } catch (error) {
+        res.status(500).json({ error: "Failed to reject long-term wish" });
+      }
+    },
+  );
+
+  // Long-term absences routes
+  app.get("/api/long-term-absences", async (req: Request, res: Response) => {
+    try {
+      const { employeeId, status, from, to } = req.query;
+
+      if (employeeId) {
+        const targetId = parseInt(employeeId as string);
+        if (req.user && !req.user.isAdmin && req.user.employeeId !== targetId) {
+          return res
+            .status(403)
+            .json({ error: "Zugriff nur auf eigene Daten erlaubt" });
+        }
+        const absences = await storage.getLongTermAbsencesByEmployee(targetId);
+        return res.json(absences);
+      }
+
+      if (status) {
+        if (!canViewPlanningData(req)) {
+          return res
+            .status(403)
+            .json({ error: "Keine Berechtigung für diese Aktion" });
+        }
+        let absences = await storage.getLongTermAbsencesByStatus(
+          status as string,
+        );
+        if (from || to) {
+          const fromDate = from ? String(from) : null;
+          const toDate = to ? String(to) : null;
+          absences = absences.filter((absence) => {
+            if (fromDate && absence.endDate < fromDate) return false;
+            if (toDate && absence.startDate > toDate) return false;
+            return true;
+          });
+        }
+        return res.json(absences);
+      }
+
+      res
+        .status(400)
+        .json({ error: "employeeId oder status ist erforderlich" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch long-term absences" });
+    }
+  });
+
+  app.post("/api/long-term-absences", async (req: Request, res: Response) => {
+    try {
+      const payload = insertLongTermAbsenceSchema.parse(req.body);
+      if (
+        req.user &&
+        !req.user.isAdmin &&
+        req.user.employeeId !== payload.employeeId
+      ) {
+        return res
+          .status(403)
+          .json({ error: "Zugriff nur auf eigene Daten erlaubt" });
+      }
+      if (payload.startDate > payload.endDate) {
+        return res
+          .status(400)
+          .json({ error: "Enddatum muss nach dem Startdatum liegen" });
+      }
+      const reason = payload.reason?.trim();
+      if (!reason) {
+        return res.status(400).json({ error: "Begruendung ist erforderlich" });
+      }
+      const absence = await storage.createLongTermAbsence({
+        ...payload,
+        reason,
+        status: "Entwurf",
+        submittedAt: null,
+        approvedAt: null,
+        approvedById: null,
+        approvalNotes: null,
+      });
+      res.json(absence);
+    } catch (error: any) {
+      if (error.name === "ZodError") {
+        const validationError = fromZodError(error);
+        return res.status(400).json({ error: validationError.message });
+      }
+      res.status(500).json({ error: "Failed to save long-term absence" });
+    }
+  });
+
+  app.patch(
+    "/api/long-term-absences/:id",
+    async (req: Request, res: Response) => {
+      try {
+        const id = parseInt(req.params.id);
+        const existing = await storage.getLongTermAbsence(id);
+        if (!existing) {
+          return res.status(404).json({ error: "Long-term absence not found" });
+        }
+        if (
+          req.user &&
+          !req.user.isAdmin &&
+          req.user.employeeId !== existing.employeeId
+        ) {
+          return res
+            .status(403)
+            .json({ error: "Zugriff nur auf eigene Daten erlaubt" });
+        }
+        if (
+          existing.status === "Eingereicht" ||
+          existing.status === "Genehmigt"
+        ) {
+          return res.status(400).json({
+            error: "Einreichungen koennen nicht mehr bearbeitet werden",
+          });
+        }
+        const payload = insertLongTermAbsenceSchema.partial().parse(req.body);
+        delete (payload as { status?: unknown }).status;
+        delete (payload as { submittedAt?: unknown }).submittedAt;
+        delete (payload as { approvedAt?: unknown }).approvedAt;
+        delete (payload as { approvedById?: unknown }).approvedById;
+        delete (payload as { approvalNotes?: unknown }).approvalNotes;
+        delete (payload as { employeeId?: unknown }).employeeId;
+        if (typeof payload.reason === "string") {
+          payload.reason = payload.reason.trim();
+        }
+        if (payload.reason === "") {
+          return res
+            .status(400)
+            .json({ error: "Begruendung ist erforderlich" });
+        }
+        if (
+          payload.startDate &&
+          payload.endDate &&
+          payload.startDate > payload.endDate
+        ) {
+          return res
+            .status(400)
+            .json({ error: "Enddatum muss nach dem Startdatum liegen" });
+        }
+        const updated = await storage.updateLongTermAbsence(id, payload);
+        res.json(updated);
+      } catch (error: any) {
+        if (error.name === "ZodError") {
+          const validationError = fromZodError(error);
+          return res.status(400).json({ error: validationError.message });
+        }
+        res.status(500).json({ error: "Failed to update long-term absence" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/long-term-absences/:id/submit",
+    async (req: Request, res: Response) => {
+      try {
+        const id = parseInt(req.params.id);
+        const existing = await storage.getLongTermAbsence(id);
+        if (!existing) {
+          return res.status(404).json({ error: "Long-term absence not found" });
+        }
+        if (
+          req.user &&
+          !req.user.isAdmin &&
+          req.user.employeeId !== existing.employeeId
+        ) {
+          return res
+            .status(403)
+            .json({ error: "Zugriff nur auf eigene Daten erlaubt" });
+        }
+        const updated = await storage.updateLongTermAbsence(id, {
+          status: "Eingereicht",
+          submittedAt: new Date(),
+        });
+        res.json(updated);
+      } catch (error) {
+        res.status(500).json({ error: "Failed to submit long-term absence" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/long-term-absences/:id/approve",
+    async (req: Request, res: Response) => {
+      try {
+        const id = parseInt(req.params.id);
+        const allowed = await canApproveLongTermWishes(req);
+        if (!allowed) {
+          return res
+            .status(403)
+            .json({ error: "Keine Berechtigung für diese Aktion" });
+        }
+        const existing = await storage.getLongTermAbsence(id);
+        if (!existing) {
+          return res.status(404).json({ error: "Long-term absence not found" });
+        }
+        const updated = await storage.updateLongTermAbsence(id, {
+          status: "Genehmigt",
+          approvedAt: new Date(),
+          approvedById: req.user?.employeeId,
+          approvalNotes: req.body?.notes || null,
+        });
+        res.json(updated);
+      } catch (error) {
+        res.status(500).json({ error: "Failed to approve long-term absence" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/long-term-absences/:id/reject",
+    async (req: Request, res: Response) => {
+      try {
+        const id = parseInt(req.params.id);
+        const allowed = await canApproveLongTermWishes(req);
+        if (!allowed) {
+          return res
+            .status(403)
+            .json({ error: "Keine Berechtigung für diese Aktion" });
+        }
+        const existing = await storage.getLongTermAbsence(id);
+        if (!existing) {
+          return res.status(404).json({ error: "Long-term absence not found" });
+        }
+        const updated = await storage.updateLongTermAbsence(id, {
+          status: "Abgelehnt",
+          approvedAt: new Date(),
+          approvedById: req.user?.employeeId,
+          approvalNotes: req.body?.notes || null,
+        });
+        res.json(updated);
+      } catch (error) {
+        res.status(500).json({ error: "Failed to reject long-term absence" });
+      }
+    },
+  );
+
+  // Planned Absences routes
+  app.get("/api/planned-absences", async (req: Request, res: Response) => {
+    try {
+      const { year, month, employeeId } = req.query;
+
+      if (!req.user) {
+        return res.status(401).json({ error: "Anmeldung erforderlich" });
+      }
+
+      const canViewAll =
+        req.user.isAdmin ||
+        (req.user.capabilities?.includes("vacation.approve") ?? false) ||
+        (req.user.capabilities?.includes("vacation.lock") ?? false);
+
+      if (employeeId && year && month) {
+        if (
+          !canViewAll &&
+          req.user.employeeId !== parseInt(employeeId as string)
+        ) {
+          return res.status(403).json({ error: "Keine Berechtigung" });
+        }
+        const absences = await storage.getPlannedAbsencesByEmployee(
+          parseInt(employeeId as string),
+          parseInt(year as string),
+          parseInt(month as string),
+        );
+        return res.json(absences);
+      }
+
+      if (year && month) {
+        if (!canViewAll) {
+          return res.status(403).json({ error: "Keine Berechtigung" });
+        }
+        const absences = await storage.getPlannedAbsencesByMonth(
+          parseInt(year as string),
+          parseInt(month as string),
+        );
+        return res.json(absences);
+      }
+
+      res.status(400).json({ error: "Jahr und Monat sind erforderlich" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch planned absences" });
+    }
+  });
+
+  app.post("/api/planned-absences", async (req: Request, res: Response) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: "Anmeldung erforderlich" });
+      }
+
+      const validatedData = insertPlannedAbsenceSchema.parse(req.body);
+      if (
+        !req.user.isAdmin &&
+        req.user.employeeId !== validatedData.employeeId
+      ) {
+        return res.status(403).json({ error: "Keine Berechtigung" });
+      }
+
+      if (validatedData.reason === "Urlaub") {
+        const entitlementCheck = await ensurePlannedVacationEntitlement(
+          validatedData.employeeId,
+          String(validatedData.startDate),
+          String(validatedData.endDate),
+        );
+        if (!entitlementCheck.ok) {
+          return res.status(400).json({
+            error: entitlementCheck.error || "Urlaubsanspruch ueberschritten",
+          });
+        }
+      }
+
+      const absence = await storage.createPlannedAbsence({
+        ...validatedData,
+        createdById: req.user.employeeId,
+      });
+      res.status(201).json(absence);
+    } catch (error) {
+      if (error instanceof Error && error.name === "ZodError") {
+        const validationError = fromZodError(error as any);
+        return res.status(400).json({ error: validationError.message });
+      }
+      res.status(500).json({ error: "Failed to create planned absence" });
+    }
+  });
+
+  app.patch(
+    "/api/planned-absences/:id",
+    async (req: Request, res: Response) => {
+      try {
+        if (!req.user) {
+          return res.status(401).json({ error: "Anmeldung erforderlich" });
+        }
+
+        const id = parseInt(req.params.id);
+        const existing = await db
+          .select()
+          .from(plannedAbsences)
+          .where(eq(plannedAbsences.id, id));
+
+        if (!existing.length) {
+          return res.status(404).json({ error: "Planned absence not found" });
+        }
+
+        const current = existing[0];
+        if (!req.user.isAdmin && req.user.employeeId !== current.employeeId) {
+          return res.status(403).json({ error: "Keine Berechtigung" });
+        }
+
+        const next = {
+          ...current,
+          ...req.body,
+        } as any;
+
+        if (next.reason === "Urlaub" && next.status !== "Abgelehnt") {
+          const entitlementCheck = await ensurePlannedVacationEntitlement(
+            current.employeeId,
+            String(next.startDate),
+            String(next.endDate),
+            id,
+          );
+          if (!entitlementCheck.ok) {
+            return res.status(400).json({
+              error: entitlementCheck.error || "Urlaubsanspruch ueberschritten",
+            });
+          }
+        }
+
+        const absence = await storage.updatePlannedAbsence(id, req.body);
+        if (!absence) {
+          return res.status(404).json({ error: "Planned absence not found" });
+        }
+        res.json(absence);
+      } catch (error) {
+        res.status(500).json({ error: "Failed to update planned absence" });
+      }
+    },
+  );
+
+  app.delete(
+    "/api/planned-absences/:id",
+    async (req: Request, res: Response) => {
+      try {
+        if (!req.user) {
+          return res.status(401).json({ error: "Anmeldung erforderlich" });
+        }
+
+        const id = parseInt(req.params.id);
+        const existing = await db
+          .select()
+          .from(plannedAbsences)
+          .where(eq(plannedAbsences.id, id));
+
+        if (!existing.length) {
+          return res.status(404).json({ error: "Planned absence not found" });
+        }
+
+        if (
+          !req.user.isAdmin &&
+          req.user.employeeId !== existing[0].employeeId
+        ) {
+          return res.status(403).json({ error: "Keine Berechtigung" });
+        }
+
+        await storage.deletePlannedAbsence(id);
+        res.status(204).send();
+      } catch (error) {
+        res.status(500).json({ error: "Failed to delete planned absence" });
+      }
+    },
+  );
+
+  return httpServer;
+}
