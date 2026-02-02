@@ -1429,18 +1429,22 @@ export async function registerRoutes(
         return parsed;
       };
 
-      // Fallback to ISO range only when BOTH year and month are missing.
-      const fallbackDate = tryParseIso(rawFrom) ?? tryParseIso(rawTo);
+      const hasYear = typeof yearParam === "number";
+      const hasMonth = typeof monthParam === "number";
+      const useFallback = !hasYear && !hasMonth;
 
-      const year = Number.isFinite(yearParam ?? NaN)
-        ? (yearParam as number)
-        : yearParam === null && monthParam === null && fallbackDate
+      // Fallback to ISO range only when BOTH year and month are missing.
+      const fallbackDate = useFallback ? (tryParseIso(rawFrom) ?? tryParseIso(rawTo)) : null;
+
+      const year = hasYear
+        ? yearParam!
+        : fallbackDate
           ? fallbackDate.getFullYear()
           : now.getFullYear();
 
-      const month = Number.isFinite(monthParam ?? NaN)
-        ? (monthParam as number)
-        : yearParam === null && monthParam === null && fallbackDate
+      const month = hasMonth
+        ? monthParam!
+        : fallbackDate
           ? fallbackDate.getMonth() + 1
           : now.getMonth() + 1;
 
@@ -2576,20 +2580,5 @@ export async function registerRoutes(
           if (r.includes("assistenz")) return 3;
 
           // Turnus
-          if (r.includes("turnus")) return 4;
-
-          return 99;
-        };
-
-        const buildAttendanceMembers = (
-          meta: { date: string; weekKey: string; isoDay: number },
-          absentIds: Set<number>,
-        ): AttendanceMember[] => {
-          const effectiveAssignments = buildEffectiveAssignmentsForMeta(meta);
-          const dutyIdsForDay = dutyEmployeeIdsForDate(meta.date);
-
-          const seen = new Set<number>();
-          const members: AttendanceMember[] = [];
-
-          for (const assignment of effectiveAssignments) {
-            const employeeId = assignment.employeeId;
+          if (r.includes("turnus")) retur<truncated__content/>
+}
