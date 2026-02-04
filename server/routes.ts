@@ -245,12 +245,15 @@ const buildOpenShiftPayload = async ({
     }
 
     const dayEntry = countsByDay[shift.date];
-    if (dayEntry && dayEntry[shift.serviceType] !== undefined) {
+    const hasOccupant =
+      Boolean(shift.employeeId) ||
+      Boolean((shift.assigneeFreeText ?? "").trim());
+    if (dayEntry && dayEntry[shift.serviceType] !== undefined && hasOccupant) {
       dayEntry[shift.serviceType] += 1;
     }
 
     const isOpen =
-      !shift.employeeId && !(shift.assigneeFreeText ?? "").trim();
+      !hasOccupant;
 
     if (isOpen) {
       slots.push({
