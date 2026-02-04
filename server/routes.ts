@@ -57,6 +57,10 @@ import {
 import { registerModularApiRoutes } from "./api";
 import { employeeDoesShifts, OVERDUTY_KEY } from "@shared/shiftTypes";
 import { getEffectiveServiceLineKeys } from "@shared/serviceLineAccess";
+import {
+  buildNormalizedServiceLineKeySet,
+  normalizeServiceLineKey,
+} from "@shared/serviceLineKey";
 import { requireAuth, hasCapability } from "./api/middleware/auth";
 import {
   addDays,
@@ -105,22 +109,40 @@ type OpenShiftPayload = {
   missingCounts: Record<string, number>;
 };
 
+type ServiceLineFlagLookup = {
+  rawKeys: Set<string>;
+  normalizedKeys: Set<string>;
+};
+
+const buildServiceLineFlagLookup = (
+  lines: ServiceLine[],
+  flag: "allowsClaim" | "allowsSwap",
+): ServiceLineFlagLookup => {
+  const rawKeys = new Set(
+    lines.filter((line) => line[flag]).map((line) => line.key),
+  );
+  return {
+    rawKeys,
+    normalizedKeys: buildNormalizedServiceLineKeySet(rawKeys),
+  };
+};
+
 const getServiceLineKeysByFlag = (
   lines: ServiceLine[],
   flag: "allowsClaim" | "allowsSwap",
-): Set<string> => {
-  return new Set(
-    lines.filter((line) => line[flag]).map((line) => line.key),
-  );
-};
+): Set<string> => buildServiceLineFlagLookup(lines, flag).rawKeys;
 
 const filterKeysByFlag = (
   keys: Set<string>,
   lines: ServiceLine[],
   flag: "allowsClaim" | "allowsSwap",
 ): Set<string> => {
-  const filteredKeys = getServiceLineKeysByFlag(lines, flag);
-  return new Set([...keys].filter((key) => filteredKeys.has(key)));
+  const { normalizedKeys } = buildServiceLineFlagLookup(lines, flag);
+  return new Set(
+    [...keys].filter((key) =>
+      normalizedKeys.has(normalizeServiceLineKey(key)),
+    ),
+  );
 };
 
 const parseBoolQueryFlag = (value?: string | string[]): boolean => {
@@ -159,9 +181,10 @@ const buildOpenShiftPayload = async ({
   const claimableServiceLines = serviceLineRows.filter(
     (line) => line.allowsClaim,
   );
-  const claimableServiceLineKeys = new Set(
-    claimableServiceLines.map((line) => line.key),
-  );
+  const {
+    rawKeys: claimableServiceLineKeys,
+    normalizedKeys: claimableServiceLineNormalizedKeys,
+  } = buildServiceLineFlagLookup(claimableServiceLines, "allowsClaim");
 
   const requiredDailyMap = new Map<string, number>();
   for (const line of claimableServiceLines) {
@@ -212,6 +235,15 @@ const buildOpenShiftPayload = async ({
     if (!shift.serviceType || !claimableServiceLineKeys.has(shift.serviceType)) {
       continue;
     }
+    const shiftKeyNormalized = normalizeServiceLineKey(shift.serviceType);
+    const isClaimableServiceType =
+      !!shift.serviceType &&
+      (claimableServiceLineKeys.has(shift.serviceType) ||
+        claimableServiceLineNormalizedKeys.has(shiftKeyNormalized));
+    if (!isClaimableServiceType) {
+      continue;
+    }
+
     const dayEntry = countsByDay[shift.date];
     if (dayEntry && dayEntry[shift.serviceType] !== undefined) {
       dayEntry[shift.serviceType] += 1;
@@ -1827,13 +1859,24 @@ export async function registerRoutes(
             eq(serviceLines.isActive, true),
           ),
         );
+
+      const requestedNormalizedKey = normalizeServiceLineKey(serviceType);
+      const matchedServiceLine = serviceLineRows.find(
+        (line) =>
+          normalizeServiceLineKey(line.key) === requestedNormalizedKey,
+      );
+      if (!matchedServiceLine || !matchedServiceLine.allowsClaim) {
+        return res.status(403).json({ error: "Diensttyp nicht erlaubt" });
+      }
+      const finalServiceTypeKey = matchedServiceLine.key;
+
       const allowedKeys = getEffectiveServiceLineKeys(employee, serviceLineRows);
       const allowedClaimKeys = filterKeysByFlag(
         allowedKeys,
         serviceLineRows,
         "allowsClaim",
       );
-      if (!allowedClaimKeys.has(serviceType)) {
+      if (!allowedClaimKeys.has(finalServiceTypeKey)) {
         return res.status(403).json({ error: "Diensttyp nicht erlaubt" });
       }
 
@@ -1860,8 +1903,8 @@ export async function registerRoutes(
         month,
         includeDraft: false,
       });
-      const missing = payload.missingCounts[serviceType] ?? 0;
-      const required = payload.requiredDaily[serviceType] ?? 0;
+      const missing = payload.missingCounts[finalServiceTypeKey] ?? 0;
+      const required = payload.requiredDaily[finalServiceTypeKey] ?? 0;
       if (required <= 0) {
         return res
           .status(400)
@@ -1875,7 +1918,7 @@ export async function registerRoutes(
 
       const shift = await storage.createRosterShift({
         date: rawDate,
-        serviceType,
+        serviceType: finalServiceTypeKey,
         employeeId,
         isDraft: false,
       });
@@ -3916,23 +3959,24 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
             eq(serviceLines.isActive, true),
           ),
         );
-      const swapableKeys = getServiceLineKeysByFlag(
-        serviceLineRows,
-        "allowsSwap",
-      );
+      const swapLookup = buildServiceLineFlagLookup(serviceLineRows, "allowsSwap");
+      const swapableKeys = swapLookup.rawKeys;
+      const swapableNormalizedKeys = swapLookup.normalizedKeys;
+      const matchesSwapableServiceType = (value?: string | null) =>
+        Boolean(
+          value &&
+            (swapableKeys.has(value) ||
+              swapableNormalizedKeys.has(normalizeServiceLineKey(value))),
+        );
 
       if (
-        !requesterShift.serviceType ||
-        !swapableKeys.has(requesterShift.serviceType)
+        !matchesSwapableServiceType(requesterShift.serviceType)
       ) {
         return res
           .status(403)
           .json({ error: "RequesterShift erlaubt keinen Tausch" });
       }
-      if (
-        !targetShift.serviceType ||
-        !swapableKeys.has(targetShift.serviceType)
-      ) {
+      if (!matchesSwapableServiceType(targetShift.serviceType)) {
         return res
           .status(403)
           .json({ error: "TargetShift erlaubt keinen Tausch" });
@@ -3956,7 +4000,14 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
         serviceLineRows,
         "allowsSwap",
       );
-      if (!allowedRequesterSwapKeys.has(requesterShift.serviceType)) {
+      const allowedRequesterSwapNormalized = buildNormalizedServiceLineKeySet(
+        allowedRequesterSwapKeys,
+      );
+      if (
+        !allowedRequesterSwapNormalized.has(
+          normalizeServiceLineKey(requesterShift.serviceType),
+        )
+      ) {
         return res
           .status(403)
           .json({
@@ -3969,7 +4020,14 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
         serviceLineRows,
         "allowsSwap",
       );
-      if (!allowedTargetSwapKeys.has(targetShift.serviceType)) {
+      const allowedTargetSwapNormalized = buildNormalizedServiceLineKeySet(
+        allowedTargetSwapKeys,
+      );
+      if (
+        !allowedTargetSwapNormalized.has(
+          normalizeServiceLineKey(targetShift.serviceType),
+        )
+      ) {
         return res
           .status(403)
           .json({

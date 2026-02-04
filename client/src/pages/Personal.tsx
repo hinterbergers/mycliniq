@@ -87,6 +87,10 @@ import {
   getEffectiveServiceLineKeys,
   getEmployeeServiceLineCandidate,
 } from "@/lib/serviceLineAccess";
+import {
+  buildNormalizedServiceLineKeySet,
+  normalizeServiceLineKey,
+} from "@/lib/serviceLineKey";
 import type {
   DutyPlan,
   Employee,
@@ -121,7 +125,7 @@ const ALLOWED_UNASSIGNED_STATUSES = new Set<DutyPlan["status"]>([
 type OpenShiftDebugDetail = {
   planStatus: DutyPlan["status"] | null;
   statusAllowed: boolean;
-  showUnassignedButton: boolean;
+  showClaimButton: boolean;
   unassignedTotal: number;
   visibleAfterPrevDayRule: number;
   claimableCount: number;
@@ -221,6 +225,7 @@ export default function Personal() {
     if (typeof window === "undefined") return false;
     return new URLSearchParams(window.location.search).get("debug") === "1";
   }, []);
+  const showTakeShiftButton = Boolean(unassignedDebug?.showClaimButton);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -391,21 +396,23 @@ export default function Personal() {
             <CalendarDays className="w-4 h-4" />
             Dienstwünsche
           </Button>
-          {!isExternalDuty && unassignedCount > 0 && (
+          {showTakeShiftButton && (
             <Button
               variant="outline"
               className="gap-2"
               onClick={() =>
-                  window.dispatchEvent(new Event("mycliniq:openUnassigned"))
-                }
-                data-testid="button-unassigned-shifts-top"
-              >
-                Unbesetzte Dienste
+                window.dispatchEvent(new Event("mycliniq:openUnassigned"))
+              }
+              data-testid="button-unassigned-shifts-top"
+            >
+              Dienst übernehmen
+              {unassignedCount > 0 && (
                 <Badge variant="outline" className="h-5 px-1.5">
                   {unassignedCount}
                 </Badge>
-              </Button>
-            )}
+              )}
+            </Button>
+          )}
           </div>
         </div>
 
@@ -424,8 +431,8 @@ export default function Personal() {
               <span className="font-medium">statusAllowed</span>
               <span>{String(unassignedDebug?.statusAllowed ?? false)}</span>
 
-              <span className="font-medium">showUnassignedButton</span>
-              <span>{String(unassignedDebug?.showUnassignedButton ?? false)}</span>
+              <span className="font-medium">showClaimButton</span>
+              <span>{String(unassignedDebug?.showClaimButton ?? false)}</span>
 
               <span className="font-medium">unassignedTotal</span>
               <span>{unassignedDebug?.unassignedTotal ?? "—"}</span>
@@ -558,6 +565,14 @@ function RosterView({
   const serviceLineLookup = useMemo(() => {
     return new Map(serviceLineDisplay.map((line) => [line.key, line]));
   }, [serviceLineDisplay]);
+  const normalizedServiceLineLookup = useMemo(() => {
+    return new Map(
+      serviceLineDisplay.map((line) => [
+        normalizeServiceLineKey(line.key),
+        line,
+      ]),
+    );
+  }, [serviceLineDisplay]);
   const rosterColumnCount = 3 + serviceLineDisplay.length + 1;
   const activePlannedAbsences = useMemo(
     () => plannedAbsences.filter((absence) => absence.status !== "Abgelehnt"),
@@ -664,13 +679,18 @@ function RosterView({
       ),
     [claimableServiceLineKeySet, effectiveAllowedKeys],
   );
+  const normalizedEffectiveClaimKeys = useMemo(
+    () => buildNormalizedServiceLineKeySet(effectiveClaimKeys),
+    [effectiveClaimKeys],
+  );
 
   const canCurrentUserTakeShift = (shift: { serviceType: string }) => {
     if (isExternalDuty) return false;
     if (!token) return false;
     if (!currentUser?.id) return false;
-    if (effectiveClaimKeys.size === 0) return false;
-    return effectiveClaimKeys.has(shift.serviceType);
+    if (normalizedEffectiveClaimKeys.size === 0) return false;
+    const normalizedSlotKey = normalizeServiceLineKey(shift.serviceType);
+    return normalizedEffectiveClaimKeys.has(normalizedSlotKey);
   };
 
   const claimableOpenShiftSlots = useMemo(() => {
@@ -678,22 +698,22 @@ function RosterView({
     if (!token) return [] as OpenShiftSlot[];
     if (!currentUser?.id) return [] as OpenShiftSlot[];
     if (effectiveAllowedKeys.size === 0) return [];
-    return visibleOpenShiftSlots.filter((slot) =>
-      effectiveClaimKeys.has(slot.serviceType),
-    );
+    return visibleOpenShiftSlots.filter((slot) => {
+      const normalizedSlotKey = normalizeServiceLineKey(slot.serviceType);
+      return normalizedEffectiveClaimKeys.has(normalizedSlotKey);
+    });
   }, [
     isExternalDuty,
     token,
     currentUser?.id,
-    effectiveClaimKeys,
+    normalizedEffectiveClaimKeys,
     visibleOpenShiftSlots,
   ]);
 
-  const showUnassignedButton =
+  const showClaimButton =
     !isExternalDuty &&
     isPlanStatusAllowingUnassigned &&
-    effectiveClaimKeys.size > 0 &&
-    claimableOpenShiftSlots.length > 0;
+    normalizedEffectiveClaimKeys.size > 0;
 
   const allowedKeysForDebug = useMemo(
     () => Array.from(effectiveClaimKeys).slice(0, 30),
@@ -704,7 +724,7 @@ function RosterView({
     () => ({
       planStatus: planStatus ?? null,
       statusAllowed: isPlanStatusAllowingUnassigned,
-      showUnassignedButton,
+      showClaimButton,
       unassignedTotal: openShiftSlots.length,
       visibleAfterPrevDayRule: visibleOpenShiftSlots.length,
       claimableCount: claimableOpenShiftSlots.length,
@@ -717,7 +737,7 @@ function RosterView({
     [
       planStatus,
       isPlanStatusAllowingUnassigned,
-      showUnassignedButton,
+      showClaimButton,
       openShiftSlots.length,
       visibleOpenShiftSlots.length,
       claimableOpenShiftSlots.length,
@@ -768,7 +788,9 @@ function RosterView({
   useEffect(() => {
     if (typeof window === "undefined") return;
     const detail = {
-      count: showUnassignedButton ? claimableOpenShiftSlots.length : 0,
+      count: claimableOpenShiftSlots.length,
+      claimableCount: claimableOpenShiftSlots.length,
+      showClaimButton,
       missingCounts: openShiftDebugDetail.missingCounts,
       requiredDaily: openShiftDebugDetail.requiredDaily,
       countsByDay: openShiftDebugDetail.countsByDay,
@@ -779,7 +801,7 @@ function RosterView({
       }),
     );
   }, [
-    showUnassignedButton,
+    showClaimButton,
     claimableOpenShiftSlots.length,
     openShiftDebugDetail,
   ]);
@@ -1281,17 +1303,16 @@ function RosterView({
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              Unbesetzte Dienste ({claimableOpenShiftSlots.length})
+              Dienst übernehmen ({claimableOpenShiftSlots.length})
             </DialogTitle>
             <DialogDescription>
-              Offene Dienste im aktuellen Monat (Geburtshilfe/Kreißzimmer, Gynäkologie, Turnus)
-              die Sie übernehmen dürfen.
+              Offene Dienste im aktuellen Monat aus Vorschau/Freigabe, die Sie übernehmen dürfen.
             </DialogDescription>
           </DialogHeader>
 
           {claimableOpenShiftSlots.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Keine freien Dienste für Sie verfügbar.
+              Keine Dienste zum Übernehmen verfügbar.
             </p>
           ) : (
             <div className="space-y-3">
@@ -1299,8 +1320,10 @@ function RosterView({
                 const slotKey = slot.isSynthetic
                   ? slot.syntheticId
                   : slot.id ?? `${slot.date}:${slot.serviceType}`;
+                const normalizedSlotKey = normalizeServiceLineKey(slot.serviceType);
                 const serviceLabel =
                   serviceLineLookup.get(slot.serviceType)?.label ??
+                  normalizedServiceLineLookup.get(normalizedSlotKey)?.label ??
                   slot.serviceType;
 
                 return (
