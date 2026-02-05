@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
@@ -32,6 +33,7 @@ export function Sidebar({
   className,
 }: SidebarProps) {
   const [location, setLocation] = useLocation();
+  const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
   const {
     employee,
     user,
@@ -186,10 +188,25 @@ export function Sidebar({
                   location === child.href ||
                   (child.href !== "/" && location.startsWith(child.href)),
               );
+              const isGroupOpen =
+                variant === "mobile" ||
+                isGroupActive ||
+                hoveredGroup === item.label;
               return (
                 <div
                   key={item.label}
                   className="rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200"
+                  aria-expanded={isGroupOpen}
+                  onMouseEnter={() => {
+                    if (variant === "desktop") {
+                      setHoveredGroup(item.label);
+                    }
+                  }}
+                  onMouseLeave={() => {
+                    if (variant === "desktop") {
+                      setHoveredGroup(null);
+                    }
+                  }}
                 >
                   <div
                     className={cn(
@@ -204,38 +221,41 @@ export function Sidebar({
                     )}
                     <span>{item.label}</span>
                   </div>
-                  <div className="mt-2 space-y-1 pl-8">
-                    {item.children.map((child) => {
-                      const isActive =
-                        location === child.href ||
-                        (child.href !== "/" && location.startsWith(child.href));
-                      return (
-                        <a
-                          key={child.href}
-                          href={child.href}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            setLocation(child.href);
-                            onNavigate?.();
-                          }}
-                          className={cn(
-                            "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200",
-                            isActive
-                              ? "bg-sidebar-accent text-white"
-                              : "text-white/70 hover:bg-white/10 hover:text-white",
-                          )}
-                          data-testid={`nav-${child.href
-                            .replace(/\//g, "-")
-                            .slice(1)}`}
-                        >
-                          {child.icon && (
-                            <child.icon className="w-4 h-4" aria-hidden />
-                          )}
-                          {child.label}
-                        </a>
-                      );
-                    })}
-                  </div>
+                  {isGroupOpen && (
+                    <div className="mt-2 space-y-1 pl-8">
+                      {item.children.map((child) => {
+                        const isActive =
+                          location === child.href ||
+                          (child.href !== "/" &&
+                            location.startsWith(child.href));
+                        return (
+                          <a
+                            key={child.href}
+                            href={child.href}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              setLocation(child.href);
+                              onNavigate?.();
+                            }}
+                            className={cn(
+                              "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200",
+                              isActive
+                                ? "bg-sidebar-accent text-white"
+                                : "text-white/70 hover:bg-white/10 hover:text-white",
+                            )}
+                            data-testid={`nav-${child.href
+                              .replace(/\//g, "-")
+                              .slice(1)}`}
+                          >
+                            {child.icon && (
+                              <child.icon className="w-4 h-4" aria-hidden />
+                            )}
+                            {child.label}
+                          </a>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               );
             }
