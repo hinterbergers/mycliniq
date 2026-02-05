@@ -10,6 +10,9 @@ Required:
 Optional:
 - `OPENAI_API_KEY` – enables OpenAI features (if not set, OpenAI-related features should be disabled/hidden)
 
+## Nginx proxy
+- Ensure the Nginx server block that proxy_pass-es to Node uses `client_max_body_size` large enough for training uploads; e.g. `client_max_body_size 20m;`. Without increasing it, PowerPoint/PDF uploads hit `413 Request Entity Too Large` before Express can process them.
+
 ### Example (.env)
 ```env
 NODE_ENV=production
