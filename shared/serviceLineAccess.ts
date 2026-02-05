@@ -52,6 +52,40 @@ const extractCandidate = (employee: any): unknown => {
       if (value != null) return value;
     }
   }
+  const shiftPrefCandidate = getShiftPreferenceCandidate(employee);
+  if (shiftPrefCandidate != null) return shiftPrefCandidate;
+  return null;
+};
+
+const getShiftPreferenceCandidate = (employee: any): unknown => {
+  if (!employee) return null;
+  const shiftPreferences = employee.shiftPreferences ?? employee.shift_preferences ?? null;
+  if (!shiftPreferences) return null;
+
+  if (Array.isArray(shiftPreferences.serviceTypeOverrides)) {
+    if (shiftPreferences.serviceTypeOverrides.length > 0) {
+      return shiftPreferences.serviceTypeOverrides;
+    }
+  } else if (typeof shiftPreferences.serviceTypeOverrides === "string") {
+    return shiftPreferences.serviceTypeOverrides;
+  }
+
+  if (Array.isArray(shiftPreferences.serviceLines)) {
+    if (shiftPreferences.serviceLines.length > 0) {
+      return shiftPreferences.serviceLines;
+    }
+  } else if (typeof shiftPreferences.serviceLines === "string") {
+    return shiftPreferences.serviceLines;
+  }
+
+  if (Array.isArray(shiftPreferences.serviceLineKeys)) {
+    if (shiftPreferences.serviceLineKeys.length > 0) {
+      return shiftPreferences.serviceLineKeys;
+    }
+  } else if (typeof shiftPreferences.serviceLineKeys === "string") {
+    return shiftPreferences.serviceLineKeys;
+  }
+
   return null;
 };
 
