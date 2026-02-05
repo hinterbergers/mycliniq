@@ -223,6 +223,61 @@ function normalizeKeywords(value: unknown): string[] {
     .filter(Boolean);
 }
 
+function normalizeFileNameForComparison(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/gi, "")
+    .toLowerCase();
+}
+
+function findConvertedPdf(
+  outputDir: string,
+  basename: string,
+  sinceMs: number,
+): string | null {
+  const normalizedBase = normalizeFileNameForComparison(basename);
+  const candidateFiles = fs
+    .readdirSync(outputDir)
+    .filter((name) => name.toLowerCase().endsWith(".pdf"));
+
+  const candidates = candidateFiles
+    .map((name) => {
+      const filePath = path.join(outputDir, name);
+      try {
+        const { mtimeMs } = fs.statSync(filePath);
+        return { name, path: filePath, mtimeMs };
+      } catch {
+        return null;
+      }
+    })
+    .filter(
+      (entry): entry is { name: string; path: string; mtimeMs: number } =>
+        Boolean(entry),
+    );
+
+  const ordered = [
+    ...candidates.filter((entry) => entry.mtimeMs >= sinceMs - 2000),
+    ...candidates,
+  ];
+  const seen = new Set<string>();
+  for (const entry of ordered) {
+    if (seen.has(entry.path)) continue;
+    seen.add(entry.path);
+    const nameWithoutExt = entry.name.slice(0, -4);
+    const normalizedCandidate = normalizeFileNameForComparison(nameWithoutExt);
+    if (!normalizedCandidate) continue;
+    if (
+      normalizedCandidate === normalizedBase ||
+      normalizedCandidate.includes(normalizedBase)
+    ) {
+      return entry.path;
+    }
+  }
+
+  return null;
+}
+
 
 async function convertPresentationToPdf(inputPath: string): Promise<string> {
   const outputDir = path.dirname(inputPath);
@@ -231,6 +286,7 @@ async function convertPresentationToPdf(inputPath: string): Promise<string> {
   const pdfPath = path.join(outputDir, pdfName);
 
   return new Promise<string>((resolve, reject) => {
+    const conversionStartedAt = Date.now();
     const child = spawn(
       "soffice",
       [
@@ -257,6 +313,15 @@ async function convertPresentationToPdf(inputPath: string): Promise<string> {
     child.on("close", (code) => {
       if (code === 0) {
         if (!fs.existsSync(pdfPath)) {
+          const alternativePath = findConvertedPdf(
+            outputDir,
+            basename,
+            conversionStartedAt,
+          );
+          if (alternativePath) {
+            resolve(alternativePath);
+            return;
+          }
           reject(new Error("PDF nach der Konvertierung nicht gefunden"));
           return;
         }
