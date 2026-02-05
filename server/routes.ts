@@ -248,7 +248,7 @@ const buildOpenShiftPayload = async ({
     const hasOccupant =
       Boolean(shift.employeeId) ||
       Boolean((shift.assigneeFreeText ?? "").trim());
-    if (dayEntry && dayEntry[shift.serviceType] !== undefined && hasOccupant) {
+    if (dayEntry && dayEntry[shift.serviceType] !== undefined) {
       dayEntry[shift.serviceType] += 1;
     }
 
