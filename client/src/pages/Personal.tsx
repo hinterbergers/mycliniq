@@ -614,12 +614,8 @@ function RosterView({
   }, [currentUser?.id, shifts]);
 
   const visibleOpenShiftSlots = useMemo(() => {
-    if (!currentUser?.id) return openShiftSlots;
-    return openShiftSlots.filter((slot) => {
-      const prevDate = format(subDays(parseISO(slot.date), 1), "yyyy-MM-dd");
-      return !myDutyDates.has(prevDate);
-    });
-  }, [currentUser?.id, myDutyDates, openShiftSlots]);
+    return openShiftSlots;
+  }, [openShiftSlots]);
 
   // --- Service line helpers using employee record assignments ---
   const currentEmployee = useMemo(() => {
