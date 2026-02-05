@@ -42,8 +42,14 @@ export default function TrainingPresentations() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { isAdmin, isTechnicalAdmin } = useAuth();
-  const canManageTraining = isAdmin || isTechnicalAdmin;
+  const { employee, isAdmin, isTechnicalAdmin } = useAuth();
+  const canManageTraining = Boolean(
+    isAdmin ||
+      isTechnicalAdmin ||
+      employee?.isAdmin ||
+      employee?.systemRole === "system_admin" ||
+      employee?.appRole === "Admin",
+  );
 
   const { data: presentations = [], isLoading, error } = useQuery({
     queryKey: ["training", "presentations"],
