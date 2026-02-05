@@ -1761,7 +1761,11 @@ export async function registerRoutes(
 
         const prevDate = format(subDays(parsedDate, 1), "yyyy-MM-dd");
         const [prevShift] = await db
-          .select()
+          .select({
+            id: rosterShifts.id,
+            serviceType: rosterShifts.serviceType,
+            employeeId: rosterShifts.employeeId,
+          })
           .from(rosterShifts)
           .where(
             and(
@@ -1771,9 +1775,17 @@ export async function registerRoutes(
           )
           .limit(1);
         if (prevShift) {
-          return res
-            .status(400)
-            .json({ error: "Übernahme nicht erlaubt: Dienst am Vortag vorhanden" });
+          if (
+            prevShift.serviceType &&
+            normalizeServiceLineKey(prevShift.serviceType) ===
+              normalizeServiceLineKey(OVERDUTY_KEY)
+          ) {
+            // Überdienste dürfen den folgenden Tag nicht blockieren
+          } else {
+            return res
+              .status(400)
+              .json({ error: "Übernahme nicht erlaubt: Dienst am Vortag vorhanden" });
+          }
         }
 
         const [updated] = await db
