@@ -310,25 +310,25 @@ async function convertPresentationToPdf(inputPath: string): Promise<string> {
       reject(error);
     });
 
-  child.on("close", (code) => {
-    if (code === 0) {
-      if (!fs.existsSync(pdfPath)) {
-        const outputFiles = fs.readdirSync(outputDir);
-        console.error(
-          `[training] convertPresentationToPdf: expected ${pdfName} but directory contains ${outputFiles.length} files: ${outputFiles.join(
-            ", ",
-          )}`,
-        );
-        if (stderr.trim()) {
+    child.on("close", (code, signal) => {
+      if (code === 0) {
+        if (!fs.existsSync(pdfPath)) {
+          const outputFiles = fs.readdirSync(outputDir);
           console.error(
-            `[training] LibreOffice stderr during convertPresentationToPdf: ${stderr.trim()}`,
+            `[training] convertPresentationToPdf: expected ${pdfName} but directory contains ${outputFiles.length} files: ${outputFiles.join(
+              ", ",
+            )}`,
           );
-        }
-        const alternativePath = findConvertedPdf(
-          outputDir,
-          basename,
-          conversionStartedAt,
-        );
+          if (stderr.trim()) {
+            console.error(
+              `[training] LibreOffice stderr during convertPresentationToPdf: ${stderr.trim()}`,
+            );
+          }
+          const alternativePath = findConvertedPdf(
+            outputDir,
+            basename,
+            conversionStartedAt,
+          );
           if (alternativePath) {
             resolve(alternativePath);
             return;
@@ -339,7 +339,12 @@ async function convertPresentationToPdf(inputPath: string): Promise<string> {
         resolve(pdfPath);
         return;
       }
-      const message = stderr || `LibreOffice-Konvertierung fehlgeschlagen (code ${code})`;
+      console.error(
+        `[training] convertPresentationToPdf failed (code=${code} signal=${signal}): ${stderr.trim()}`,
+      );
+      const message =
+        stderr.trim() ||
+        `LibreOffice-Konvertierung fehlgeschlagen (code ${code}, signal ${signal})`;
       reject(new Error(message));
     });
   });
