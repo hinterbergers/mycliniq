@@ -310,14 +310,25 @@ async function convertPresentationToPdf(inputPath: string): Promise<string> {
       reject(error);
     });
 
-    child.on("close", (code) => {
-      if (code === 0) {
-        if (!fs.existsSync(pdfPath)) {
-          const alternativePath = findConvertedPdf(
-            outputDir,
-            basename,
-            conversionStartedAt,
+  child.on("close", (code) => {
+    if (code === 0) {
+      if (!fs.existsSync(pdfPath)) {
+        const outputFiles = fs.readdirSync(outputDir);
+        console.error(
+          `[training] convertPresentationToPdf: expected ${pdfName} but directory contains ${outputFiles.length} files: ${outputFiles.join(
+            ", ",
+          )}`,
+        );
+        if (stderr.trim()) {
+          console.error(
+            `[training] LibreOffice stderr during convertPresentationToPdf: ${stderr.trim()}`,
           );
+        }
+        const alternativePath = findConvertedPdf(
+          outputDir,
+          basename,
+          conversionStartedAt,
+        );
           if (alternativePath) {
             resolve(alternativePath);
             return;
