@@ -3216,12 +3216,7 @@ const buildAttendanceMembers = (
             .json({ success: false, error: "Anmeldung erforderlich" });
         }
 
-        const regenerateParam =
-          typeof req.query.regenerate === "string"
-            ? req.query.regenerate
-            : Array.isArray(req.query.regenerate)
-            ? req.query.regenerate[0]
-            : undefined;
+        const regenerateParam = resolveQueryToken(req.query.regenerate);
         const regenerate =
           regenerateParam === "1" ||
           regenerateParam === "true" ||
@@ -3311,18 +3306,19 @@ const buildAttendanceMembers = (
             error: "Ungültiges oder abgelaufenes Token",
           });
         }
+      }
 
-        const sessionEmployee = await storage.getEmployee(employeeId);
-        if (!sessionEmployee) {
-          return res.status(401).json({
-            success: false,
-            error: "Ungültiges oder abgelaufenes Token",
-          });
-        }
+      const sessionEmployee = await storage.getEmployee(employeeId);
+      if (!sessionEmployee) {
+        return res.status(401).json({
+          success: false,
+          error: "Ungültiges oder abgelaufenes Token",
+        });
+      }
 
-        const monthsParam = Number(
-          typeof req.query.months === "string" ? req.query.months : undefined,
-        );
+      const monthsParam = Number(
+        typeof req.query.months === "string" ? req.query.months : undefined,
+      );
         const months = Number.isFinite(monthsParam)
           ? Math.min(Math.max(monthsParam, 1), 12)
           : 6;

@@ -2323,7 +2323,7 @@ function WeeklyView({
                     variant="outline"
                     size="sm"
                     onClick={handleWeeklySubscribe}
-                    disabled={!token}
+                    disabled={!calendarToken}
                   >
                     <Rss className="w-4 h-4" />
                     Wochenplan abonnieren
@@ -2332,7 +2332,7 @@ function WeeklyView({
                     variant="outline"
                     size="sm"
                     onClick={handleCopyWeeklyLink}
-                    disabled={!token}
+                    disabled={!calendarToken}
                   >
                     <ClipboardCopy className="w-4 h-4" />
                     Link kopieren

@@ -38,6 +38,7 @@ import {
   type InsertLongTermAbsence,
   type PlannedAbsence,
   type InsertPlannedAbsence,
+  type CalendarToken,
   users,
   employees,
   rosterShifts,
