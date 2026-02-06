@@ -124,7 +124,9 @@ const ALLOWED_UNASSIGNED_STATUSES = new Set<DutyPlan["status"]>([
 ]);
 
 const useCalendarToken = (authToken: string | null | undefined) => {
-  const [calendarToken, setCalendarToken] = useState<string | null>(null);
+  const [calendarToken, setCalendarToken] = useState<string | null>(
+    authToken ?? null,
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -136,18 +138,18 @@ const useCalendarToken = (authToken: string | null | undefined) => {
         return null;
       }
       setIsLoading(true);
-      try {
-        const data = await calendarApi.getToken({ regenerate });
-        setCalendarToken(data.token);
-        setError(null);
-        return data.token;
-      } catch (err: any) {
-        const message =
-          err?.message || "Kalenderlink konnte nicht geladen werden.";
-        setCalendarToken(null);
-        setError(message);
-        return null;
-      } finally {
+    try {
+      const data = await calendarApi.getToken({ regenerate });
+      setCalendarToken(data.token);
+      setError(null);
+      return data.token;
+    } catch (err: any) {
+      const message =
+        err?.message || "Kalenderlink konnte nicht geladen werden.";
+      setCalendarToken(authToken ?? null);
+      setError(message);
+      return authToken ?? null;
+    } finally {
         setIsLoading(false);
       }
     },
@@ -271,6 +273,7 @@ export default function Personal() {
     refreshCalendarToken,
     error: calendarTokenError,
   } = useCalendarToken(token);
+  const resolvedCalendarToken = calendarToken ?? token ?? null;
 
   const debugEnabled = useMemo(() => {
     if (typeof window === "undefined") return false;
@@ -330,7 +333,7 @@ export default function Personal() {
       return;
     }
 
-    let calendarTokenValue = calendarToken;
+    let calendarTokenValue = resolvedCalendarToken;
     if (!calendarTokenValue) {
       calendarTokenValue = await refreshCalendarToken(false);
     }
@@ -573,7 +576,7 @@ export default function Personal() {
             value="weekly"
             className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300"
           >
-            <WeeklyView calendarToken={calendarToken} />
+            <WeeklyView calendarToken={resolvedCalendarToken} />
           </TabsContent>
 
           <TabsContent
