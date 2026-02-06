@@ -26,8 +26,17 @@ import type { TrainingPresentation } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 import { Label } from "@/components/ui/label";
+import { readAuthToken } from "@/lib/authToken";
 
 type FilterTag = string | "all";
+
+const withAuthToken = (url?: string | null) => {
+  if (!url) return undefined;
+  const token = readAuthToken();
+  if (!token) return url;
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}token=${encodeURIComponent(token)}`;
+};
 
 export default function TrainingPresentations() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -226,16 +235,16 @@ export default function TrainingPresentations() {
                   </div>
                 </CardHeader>
                 <CardContent className="flex justify-between">
-                  <Button onClick={() => setSelectedPresentation(presentation)}>
-                    Ansicht öffnen
-                  </Button>
-                  <Button asChild variant="ghost">
-                    <a
-                      href={presentation.fileUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      <Download className="w-4 h-4" />
+            <Button onClick={() => setSelectedPresentation(presentation)}>
+              Ansicht öffnen
+            </Button>
+            <Button asChild variant="ghost">
+              <a
+                  href={withAuthToken(presentation.fileUrl)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <Download className="w-4 h-4" />
                       <span className="ml-2">Download</span>
                     </a>
                   </Button>
@@ -265,7 +274,7 @@ export default function TrainingPresentations() {
             isPdf ? (
               <div className="mt-4 aspect-[4/3] overflow-hidden rounded-lg border border-border">
                 <iframe
-                  src={selectedPresentation.fileUrl}
+                  src={withAuthToken(selectedPresentation.fileUrl)}
                   title={selectedPresentation.title}
                   className="h-full w-full"
                 />
@@ -283,10 +292,10 @@ export default function TrainingPresentations() {
           )}
             <div className="mt-4 flex items-center gap-2">
               <Button asChild>
-                <a
-                  href={selectedPresentation?.fileUrl}
-                  target="_blank"
-                  rel="noreferrer"
+              <a
+                href={withAuthToken(selectedPresentation?.fileUrl)}
+                target="_blank"
+                rel="noreferrer"
                 className="flex items-center gap-2"
               >
                 <Download className="w-4 h-4" />
