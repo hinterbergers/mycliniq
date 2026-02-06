@@ -1643,8 +1643,14 @@ export const tasksApi = {
     const data = await handleResponse<unknown>(response);
     return unwrap<TaskAttachment>(data);
   },
-  getAttachmentDownloadUrl: (attachmentId: number) =>
-    `${API_BASE}/tasks/attachments/${attachmentId}/download`,
+  getAttachmentDownloadUrl: (attachmentId: number) => {
+    const token = readAuthToken();
+    const baseUrl = `${API_BASE}/tasks/attachments/${attachmentId}/download`;
+    if (!token) {
+      return baseUrl;
+    }
+    return `${baseUrl}?token=${encodeURIComponent(token)}`;
+  },
 };
 
 export type SopMemberInfo = {
