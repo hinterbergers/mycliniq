@@ -797,10 +797,12 @@ export function registerTrainingRoutes(router: Router) {
       if ([".ppt", ".pptx"].includes(extension)) {
         originalMimeType = file.mimetype;
         originalStoredName = originalStorageName;
+        let pdfConversionSucceeded = false;
         try {
           const convertedPath = await convertPresentationToPdf(originalPath);
           finalStorageName = path.basename(convertedPath);
           finalMimeType = "application/pdf";
+          pdfConversionSucceeded = true;
         } catch (error: any) {
           if (error.code === "ENOENT") {
             return validationError(
@@ -808,10 +810,9 @@ export function registerTrainingRoutes(router: Router) {
               "LibreOffice ist auf dem Server nicht installiert.",
             );
           }
-          const message =
-            error?.message || "Konvertierung der PowerPoint-Datei fehlgeschlagen.";
-          res.status(500).json({ success: false, error: message });
-          return;
+          console.warn(
+            `[training] convertPresentationToPdf failed: ${error?.message ?? error}`,
+          );
         }
 
         try {
@@ -820,6 +821,10 @@ export function registerTrainingRoutes(router: Router) {
           console.warn(
             `[training] convertPresentationToHtml: ${error?.message ?? error}`,
           );
+          if (!pdfConversionSucceeded) {
+            finalStorageName = originalStorageName;
+            finalMimeType = mime;
+          }
         }
       }
 
