@@ -805,11 +805,14 @@ export function registerTrainingRoutes(router: Router) {
       }
 
       res.setHeader("Content-Type", presentation.mimeType);
+      const sanitizedBase = presentation.title
+        .replace(/"/g, '\\"')
+        .replace(/[^a-zA-Z0-9._-]/g, "_")
+        .slice(0, 200);
+      const extension = path.extname(presentation.storageName) || ".pdf";
       res.setHeader(
         "Content-Disposition",
-        `inline; filename="${presentation.title
-          .replace(/"/g, '\\"')
-          .replace(/[^a-zA-Z0-9._-]/g, "_")}.pdf"`,
+        `inline; filename="${sanitizedBase}${extension}"`,
       );
       res.sendFile(filePath);
     }),
