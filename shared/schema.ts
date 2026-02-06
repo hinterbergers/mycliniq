@@ -332,6 +332,7 @@ export const trainingPresentations = pgTable(
     storageName: text("storage_name"),
     originalStorageName: text("original_storage_name"),
     originalMimeType: text("original_mime_type"),
+    interactiveStorageName: text("interactive_storage_name"),
     isActive: boolean("is_active").notNull().default(true),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),

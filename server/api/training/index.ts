@@ -1,4 +1,4 @@
-import type { Router, Request } from "express";
+import type { Router, Request, Response } from "express";
 import { z } from "zod";
 import { db, eq, desc } from "../../lib/db";
 import {
@@ -191,14 +191,22 @@ const selectPresentationFields = {
   storageName: trainingPresentations.storageName,
   originalStorageName: trainingPresentations.originalStorageName,
   originalMimeType: trainingPresentations.originalMimeType,
+  interactiveStorageName: trainingPresentations.interactiveStorageName,
   createdAt: trainingPresentations.createdAt,
   updatedAt: trainingPresentations.updatedAt,
+};
+
+const selectPresentationInteractiveFields = {
+  id: trainingPresentations.id,
+  interactiveStorageName: trainingPresentations.interactiveStorageName,
 };
 
 const upload = multer({ storage: multer.memoryStorage() });
 
 const trainingUploadsDir = path.join(process.cwd(), "uploads", "training");
 fs.mkdirSync(trainingUploadsDir, { recursive: true });
+const trainingInteractiveDir = path.join(trainingUploadsDir, "interactive");
+fs.mkdirSync(trainingInteractiveDir, { recursive: true });
 
 const ALLOWED_PRESENTATION_MIMES = new Set([
   "application/pdf",
@@ -231,15 +239,17 @@ function normalizeFileNameForComparison(value: string): string {
     .toLowerCase();
 }
 
-function findConvertedPdf(
+function findConvertedFile(
   outputDir: string,
   basename: string,
+  extension: string,
   sinceMs: number,
 ): string | null {
   const normalizedBase = normalizeFileNameForComparison(basename);
+  const normalizedExt = extension.startsWith(".") ? extension : `.${extension}`;
   const candidateFiles = fs
     .readdirSync(outputDir)
-    .filter((name) => name.toLowerCase().endsWith(".pdf"));
+    .filter((name) => name.toLowerCase().endsWith(normalizedExt));
 
   const candidates = candidateFiles
     .map((name) => {
@@ -264,7 +274,7 @@ function findConvertedPdf(
   for (const entry of ordered) {
     if (seen.has(entry.path)) continue;
     seen.add(entry.path);
-    const nameWithoutExt = entry.name.slice(0, -4);
+    const nameWithoutExt = entry.name.slice(0, -normalizedExt.length);
     const normalizedCandidate = normalizeFileNameForComparison(nameWithoutExt);
     if (!normalizedCandidate) continue;
     if (
@@ -324,9 +334,10 @@ async function convertPresentationToPdf(inputPath: string): Promise<string> {
               `[training] LibreOffice stderr during convertPresentationToPdf: ${stderr.trim()}`,
             );
           }
-          const alternativePath = findConvertedPdf(
+          const alternativePath = findConvertedFile(
             outputDir,
             basename,
+            ".pdf",
             conversionStartedAt,
           );
           if (alternativePath) {
@@ -348,6 +359,127 @@ async function convertPresentationToPdf(inputPath: string): Promise<string> {
       reject(new Error(message));
     });
   });
+}
+
+async function convertPresentationToHtml(inputPath: string): Promise<string> {
+  const outputDir = path.dirname(inputPath);
+  const basename = path.basename(inputPath, path.extname(inputPath));
+  const htmlName = `${basename}.html`;
+  const htmlPath = path.join(outputDir, htmlName);
+
+  return new Promise<string>((resolve, reject) => {
+    const conversionStartedAt = Date.now();
+    const child = spawn(
+      "soffice",
+      [
+        "--headless",
+        "--nologo",
+        "--convert-to",
+        "html:'impress_html_Export'",
+        "--outdir",
+        outputDir,
+        inputPath,
+      ],
+      { stdio: ["ignore", "ignore", "pipe"] },
+    );
+
+    let stderr = "";
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on("error", (error) => {
+      reject(error);
+    });
+
+    child.on("close", (code, signal) => {
+      if (code === 0) {
+        if (!fs.existsSync(htmlPath)) {
+          const outputFiles = fs.readdirSync(outputDir);
+          console.error(
+            `[training] convertPresentationToHtml: expected ${htmlName} but directory contains ${outputFiles.length} files: ${outputFiles.join(
+              ", ",
+            )}`,
+          );
+          if (stderr.trim()) {
+            console.error(
+              `[training] LibreOffice stderr during convertPresentationToHtml: ${stderr.trim()}`,
+            );
+          }
+          const alternativePath = findConvertedFile(
+            outputDir,
+            basename,
+            ".html",
+            conversionStartedAt,
+          );
+          if (alternativePath) {
+            resolve(alternativePath);
+            return;
+          }
+          reject(new Error("HTML nach der Konvertierung nicht gefunden"));
+          return;
+        }
+        resolve(htmlPath);
+        return;
+      }
+      console.error(
+        `[training] convertPresentationToHtml failed (code=${code} signal=${signal}): ${stderr.trim()}`,
+      );
+      const message =
+        stderr.trim() ||
+        `LibreOffice HTML-Konvertierung fehlgeschlagen (code ${code}, signal ${signal})`;
+      reject(new Error(message));
+    });
+  });
+}
+
+function prepareInteractiveAssets(
+  presentationId: number,
+  htmlSourcePath: string,
+): string {
+  const destinationDir = path.join(trainingInteractiveDir, String(presentationId));
+  fs.rmSync(destinationDir, { recursive: true, force: true });
+  fs.mkdirSync(destinationDir, { recursive: true });
+
+  const htmlName = path.basename(htmlSourcePath);
+  const destinationHtmlPath = path.join(destinationDir, htmlName);
+  fs.renameSync(htmlSourcePath, destinationHtmlPath);
+
+  const assetDirName = `${path.basename(htmlName, ".html")}_files`;
+  const sourceAssetDir = path.join(path.dirname(htmlSourcePath), assetDirName);
+  const destinationAssetDir = path.join(destinationDir, assetDirName);
+  if (fs.existsSync(sourceAssetDir)) {
+    fs.cpSync(sourceAssetDir, destinationAssetDir, { recursive: true });
+    fs.rmSync(sourceAssetDir, { recursive: true, force: true });
+  }
+
+  return path.relative(trainingUploadsDir, destinationHtmlPath);
+}
+
+function serveInteractiveAsset(
+  res: Response,
+  htmlPath: string,
+  relativePath?: string,
+): void {
+  const baseDir = path.dirname(htmlPath);
+  const targetPath = relativePath
+    ? path.join(baseDir, relativePath)
+    : htmlPath;
+  const normalizedPath = path.normalize(targetPath);
+  const relativeToBase = path.relative(baseDir, normalizedPath);
+  if (relativeToBase.startsWith("..") || path.isAbsolute(relativeToBase)) {
+    res.status(400).json({ success: false, error: "Ungültiger Pfad" });
+    return;
+  }
+  if (!fs.existsSync(normalizedPath)) {
+    notFound(res, "Datei");
+    return;
+  }
+  if (fs.statSync(normalizedPath).isDirectory()) {
+    notFound(res, "Datei");
+    return;
+  }
+  res.sendFile(normalizedPath);
 }
 export function registerTrainingRoutes(router: Router) {
   router.get(
@@ -660,6 +792,7 @@ export function registerTrainingRoutes(router: Router) {
       let finalMimeType = mime;
       let originalMimeType: string | null = null;
       let originalStoredName: string | null = null;
+      let interactiveSourcePath: string | null = null;
 
       if ([".ppt", ".pptx"].includes(extension)) {
         originalMimeType = file.mimetype;
@@ -679,6 +812,15 @@ export function registerTrainingRoutes(router: Router) {
             error?.message || "Konvertierung der PowerPoint-Datei fehlgeschlagen.";
           res.status(500).json({ success: false, error: message });
           return;
+        }
+
+        try {
+          interactiveSourcePath = await convertPresentationToHtml(originalPath);
+        } catch (error: any) {
+          console.warn(
+            `[training] convertPresentationToHtml: ${error?.message ?? error}`,
+          );
+          interactiveSourcePath = null;
         }
       }
 
@@ -701,6 +843,17 @@ export function registerTrainingRoutes(router: Router) {
         .update(trainingPresentations)
         .set({ fileUrl: downloadUrl })
         .where(eq(trainingPresentations.id, inserted.id));
+
+      if (interactiveSourcePath) {
+        const interactiveStorageName = prepareInteractiveAssets(
+          inserted.id,
+          interactiveSourcePath,
+        );
+        await db
+          .update(trainingPresentations)
+          .set({ interactiveStorageName })
+          .where(eq(trainingPresentations.id, inserted.id));
+      }
 
       const [result] = await db
         .select(selectPresentationFields)
@@ -749,6 +902,53 @@ export function registerTrainingRoutes(router: Router) {
           .replace(/[^a-zA-Z0-9._-]/g, "_")}.pdf"`,
       );
       res.sendFile(filePath);
+    }),
+  );
+
+  router.get(
+    "/presentations/:id/interactive",
+    requireAuth,
+    requireTrainingEnabled,
+    validateParams(idParamSchema),
+    asyncHandler(async (req, res) => {
+      const { id } = req.params;
+      const [presentation] = await db
+        .select(selectPresentationInteractiveFields)
+        .from(trainingPresentations)
+        .where(eq(trainingPresentations.id, id))
+        .limit(1);
+      if (!presentation || !presentation.interactiveStorageName) {
+        return notFound(res, "Vortrag");
+      }
+      const htmlPath = path.join(
+        trainingUploadsDir,
+        presentation.interactiveStorageName,
+      );
+      serveInteractiveAsset(res, htmlPath);
+    }),
+  );
+
+  router.get(
+    "/presentations/:id/interactive/*",
+    requireAuth,
+    requireTrainingEnabled,
+    validateParams(idParamSchema),
+    asyncHandler(async (req, res) => {
+      const { id } = req.params;
+      const relativePath = req.params[0];
+      const [presentation] = await db
+        .select(selectPresentationInteractiveFields)
+        .from(trainingPresentations)
+        .where(eq(trainingPresentations.id, id))
+        .limit(1);
+      if (!presentation || !presentation.interactiveStorageName) {
+        return notFound(res, "Vortrag");
+      }
+      const htmlPath = path.join(
+        trainingUploadsDir,
+        presentation.interactiveStorageName,
+      );
+      serveInteractiveAsset(res, htmlPath, relativePath);
     }),
   );
 

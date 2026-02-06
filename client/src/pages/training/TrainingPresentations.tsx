@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState, useEffect, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Download, FileText } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
@@ -44,6 +44,7 @@ export default function TrainingPresentations() {
   const [selectedPresentation, setSelectedPresentation] =
     useState<TrainingPresentation | null>(null);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<"interactive" | "pdf">("pdf");
   const [uploadTitle, setUploadTitle] = useState("");
   const [uploadKeywords, setUploadKeywords] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -138,6 +139,18 @@ export default function TrainingPresentations() {
       ?.toLowerCase()
       .includes("pdf"),
   );
+  const interactiveUrl =
+    selectedPresentation?.interactiveStorageName
+      ? `/api/training/presentations/${selectedPresentation.id}/interactive`
+      : undefined;
+  const interactiveAvailable = Boolean(interactiveUrl);
+  const interactivePreviewUrl = withAuthToken(interactiveUrl);
+  const pdfPreviewUrl = withAuthToken(selectedPresentation?.fileUrl);
+
+  useEffect(() => {
+    if (!selectedPresentation) return;
+    setViewMode(interactiveAvailable ? "interactive" : "pdf");
+  }, [interactiveAvailable, selectedPresentation?.id]);
 
   return (
     <Layout title="Fortbildung – PowerPoint / Vorträge">
@@ -270,30 +283,60 @@ export default function TrainingPresentations() {
               {selectedPresentation?.mimeType}
             </DialogDescription>
           </DialogHeader>
-          {selectedPresentation?.fileUrl ? (
-            isPdf ? (
-              <div className="mt-4 aspect-[4/3] overflow-hidden rounded-lg border border-border">
-                <iframe
-                  src={withAuthToken(selectedPresentation.fileUrl)}
-                  title={selectedPresentation.title}
-                  className="h-full w-full"
-                />
-              </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {interactiveAvailable && (
+              <Button
+                size="sm"
+                variant={viewMode === "interactive" ? "secondary" : "outline"}
+                onClick={() => setViewMode("interactive")}
+              >
+                LibreOffice Ansicht
+              </Button>
+            )}
+            {isPdf && (
+              <Button
+                size="sm"
+                variant={viewMode === "pdf" ? "secondary" : "outline"}
+                onClick={() => setViewMode("pdf")}
+              >
+                PDF-Ansicht
+              </Button>
+            )}
+          </div>
+          <div className="mt-4">
+            {selectedPresentation ? (
+              viewMode === "interactive" && interactiveAvailable ? (
+                <div className="aspect-[16/9] overflow-hidden rounded-lg border border-border">
+                  <iframe
+                    src={interactivePreviewUrl}
+                    title={`${selectedPresentation.title} – LibreOffice Ansicht`}
+                    className="h-full w-full"
+                  />
+                </div>
+              ) : selectedPresentation.fileUrl && isPdf ? (
+                <div className="aspect-[4/3] overflow-hidden rounded-lg border border-border">
+                  <iframe
+                    src={pdfPreviewUrl}
+                    title={selectedPresentation.title}
+                    className="h-full w-full"
+                  />
+                </div>
+              ) : (
+                <p className="mt-4 text-sm text-muted-foreground">
+                  Diese Datei kann inline nicht angezeigt werden. Bitte laden Sie
+                  dafür eine PDF-Version hoch.
+                </p>
+              )
             ) : (
-              <p className="mt-4 text-sm text-muted-foreground">
-                Diese Datei kann inline nicht angezeigt werden. Bitte laden Sie
-                dafür eine PDF-Version hoch.
+              <p className="mt-4 text-sm text-destructive">
+                Die Datei konnte nicht geladen werden.
               </p>
-            )
-          ) : (
-            <p className="mt-4 text-sm text-destructive">
-              Die Datei konnte nicht geladen werden.
-            </p>
-          )}
-          <div className="mt-4 flex items-center gap-2">
+            )}
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
             <Button asChild>
               <a
-                href={withAuthToken(selectedPresentation?.fileUrl)}
+                href={pdfPreviewUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="flex items-center gap-2"
@@ -302,6 +345,18 @@ export default function TrainingPresentations() {
                 Download
               </a>
             </Button>
+            {interactiveAvailable && interactivePreviewUrl && (
+              <Button asChild variant="outline">
+                <a
+                  href={interactivePreviewUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-2"
+                >
+                  <span>LibreOffice Ansicht öffnen</span>
+                </a>
+              </Button>
+            )}
             {selectedPresentation?.originalMimeType &&
               selectedPresentation.originalMimeType !== "application/pdf" && (
                 <p className="text-xs text-muted-foreground">
