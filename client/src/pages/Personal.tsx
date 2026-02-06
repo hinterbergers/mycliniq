@@ -121,6 +121,8 @@ const ALLOWED_UNASSIGNED_STATUSES = new Set<DutyPlan["status"]>([
   "Vorläufig",
   "Freigegeben",
 ]);
+const PERSONAL_ABSENCE_COLUMN_VISIBLE_KEY =
+  "mycliniq.personal.roster.absenceColumnVisible.v1";
 
 type OpenShiftDebugDetail = {
   planStatus: DutyPlan["status"] | null;
@@ -552,6 +554,7 @@ function RosterView({
   const isExternalDuty = user?.accessScope === "external_duty";
   const [unassignedDialogOpen, setUnassignedDialogOpen] = useState(false);
   const [claimingShiftId, setClaimingShiftId] = useState<string | number | null>(null);
+  const [showAbsenceColumn, setShowAbsenceColumn] = useState(false);
 
   const planStatus = dutyPlan?.status;
   const statusLabel = planStatus ? PLAN_STATUS_LABELS[planStatus] : "Vorschau";
@@ -578,6 +581,26 @@ function RosterView({
     () => plannedAbsences.filter((absence) => absence.status !== "Abgelehnt"),
     [plannedAbsences],
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem(
+      PERSONAL_ABSENCE_COLUMN_VISIBLE_KEY,
+    );
+    if (stored === "1") {
+      setShowAbsenceColumn(true);
+    } else if (stored === "0") {
+      setShowAbsenceColumn(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      PERSONAL_ABSENCE_COLUMN_VISIBLE_KEY,
+      showAbsenceColumn ? "1" : "0",
+    );
+  }, [showAbsenceColumn]);
 
   const days = useMemo(
     () =>
@@ -1162,7 +1185,26 @@ function RosterView({
                     {line.label}
                   </th>
                 ))}
-                <th className="px-2 py-2 text-left font-medium">Abwesenheiten</th>
+                <th className="px-2 py-2 text-left font-medium">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShowAbsenceColumn((prev) => !prev)
+                    }
+                    aria-pressed={showAbsenceColumn}
+                    title={
+                      showAbsenceColumn
+                        ? "Abwesenheitsspalte ausblenden"
+                        : "Abwesenheitsspalte einblenden"
+                    }
+                    className="flex flex-col items-start gap-0.5 text-xs font-semibold text-white/90 transition hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                  >
+                    <span>Abwesenheiten</span>
+                    <span className="text-[11px] font-normal text-white/70">
+                      {showAbsenceColumn ? "verstecken" : "anzeigen"}
+                    </span>
+                  </button>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -1200,6 +1242,7 @@ function RosterView({
                   const isHoliday = Boolean(holiday);
                   const isWeekend = day.getDay() === 0 || day.getDay() === 6;
                   const highlightRow = isWeekend || isHoliday;
+                  const dayAbsences = getAbsencesForDate(day);
 
                   return (
                     <tr
@@ -1250,15 +1293,17 @@ function RosterView({
                           </td>
                         );
                       })}
-                      <td className="px-2 py-1.5 text-muted-foreground text-xs">
-                        {(() => {
-                          const dayAbsences = getAbsencesForDate(day);
-                          if (!dayAbsences.length) {
-                            return (
-                              <span className="text-muted-foreground">-</span>
-                            );
-                          }
-                          return (
+                      <td
+                        className={
+                          showAbsenceColumn
+                            ? "px-2 py-1.5 text-muted-foreground text-xs"
+                            : "hidden"
+                        }
+                      >
+                        {showAbsenceColumn &&
+                          (dayAbsences.length === 0 ? (
+                            <span className="text-muted-foreground">-</span>
+                          ) : (
                             <div className="flex flex-wrap gap-1">
                               {dayAbsences.map((absence) => {
                                 const titleParts = [
@@ -1280,8 +1325,7 @@ function RosterView({
                                 );
                               })}
                             </div>
-                          );
-                        })()}
+                          ))}
                       </td>
                     </tr>
                   );
