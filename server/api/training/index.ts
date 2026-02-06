@@ -289,6 +289,78 @@ function findConvertedFile(
 }
 
 
+async function convertPresentationToPdf(inputPath: string): Promise<string> {
+  const outputDir = path.dirname(inputPath);
+  const basename = path.basename(inputPath, path.extname(inputPath));
+  const pdfName = `${basename}.pdf`;
+  const pdfPath = path.join(outputDir, pdfName);
+
+  return new Promise<string>((resolve, reject) => {
+    const conversionStartedAt = Date.now();
+    const child = spawn(
+      "soffice",
+      [
+        "--headless",
+        "--nologo",
+        "--convert-to",
+        "pdf",
+        "--outdir",
+        outputDir,
+        inputPath,
+      ],
+      { stdio: ["ignore", "ignore", "pipe"] },
+    );
+
+    let stderr = "";
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on("error", (error) => {
+      reject(error);
+    });
+
+    child.on("close", (code, signal) => {
+      if (code === 0) {
+        if (!fs.existsSync(pdfPath)) {
+          const outputFiles = fs.readdirSync(outputDir);
+          console.error(
+            `[training] convertPresentationToPdf: expected ${pdfName} but directory contains ${outputFiles.length} files: ${outputFiles.join(
+              ", ",
+            )}`,
+          );
+          if (stderr.trim()) {
+            console.error(
+              `[training] LibreOffice stderr during convertPresentationToPdf: ${stderr.trim()}`,
+            );
+          }
+          const alternativePath = findConvertedFile(
+            outputDir,
+            basename,
+            ".pdf",
+            conversionStartedAt,
+          );
+          if (alternativePath) {
+            resolve(alternativePath);
+            return;
+          }
+          reject(new Error("PDF nach der Konvertierung nicht gefunden"));
+          return;
+        }
+        resolve(pdfPath);
+        return;
+      }
+      console.error(
+        `[training] convertPresentationToPdf failed (code=${code} signal=${signal}): ${stderr.trim()}`,
+      );
+      const message =
+        stderr.trim() ||
+        `LibreOffice-Konvertierung fehlgeschlagen (code ${code}, signal ${signal})`;
+      reject(new Error(message));
+    });
+  });
+}
+
 async function convertPresentationToHtml(inputPath: string): Promise<string> {
   const outputDir = path.dirname(inputPath);
   const basename = path.basename(inputPath, path.extname(inputPath));
@@ -725,6 +797,23 @@ export function registerTrainingRoutes(router: Router) {
       if ([".ppt", ".pptx"].includes(extension)) {
         originalMimeType = file.mimetype;
         originalStoredName = originalStorageName;
+        try {
+          const convertedPath = await convertPresentationToPdf(originalPath);
+          finalStorageName = path.basename(convertedPath);
+          finalMimeType = "application/pdf";
+        } catch (error: any) {
+          if (error.code === "ENOENT") {
+            return validationError(
+              res,
+              "LibreOffice ist auf dem Server nicht installiert.",
+            );
+          }
+          const message =
+            error?.message || "Konvertierung der PowerPoint-Datei fehlgeschlagen.";
+          res.status(500).json({ success: false, error: message });
+          return;
+        }
+
         try {
           interactiveSourcePath = await convertPresentationToHtml(originalPath);
         } catch (error: any) {
