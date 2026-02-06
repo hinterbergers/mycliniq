@@ -229,6 +229,7 @@ const MONTH_NAMES = [
 
 const RULES_STORAGE_KEY = "mycliniq.roster.aiRules.v1";
 const LONGTERM_ABSENCE_TOGGLE_KEY = "mycliniq.roster.editor.showLongTermAbsences.v1";
+const ABSENCE_COLUMN_VISIBLE_KEY = "mycliniq.roster.editor.absenceColumnVisible.v1";
 
 type AiRuleWeights = {
   weekendFairness: number;
@@ -374,6 +375,7 @@ export default function RosterPlan() {
     null,
   );
   const [showLongTermAbsences, setShowLongTermAbsences] = useState(false);
+  const [showAbsenceColumn, setShowAbsenceColumn] = useState(false);
   const [savingCellKey, setSavingCellKey] = useState<string | null>(null);
   const [manualDrafts, setManualDrafts] = useState<Record<string, string>>({});
   const [activeCellKey, setActiveCellKey] = useState<string | null>(null);
@@ -512,6 +514,24 @@ export default function RosterPlan() {
     );
   }, [showLongTermAbsences]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem(ABSENCE_COLUMN_VISIBLE_KEY);
+    if (stored === "1") {
+      setShowAbsenceColumn(true);
+    } else if (stored === "0") {
+      setShowAbsenceColumn(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      ABSENCE_COLUMN_VISIBLE_KEY,
+      showAbsenceColumn ? "1" : "0",
+    );
+  }, [showAbsenceColumn]);
+
   const serviceLineDisplay = useMemo(() => {
     const lines: ServiceLineConfig[] = (
       serviceLines.length ? serviceLines : FALLBACK_SERVICE_LINES
@@ -557,6 +577,10 @@ export default function RosterPlan() {
   const serviceLineLookup = useMemo(() => {
     return new Map(serviceLineDisplay.map((line) => [line.key, line]));
   }, [serviceLineDisplay]);
+
+  const toggleAbsenceColumn = useCallback(() => {
+    setShowAbsenceColumn((prev) => !prev);
+  }, []);
 
   const absenceEmployeeOptions = useMemo(() => {
     return [...employees].sort((a, b) => {
@@ -2147,8 +2171,23 @@ export default function RosterPlan() {
                   ))}
 
                   {/* Absence Column */}
-                  <TableHead className="min-w-[300px] bg-slate-50/50 text-slate-700 font-bold text-center">
-                    Abwesenheiten / Info
+                  <TableHead className="min-w-[300px] bg-slate-50/50 font-bold text-center">
+                    <button
+                      type="button"
+                      onClick={toggleAbsenceColumn}
+                      aria-pressed={showAbsenceColumn}
+                      title={
+                        showAbsenceColumn
+                          ? "Abwesenheitsspalte ausblenden"
+                          : "Abwesenheitsspalte einblenden"
+                      }
+                      className="flex w-full flex-col items-center gap-1 px-1 py-2 text-xs font-semibold leading-tight text-slate-700 transition hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
+                    >
+                      <span>Abwesenheiten / Info</span>
+                      <span className="text-[11px] font-normal text-slate-500">
+                        {showAbsenceColumn ? "verstecken" : "anzeigen"}
+                      </span>
+                    </button>
                   </TableHead>
                 </TableRow>
               </TableHeader>
@@ -2192,61 +2231,69 @@ export default function RosterPlan() {
           ))}
 
                       {/* Absences & Info */}
-                      <TableCell className="p-1 text-muted-foreground">
-                        <div className="flex flex-wrap items-center gap-1">
-                          {isHoliday && (
-                            <Badge
-                              variant="outline"
-                              className="bg-red-50 text-red-600 border-red-200 mr-2"
-                            >
-                              {holiday?.name}
-                            </Badge>
-                          )}
-                          {dayAbsences.map((absence) => {
-                            const titleParts = [
-                              absence.name,
-                              absence.reason,
-                              absence.status ? `(${absence.status})` : null,
-                            ].filter(Boolean);
-                            if (absence.notes) {
-                              titleParts.push(absence.notes);
-                            }
-                            return (
-                              <span
-                                key={`${absence.source}-${absence.employeeId}-${absence.absenceId ?? absence.reason}`}
-                                className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600"
-                                title={titleParts.join(" · ")}
+                      <TableCell
+                        className={
+                          showAbsenceColumn
+                            ? "p-1 text-muted-foreground"
+                            : "hidden"
+                        }
+                      >
+                        {showAbsenceColumn && (
+                          <div className="flex flex-wrap items-center gap-1">
+                            {isHoliday && (
+                              <Badge
+                                variant="outline"
+                                className="bg-red-50 text-red-600 border-red-200 mr-2"
                               >
-                                <span className="truncate max-w-[120px]">
-                                  {absence.name}
+                                {holiday?.name}
+                              </Badge>
+                            )}
+                            {dayAbsences.map((absence) => {
+                              const titleParts = [
+                                absence.name,
+                                absence.reason,
+                                absence.status ? `(${absence.status})` : null,
+                              ].filter(Boolean);
+                              if (absence.notes) {
+                                titleParts.push(absence.notes);
+                              }
+                              return (
+                                <span
+                                  key={`${absence.source}-${absence.employeeId}-${absence.absenceId ?? absence.reason}`}
+                                  className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600"
+                                  title={titleParts.join(" · ")}
+                                >
+                                  <span className="truncate max-w-[120px]">
+                                    {absence.name}
+                                  </span>
+                                  {canEdit &&
+                                  absence.source === "planned" &&
+                                  absence.absenceId ? (
+                                    <button
+                                      type="button"
+                                      className="text-slate-400 hover:text-slate-700"
+                                      onClick={() =>
+                                        handleAbsenceDelete(absence.absenceId!)
+                                      }
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  ) : null}
                                 </span>
-                                {canEdit &&
-                                absence.source === "planned" &&
-                                absence.absenceId ? (
-                                  <button
-                                    type="button"
-                                    className="text-slate-400 hover:text-slate-700"
-                                    onClick={() =>
-                                      handleAbsenceDelete(absence.absenceId!)
-                                    }
-                                  >
-                                    <X className="w-3 h-3" />
-                                  </button>
-                                ) : null}
-                              </span>
-                            );
-                          })}
-                          {canEdit && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 text-slate-500"
-                              onClick={() => handleOpenAbsenceDialog(day)}
-                            >
-                              <Plus className="w-3 h-3" />
-                            </Button>
-                          )}
-                        </div>
+                              );
+                            })}
+                            {canEdit && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 text-slate-500"
+                                onClick={() => handleOpenAbsenceDialog(day)}
+                              >
+                                <Plus className="w-3 h-3" />
+                              </Button>
+                            )}
+                          </div>
+                        )}
                       </TableCell>
                     </TableRow>
                   );
