@@ -358,6 +358,20 @@ export const meApi = {
   },
 };
 
+export const calendarApi = {
+  getToken: async (options?: { regenerate?: boolean }) => {
+    const params = new URLSearchParams();
+    if (options?.regenerate) {
+      params.set("regenerate", "1");
+    }
+    const query = params.toString();
+    const response = await apiFetch(
+      `${API_BASE}/calendar-token${query ? `?${query}` : ""}`,
+    );
+    return handleResponse<{ token: string }>(response);
+  },
+};
+
 export const dashboardApi = {
   get: async (): Promise<DashboardResponse> => {
     const response = await apiFetch(`${API_BASE}/dashboard?days=7`);

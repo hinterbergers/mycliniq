@@ -456,19 +456,19 @@ const verifyJwtIgnoreExpiration = (
   return JSON.parse(payloadJson) as Record<string, unknown>;
 };
 
-const getAuthTokenFromRequest = (req: Request): string | null => {
-  const resolveQueryToken = (value: unknown): string | undefined => {
-    if (typeof value === "string") return value;
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        if (typeof item === "string") {
-          return item;
-        }
+const resolveQueryToken = (value: unknown): string | undefined => {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (typeof item === "string") {
+        return item;
       }
     }
-    return undefined;
-  };
+  }
+  return undefined;
+};
 
+const getAuthTokenFromRequest = (req: Request): string | null => {
   const queryToken = resolveQueryToken(req.query.token);
   const authHeader =
     typeof req.headers.authorization === "string"
@@ -480,6 +480,30 @@ const getAuthTokenFromRequest = (req: Request): string | null => {
       : undefined;
 
   return queryToken ?? headerToken ?? null;
+};
+
+const getCalendarTokenFromRequest = (req: Request): string | null => {
+  const calendarToken = resolveQueryToken(req.query.calendarToken);
+  if (calendarToken) {
+    return calendarToken;
+  }
+  return getAuthTokenFromRequest(req);
+};
+
+const ensureCalendarTokenForEmployee = async (
+  employeeId: number,
+  regenerate = false,
+): Promise<string> => {
+  if (!regenerate) {
+    const existing = await storage.getCalendarTokenByEmployee(employeeId);
+    if (existing) {
+      await storage.touchCalendarToken(existing.token);
+      return existing.token;
+    }
+  }
+  const token = crypto.randomBytes(32).toString("hex");
+  await storage.upsertCalendarTokenForEmployee(employeeId, token);
+  return token;
 };
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -3106,9 +3130,9 @@ const buildAttendanceMembers = (
       },
     );
 
-    app.post(
-      "/api/zeitausgleich/:id/accept",
-      requireAuth,
+  app.post(
+    "/api/zeitausgleich/:id/accept",
+    requireAuth,
     async (req: Request, res: Response) => {
       try {
         const zeId = Number(req.params.id);
@@ -3181,9 +3205,50 @@ const buildAttendanceMembers = (
     },
   );
 
-  app.get("/api/roster/calendar", async (req: Request, res: Response) => {
+  app.get(
+    "/api/calendar-token",
+    requireAuth,
+    async (req: Request, res: Response) => {
       try {
-      const token = getAuthTokenFromRequest(req);
+        if (!req.user) {
+          return res
+            .status(401)
+            .json({ success: false, error: "Anmeldung erforderlich" });
+        }
+
+        const regenerateParam =
+          typeof req.query.regenerate === "string"
+            ? req.query.regenerate
+            : Array.isArray(req.query.regenerate)
+            ? req.query.regenerate[0]
+            : undefined;
+        const regenerate =
+          regenerateParam === "1" ||
+          regenerateParam === "true" ||
+          regenerateParam?.toLowerCase() === "true";
+        const token = await ensureCalendarTokenForEmployee(
+          req.user.employeeId,
+          regenerate,
+        );
+
+        res.json({
+          success: true,
+          data: {
+            token,
+          },
+        });
+      } catch (error) {
+        console.error("[Calendar Token] Error:", error);
+        res
+          .status(500)
+          .json({ success: false, error: "Kalender-Token konnte nicht erstellt werden" });
+      }
+    },
+  );
+
+  app.get("/api/roster/calendar", async (req: Request, res: Response) => {
+    try {
+      const token = getCalendarTokenFromRequest(req);
 
       if (!token) {
         return res.status(401).json({
@@ -3192,15 +3257,19 @@ const buildAttendanceMembers = (
         });
       }
 
-      const sessionToken = token;
+      let employeeId: number | undefined;
+      const calendarRow = await storage.getCalendarTokenByToken(token);
+      if (calendarRow) {
+        employeeId = calendarRow.employeeId;
+        await storage.touchCalendarToken(token);
+      }
 
-      const [sessionRow] = await db
-        .select({ employeeId: sessions.employeeId })
-        .from(sessions)
-        .where(eq(sessions.token, sessionToken))
-        .limit(1);
-
-        let employeeId: number | undefined;
+      if (!employeeId) {
+        const [sessionRow] = await db
+          .select({ employeeId: sessions.employeeId })
+          .from(sessions)
+          .where(eq(sessions.token, token))
+          .limit(1);
         if (sessionRow) {
           employeeId = sessionRow.employeeId;
         } else {
@@ -3212,10 +3281,10 @@ const buildAttendanceMembers = (
               error: "Serverkonfiguration fehlerhaft",
             });
           }
-        let payload: Record<string, unknown>;
-        try {
-          payload = verifyJwtIgnoreExpiration(sessionToken, jwtSecret);
-        } catch (error) {
+          let payload: Record<string, unknown>;
+          try {
+            payload = verifyJwtIgnoreExpiration(token, jwtSecret);
+          } catch (error) {
             return res.status(401).json({
               success: false,
               error: "Ungültiges oder abgelaufenes Token",
@@ -3427,54 +3496,60 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
 
   app.get("/api/weekly/calendar", async (req: Request, res: Response) => {
     try {
-      const token = getAuthTokenFromRequest(req);
+      const token = getCalendarTokenFromRequest(req);
       if (!token) {
         return res.status(401).json({
           success: false,
           error: "Ungültiges oder abgelaufenes Token",
         });
       }
-      const sessionToken = token;
-
-      const [sessionRow] = await db
-        .select({ employeeId: sessions.employeeId })
-        .from(sessions)
-        .where(eq(sessions.token, sessionToken))
-        .limit(1);
 
       let employeeId: number | undefined;
-      if (sessionRow) {
-        employeeId = sessionRow.employeeId;
-      } else {
-        const jwtSecret = process.env.JWT_SECRET;
-        if (!jwtSecret) {
-          console.error("JWT_SECRET fehlt für Kalender-Token");
-          return res.status(500).json({
-            success: false,
-            error: "Serverkonfiguration fehlerhaft",
-          });
-        }
-        let payload: Record<string, unknown>;
-        try {
-          payload = verifyJwtIgnoreExpiration(sessionToken, jwtSecret);
-        } catch (error) {
-          return res.status(401).json({
-            success: false,
-            error: "Ungültiges oder abgelaufenes Token",
-          });
-        }
-        const candidate =
-          (typeof payload.employeeId === "number" && payload.employeeId) ||
-          (typeof payload.userId === "number" && payload.userId) ||
-          (typeof payload.id === "number" && payload.id) ||
-          (typeof payload.sub === "number" && payload.sub) ||
-          (typeof payload.employeeId === "string" &&
-            Number(payload.employeeId)) ||
-          (typeof payload.userId === "string" && Number(payload.userId)) ||
-          (typeof payload.id === "string" && Number(payload.id)) ||
-          (typeof payload.sub === "string" && Number(payload.sub));
-        if (Number.isFinite(candidate)) {
-          employeeId = Number(candidate);
+      const calendarRow = await storage.getCalendarTokenByToken(token);
+      if (calendarRow) {
+        employeeId = calendarRow.employeeId;
+        await storage.touchCalendarToken(token);
+      }
+
+      if (!employeeId) {
+        const [sessionRow] = await db
+          .select({ employeeId: sessions.employeeId })
+          .from(sessions)
+          .where(eq(sessions.token, token))
+          .limit(1);
+        if (sessionRow) {
+          employeeId = sessionRow.employeeId;
+        } else {
+          const jwtSecret = process.env.JWT_SECRET;
+          if (!jwtSecret) {
+            console.error("JWT_SECRET fehlt für Kalender-Token");
+            return res.status(500).json({
+              success: false,
+              error: "Serverkonfiguration fehlerhaft",
+            });
+          }
+          let payload: Record<string, unknown>;
+          try {
+            payload = verifyJwtIgnoreExpiration(token, jwtSecret);
+          } catch (error) {
+            return res.status(401).json({
+              success: false,
+              error: "Ungültiges oder abgelaufenes Token",
+            });
+          }
+          const candidate =
+            (typeof payload.employeeId === "number" && payload.employeeId) ||
+            (typeof payload.userId === "number" && payload.userId) ||
+            (typeof payload.id === "number" && payload.id) ||
+            (typeof payload.sub === "number" && payload.sub) ||
+            (typeof payload.employeeId === "string" &&
+              Number(payload.employeeId)) ||
+            (typeof payload.userId === "string" && Number(payload.userId)) ||
+            (typeof payload.id === "string" && Number(payload.id)) ||
+            (typeof payload.sub === "string" && Number(payload.sub));
+          if (Number.isFinite(candidate)) {
+            employeeId = Number(candidate);
+          }
         }
       }
 

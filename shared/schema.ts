@@ -522,10 +522,43 @@ export const sessions = pgTable("sessions", {
 export const insertSessionSchema = createInsertSchema(sessions).omit({
   id: true,
   createdAt: true,
+  lastSeenAt: true,
 });
 
 export type InsertSession = z.infer<typeof insertSessionSchema>;
 export type Session = typeof sessions.$inferSelect;
+
+export const calendarTokens = pgTable(
+  "calendar_tokens",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    employeeId: integer("employee_id")
+      .references(() => employees.id)
+      .notNull(),
+    token: text("token").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    lastUsedAt: timestamp("last_used_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("calendar_tokens_employee_id_idx").on(table.employeeId),
+    uniqueIndex("calendar_tokens_token_idx").on(table.token),
+  ],
+);
+
+export const insertCalendarTokenSchema = createInsertSchema(
+  calendarTokens,
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  lastUsedAt: true,
+});
+
+export type InsertCalendarToken = z.infer<typeof insertCalendarTokenSchema>;
+export type CalendarToken = typeof calendarTokens.$inferSelect;
 
 export const insertEmployeeSchema = createInsertSchema(employees).omit({
   id: true,

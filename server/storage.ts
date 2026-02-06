@@ -57,6 +57,7 @@ import {
   longTermShiftWishes,
   longTermAbsences,
   plannedAbsences,
+  calendarTokens,
 } from "@shared/schema";
 import { eq, and, gte, lte, desc, gt } from "drizzle-orm";
 
@@ -200,6 +201,15 @@ export interface IStorage {
   deleteSession(token: string): Promise<boolean>;
   deleteSessionsByEmployee(employeeId: number): Promise<boolean>;
   cleanupExpiredSessions(): Promise<number>;
+  getCalendarTokenByEmployee(
+    employeeId: number,
+  ): Promise<CalendarToken | undefined>;
+  getCalendarTokenByToken(token: string): Promise<CalendarToken | undefined>;
+  upsertCalendarTokenForEmployee(
+    employeeId: number,
+    token: string,
+  ): Promise<CalendarToken>;
+  touchCalendarToken(token: string): Promise<void>;
 
   // Shift swap request methods
   getShiftSwapRequests(): Promise<ShiftSwapRequest[]>;
@@ -780,6 +790,74 @@ export class DatabaseStorage implements IStorage {
       .where(lte(sessions.expiresAt, new Date()))
       .returning();
     return result.length;
+  }
+
+  async getCalendarTokenByEmployee(
+    employeeId: number,
+  ): Promise<CalendarToken | undefined> {
+    const result = await db
+      .select()
+      .from(calendarTokens)
+      .where(eq(calendarTokens.employeeId, employeeId))
+      .limit(1);
+    return result[0];
+  }
+
+  async getCalendarTokenByToken(
+    token: string,
+  ): Promise<CalendarToken | undefined> {
+    const result = await db
+      .select()
+      .from(calendarTokens)
+      .where(eq(calendarTokens.token, token))
+      .limit(1);
+    return result[0];
+  }
+
+  async upsertCalendarTokenForEmployee(
+    employeeId: number,
+    token: string,
+  ): Promise<CalendarToken> {
+    const now = new Date();
+    const [existing] = await db
+      .select()
+      .from(calendarTokens)
+      .where(eq(calendarTokens.employeeId, employeeId))
+      .limit(1);
+    if (existing) {
+      const [updated] = await db
+        .update(calendarTokens)
+        .set({
+          token,
+          updatedAt: now,
+          lastUsedAt: now,
+        })
+        .where(eq(calendarTokens.employeeId, employeeId))
+        .returning();
+      return updated;
+    }
+    const [created] = await db
+      .insert(calendarTokens)
+      .values({
+        employeeId,
+        token,
+        createdAt: now,
+        updatedAt: now,
+        lastUsedAt: now,
+      })
+      .returning();
+    return created;
+  }
+
+  async touchCalendarToken(token: string): Promise<void> {
+    const now = new Date();
+    await db
+      .update(calendarTokens)
+      .set({
+        updatedAt: now,
+        lastUsedAt: now,
+      })
+      .where(eq(calendarTokens.token, token));
   }
 
   // Shift swap request methods

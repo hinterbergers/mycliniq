@@ -46,7 +46,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getAustrianHoliday } from "@/lib/holidays";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   format,
   addMonths,
@@ -78,6 +78,7 @@ import {
   longTermAbsencesApi,
   roomApi,
   weeklyPlanApi,
+  calendarApi,
   type OpenShiftSlot,
   type OpenShiftResponse,
   type PlannedAbsenceAdmin,
@@ -121,6 +122,49 @@ const ALLOWED_UNASSIGNED_STATUSES = new Set<DutyPlan["status"]>([
   "Vorläufig",
   "Freigegeben",
 ]);
+
+const useCalendarToken = (authToken: string | null | undefined) => {
+  const [calendarToken, setCalendarToken] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refreshCalendarToken = useCallback(
+    async (regenerate = false): Promise<string | null> => {
+      if (!authToken) {
+        setCalendarToken(null);
+        setError(null);
+        return null;
+      }
+      setIsLoading(true);
+      try {
+        const data = await calendarApi.getToken({ regenerate });
+        setCalendarToken(data.token);
+        setError(null);
+        return data.token;
+      } catch (err: any) {
+        const message =
+          err?.message || "Kalenderlink konnte nicht geladen werden.";
+        setCalendarToken(null);
+        setError(message);
+        return null;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [authToken],
+  );
+
+  useEffect(() => {
+    refreshCalendarToken(false);
+  }, [refreshCalendarToken]);
+
+  return {
+    calendarToken,
+    refreshCalendarToken,
+    isLoading,
+    error,
+  };
+};
 const PERSONAL_ABSENCE_COLUMN_VISIBLE_KEY =
   "mycliniq.personal.roster.absenceColumnVisible.v1";
 
@@ -222,6 +266,11 @@ export default function Personal() {
   const [unassignedCount, setUnassignedCount] = useState(0);
   const [unassignedDebug, setUnassignedDebug] =
     useState<OpenShiftDebugDetail | null>(null);
+  const {
+    calendarToken,
+    refreshCalendarToken,
+    error: calendarTokenError,
+  } = useCalendarToken(token);
 
   const debugEnabled = useMemo(() => {
     if (typeof window === "undefined") return false;
@@ -281,8 +330,25 @@ export default function Personal() {
       return;
     }
 
+    let calendarTokenValue = calendarToken;
+    if (!calendarTokenValue) {
+      calendarTokenValue = await refreshCalendarToken(false);
+    }
+    if (!calendarTokenValue) {
+      toast({
+        title: "Kalender-Abo",
+        description:
+          calendarTokenError ||
+          "Kalenderlink konnte nicht geladen werden. Bitte versuchen Sie es erneut.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const baseUrl = window.location.origin.replace(/\/$/, "");
-    const calendarUrl = `${baseUrl}/api/roster/calendar?token=${encodeURIComponent(token)}&months=6`;
+    const calendarUrl = `${baseUrl}/api/roster/calendar?calendarToken=${encodeURIComponent(
+      calendarTokenValue,
+    )}&months=6`;
     const webcalUrl = calendarUrl.replace(/^https?:\/\//, "webcal://");
 
     try {
@@ -507,7 +573,7 @@ export default function Personal() {
             value="weekly"
             className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300"
           >
-            <WeeklyView />
+            <WeeklyView calendarToken={calendarToken} />
           </TabsContent>
 
           <TabsContent
@@ -1965,8 +2031,12 @@ function ShiftSwapRosterDialog({
   );
 }
 
-function WeeklyView() {
-  const { employee: currentUser, token } = useAuth();
+function WeeklyView({
+  calendarToken,
+}: {
+  calendarToken: string | null;
+}) {
+  const { employee: currentUser } = useAuth();
   const { toast } = useToast();
   const [currentDate, setCurrentDate] = useState(() => new Date());
   const [rooms, setRooms] = useState<WeeklyPlanRoom[]>([]);
@@ -1979,10 +2049,10 @@ function WeeklyView() {
   const [isLoading, setIsLoading] = useState(false);
 
   const getWeeklyCalendarUrl = () => {
-    if (!token || typeof window === "undefined") return null;
+    if (!calendarToken || typeof window === "undefined") return null;
     const baseUrl = window.location.origin.replace(/\/$/, "");
-    return `${baseUrl}/api/weekly/calendar?token=${encodeURIComponent(
-      token,
+    return `${baseUrl}/api/weekly/calendar?calendarToken=${encodeURIComponent(
+      calendarToken,
     )}&weeks=8`;
   };
 
