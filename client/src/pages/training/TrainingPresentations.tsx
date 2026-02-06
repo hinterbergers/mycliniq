@@ -235,16 +235,16 @@ export default function TrainingPresentations() {
                   </div>
                 </CardHeader>
                 <CardContent className="flex justify-between">
-            <Button onClick={() => setSelectedPresentation(presentation)}>
-              Ansicht öffnen
-            </Button>
-            <Button asChild variant="ghost">
-              <a
-                  href={withAuthToken(presentation.fileUrl)}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <Download className="w-4 h-4" />
+                  <Button onClick={() => setSelectedPresentation(presentation)}>
+                    Ansicht öffnen
+                  </Button>
+                  <Button asChild variant="ghost">
+                    <a
+                      href={withAuthToken(presentation.fileUrl)}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <Download className="w-4 h-4" />
                       <span className="ml-2">Download</span>
                     </a>
                   </Button>
@@ -255,16 +255,16 @@ export default function TrainingPresentations() {
         </ScrollArea>
       </div>
 
-          <Dialog
-            open={Boolean(selectedPresentation)}
-            onOpenChange={(open) => {
-              if (!open) {
-                setSelectedPresentation(null);
-              }
-            }}
-          >
-            <DialogContent className="max-w-5xl">
-              <DialogHeader>
+      <Dialog
+        open={Boolean(selectedPresentation)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedPresentation(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-5xl">
+          <DialogHeader>
             <DialogTitle>{selectedPresentation?.title}</DialogTitle>
             <DialogDescription>
               {selectedPresentation?.mimeType}
@@ -290,8 +290,8 @@ export default function TrainingPresentations() {
               Die Datei konnte nicht geladen werden.
             </p>
           )}
-            <div className="mt-4 flex items-center gap-2">
-              <Button asChild>
+          <div className="mt-4 flex items-center gap-2">
+            <Button asChild>
               <a
                 href={withAuthToken(selectedPresentation?.fileUrl)}
                 target="_blank"
@@ -300,8 +300,8 @@ export default function TrainingPresentations() {
               >
                 <Download className="w-4 h-4" />
                 Download
-                </a>
-              </Button>
+              </a>
+            </Button>
             {selectedPresentation?.originalMimeType &&
               selectedPresentation.originalMimeType !== "application/pdf" && (
                 <p className="text-xs text-muted-foreground">
@@ -309,9 +309,9 @@ export default function TrainingPresentations() {
                   Ansicht basiert auf der konvertierten PDF-Datei.
                 </p>
               )}
-            </div>
-          </DialogContent>
-        </Dialog>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={uploadDialogOpen}
