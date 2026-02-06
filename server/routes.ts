@@ -506,6 +506,13 @@ const ensureCalendarTokenForEmployee = async (
   return token;
 };
 
+const isMissingCalendarTokensTableError = (error: unknown): boolean => {
+  if (typeof error !== "object" || error === null) return false;
+  const maybeErr = error as { code?: string; message?: string };
+  if (maybeErr.code === "42P01") return true;
+  return maybeErr.message?.toLowerCase().includes("calendar_tokens") ?? false;
+};
+
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const isValidEmail = (value: string) =>
   EMAIL_REGEX.test(value) && !/[^\x00-\x7F]/.test(value);
@@ -3221,10 +3228,24 @@ const buildAttendanceMembers = (
           regenerateParam === "1" ||
           regenerateParam === "true" ||
           regenerateParam?.toLowerCase() === "true";
-        const token = await ensureCalendarTokenForEmployee(
-          req.user.employeeId,
-          regenerate,
-        );
+        let token: string;
+        try {
+          token = await ensureCalendarTokenForEmployee(
+            req.user.employeeId,
+            regenerate,
+          );
+        } catch (error) {
+          if (isMissingCalendarTokensTableError(error)) {
+            const fallbackToken = getAuthTokenFromRequest(req);
+            if (fallbackToken) {
+              return res.json({
+                success: true,
+                data: { token: fallbackToken },
+              });
+            }
+          }
+          throw error;
+        }
 
         res.json({
           success: true,
