@@ -354,6 +354,7 @@ export function registerRoomRoutes(router: Router) {
         blockReason,
         requiredRoleCompetencies,
         alternativeRoleCompetencies,
+        rowColor,
       } = req.body;
       const updateData: Record<string, any> = {};
 
@@ -370,6 +371,7 @@ export function registerRoomRoutes(router: Router) {
         updateData.requiredRoleCompetencies = requiredRoleCompetencies;
       if (alternativeRoleCompetencies !== undefined)
         updateData.alternativeRoleCompetencies = alternativeRoleCompetencies;
+      if (rowColor !== undefined) updateData.rowColor = rowColor;
 
       const [room] = await db
         .update(rooms)
