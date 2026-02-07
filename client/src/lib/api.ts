@@ -72,6 +72,7 @@ export type OpenShiftSlot = {
   slotIndex?: number;
   isSynthetic: boolean;
   source: "final" | "draft";
+  label?: string | null;
 };
 
 export type OpenShiftResponse = {
@@ -585,8 +586,9 @@ export const rosterApi = {
   },
 
   claimOpenShift: async (payload: {
-    date: string;
-    serviceType: string;
+    slotId?: number;
+    date?: string;
+    serviceType?: string;
     slotIndex?: number;
   }): Promise<RosterShift> => {
     const response = await apiFetch(`${API_BASE}/roster/open-shifts/claim`, {

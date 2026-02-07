@@ -100,6 +100,7 @@ type OpenShiftSlot = {
   slotIndex?: number;
   isSynthetic: boolean;
   source: OpenShiftSlotSource;
+  label?: string | null;
 };
 
 type OpenShiftPayload = {
@@ -179,15 +180,29 @@ const buildOpenShiftPayload = async ({
     );
 
   const claimableServiceLines = serviceLineRows.filter(
-    (line) => line.allowsClaim,
+    (line) => Boolean(line.allowsClaim) && typeof line.key === "string",
   );
+  if (!claimableServiceLines.length) {
+    return {
+      slots: [],
+      requiredDaily: {},
+      countsByDay: {},
+      missingCounts: {},
+    };
+  }
+
   const {
     rawKeys: claimableServiceLineKeys,
     normalizedKeys: claimableServiceLineNormalizedKeys,
   } = buildServiceLineFlagLookup(claimableServiceLines, "allowsClaim");
 
+  const serviceLineLookup = new Map(
+    claimableServiceLines.map((line) => [line.key, line]),
+  );
+
   const requiredDailyMap = new Map<string, number>();
   for (const line of claimableServiceLines) {
+    if (!line.key) continue;
     const rawValue =
       typeof line.requiredDaily === "number"
         ? line.requiredDaily
@@ -195,18 +210,20 @@ const buildOpenShiftPayload = async ({
           ? 1
           : 0;
     const normalized = Math.max(0, Number(rawValue) || 0);
-    if (normalized > 0 && line.key) {
+    if (normalized > 0) {
       requiredDailyMap.set(line.key, normalized);
     }
   }
 
   const countsByDay: Record<string, Record<string, number>> = {};
-  const serviceKeys = Array.from(requiredDailyMap.keys());
-  for (let day = 1; day <= lastDay; day += 1) {
-    const date = `${year}-${padTwo(month)}-${padTwo(day)}`;
-    countsByDay[date] = {};
-    for (const serviceType of serviceKeys) {
-      countsByDay[date][serviceType] = 0;
+  const requiredKeys = Array.from(requiredDailyMap.keys());
+  if (requiredKeys.length) {
+    for (let day = 1; day <= lastDay; day += 1) {
+      const date = `${year}-${padTwo(month)}-${padTwo(day)}`;
+      countsByDay[date] = {};
+      for (const serviceType of requiredKeys) {
+        countsByDay[date][serviceType] = 0;
+      }
     }
   }
 
@@ -214,6 +231,7 @@ const buildOpenShiftPayload = async ({
   const conditions = [
     gte(rosterShifts.date, monthStart),
     lte(rosterShifts.date, monthEnd),
+    inArray(rosterShifts.serviceType, Array.from(claimableServiceLineKeys)),
   ];
   if (!includeDraft) {
     conditions.push(eq(rosterShifts.isDraft, false));
@@ -225,68 +243,66 @@ const buildOpenShiftPayload = async ({
       date: rosterShifts.date,
       serviceType: rosterShifts.serviceType,
       employeeId: rosterShifts.employeeId,
-      assigneeFreeText: rosterShifts.assigneeFreeText,
       isDraft: rosterShifts.isDraft,
     })
     .from(rosterShifts)
     .where(and(...conditions));
 
   for (const shift of shiftRows) {
-    if (!shift.serviceType || !claimableServiceLineKeys.has(shift.serviceType)) {
-      continue;
-    }
-    const shiftKeyNormalized = normalizeServiceLineKey(shift.serviceType);
-    const isClaimableServiceType =
-      !!shift.serviceType &&
-      (claimableServiceLineKeys.has(shift.serviceType) ||
-        claimableServiceLineNormalizedKeys.has(shiftKeyNormalized));
-    if (!isClaimableServiceType) {
+    if (!shift.serviceType) continue;
+    const normalizedKey = normalizeServiceLineKey(shift.serviceType);
+    if (
+      !claimableServiceLineKeys.has(shift.serviceType) &&
+      !claimableServiceLineNormalizedKeys.has(normalizedKey)
+    ) {
       continue;
     }
 
     const dayEntry = countsByDay[shift.date];
-    const hasOccupant =
-      Boolean(shift.employeeId) ||
-      Boolean((shift.assigneeFreeText ?? "").trim());
-    if (dayEntry && dayEntry[shift.serviceType] !== undefined) {
+    if (
+      dayEntry &&
+      shift.employeeId &&
+      dayEntry[shift.serviceType] !== undefined
+    ) {
       dayEntry[shift.serviceType] += 1;
     }
 
-    const isOpen =
-      !hasOccupant;
-
-    if (isOpen) {
+    if (!shift.employeeId) {
       slots.push({
         id: shift.id,
         date: shift.date,
         serviceType: shift.serviceType,
         isSynthetic: false,
         source: shift.isDraft ? "draft" : "final",
+        label: serviceLineLookup.get(shift.serviceType)?.label ?? null,
       });
     }
   }
 
   const missingCounts: Record<string, number> = {};
   const syntheticSlots: OpenShiftSlot[] = [];
-  for (let day = 1; day <= lastDay; day += 1) {
-    const date = `${year}-${padTwo(month)}-${padTwo(day)}`;
-    for (const serviceType of serviceKeys) {
-      const dayCount = countsByDay[date]?.[serviceType] ?? 0;
-      const required = requiredDailyMap.get(serviceType) ?? 0;
-      const missing = Math.max(0, required - dayCount);
-      if (missing <= 0) continue;
-      missingCounts[serviceType] =
-        (missingCounts[serviceType] ?? 0) + missing;
-      for (let slotIndex = 1; slotIndex <= missing; slotIndex += 1) {
-        syntheticSlots.push({
-          id: null,
-          syntheticId: `${date}:${serviceType}:slot${slotIndex}`,
-          date,
-          serviceType,
-          slotIndex,
-          isSynthetic: true,
-          source: "final",
-        });
+  if (requiredKeys.length) {
+    for (let day = 1; day <= lastDay; day += 1) {
+      const date = `${year}-${padTwo(month)}-${padTwo(day)}`;
+      for (const serviceType of requiredKeys) {
+        const dayCount = countsByDay[date]?.[serviceType] ?? 0;
+        const required = requiredDailyMap.get(serviceType) ?? 0;
+        const missing = Math.max(0, required - dayCount);
+        if (missing <= 0) continue;
+        missingCounts[serviceType] =
+          (missingCounts[serviceType] ?? 0) + missing;
+        for (let slotIndex = 1; slotIndex <= missing; slotIndex += 1) {
+          syntheticSlots.push({
+            id: null,
+            syntheticId: `${date}:${serviceType}:slot${slotIndex}`,
+            date,
+            serviceType,
+            slotIndex,
+            isSynthetic: true,
+            source: "final",
+            label: serviceLineLookup.get(serviceType)?.label ?? null,
+          });
+        }
       }
     }
   }
@@ -1850,21 +1866,63 @@ export async function registerRoutes(
   //   -d '{"date":"2026-03-24","serviceType":"kreiszimmer"}'
   const openShiftClaimHandler = async (req: Request, res: Response) => {
     try {
+      const slotIdRaw = req.body?.slotId;
+      const parsedSlotId =
+        typeof slotIdRaw === "number"
+          ? slotIdRaw
+          : typeof slotIdRaw === "string"
+            ? Number(slotIdRaw)
+            : Number.NaN;
+      let slotShiftId: number | null = null;
+      let slotShiftDate: string | null = null;
+      let slotShiftServiceType: string | null = null;
+
+      if (Number.isFinite(parsedSlotId)) {
+        const [found] = await db
+          .select({
+            id: rosterShifts.id,
+            date: rosterShifts.date,
+            serviceType: rosterShifts.serviceType,
+          })
+          .from(rosterShifts)
+          .where(
+            and(
+              eq(rosterShifts.id, parsedSlotId),
+              eq(rosterShifts.isDraft, false),
+              isNull(rosterShifts.employeeId),
+            ),
+          )
+          .limit(1);
+        if (!found) {
+          return res.status(404).json({
+            error: "Kein offener Dienst für dieses Datum/Diensttyp vorhanden",
+          });
+        }
+        slotShiftId = found.id;
+        slotShiftDate = found.date;
+        slotShiftServiceType = found.serviceType;
+      }
+
       const rawDate =
-        typeof req.body.date === "string" ? req.body.date.trim() : "";
+        slotShiftDate ??
+        (typeof req.body.date === "string" ? req.body.date.trim() : "");
       const serviceType =
-        typeof req.body.serviceType === "string"
+        slotShiftServiceType ??
+        (typeof req.body.serviceType === "string"
           ? req.body.serviceType.trim()
-          : "";
+          : "");
+
       if (!rawDate || !serviceType) {
         return res
           .status(400)
           .json({ error: "date/serviceType erforderlich" });
       }
+
       const parsedDate = parseISO(rawDate);
       if (Number.isNaN(parsedDate.getTime())) {
         return res.status(400).json({ error: "Ungültiges Datum" });
       }
+
       const year = parsedDate.getFullYear();
       const month = parsedDate.getMonth() + 1;
       const [planRow] = await db
@@ -1879,14 +1937,17 @@ export async function registerRoutes(
       if (!planRow || !ALLOWED_CLAIM_STATUSES.has(planRow.status)) {
         return res.status(400).json({ error: "Dienstplan noch nicht freigegeben" });
       }
+
       const clinicId = await resolveClinicIdFromUser(req.user);
       if (!clinicId) {
         return res.status(400).json({ error: "Klinik-Kontext fehlt" });
       }
+
       const employeeId = req.user?.employeeId;
       if (!employeeId) {
         return res.status(400).json({ error: "EmployeeId fehlt" });
       }
+
       const [employee] = await db
         .select()
         .from(employees)
@@ -1894,6 +1955,7 @@ export async function registerRoutes(
       if (!employee) {
         return res.status(404).json({ error: "Mitarbeiter nicht gefunden" });
       }
+
       const serviceLineRows = await db
         .select()
         .from(serviceLines)
@@ -1903,6 +1965,7 @@ export async function registerRoutes(
             eq(serviceLines.isActive, true),
           ),
         );
+
       const requestedNormalizedKey = normalizeServiceLineKey(serviceType);
       const matchedServiceLine = serviceLineRows.find(
         (line) =>
@@ -1912,6 +1975,7 @@ export async function registerRoutes(
         return res.status(403).json({ error: "Diensttyp nicht erlaubt" });
       }
       const finalServiceTypeKey = matchedServiceLine.key;
+
       const allowedKeys = getEffectiveServiceLineKeys(employee, serviceLineRows);
       const allowedClaimKeys = filterKeysByFlag(
         allowedKeys,
@@ -1921,6 +1985,7 @@ export async function registerRoutes(
       if (!allowedClaimKeys.has(finalServiceTypeKey)) {
         return res.status(403).json({ error: "Diensttyp nicht erlaubt" });
       }
+
       const prevDate = format(subDays(parsedDate, 1), "yyyy-MM-dd");
       const [prevShift] = await db
         .select()
@@ -1937,21 +2002,30 @@ export async function registerRoutes(
           .status(400)
           .json({ error: "Übernahme nicht erlaubt: Dienst am Vortag vorhanden" });
       }
-      const payload = await buildOpenShiftPayload({
-        clinicId,
-        year,
-        month,
-        includeDraft: false,
-      });
-      const normalizedFinalKey = normalizeServiceLineKey(finalServiceTypeKey);
-      const matchingSlot = payload.slots.find(
-        (slot) =>
-          slot.date === rawDate &&
-          normalizeServiceLineKey(slot.serviceType) === normalizedFinalKey,
-      );
-      if (!matchingSlot) {
+
+      let targetShiftId = slotShiftId;
+      if (!targetShiftId) {
+        const [found] = await db
+          .select({
+            id: rosterShifts.id,
+          })
+          .from(rosterShifts)
+          .where(
+            and(
+              eq(rosterShifts.date, rawDate),
+              eq(rosterShifts.serviceType, finalServiceTypeKey),
+              eq(rosterShifts.isDraft, false),
+              isNull(rosterShifts.employeeId),
+            ),
+          )
+          .orderBy(rosterShifts.id)
+          .limit(1);
+        targetShiftId = found?.id ?? null;
+      }
+
+      if (!targetShiftId) {
         console.warn(
-          "No open shift slot found during claim",
+          "Claim attempted without matching slot",
           rawDate,
           finalServiceTypeKey,
         );
@@ -1959,36 +2033,27 @@ export async function registerRoutes(
           error: "Kein offener Dienst für dieses Datum/Diensttyp vorhanden",
         });
       }
-      let shift: RosterShift;
-      if (matchingSlot.id) {
-        const [updated] = await db
-          .update(rosterShifts)
-          .set({
-            employeeId,
-            assigneeFreeText: null,
-          })
-          .where(
-            and(
-              eq(rosterShifts.id, matchingSlot.id),
-              isNull(rosterShifts.employeeId),
-            ),
-          )
-          .returning();
-        if (!updated) {
-          return res
-            .status(409)
-            .json({ error: "Shift konnte nicht übernommen werden" });
-        }
-        shift = updated;
-      } else {
-        shift = await storage.createRosterShift({
-          date: rawDate,
-          serviceType: finalServiceTypeKey,
+
+      const [updated] = await db
+        .update(rosterShifts)
+        .set({
           employeeId,
-          isDraft: false,
-        });
+          assigneeFreeText: null,
+        })
+        .where(
+          and(
+            eq(rosterShifts.id, targetShiftId),
+            isNull(rosterShifts.employeeId),
+          ),
+        )
+        .returning();
+      if (!updated) {
+        return res
+          .status(409)
+          .json({ error: "Shift konnte nicht übernommen werden" });
       }
-      res.status(201).json(shift);
+
+      res.status(201).json(updated);
     } catch (error) {
       console.error("Claim open shift error:", error);
       res.status(500).json({ error: "Dienst konnte nicht übernommen werden" });

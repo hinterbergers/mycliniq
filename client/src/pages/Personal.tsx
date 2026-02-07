@@ -937,17 +937,11 @@ function RosterView({
         if (!slot.id) {
           throw new Error("Ungültiger Dienst");
         }
-        const headers: Record<string, string> = {
-          Authorization: `Bearer ${token}`,
-        };
-        const response = await fetch(`/api/roster/${slot.id}/claim`, {
-          method: "POST",
-          headers,
+        await rosterApi.claimOpenShift({
+          slotId: slot.id,
+          date: slot.date,
+          serviceType: slot.serviceType,
         });
-        if (!response.ok) {
-          const text = await response.text().catch(() => "");
-          throw new Error(text || `HTTP ${response.status}`);
-        }
       }
 
       const serviceLabel =
