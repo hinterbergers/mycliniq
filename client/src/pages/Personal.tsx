@@ -801,7 +801,8 @@ function RosterView({
   const showClaimButton =
     !isExternalDuty &&
     isPlanStatusAllowingUnassigned &&
-    normalizedEffectiveClaimKeys.size > 0;
+    normalizedEffectiveClaimKeys.size > 0 &&
+    claimableOpenShiftSlots.length > 0;
 
   const allowedKeysForDebug = useMemo(
     () => Array.from(effectiveClaimKeys).slice(0, 30),
@@ -913,6 +914,14 @@ function RosterView({
       return;
     }
     if (!currentUser?.id) return;
+    if (!slot.date || !slot.serviceType) {
+      toast({
+        title: "Ungültiger Dienst",
+        description: "Datum und Diensttyp müssen vorhanden sein.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (!canCurrentUserTakeShift(slot)) return;
 
     const shiftKey = slot.isSynthetic ? slot.syntheticId : slot.id;

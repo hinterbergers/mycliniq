@@ -1843,6 +1843,11 @@ export async function registerRoutes(
     },
   );
 
+  // Smoke check (curl example):
+  // curl -X POST https://mycliniq.info/api/roster/open-shifts/claim \
+  //   -H "Authorization: Bearer <token>" \
+  //   -H "Content-Type: application/json" \
+  //   -d '{"date":"2026-03-24","serviceType":"kreiszimmer"}'
   const openShiftClaimHandler = async (req: Request, res: Response) => {
     try {
       const rawDate =
@@ -1851,18 +1856,15 @@ export async function registerRoutes(
         typeof req.body.serviceType === "string"
           ? req.body.serviceType.trim()
           : "";
-      if (!rawDate) {
-        return res.status(400).json({ error: "Datum ist erforderlich" });
+      if (!rawDate || !serviceType) {
+        return res
+          .status(400)
+          .json({ error: "date/serviceType erforderlich" });
       }
-      if (!serviceType) {
-        return res.status(400).json({ error: "Diensttyp ist erforderlich" });
-      }
-
       const parsedDate = parseISO(rawDate);
       if (Number.isNaN(parsedDate.getTime())) {
         return res.status(400).json({ error: "Ungültiges Datum" });
       }
-
       const year = parsedDate.getFullYear();
       const month = parsedDate.getMonth() + 1;
       const [planRow] = await db
@@ -1877,17 +1879,14 @@ export async function registerRoutes(
       if (!planRow || !ALLOWED_CLAIM_STATUSES.has(planRow.status)) {
         return res.status(400).json({ error: "Dienstplan noch nicht freigegeben" });
       }
-
       const clinicId = await resolveClinicIdFromUser(req.user);
       if (!clinicId) {
         return res.status(400).json({ error: "Klinik-Kontext fehlt" });
       }
-
       const employeeId = req.user?.employeeId;
       if (!employeeId) {
         return res.status(400).json({ error: "EmployeeId fehlt" });
       }
-
       const [employee] = await db
         .select()
         .from(employees)
@@ -1895,7 +1894,6 @@ export async function registerRoutes(
       if (!employee) {
         return res.status(404).json({ error: "Mitarbeiter nicht gefunden" });
       }
-
       const serviceLineRows = await db
         .select()
         .from(serviceLines)
@@ -1905,7 +1903,6 @@ export async function registerRoutes(
             eq(serviceLines.isActive, true),
           ),
         );
-
       const requestedNormalizedKey = normalizeServiceLineKey(serviceType);
       const matchedServiceLine = serviceLineRows.find(
         (line) =>
@@ -1915,7 +1912,6 @@ export async function registerRoutes(
         return res.status(403).json({ error: "Diensttyp nicht erlaubt" });
       }
       const finalServiceTypeKey = matchedServiceLine.key;
-
       const allowedKeys = getEffectiveServiceLineKeys(employee, serviceLineRows);
       const allowedClaimKeys = filterKeysByFlag(
         allowedKeys,
@@ -1925,7 +1921,6 @@ export async function registerRoutes(
       if (!allowedClaimKeys.has(finalServiceTypeKey)) {
         return res.status(403).json({ error: "Diensttyp nicht erlaubt" });
       }
-
       const prevDate = format(subDays(parsedDate, 1), "yyyy-MM-dd");
       const [prevShift] = await db
         .select()
@@ -1942,33 +1937,57 @@ export async function registerRoutes(
           .status(400)
           .json({ error: "Übernahme nicht erlaubt: Dienst am Vortag vorhanden" });
       }
-
       const payload = await buildOpenShiftPayload({
         clinicId,
         year,
         month,
         includeDraft: false,
       });
-      const missing = payload.missingCounts[finalServiceTypeKey] ?? 0;
-      const required = payload.requiredDaily[finalServiceTypeKey] ?? 0;
-      if (required <= 0) {
-        return res
-          .status(400)
-          .json({ error: "Diensttyp kann nicht automatisch übernommen werden" });
+      const normalizedFinalKey = normalizeServiceLineKey(finalServiceTypeKey);
+      const matchingSlot = payload.slots.find(
+        (slot) =>
+          slot.date === rawDate &&
+          normalizeServiceLineKey(slot.serviceType) === normalizedFinalKey,
+      );
+      if (!matchingSlot) {
+        console.warn(
+          "No open shift slot found during claim",
+          rawDate,
+          finalServiceTypeKey,
+        );
+        return res.status(404).json({
+          error: "Kein offener Dienst für dieses Datum/Diensttyp vorhanden",
+        });
       }
-      if (missing <= 0) {
-        return res
-          .status(409)
-          .json({ error: "Kein freier Slot für diesen Dienst verfügbar" });
+      let shift: RosterShift;
+      if (matchingSlot.id) {
+        const [updated] = await db
+          .update(rosterShifts)
+          .set({
+            employeeId,
+            assigneeFreeText: null,
+          })
+          .where(
+            and(
+              eq(rosterShifts.id, matchingSlot.id),
+              isNull(rosterShifts.employeeId),
+            ),
+          )
+          .returning();
+        if (!updated) {
+          return res
+            .status(409)
+            .json({ error: "Shift konnte nicht übernommen werden" });
+        }
+        shift = updated;
+      } else {
+        shift = await storage.createRosterShift({
+          date: rawDate,
+          serviceType: finalServiceTypeKey,
+          employeeId,
+          isDraft: false,
+        });
       }
-
-      const shift = await storage.createRosterShift({
-        date: rawDate,
-        serviceType: finalServiceTypeKey,
-        employeeId,
-        isDraft: false,
-      });
-
       res.status(201).json(shift);
     } catch (error) {
       console.error("Claim open shift error:", error);
