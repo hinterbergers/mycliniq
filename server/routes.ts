@@ -101,6 +101,7 @@ type OpenShiftSlot = {
   isSynthetic: boolean;
   source: OpenShiftSlotSource;
   label?: string | null;
+  isDraft?: boolean;
 };
 
 type OpenShiftPayload = {
@@ -275,6 +276,7 @@ const buildOpenShiftPayload = async ({
         isSynthetic: false,
         source: shift.isDraft ? "draft" : "final",
         label: serviceLineLookup.get(shift.serviceType)?.label ?? null,
+        isDraft: shift.isDraft,
       });
     }
   }
@@ -301,6 +303,7 @@ const buildOpenShiftPayload = async ({
             isSynthetic: true,
             source: "final",
             label: serviceLineLookup.get(serviceType)?.label ?? null,
+            isDraft: false,
           });
         }
       }
@@ -1579,9 +1582,11 @@ export async function registerRoutes(
         ? ALLOWED_UNASSIGNED_STATUSES.has(planStatus)
         : false;
 
-      const includeDraft = parseBoolQueryFlag(
+      const includeDraftParam = parseBoolQueryFlag(
         req.query.includeDraft as string | string[],
       );
+      const allowDraftFromStatus = planStatus && planStatus !== "Freigegeben";
+      const includeDraft = includeDraftParam || allowDraftFromStatus;
       const payload = await buildOpenShiftPayload({
         clinicId,
         year,
@@ -1876,22 +1881,22 @@ export async function registerRoutes(
       let slotShiftId: number | null = null;
       let slotShiftDate: string | null = null;
       let slotShiftServiceType: string | null = null;
+      let slotShiftIsDraft: boolean | null = null;
 
       if (Number.isFinite(parsedSlotId)) {
+        const slotIdConditions = [
+          eq(rosterShifts.id, parsedSlotId),
+          isNull(rosterShifts.employeeId),
+        ];
         const [found] = await db
           .select({
             id: rosterShifts.id,
             date: rosterShifts.date,
             serviceType: rosterShifts.serviceType,
+            isDraft: rosterShifts.isDraft,
           })
           .from(rosterShifts)
-          .where(
-            and(
-              eq(rosterShifts.id, parsedSlotId),
-              eq(rosterShifts.isDraft, false),
-              isNull(rosterShifts.employeeId),
-            ),
-          )
+          .where(and(...slotIdConditions))
           .limit(1);
         if (!found) {
           return res.status(404).json({
@@ -1901,6 +1906,7 @@ export async function registerRoutes(
         slotShiftId = found.id;
         slotShiftDate = found.date;
         slotShiftServiceType = found.serviceType;
+        slotShiftIsDraft = found.isDraft ?? null;
       }
 
       const rawDate =
@@ -1936,6 +1942,12 @@ export async function registerRoutes(
         );
       if (!planRow || !ALLOWED_CLAIM_STATUSES.has(planRow.status)) {
         return res.status(400).json({ error: "Dienstplan noch nicht freigegeben" });
+      }
+      const allowDraftClaim = planRow.status !== "Freigegeben";
+      if (slotShiftId && slotShiftIsDraft && !allowDraftClaim) {
+        return res.status(404).json({
+          error: "Kein offener Dienst für dieses Datum/Diensttyp vorhanden",
+        });
       }
 
       const clinicId = await resolveClinicIdFromUser(req.user);
@@ -2005,19 +2017,20 @@ export async function registerRoutes(
 
       let targetShiftId = slotShiftId;
       if (!targetShiftId) {
+        const dateConditions = [
+          eq(rosterShifts.date, rawDate),
+          eq(rosterShifts.serviceType, finalServiceTypeKey),
+          isNull(rosterShifts.employeeId),
+        ];
+        if (!allowDraftClaim) {
+          dateConditions.push(eq(rosterShifts.isDraft, false));
+        }
         const [found] = await db
           .select({
             id: rosterShifts.id,
           })
           .from(rosterShifts)
-          .where(
-            and(
-              eq(rosterShifts.date, rawDate),
-              eq(rosterShifts.serviceType, finalServiceTypeKey),
-              eq(rosterShifts.isDraft, false),
-              isNull(rosterShifts.employeeId),
-            ),
-          )
+          .where(and(...dateConditions))
           .orderBy(rosterShifts.id)
           .limit(1);
         targetShiftId = found?.id ?? null;
@@ -5499,7 +5512,7 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
   );
 
   // Long-term absences routes
-  app.get("/api/long-term-absences", async (req: Request, res: Response) => {
+  app.get("/api/long-term-absences", requireAuth, async (req: Request, res: Response) => {
     try {
       const { employeeId, status, from, to } = req.query;
 
@@ -5515,11 +5528,6 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
       }
 
       if (status) {
-        if (!canViewPlanningData(req)) {
-          return res
-            .status(403)
-            .json({ error: "Keine Berechtigung für diese Aktion" });
-        }
         let absences = await storage.getLongTermAbsencesByStatus(
           status as string,
         );
