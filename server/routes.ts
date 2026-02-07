@@ -1878,53 +1878,49 @@ export async function registerRoutes(
           : typeof slotIdRaw === "string"
             ? Number(slotIdRaw)
             : Number.NaN;
-      let slotShiftId: number | null = null;
-      let slotShiftDate: string | null = null;
-      let slotShiftServiceType: string | null = null;
-      let slotShiftIsDraft: boolean | null = null;
+      const slotId = Number.isFinite(parsedSlotId) ? parsedSlotId : null;
+      let effectiveDate =
+        typeof req.body.date === "string" ? req.body.date.trim() : "";
+      let effectiveServiceType =
+        typeof req.body.serviceType === "string"
+          ? req.body.serviceType.trim()
+          : "";
+      let slotIsDraft: boolean | null = null;
 
-      if (Number.isFinite(parsedSlotId)) {
-        const slotIdConditions = [
-          eq(rosterShifts.id, parsedSlotId),
-          isNull(rosterShifts.employeeId),
-        ];
-        const [found] = await db
+      if (slotId) {
+        const [slotRow] = await db
           .select({
             id: rosterShifts.id,
             date: rosterShifts.date,
             serviceType: rosterShifts.serviceType,
             isDraft: rosterShifts.isDraft,
+            employeeId: rosterShifts.employeeId,
           })
           .from(rosterShifts)
-          .where(and(...slotIdConditions))
+          .where(eq(rosterShifts.id, slotId))
           .limit(1);
-        if (!found) {
-          return res.status(404).json({
-            error: "Kein offener Dienst für dieses Datum/Diensttyp vorhanden",
-          });
+        if (!slotRow) {
+          return res
+            .status(404)
+            .json({ error: "Kein offener Dienst für dieses Datum/Diensttyp vorhanden" });
         }
-        slotShiftId = found.id;
-        slotShiftDate = found.date;
-        slotShiftServiceType = found.serviceType;
-        slotShiftIsDraft = found.isDraft ?? null;
+        if (slotRow.employeeId) {
+          return res
+            .status(404)
+            .json({ error: "Kein offener Dienst für dieses Datum/Diensttyp vorhanden" });
+        }
+        effectiveDate = slotRow.date ?? effectiveDate;
+        effectiveServiceType = slotRow.serviceType ?? effectiveServiceType;
+        slotIsDraft = slotRow.isDraft ?? null;
       }
 
-      const rawDate =
-        slotShiftDate ??
-        (typeof req.body.date === "string" ? req.body.date.trim() : "");
-      const serviceType =
-        slotShiftServiceType ??
-        (typeof req.body.serviceType === "string"
-          ? req.body.serviceType.trim()
-          : "");
-
-      if (!rawDate || !serviceType) {
+      if (!effectiveDate || !effectiveServiceType) {
         return res
           .status(400)
           .json({ error: "date/serviceType erforderlich" });
       }
 
-      const parsedDate = parseISO(rawDate);
+      const parsedDate = parseISO(effectiveDate);
       if (Number.isNaN(parsedDate.getTime())) {
         return res.status(400).json({ error: "Ungültiges Datum" });
       }
@@ -1944,10 +1940,11 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Dienstplan noch nicht freigegeben" });
       }
       const allowDraftClaim = planRow.status !== "Freigegeben";
-      if (slotShiftId && slotShiftIsDraft && !allowDraftClaim) {
-        return res.status(404).json({
-          error: "Kein offener Dienst für dieses Datum/Diensttyp vorhanden",
-        });
+
+      if (slotIsDraft && !allowDraftClaim) {
+        return res
+          .status(404)
+          .json({ error: "Kein offener Dienst für dieses Datum/Diensttyp vorhanden" });
       }
 
       const clinicId = await resolveClinicIdFromUser(req.user);
@@ -1978,7 +1975,7 @@ export async function registerRoutes(
           ),
         );
 
-      const requestedNormalizedKey = normalizeServiceLineKey(serviceType);
+      const requestedNormalizedKey = normalizeServiceLineKey(effectiveServiceType);
       const matchedServiceLine = serviceLineRows.find(
         (line) =>
           normalizeServiceLineKey(line.key) === requestedNormalizedKey,
@@ -2015,10 +2012,10 @@ export async function registerRoutes(
           .json({ error: "Übernahme nicht erlaubt: Dienst am Vortag vorhanden" });
       }
 
-      let targetShiftId = slotShiftId;
+      let targetShiftId = slotId;
       if (!targetShiftId) {
         const dateConditions = [
-          eq(rosterShifts.date, rawDate),
+          eq(rosterShifts.date, effectiveDate),
           eq(rosterShifts.serviceType, finalServiceTypeKey),
           isNull(rosterShifts.employeeId),
         ];
@@ -2037,14 +2034,19 @@ export async function registerRoutes(
       }
 
       if (!targetShiftId) {
-        console.warn(
-          "Claim attempted without matching slot",
-          rawDate,
+        console.log(
+          "No open row, creating on-demand",
+          effectiveDate,
           finalServiceTypeKey,
+          allowDraftClaim ? "draft" : "final",
         );
-        return res.status(404).json({
-          error: "Kein offener Dienst für dieses Datum/Diensttyp vorhanden",
+        const created = await storage.createRosterShift({
+          date: effectiveDate,
+          serviceType: finalServiceTypeKey,
+          employeeId: null,
+          isDraft: allowDraftClaim,
         });
+        targetShiftId = created.id;
       }
 
       const [updated] = await db
