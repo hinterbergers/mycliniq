@@ -48,6 +48,11 @@ const updateRoomSchema = z.object({
   blockReason: z.string().nullable().optional(),
   requiredRoleCompetencies: z.array(z.string()).optional(),
   alternativeRoleCompetencies: z.array(z.string()).optional(),
+  rowColor: z
+    .string()
+    .regex(/^#[0-9A-Fa-f]{6}$/)
+    .nullable()
+    .optional(),
 });
 
 /**

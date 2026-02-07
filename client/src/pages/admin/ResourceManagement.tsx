@@ -22,7 +22,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { AlertCircle, Building, Pencil, Info, Loader2 } from "lucide-react";
+import {
+  AlertCircle,
+  Building,
+  Pencil,
+  Info,
+  Loader2,
+  X,
+} from "lucide-react";
 import { useEffect, useState, type MouseEvent } from "react";
 import { competencyApi, roomApi, physicalRoomApi } from "@/lib/api";
 import type { Competency, Resource, PhysicalRoom } from "@shared/schema";
@@ -84,6 +91,7 @@ interface RoomState {
   alternativeAdminCompetencyIds: number[];
   physicalRoomIds: number[];
   isActive: boolean;
+  rowColor: string | null;
 }
 
 const initialWeeklySchedule = (): WeeklySchedule[] =>
@@ -225,6 +233,7 @@ export default function ResourceManagement() {
       alternativeAdminCompetencyIds,
       physicalRoomIds,
       isActive: room.isActive,
+      rowColor: room.rowColor || null,
     };
   };
 
@@ -243,6 +252,7 @@ export default function ResourceManagement() {
     alternativeAdminCompetencyIds: [],
     physicalRoomIds: [],
     isActive: true,
+    rowColor: null,
   });
 
   const toggleRoom = async (id: number, e: MouseEvent<HTMLElement>) => {
@@ -348,16 +358,17 @@ export default function ResourceManagement() {
     setSaving(true);
     try {
       const isCreating = isCreatingRoom || editingRoom.id === 0;
-      const basePayload = {
-        name: editingRoom.name.trim(),
-        category: editingRoom.category as Resource["category"],
-        description: editingRoom.description || null,
-        useInWeeklyPlan: editingRoom.useInWeeklyPlan,
-        isAvailable: editingRoom.isAvailable,
-        blockReason: editingRoom.blockReason || null,
-        requiredRoleCompetencies: editingRoom.requiredRoleCompetencies,
-        alternativeRoleCompetencies: editingRoom.alternativeRoleCompetencies,
-      };
+    const basePayload = {
+      name: editingRoom.name.trim(),
+      category: editingRoom.category as Resource["category"],
+      description: editingRoom.description || null,
+      useInWeeklyPlan: editingRoom.useInWeeklyPlan,
+      isAvailable: editingRoom.isAvailable,
+      blockReason: editingRoom.blockReason || null,
+      requiredRoleCompetencies: editingRoom.requiredRoleCompetencies,
+      alternativeRoleCompetencies: editingRoom.alternativeRoleCompetencies,
+      rowColor: editingRoom.rowColor || null,
+    };
 
       const persistedRoom = isCreating
         ? await roomApi.create(basePayload as any)
@@ -972,6 +983,41 @@ export default function ResourceManagement() {
                     disabled={!canEdit}
                     data-testid="input-room-description"
                   />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="room-row-color">Zeilenfarbe</Label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      id="room-row-color"
+                      type="color"
+                      value={editingRoom.rowColor ?? "#ffffff"}
+                      onChange={(event) =>
+                        updateEditingRoom({ rowColor: event.target.value })
+                      }
+                      disabled={!canEdit}
+                      className="h-10 w-10 rounded-md border border-border p-0"
+                      data-testid="input-room-row-color"
+                    />
+                    <div className="text-sm text-muted-foreground">
+                      {editingRoom.rowColor
+                        ? `Aktuell: ${editingRoom.rowColor.toUpperCase()}`
+                        : "Keine Farbe ausgewählt"}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="ml-auto"
+                      onClick={() => updateEditingRoom({ rowColor: null })}
+                      disabled={!canEdit || !editingRoom.rowColor}
+                      aria-label="Farbe zurücksetzen"
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Diese Farbe markiert den Arbeitsplatz im Dienst- und Wochenplan.
+                  </p>
                 </div>
 
                 <div className="space-y-2">

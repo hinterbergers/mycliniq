@@ -816,6 +816,7 @@ export const rooms = pgTable(
     description: text("description"),
     useInWeeklyPlan: boolean("use_in_weekly_plan").notNull().default(true),
     weeklyPlanSortOrder: integer("weekly_plan_sort_order").notNull().default(0),
+    rowColor: text("row_color"),
     isAvailable: boolean("is_available").notNull().default(true),
     blockReason: text("block_reason"),
     requiredRoleCompetencies: text("required_role_competencies")

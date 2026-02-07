@@ -2396,7 +2396,12 @@ function WeeklyView({
                   {visibleRooms.map((room) => (
                     <tr
                       key={room.id}
-                      className="border-b border-border align-top"
+                      className="border-b border-border align-top bg-white transition-colors hover:bg-slate-100/80"
+                      style={
+                        room.rowColor
+                          ? { backgroundColor: room.rowColor }
+                          : undefined
+                      }
                     >
                       <td className="p-3">
                         <div className="font-medium">{room.name}</div>
@@ -2423,13 +2428,24 @@ function WeeklyView({
                           );
                         }
                         if (setting.isClosed) {
+                          const closedReason = setting.closedReason?.trim();
+                          if (!closedReason && room.rowColor) {
+                            return (
+                              <td
+                                key={`${room.id}-${weekday}`}
+                                className="p-3 text-center text-xs text-muted-foreground"
+                              >
+                                {"\u00A0"}
+                              </td>
+                            );
+                          }
                           return (
                             <td
                               key={`${room.id}-${weekday}`}
                               className="p-3 text-center text-xs text-muted-foreground"
                             >
-                              {setting.closedReason
-                                ? `Gesperrt: ${setting.closedReason}`
+                              {closedReason
+                                ? `Gesperrt: ${closedReason}`
                                 : "Gesperrt"}
                             </td>
                           );
@@ -2450,7 +2466,11 @@ function WeeklyView({
                             if (assignment.isBlocked) return "Gesperrt";
                             return assignment.note || "";
                           })
-                          .filter(Boolean);
+                          .filter(
+                            (entry) =>
+                              entry &&
+                              (entry !== "Gesperrt" || !room.rowColor),
+                          );
                         const timeLabel = formatRoomTime(
                           setting.timeFrom,
                           setting.timeTo,

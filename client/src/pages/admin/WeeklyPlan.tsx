@@ -1367,12 +1367,17 @@ export default function WeeklyPlan() {
                   remainingEligible.length === 0;
 
                 return (
-                  <Card
-                    key={room.id}
-                    className={cn(
-                      "border-none kabeg-shadow",
-                      isReorderMode && "cursor-grab active:cursor-grabbing",
-                    )}
+                <Card
+                  key={room.id}
+                  className={cn(
+                    "border-none kabeg-shadow",
+                    isReorderMode && "cursor-grab active:cursor-grabbing",
+                  )}
+                  style={
+                    room.rowColor
+                      ? { backgroundColor: room.rowColor }
+                      : undefined
+                  }
                     draggable={isReorderMode}
                     onDragStart={(event) => {
                       if (!isReorderMode) return;
@@ -1508,12 +1513,13 @@ export default function WeeklyPlan() {
                               </Badge>
                             ) : null}
                           </div>
-                          {isClosed && (
-                            <div className="text-xs text-red-600 mt-2">
-                              {setting?.closedReason ||
-                                "Arbeitsplatz geschlossen"}
-                            </div>
-                          )}
+                          {isClosed &&
+                            (setting?.closedReason || !room.rowColor) && (
+                              <div className="text-xs text-red-600 mt-2">
+                                {setting?.closedReason ||
+                                  "Arbeitsplatz geschlossen"}
+                              </div>
+                            )}
                           {noteAssignment?.note && (
                             <div className="text-xs text-slate-600 mt-2 whitespace-pre-line">
                               {noteAssignment.note}
