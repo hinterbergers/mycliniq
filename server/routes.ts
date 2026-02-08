@@ -1734,7 +1734,7 @@ export async function registerRoutes(
   });
 
   app.post(
-    "/api/roster/:id/claim",
+    "/api/roster/:id(\\d+)/claim",
     requireAuth,
     async (req: Request, res: Response) => {
       try {
