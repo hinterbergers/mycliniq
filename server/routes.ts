@@ -246,9 +246,10 @@ const buildOpenShiftPayload = async ({
     lte(rosterShifts.date, monthEnd),
     inArray(rosterShifts.serviceType, Array.from(claimableServiceLineKeys)),
   ];
-  if (!includeDraft) {
-    conditions.push(eq(rosterShifts.isDraft, false));
-  }
+  conditions.push(eq(rosterShifts.isDraft, false));
+
+  const finalRowCounts: Record<string, number> = {};
+  const openSlotTracker: Record<string, number> = {};
 
   const shiftRows = await db
     .select({
@@ -256,6 +257,7 @@ const buildOpenShiftPayload = async ({
       date: rosterShifts.date,
       serviceType: rosterShifts.serviceType,
       employeeId: rosterShifts.employeeId,
+      assigneeFreeText: rosterShifts.assigneeFreeText,
       isDraft: rosterShifts.isDraft,
     })
     .from(rosterShifts)
@@ -271,6 +273,9 @@ const buildOpenShiftPayload = async ({
       continue;
     }
 
+    const slotKey = `${shift.date}|${shift.serviceType}`;
+    finalRowCounts[slotKey] = (finalRowCounts[slotKey] ?? 0) + 1;
+
     const dayEntry = countsByDay[shift.date];
     if (
       dayEntry &&
@@ -280,15 +285,20 @@ const buildOpenShiftPayload = async ({
       dayEntry[shift.serviceType] += 1;
     }
 
-    if (!shift.employeeId) {
+    const freeText = (shift.assigneeFreeText ?? "").trim();
+    const isOpenFinal = !shift.employeeId && !freeText;
+    if (isOpenFinal) {
+      const limit = requiredDailyMap.get(shift.serviceType) ?? Infinity;
+      if ((openSlotTracker[slotKey] ?? 0) >= limit) continue;
+      openSlotTracker[slotKey] = (openSlotTracker[slotKey] ?? 0) + 1;
       slots.push({
         id: shift.id,
         date: shift.date,
         serviceType: shift.serviceType,
         isSynthetic: false,
-        source: shift.isDraft ? "draft" : "final",
+        source: "final",
         label: serviceLineLookup.get(shift.serviceType)?.label ?? null,
-        isDraft: shift.isDraft,
+        isDraft: false,
       });
     }
   }
@@ -304,6 +314,9 @@ const buildOpenShiftPayload = async ({
         const required = requiredDailyMap.get(serviceType) ?? 0;
         const missing = Math.max(0, required - dayCount);
         if (missing <= 0) continue;
+        const slotKey = `${date}|${serviceType}`;
+        const finalCount = finalRowCounts[slotKey] ?? 0;
+        if (finalCount >= required) continue;
         missingCounts[serviceType] =
           (missingCounts[serviceType] ?? 0) + missing;
         for (let slotIndex = 1; slotIndex <= missing; slotIndex += 1) {
