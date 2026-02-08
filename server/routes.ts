@@ -157,18 +157,28 @@ const parseBoolQueryFlag = (value?: string | string[]): boolean => {
 
 const buildOpenShiftPayload = async ({
   clinicId,
-  year,
-  month,
+  startDate,
+  endDate,
   includeDraft,
 }: {
   clinicId: number;
-  year: number;
-  month: number;
+  startDate: string;
+  endDate: string;
   includeDraft?: boolean;
 }): Promise<OpenShiftPayload> => {
-  const lastDay = new Date(year, month, 0).getDate();
-  const monthStart = `${year}-${padTwo(month)}-01`;
-  const monthEnd = `${year}-${padTwo(month)}-${padTwo(lastDay)}`;
+  const parsedStart = parseISO(startDate);
+  const parsedEnd = parseISO(endDate);
+  if (Number.isNaN(parsedStart.getTime()) || Number.isNaN(parsedEnd.getTime())) {
+    throw new Error("Invalid range");
+  }
+  let rangeStart = parsedStart;
+  let rangeEnd = parsedEnd;
+  if (rangeEnd < rangeStart) {
+    rangeStart = parsedEnd;
+    rangeEnd = parsedStart;
+  }
+  const monthStart = format(rangeStart, "yyyy-MM-dd");
+  const monthEnd = format(rangeEnd, "yyyy-MM-dd");
 
   const serviceLineRows = await db
     .select()
@@ -216,15 +226,16 @@ const buildOpenShiftPayload = async ({
     }
   }
 
-  const countsByDay: Record<string, Record<string, number>> = {};
   const requiredKeys = Array.from(requiredDailyMap.keys());
   if (requiredKeys.length) {
-    for (let day = 1; day <= lastDay; day += 1) {
-      const date = `${year}-${padTwo(month)}-${padTwo(day)}`;
-      countsByDay[date] = {};
+    let currentDate = rangeStart;
+    while (currentDate <= rangeEnd) {
+      const dateKey = format(currentDate, "yyyy-MM-dd");
+      countsByDay[dateKey] = {};
       for (const serviceType of requiredKeys) {
-        countsByDay[date][serviceType] = 0;
+        countsByDay[dateKey][serviceType] = 0;
       }
+      currentDate = addDays(currentDate, 1);
     }
   }
 
@@ -284,8 +295,9 @@ const buildOpenShiftPayload = async ({
   const missingCounts: Record<string, number> = {};
   const syntheticSlots: OpenShiftSlot[] = [];
   if (requiredKeys.length) {
-    for (let day = 1; day <= lastDay; day += 1) {
-      const date = `${year}-${padTwo(month)}-${padTwo(day)}`;
+    let currentDate = rangeStart;
+    while (currentDate <= rangeEnd) {
+      const date = format(currentDate, "yyyy-MM-dd");
       for (const serviceType of requiredKeys) {
         const dayCount = countsByDay[date]?.[serviceType] ?? 0;
         const required = requiredDailyMap.get(serviceType) ?? 0;
@@ -307,6 +319,7 @@ const buildOpenShiftPayload = async ({
           });
         }
       }
+      currentDate = addDays(currentDate, 1);
     }
   }
 
@@ -1529,39 +1542,64 @@ export async function registerRoutes(
       const rawFrom = typeof req.query.from === "string" ? req.query.from.trim() : "";
       const rawTo = typeof req.query.to === "string" ? req.query.to.trim() : "";
 
-      const tryParseIso = (value: string) => {
-        if (!value) return null;
-        const iso = parseIsoDateParam(value);
-        if (!iso) return null;
-        const parsed = parseISO(iso);
-        if (Number.isNaN(parsed.getTime())) return null;
-        return parsed;
-      };
+      const startIso = rawFrom || null;
+      const endIso = rawTo || null;
 
-      const hasYear = typeof yearParam === "number";
-      const hasMonth = typeof monthParam === "number";
-      const useFallback = !hasYear && !hasMonth;
-
-      // Fallback to ISO range only when BOTH year and month are missing.
-      const fallbackDate = useFallback ? (tryParseIso(rawFrom) ?? tryParseIso(rawTo)) : null;
-
-      const year = hasYear
-        ? yearParam!
-        : fallbackDate
-          ? fallbackDate.getFullYear()
-          : now.getFullYear();
-
-      const month = hasMonth
-        ? monthParam!
-        : fallbackDate
-          ? fallbackDate.getMonth() + 1
-          : now.getMonth() + 1;
-
-      if (month < 1 || month > 12) {
+      const hasYearMonth =
+        typeof yearParam === "number" && typeof monthParam === "number";
+      if (hasYearMonth && (monthParam < 1 || monthParam > 12)) {
         return res
           .status(400)
           .json({ error: "Monat muss zwischen 1 und 12 liegen" });
       }
+
+      let computedStart = startIso;
+      let computedEnd = endIso;
+      if (!computedStart && hasYearMonth) {
+        computedStart = `${yearParam}-${padTwo(monthParam)}-01`;
+      }
+      if (!computedEnd && hasYearMonth) {
+        const lastDay = new Date(yearParam, monthParam, 0).getDate();
+        computedEnd = `${yearParam}-${padTwo(monthParam)}-${padTwo(lastDay)}`;
+      }
+
+      const ensureDateString = (value: string | null, fallback: string) =>
+        value || fallback;
+      const fallbackStart = `${now.getFullYear()}-${padTwo(now.getMonth() + 1)}-01`;
+      let finalStart = ensureDateString(computedStart, fallbackStart);
+      if (!computedEnd) {
+        const parsedStart = parseISO(finalStart);
+        if (Number.isNaN(parsedStart.getTime())) {
+          return res.status(400).json({ error: "Ungültiges Startdatum" });
+        }
+        const lastDay = new Date(
+          parsedStart.getFullYear(),
+          parsedStart.getMonth() + 1,
+          0,
+        ).getDate();
+        computedEnd = `${parsedStart.getFullYear()}-${padTwo(
+          parsedStart.getMonth() + 1,
+        )}-${padTwo(lastDay)}`;
+      }
+      let finalEnd = ensureDateString(computedEnd, finalStart);
+
+      const parsedStartDate = parseISO(finalStart);
+      const parsedEndDate = parseISO(finalEnd);
+      if (Number.isNaN(parsedStartDate.getTime()) || Number.isNaN(parsedEndDate.getTime())) {
+        return res.status(400).json({ error: "Ungültige Datumsangabe" });
+      }
+      if (parsedEndDate < parsedStartDate) {
+        const swappedStart = parsedEndDate;
+        const swappedEnd = parsedStartDate;
+        finalStart = format(swappedStart, "yyyy-MM-dd");
+        finalEnd = format(swappedEnd, "yyyy-MM-dd");
+      } else {
+        finalStart = format(parsedStartDate, "yyyy-MM-dd");
+        finalEnd = format(parsedEndDate, "yyyy-MM-dd");
+      }
+
+      const planYear = parseISO(finalStart).getFullYear();
+      const planMonth = parseISO(finalStart).getMonth() + 1;
 
       const clinicId = await resolveClinicIdFromUser(req.user);
       if (!clinicId) {
@@ -1573,8 +1611,8 @@ export async function registerRoutes(
         .from(dutyPlans)
         .where(
           and(
-            eq(dutyPlans.year, year),
-            eq(dutyPlans.month, month),
+            eq(dutyPlans.year, planYear),
+            eq(dutyPlans.month, planMonth),
           ),
         );
       const planStatus = planRow?.status ?? null;
@@ -1589,8 +1627,8 @@ export async function registerRoutes(
       const includeDraft = includeDraftParam || allowDraftFromStatus;
       const payload = await buildOpenShiftPayload({
         clinicId,
-        year,
-        month,
+        startDate: finalStart,
+        endDate: finalEnd,
         includeDraft,
       });
 
@@ -1870,7 +1908,10 @@ export async function registerRoutes(
   //   -H "Content-Type: application/json" \
   //   -d '{"date":"2026-03-24","serviceType":"kreiszimmer"}'
   const openShiftClaimHandler = async (req: Request, res: Response) => {
+    // TODO: remove this logging flag once claim flow is stable.
+    const claimDebug = process.env.CLAIM_DEBUG === "1";
     try {
+      const forceDraftFlag = Boolean(req.body?.forceDraft);
       const slotIdRaw = req.body?.slotId;
       const parsedSlotId =
         typeof slotIdRaw === "number"
@@ -1885,10 +1926,18 @@ export async function registerRoutes(
         typeof req.body.serviceType === "string"
           ? req.body.serviceType.trim()
           : "";
-      let slotIsDraft: boolean | null = null;
+      let slotRow:
+        | {
+            id: number;
+            date: string | null;
+            serviceType: string | null;
+            isDraft: boolean | null;
+            employeeId: number | null;
+          }
+        | null = null;
 
       if (slotId) {
-        const [slotRow] = await db
+        const [fetched] = await db
           .select({
             id: rosterShifts.id,
             date: rosterShifts.date,
@@ -1899,19 +1948,19 @@ export async function registerRoutes(
           .from(rosterShifts)
           .where(eq(rosterShifts.id, slotId))
           .limit(1);
-        if (!slotRow) {
+        if (!fetched) {
           return res
             .status(404)
             .json({ error: "Kein offener Dienst für dieses Datum/Diensttyp vorhanden" });
         }
-        if (slotRow.employeeId) {
+        if (fetched.employeeId) {
           return res
             .status(404)
             .json({ error: "Kein offener Dienst für dieses Datum/Diensttyp vorhanden" });
         }
-        effectiveDate = slotRow.date ?? effectiveDate;
-        effectiveServiceType = slotRow.serviceType ?? effectiveServiceType;
-        slotIsDraft = slotRow.isDraft ?? null;
+        slotRow = fetched;
+        effectiveDate = fetched.date ?? effectiveDate;
+        effectiveServiceType = fetched.serviceType ?? effectiveServiceType;
       }
 
       if (!effectiveDate || !effectiveServiceType) {
@@ -1925,26 +1974,54 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Ungültiges Datum" });
       }
 
-      const year = parsedDate.getFullYear();
-      const month = parsedDate.getMonth() + 1;
+      if (claimDebug) {
+        console.log(
+          "[claim-debug] request",
+          {
+            slotId,
+            date: effectiveDate,
+            serviceType: effectiveServiceType,
+            slotIndex: req.body?.slotIndex,
+            syntheticId: req.body?.syntheticId,
+            forceDraftFlag,
+          },
+        );
+      }
+
+      const planYear = parsedDate.getFullYear();
+      const planMonth = parsedDate.getMonth() + 1;
       const [planRow] = await db
         .select({ status: dutyPlans.status })
         .from(dutyPlans)
         .where(
           and(
-            eq(dutyPlans.year, year),
-            eq(dutyPlans.month, month),
+            eq(dutyPlans.year, planYear),
+            eq(dutyPlans.month, planMonth),
           ),
         );
       if (!planRow || !ALLOWED_CLAIM_STATUSES.has(planRow.status)) {
         return res.status(400).json({ error: "Dienstplan noch nicht freigegeben" });
       }
-      const allowDraftClaim = planRow.status !== "Freigegeben";
+      const allowDraftFromStatus = planRow.status !== "Freigegeben";
+      const hasDraftPermissions = Boolean(
+        req.user?.isAdmin ||
+          req.user?.appRole === "Admin" ||
+          req.user?.appRole === "Editor" ||
+          req.user?.capabilities?.includes("dutyplan.edit"),
+      );
+      const targetIsDraft =
+        forceDraftFlag && allowDraftFromStatus && hasDraftPermissions;
 
-      if (slotIsDraft && !allowDraftClaim) {
-        return res
-          .status(404)
-          .json({ error: "Kein offener Dienst für dieses Datum/Diensttyp vorhanden" });
+      if (claimDebug) {
+        console.log(
+          "[claim-debug] plan",
+          {
+            planStatus: planRow.status,
+            allowDraftFromStatus,
+            hasDraftPermissions,
+            targetIsDraft,
+          },
+        );
       }
 
       const clinicId = await resolveClinicIdFromUser(req.user);
@@ -2007,21 +2084,31 @@ export async function registerRoutes(
         )
         .limit(1);
       if (prevShift) {
-        return res
-          .status(400)
-          .json({ error: "Übernahme nicht erlaubt: Dienst am Vortag vorhanden" });
+        if (
+          prevShift.serviceType &&
+          normalizeServiceLineKey(prevShift.serviceType) ===
+            normalizeServiceLineKey(OVERDUTY_KEY)
+        ) {
+          // Überdienste dürfen den folgenden Tag nicht blockieren
+        } else {
+          return res
+            .status(400)
+            .json({ error: "Übernahme nicht erlaubt: Dienst am Vortag vorhanden" });
+        }
       }
 
-      let targetShiftId = slotId;
+      let targetShiftId: number | null = null;
+      if (slotRow && slotRow.isDraft === targetIsDraft) {
+        targetShiftId = slotRow.id;
+      }
+
       if (!targetShiftId) {
         const dateConditions = [
           eq(rosterShifts.date, effectiveDate),
           eq(rosterShifts.serviceType, finalServiceTypeKey),
+          eq(rosterShifts.isDraft, targetIsDraft),
           isNull(rosterShifts.employeeId),
         ];
-        if (!allowDraftClaim) {
-          dateConditions.push(eq(rosterShifts.isDraft, false));
-        }
         const [found] = await db
           .select({
             id: rosterShifts.id,
@@ -2031,20 +2118,30 @@ export async function registerRoutes(
           .orderBy(rosterShifts.id)
           .limit(1);
         targetShiftId = found?.id ?? null;
+        if (claimDebug) {
+          console.log(
+            "[claim-debug] matched existing shift",
+            { foundId: found?.id ?? null, targetIsDraft },
+          );
+        }
       }
 
       if (!targetShiftId) {
-        console.log(
-          "No open row, creating on-demand",
-          effectiveDate,
-          finalServiceTypeKey,
-          allowDraftClaim ? "draft" : "final",
-        );
+        if (claimDebug) {
+          console.log(
+            "[claim-debug] no open row, creating",
+            {
+              date: effectiveDate,
+              serviceType: finalServiceTypeKey,
+              targetIsDraft,
+            },
+          );
+        }
         const created = await storage.createRosterShift({
           date: effectiveDate,
           serviceType: finalServiceTypeKey,
           employeeId: null,
-          isDraft: allowDraftClaim,
+          isDraft: targetIsDraft,
         });
         targetShiftId = created.id;
       }
