@@ -227,6 +227,7 @@ const buildOpenShiftPayload = async ({
   }
 
   const requiredKeys = Array.from(requiredDailyMap.keys());
+  const countsByDay: Record<string, Record<string, number>> = {};
   if (requiredKeys.length) {
     let currentDate = rangeStart;
     while (currentDate <= rangeEnd) {
