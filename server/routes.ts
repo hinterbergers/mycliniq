@@ -1082,7 +1082,15 @@ export async function registerRoutes(
   };
 
   const resolvePlanningMonth = async () => {
-    const rawSettings = await storage.getRosterSettings();
+    let rawSettings: Awaited<ReturnType<typeof storage.getRosterSettings>> | null =
+      null;
+    let settingsReadFailed = false;
+    try {
+      rawSettings = await storage.getRosterSettings();
+    } catch (error) {
+      settingsReadFailed = true;
+      console.error("resolvePlanningMonth: failed to read roster settings", error);
+    }
 
     const toIntOrNull = (value: unknown): number | null => {
       if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -1146,7 +1154,8 @@ export async function registerRoutes(
           storedWish.year,
           storedWish.month,
         ) > 0;
-    const shouldPersistFinal = storedWish ? false : shouldPersist;
+    const shouldPersistFinal =
+      settingsReadFailed || storedWish ? false : shouldPersist;
 
     return {
       settings,
@@ -5158,37 +5167,58 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
         const month = auto.month;
 
         if (shouldPersist) {
-          await storage.upsertRosterSettings({
-            lastApprovedYear: lastApproved.year,
-            lastApprovedMonth: lastApproved.month,
-            wishYear: auto.year,
-            wishMonth: auto.month,
-            fixedPreferredEmployees: settings?.fixedPreferredEmployees ?? [],
-            updatedById: req.user?.employeeId ?? settings?.updatedById ?? null,
-          });
+          try {
+            await storage.upsertRosterSettings({
+              lastApprovedYear: lastApproved.year,
+              lastApprovedMonth: lastApproved.month,
+              wishYear: auto.year,
+              wishMonth: auto.month,
+              fixedPreferredEmployees: settings?.fixedPreferredEmployees ?? [],
+              updatedById: req.user?.employeeId ?? settings?.updatedById ?? null,
+            });
+          } catch (error) {
+            console.error(
+              "next planning month: failed to persist roster settings",
+              error,
+            );
+          }
         }
 
-        // Get eligible employees and submitted wishes count
-        const employeeRows = await storage.getEmployees();
-        const eligibleEmployees = employeeRows
-          .filter((employee) => employeeDoesShifts(employee))
-          .filter((employee) => isEligibleForWishMonth(employee, year, month));
-        const eligibleEmployeeIds = new Set(
-          eligibleEmployees.map((emp) => emp.id),
-        );
-        const wishes = await storage.getShiftWishesByMonth(year, month);
-        const submittedCount = wishes.filter(
-          (wish) =>
-            wish.status === "Eingereicht" &&
-            eligibleEmployeeIds.has(wish.employeeId),
-        ).length;
-        const totalEmployees = eligibleEmployees.length;
-        const allSubmitted =
-          totalEmployees > 0 && submittedCount >= totalEmployees;
-        const rosterShifts = await storage.getRosterShiftsByMonth(year, month);
-        const draftShiftCount = rosterShifts.length;
+        let totalEmployees = 0;
+        let submittedCount = 0;
+        let allSubmitted = false;
+        let draftShiftCount = 0;
+        let eligibleEmployeeIds: number[] = [];
+        try {
+          const employeeRows = await storage.getEmployees();
+          const eligibleEmployees = employeeRows
+            .filter((employee) => employeeDoesShifts(employee))
+            .filter((employee) => isEligibleForWishMonth(employee, year, month));
+          const eligibleIdSet = new Set(eligibleEmployees.map((emp) => emp.id));
+          const wishes = await storage.getShiftWishesByMonth(year, month);
+          submittedCount = wishes.filter(
+            (wish) =>
+              wish.status === "Eingereicht" &&
+              eligibleIdSet.has(wish.employeeId),
+          ).length;
+          totalEmployees = eligibleEmployees.length;
+          allSubmitted = totalEmployees > 0 && submittedCount >= totalEmployees;
+          eligibleEmployeeIds = eligibleEmployees.map((emp) => emp.id);
+        } catch (error) {
+          console.error(
+            "next planning month: failed to calculate wish submission stats",
+            error,
+          );
+        }
 
-        res.json({
+        try {
+          const rosterShifts = await storage.getRosterShiftsByMonth(year, month);
+          draftShiftCount = rosterShifts.length;
+        } catch (error) {
+          console.error("next planning month: failed to load roster shifts", error);
+        }
+
+        return res.json({
           year,
           month,
           totalEmployees,
@@ -5196,7 +5226,7 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
           allSubmitted,
           draftShiftCount,
           hasDraft: draftShiftCount > 0,
-          eligibleEmployeeIds: eligibleEmployees.map((emp) => emp.id),
+          eligibleEmployeeIds,
         });
       } catch (error) {
         console.error("next planning month error", error);
