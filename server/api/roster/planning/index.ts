@@ -169,6 +169,17 @@ const resolveSeedValue = (value: unknown): number | undefined => {
   return undefined;
 };
 
+const resolveBooleanValue = (value: unknown, fallback = false): boolean => {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["1", "true", "yes", "on"].includes(normalized)) return true;
+    if (["0", "false", "no", "off"].includes(normalized)) return false;
+  }
+  return fallback;
+};
+
 const SOLVER_ROLES = ["gyn", "kreiszimmer", "turnus"];
 const REQUIRED_SERVICE_ROLES = new Set(["gyn", "kreiszimmer"]);
 
@@ -874,6 +885,7 @@ export function registerPlanningRoutes(router: Router) {
         seed,
       });
     } catch (error) {
+      console.error("planning preview failed", error);
       res.status(500).json({ error: "Fehler beim Erstellen der Vorschau" });
     }
   });
@@ -882,12 +894,13 @@ export function registerPlanningRoutes(router: Router) {
     try {
       const parsed = parseYearMonth(req, res);
       if (!parsed) return;
-      const { seed } = req.body ?? {};
+      const { seed, dryRun } = req.body ?? {};
       await executePlanningRun(parsed.year, parsed.month, req, res, {
-        dryRun: false,
+        dryRun: resolveBooleanValue(dryRun, false),
         seed,
       });
     } catch (error) {
+      console.error("planning run failed", error);
       res.status(500).json({ error: "Fehler beim Ausführen des Planning-Laufs" });
     }
   });
