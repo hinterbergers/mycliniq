@@ -1123,10 +1123,25 @@ export async function registerRoutes(
         }
       : null;
 
-    const previewPlan = await storage.getLatestDutyPlanByStatus("Vorläufig");
-    const lastApproved = settings
+    const [previewPlan, releasedPlan] = await Promise.all([
+      storage.getLatestDutyPlanByStatus("Vorläufig"),
+      storage.getLatestDutyPlanByStatus("Freigegeben"),
+    ]);
+
+    let lastApproved = settings
       ? { year: settings.lastApprovedYear, month: settings.lastApprovedMonth }
       : DEFAULT_LAST_APPROVED;
+    if (
+      releasedPlan &&
+      compareYearMonth(
+        releasedPlan.year,
+        releasedPlan.month,
+        lastApproved.year,
+        lastApproved.month,
+      ) > 0
+    ) {
+      lastApproved = { year: releasedPlan.year, month: releasedPlan.month };
+    }
     const base = previewPlan
       ? { year: previewPlan.year, month: previewPlan.month }
       : lastApproved;
