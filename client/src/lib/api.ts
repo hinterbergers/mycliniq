@@ -718,6 +718,7 @@ export const rosterApi = {
     month: number,
     shifts: any[],
     replaceExisting: boolean = true,
+    isDraft: boolean = true,
   ): Promise<{
     success: boolean;
     savedShifts: number;
@@ -726,7 +727,7 @@ export const rosterApi = {
     const response = await apiFetch(`${API_BASE}/roster/apply-generated`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ year, month, shifts, replaceExisting }),
+      body: JSON.stringify({ year, month, shifts, replaceExisting, isDraft }),
     });
     return handleResponse(response);
   },

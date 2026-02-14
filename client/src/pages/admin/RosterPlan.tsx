@@ -1611,6 +1611,7 @@ export default function RosterPlan() {
         month,
         generatedShifts,
         true,
+        true,
       );
 
       if (result.success) {
