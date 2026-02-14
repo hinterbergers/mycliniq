@@ -138,6 +138,7 @@ type GenerationPayload = {
   year: number;
   month: number;
   rules: AiRules;
+  specialRules?: PlannerSpecialRules;
   promptOverride?: string;
 };
 
@@ -229,6 +230,7 @@ const MONTH_NAMES = [
 ];
 
 const RULES_STORAGE_KEY = "mycliniq.roster.aiRules.v1";
+const SPECIAL_RULES_STORAGE_KEY = "mycliniq.roster.specialRules.v1";
 const LONGTERM_ABSENCE_TOGGLE_KEY = "mycliniq.roster.editor.showLongTermAbsences.v1";
 const ABSENCE_COLUMN_VISIBLE_KEY = "mycliniq.roster.editor.absenceColumnVisible.v1";
 
@@ -243,6 +245,13 @@ type AiRules = {
   hard: string;
   soft: string;
   weights: AiRuleWeights;
+};
+
+type PlannerSpecialRules = {
+  version: number;
+  fixedPreferredEmployeeIds: number[];
+  noDutyEmployeeIds: number[];
+  christophTurnusAssistantRule: boolean;
 };
 
 const DEFAULT_AI_RULES: AiRules = {
@@ -260,6 +269,13 @@ const DEFAULT_AI_RULES: AiRules = {
     preferenceSatisfaction: 7,
     minimizeConflicts: 10,
   },
+};
+
+const DEFAULT_SPECIAL_RULES: PlannerSpecialRules = {
+  version: 1,
+  fixedPreferredEmployeeIds: [],
+  noDutyEmployeeIds: [],
+  christophTurnusAssistantRule: false,
 };
 
 const clampWeight = (value: number) => Math.max(0, Math.min(10, value));
@@ -408,6 +424,8 @@ export default function RosterPlan() {
   });
   const [rulesDialogOpen, setRulesDialogOpen] = useState(false);
   const [aiRules, setAiRules] = useState<AiRules>(DEFAULT_AI_RULES);
+  const [specialRules, setSpecialRules] =
+    useState<PlannerSpecialRules>(DEFAULT_SPECIAL_RULES);
   const [promptPreviewOpen, setPromptPreviewOpen] = useState(false);
   const [promptPreviewSupported, setPromptPreviewSupported] = useState(true);
   const [promptPreviewData, setPromptPreviewData] =
@@ -500,6 +518,47 @@ export default function RosterPlan() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(RULES_STORAGE_KEY, JSON.stringify(aiRules));
   }, [aiRules]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem(SPECIAL_RULES_STORAGE_KEY);
+    if (!stored) return;
+    try {
+      const parsed = JSON.parse(stored);
+      if (!parsed || typeof parsed !== "object") return;
+      const fixedPreferredEmployeeIds = Array.isArray(parsed.fixedPreferredEmployeeIds)
+        ? parsed.fixedPreferredEmployeeIds
+            .map((value: unknown) => Number(value))
+            .filter((value: number) => Number.isInteger(value))
+        : [];
+      const noDutyEmployeeIds = Array.isArray(parsed.noDutyEmployeeIds)
+        ? parsed.noDutyEmployeeIds
+            .map((value: unknown) => Number(value))
+            .filter((value: number) => Number.isInteger(value))
+        : [];
+      setSpecialRules({
+        version:
+          typeof parsed.version === "number"
+            ? parsed.version
+            : DEFAULT_SPECIAL_RULES.version,
+        fixedPreferredEmployeeIds,
+        noDutyEmployeeIds,
+        christophTurnusAssistantRule: Boolean(
+          parsed.christophTurnusAssistantRule,
+        ),
+      });
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      SPECIAL_RULES_STORAGE_KEY,
+      JSON.stringify(specialRules),
+    );
+  }, [specialRules]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1268,12 +1327,29 @@ export default function RosterPlan() {
 
   const buildGenerationPayload = (
     promptOverride?: string,
-  ): GenerationPayload => ({
-    year: currentDate.getFullYear(),
-    month: currentDate.getMonth() + 1,
-    rules: aiRules,
-    promptOverride,
-  });
+  ): GenerationPayload => {
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth() + 1;
+    const specialRulesPayload = {
+      ...specialRules,
+      scope: { year, month },
+    };
+    const enhancedHardRules = `${aiRules.hard}\n\n# Sonderregeln (JSON)\n${JSON.stringify(
+      specialRulesPayload,
+      null,
+      2,
+    )}`;
+    return {
+      year,
+      month,
+      rules: {
+        ...aiRules,
+        hard: enhancedHardRules,
+      },
+      specialRules,
+      promptOverride,
+    };
+  };
 
   const showGenerationError = (error: any) => {
     console.error("Generation failed:", error);
@@ -1507,6 +1583,50 @@ export default function RosterPlan() {
   const handleOpenPlanningPreview = () => {
     setPlanningAutoRunTrigger((prev) => prev + 1);
     setPlanningDrawerOpen(true);
+  };
+
+  const eligibleSpecialRuleEmployees = useMemo(
+    () =>
+      employees
+        .filter((employee) => employee.takesShifts !== false)
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name, "de")),
+    [employees],
+  );
+
+  const specialRulesPreviewJson = useMemo(
+    () =>
+      JSON.stringify(
+        {
+          ...specialRules,
+          scope: {
+            year: currentDate.getFullYear(),
+            month: currentDate.getMonth() + 1,
+          },
+        },
+        null,
+        2,
+      ),
+    [specialRules, currentDate],
+  );
+
+  const toggleSpecialRuleEmployee = (
+    key: "fixedPreferredEmployeeIds" | "noDutyEmployeeIds",
+    employeeId: number,
+    checked: boolean,
+  ) => {
+    setSpecialRules((prev) => {
+      const existing = new Set(prev[key]);
+      if (checked) {
+        existing.add(employeeId);
+      } else {
+        existing.delete(employeeId);
+      }
+      return {
+        ...prev,
+        [key]: Array.from(existing).sort((a, b) => a - b),
+      };
+    });
   };
 
   const handleApplyGenerated = async () => {
@@ -2441,6 +2561,7 @@ export default function RosterPlan() {
                 <TabsTrigger value="hard">Hard (MUSS)</TabsTrigger>
                 <TabsTrigger value="soft">Soft (SOLL)</TabsTrigger>
                 <TabsTrigger value="weights">Gewichte</TabsTrigger>
+                <TabsTrigger value="special">Sonderregeln</TabsTrigger>
               </TabsList>
               <TabsContent value="hard">
                 <Textarea
@@ -2535,12 +2656,110 @@ export default function RosterPlan() {
                   Werte 0–10: Je höher, desto wichtiger für die Planung.
                 </p>
               </TabsContent>
+              <TabsContent value="special">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 rounded-md border px-3 py-2">
+                    <Checkbox
+                      id="rule-christoph-turnus-ass"
+                      checked={specialRules.christophTurnusAssistantRule}
+                      onCheckedChange={(value) =>
+                        setSpecialRules((prev) => ({
+                          ...prev,
+                          christophTurnusAssistantRule: Boolean(value),
+                        }))
+                      }
+                    />
+                    <Label
+                      htmlFor="rule-christoph-turnus-ass"
+                      className="text-sm cursor-pointer"
+                    >
+                      Wenn Christoph Dienst hat, Turnus mit Assistenzarzt besetzen
+                    </Label>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-xs uppercase tracking-wide">
+                        Wünsche fix setzen
+                      </Label>
+                      <ScrollArea className="h-44 rounded border p-2">
+                        <div className="space-y-2">
+                          {eligibleSpecialRuleEmployees.map((employee) => (
+                            <label
+                              key={`fix-${employee.id}`}
+                              className="flex items-center gap-2 text-sm cursor-pointer"
+                            >
+                              <Checkbox
+                                checked={specialRules.fixedPreferredEmployeeIds.includes(
+                                  employee.id,
+                                )}
+                                onCheckedChange={(value) =>
+                                  toggleSpecialRuleEmployee(
+                                    "fixedPreferredEmployeeIds",
+                                    employee.id,
+                                    Boolean(value),
+                                  )
+                                }
+                              />
+                              <span>{employee.name}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs uppercase tracking-wide">
+                        Keine Dienste im Monat
+                      </Label>
+                      <ScrollArea className="h-44 rounded border p-2">
+                        <div className="space-y-2">
+                          {eligibleSpecialRuleEmployees.map((employee) => (
+                            <label
+                              key={`noduty-${employee.id}`}
+                              className="flex items-center gap-2 text-sm cursor-pointer"
+                            >
+                              <Checkbox
+                                checked={specialRules.noDutyEmployeeIds.includes(
+                                  employee.id,
+                                )}
+                                onCheckedChange={(value) =>
+                                  toggleSpecialRuleEmployee(
+                                    "noDutyEmployeeIds",
+                                    employee.id,
+                                    Boolean(value),
+                                  )
+                                }
+                              />
+                              <span>{employee.name}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-xs uppercase tracking-wide">
+                      JSON Vorschau
+                    </Label>
+                    <Textarea
+                      value={specialRulesPreviewJson}
+                      readOnly
+                      rows={8}
+                      className="font-mono text-xs"
+                    />
+                  </div>
+                </div>
+              </TabsContent>
             </Tabs>
 
             <DialogFooter className="flex items-center justify-between">
               <Button
                 variant="ghost"
-                onClick={() => setAiRules(DEFAULT_AI_RULES)}
+                onClick={() => {
+                  setAiRules(DEFAULT_AI_RULES);
+                  setSpecialRules(DEFAULT_SPECIAL_RULES);
+                }}
                 disabled={isGenerating}
               >
                 Reset
