@@ -2840,7 +2840,7 @@ export default function RosterPlan() {
           open={generationDialogOpen}
           onOpenChange={setGenerationDialogOpen}
         >
-          <DialogContent className="max-w-5xl w-[95vw] max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogContent className="max-w-5xl w-[95vw] max-h-[88vh] overflow-hidden flex flex-col">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Brain className="w-5 h-5 text-primary" />
@@ -3010,7 +3010,7 @@ export default function RosterPlan() {
               </Tabs>
             </div>
 
-            <DialogFooter className="gap-2">
+            <DialogFooter className="gap-2 shrink-0 border-t pt-3 bg-background">
               <Button
                 variant="outline"
                 onClick={() => setGenerationDialogOpen(false)}
