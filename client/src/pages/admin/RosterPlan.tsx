@@ -462,6 +462,7 @@ export default function RosterPlan() {
   const planStatusLabel = PLAN_STATUS_LABELS[planStatus];
   const isDraftMode =
     planStatus === "Entwurf" || latestGenerationMode === "draft";
+  const shouldUseDraftData = isDraftMode || manualEditMode;
 
   const currentPlanningYear = currentDate.getFullYear();
   const currentPlanningMonth = currentDate.getMonth() + 1;
@@ -813,7 +814,7 @@ export default function RosterPlan() {
       const [empData, plannedAbsenceData, shiftData] = await Promise.all([
         employeeApi.getAll(),
         plannedAbsencesAdminApi.getRange({ from: startDate, to: endDate }),
-        fetchRosterShifts(isDraftMode ? true : undefined),
+        fetchRosterShifts(shouldUseDraftData ? true : undefined),
       ]);
       const planSummary = await dutyPlansApi.getByMonth(year, month);
       let plan = planSummary;
@@ -856,7 +857,7 @@ export default function RosterPlan() {
     } finally {
       setIsLoading(false);
     }
-  }, [currentDate, fetchRosterShifts, isDraftMode, toast]);
+  }, [currentDate, fetchRosterShifts, shouldUseDraftData, toast]);
 
   useEffect(() => {
     loadData();
@@ -1653,12 +1654,13 @@ export default function RosterPlan() {
       } else {
         const employeeId = nextEmployeeId || null;
         const trimmedFreeText = assigneeFreeText?.trim() || null;
+        const targetDraft = shouldUseDraftData;
         if (shift) {
           const updated = await rosterApi.update(shift.id, {
             employeeId,
             assigneeFreeText: employeeId ? null : trimmedFreeText,
-            isDraft: isDraftMode,
-          }, { draft: isDraftMode });
+            isDraft: targetDraft,
+          }, { draft: targetDraft });
           setShifts((prev) =>
             prev.map((item) => (item.id === updated.id ? updated : item)),
           );
@@ -1669,8 +1671,8 @@ export default function RosterPlan() {
             assigneeFreeText: employeeId ? null : trimmedFreeText,
             date: dateStr,
             serviceType: type,
-            isDraft: isDraftMode,
-          }, { draft: isDraftMode });
+            isDraft: targetDraft,
+          }, { draft: targetDraft });
           setShifts((prev) => [...prev, created]);
           clearManualDraft(cellKey);
         }
