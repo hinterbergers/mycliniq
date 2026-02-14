@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/drawer";
 import {
   planningApi,
+  PlanningInputV1,
   PlanningInputSummary,
   PlanningLock,
   PlanningOutputV1,
@@ -77,6 +78,7 @@ export function PlanningDrawer({
   );
 
   const [previewResult, setPreviewResult] = useState<PlanningOutputV1 | null>(null);
+  const [previewInput, setPreviewInput] = useState<PlanningInputV1 | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
@@ -90,8 +92,12 @@ export function PlanningDrawer({
     setPreviewLoading(true);
     setPreviewError(null);
     try {
-      const result = await planningApi.runPreview(year, month);
+      const [result, inputDetails] = await Promise.all([
+        planningApi.runPreview(year, month),
+        planningApi.fetchInput(year, month),
+      ]);
       setPreviewResult(result);
+      setPreviewInput(inputDetails);
     } catch (error) {
       const message = formatApiError(error);
       setPreviewError(message);
@@ -123,6 +129,51 @@ export function PlanningDrawer({
       { label: "Regeln (weich)", value: input.softRules },
     ];
   }, [input]);
+
+  const previewWishSummary = useMemo(() => {
+    if (!previewResult || !previewInput) return null;
+
+    const slotById = new Map(previewInput.slots.map((slot) => [slot.id, slot]));
+    const employeeById = new Map(
+      previewInput.employees.map((employee) => [employee.id, employee]),
+    );
+
+    let preferredDateHits = 0;
+    let preferredServiceHits = 0;
+    let avoidDateConflicts = 0;
+    let avoidServiceConflicts = 0;
+    let banWeekdayConflicts = 0;
+
+    for (const assignment of previewResult.assignments) {
+      const slot = slotById.get(assignment.slotId);
+      const employee = employeeById.get(assignment.employeeId);
+      if (!slot || !employee) continue;
+
+      const soft = employee.constraints?.soft ?? {};
+      const hard = employee.constraints?.hard ?? {};
+      const preferDates = new Set(soft.preferDates ?? []);
+      const avoidDates = new Set(soft.avoidDates ?? []);
+      const preferServiceTypes = new Set(soft.preferServiceTypes ?? []);
+      const avoidServiceTypes = new Set(soft.avoidServiceTypes ?? []);
+      const banWeekdays = new Set(hard.banWeekdays ?? []);
+      const weekday = new Date(`${slot.date}T00:00:00`).getDay();
+
+      if (preferDates.has(slot.date)) preferredDateHits += 1;
+      if (avoidDates.has(slot.date)) avoidDateConflicts += 1;
+      if (preferServiceTypes.has(slot.roleId)) preferredServiceHits += 1;
+      if (avoidServiceTypes.has(slot.roleId)) avoidServiceConflicts += 1;
+      if (banWeekdays.has(weekday)) banWeekdayConflicts += 1;
+    }
+
+    return {
+      assignments: previewResult.assignments.length,
+      preferredDateHits,
+      preferredServiceHits,
+      avoidDateConflicts,
+      avoidServiceConflicts,
+      banWeekdayConflicts,
+    };
+  }, [previewResult, previewInput]);
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
@@ -213,6 +264,38 @@ export function PlanningDrawer({
                   </span>
                 </div>
                 <div className="space-y-2">
+                  {previewWishSummary && (
+                    <div>
+                      <p className="text-xs font-semibold text-muted-foreground">
+                        Wunschabgleich
+                      </p>
+                      <div className="grid grid-cols-1 gap-1 text-xs text-muted-foreground">
+                        <div>
+                          Zuteilungen: <span className="font-semibold">{previewWishSummary.assignments}</span>
+                        </div>
+                        <div>
+                          Preferred-Datum Treffer:{" "}
+                          <span className="font-semibold">{previewWishSummary.preferredDateHits}</span>
+                        </div>
+                        <div>
+                          Preferred-Service Treffer:{" "}
+                          <span className="font-semibold">{previewWishSummary.preferredServiceHits}</span>
+                        </div>
+                        <div>
+                          Avoid-Datum Konflikte:{" "}
+                          <span className="font-semibold">{previewWishSummary.avoidDateConflicts}</span>
+                        </div>
+                        <div>
+                          Avoid-Service Konflikte:{" "}
+                          <span className="font-semibold">{previewWishSummary.avoidServiceConflicts}</span>
+                        </div>
+                        <div>
+                          Ban-Weekday Konflikte:{" "}
+                          <span className="font-semibold">{previewWishSummary.banWeekdayConflicts}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   <div>
                     <p className="text-xs font-semibold text-muted-foreground">
                       Violations (max 30)
