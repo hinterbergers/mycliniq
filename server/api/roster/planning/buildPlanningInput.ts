@@ -91,6 +91,16 @@ const normalizeStringArray = (values: unknown): string[] => {
   );
 };
 
+const isIsoDateOnly = (value: string): boolean => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = parseISO(value);
+  if (Number.isNaN(parsed.getTime())) return false;
+  return formatISO(parsed, { representation: "date" }) === value;
+};
+
+const normalizeDateArray = (values: unknown): string[] =>
+  normalizeStringArray(values).filter((value) => isIsoDateOnly(value));
+
 const normalizeWeekdays = (values: unknown): number[] => {
   if (!Array.isArray(values)) return [];
   return Array.from(
@@ -100,6 +110,18 @@ const normalizeWeekdays = (values: unknown): number[] => {
         .filter((value) => Number.isFinite(value) && value >= 0 && value <= 6),
     ),
   );
+};
+
+const normalizeOptionalInt = (
+  value: unknown,
+  min: number,
+  max: number,
+): number | undefined => {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  const rounded = Math.trunc(value);
+  if (rounded < min) return min;
+  if (rounded > max) return max;
+  return rounded;
 };
 
 const createSlotsForPeriod = (year: number, month: number) => {
@@ -132,20 +154,14 @@ const createSlotsForPeriod = (year: number, month: number) => {
 const normalizeShiftWish = (wish?: ShiftWish) => {
   if (!wish) return null;
   return {
-    avoidDates: normalizeStringArray(wish.avoidShiftDays),
-    preferDates: normalizeStringArray(wish.preferredShiftDays),
+    avoidDates: normalizeDateArray(wish.avoidShiftDays),
+    preferDates: normalizeDateArray(wish.preferredShiftDays),
     avoidWeekdays: normalizeWeekdays(wish.avoidWeekdays ?? []),
     preferredServiceTypes: normalizeStringArray(wish.preferredServiceTypes),
     avoidServiceTypes: normalizeStringArray(wish.avoidServiceTypes),
-    maxShiftsPerMonth: Number.isFinite(wish.maxShiftsPerMonth ?? NaN)
-      ? wish.maxShiftsPerMonth
-      : undefined,
-    maxShiftsPerWeek: Number.isFinite(wish.maxShiftsPerWeek ?? NaN)
-      ? wish.maxShiftsPerWeek
-      : undefined,
-    maxWeekendShifts: Number.isFinite(wish.maxWeekendShifts ?? NaN)
-      ? wish.maxWeekendShifts
-      : undefined,
+    maxShiftsPerMonth: normalizeOptionalInt(wish.maxShiftsPerMonth, 0, 31),
+    maxShiftsPerWeek: normalizeOptionalInt(wish.maxShiftsPerWeek, 0, 7),
+    maxWeekendShifts: normalizeOptionalInt(wish.maxWeekendShifts, 0, 31),
   };
 };
 
