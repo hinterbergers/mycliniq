@@ -1657,6 +1657,7 @@ export default function RosterPlan() {
           const updated = await rosterApi.update(shift.id, {
             employeeId,
             assigneeFreeText: employeeId ? null : trimmedFreeText,
+            isDraft: isDraftMode,
           });
           setShifts((prev) =>
             prev.map((item) => (item.id === updated.id ? updated : item)),
@@ -1668,6 +1669,7 @@ export default function RosterPlan() {
             assigneeFreeText: employeeId ? null : trimmedFreeText,
             date: dateStr,
             serviceType: type,
+            isDraft: isDraftMode,
           });
           setShifts((prev) => [...prev, created]);
           clearManualDraft(cellKey);
