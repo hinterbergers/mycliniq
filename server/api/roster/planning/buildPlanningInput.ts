@@ -23,7 +23,7 @@ const SERVICE_ROLES: ServiceRole[] = [
 
 const GROUP_ROLE_MAP: Record<RoleGroup, string[]> = {
   PRIM: ["overduty"],
-  OA: ["gyn", "kreiszimmer", "overduty"],
+  OA: ["gyn", "overduty"],
   ASS: ["turnus", "kreiszimmer", "overduty"],
   TA: ["turnus", "overduty"],
   OTHER: ["overduty"],

@@ -180,6 +180,18 @@ const resolveBooleanValue = (value: unknown, fallback = false): boolean => {
   return fallback;
 };
 
+const normalizeIdArray = (values: unknown): number[] => {
+  if (!Array.isArray(values)) return [];
+  const unique = new Set<number>();
+  for (const value of values) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      unique.add(parsed);
+    }
+  }
+  return Array.from(unique);
+};
+
 const SOLVER_ROLES = ["gyn", "kreiszimmer", "turnus"];
 const REQUIRED_SERVICE_ROLES = new Set(["gyn", "kreiszimmer"]);
 
@@ -356,8 +368,11 @@ const createAssignments = (
   input: any,
   locks: RosterPlanningLock[],
   fixedPreferredEmployees: number[],
+  noDutyEmployeeIds: number[],
 ) => {
   const employeeStates = buildEmployeeStates(input.employees);
+  const fixedEmployeeIds = new Set((fixedPreferredEmployees ?? []).map(String));
+  const noDutyEmployeeSet = new Set((noDutyEmployeeIds ?? []).map(String));
   const assignments: PlanningAssignment[] = [];
   const violations: Array<{
     code: string;
@@ -369,6 +384,18 @@ const createAssignments = (
   const unfilledSlots: PlanningUnfilledSlot[] = [];
   const lockMap = new Map(locks.map((lock) => [lock.slotId, lock]));
   const assignedSlotIds = new Set<string>();
+
+  for (const employeeId of noDutyEmployeeSet) {
+    if (!employeeStates.has(employeeId)) continue;
+    if (fixedEmployeeIds.has(employeeId)) {
+      violations.push({
+        code: "SPECIAL_RULE_CONFLICT",
+        hard: true,
+        employeeId,
+        message: `Mitarbeiter ${employeeId} ist gleichzeitig in fixedPreferred und noDuty`,
+      });
+    }
+  }
 
   for (const slot of input.slots) {
     const lock = lockMap.get(slot.id);
@@ -428,6 +455,7 @@ const createAssignments = (
   for (const employeeId of fixedPreferredEmployees ?? []) {
     const state = employeeStates.get(String(employeeId));
     if (!state) continue;
+    if (noDutyEmployeeSet.has(state.id)) continue;
     const preferredDates = Array.from(state.preferences.preferDates).sort();
     for (const date of preferredDates) {
       const daySlots = slotsByDate.get(date);
@@ -513,6 +541,14 @@ const createAssignments = (
     }> = [];
 
     for (const employeeState of employeeStates.values()) {
+      if (noDutyEmployeeSet.has(employeeState.id)) {
+        failureReasons.add("NO_DUTY_EMPLOYEE");
+        continue;
+      }
+      if (fixedEmployeeIds.has(employeeState.id)) {
+        failureReasons.add("FIXED_ONLY");
+        continue;
+      }
       const evaluation = evaluateEmployeeForSlot(
         employeeState,
         slot,
@@ -593,6 +629,7 @@ const buildPlanningOutput = async (
   input: any,
   locks: RosterPlanningLock[],
   fixedPreferredEmployees: number[],
+  noDutyEmployeeIds: number[],
   seed?: unknown,
 ) => {
   const resolvedSeed = resolveSeedValue(seed);
@@ -603,6 +640,7 @@ const buildPlanningOutput = async (
     input,
     locks,
     fixedPreferredEmployees ?? [],
+    noDutyEmployeeIds ?? [],
   );
   const output = {
     version: "v1",
@@ -723,9 +761,16 @@ export function registerPlanningRoutes(router: Router) {
     month: number,
     req: Request,
     res: Response,
-    options: { dryRun?: boolean; seed?: unknown },
+    options: {
+      dryRun?: boolean;
+      seed?: unknown;
+      specialRules?: {
+        fixedPreferredEmployeeIds?: number[];
+        noDutyEmployeeIds?: number[];
+      };
+    },
   ) => {
-    const { dryRun, seed } = options;
+    const { dryRun, seed, specialRules } = options;
     const label = dryRun ? "preview" : "run";
     logPlanningRequest(label, year, month, req.user?.employeeId);
     const [input, locks, settings] = await Promise.all([
@@ -733,11 +778,21 @@ export function registerPlanningRoutes(router: Router) {
       getLocks(year, month),
       storage.getRosterSettings(),
     ]);
-    const fixedPreferredEmployees = settings?.fixedPreferredEmployees ?? [];
+    const fixedFromSettings = settings?.fixedPreferredEmployees ?? [];
+    const fixedFromRequest = normalizeIdArray(
+      specialRules?.fixedPreferredEmployeeIds ?? [],
+    );
+    const noDutyFromRequest = normalizeIdArray(
+      specialRules?.noDutyEmployeeIds ?? [],
+    );
+    const fixedPreferredEmployees = Array.from(
+      new Set([...fixedFromSettings, ...fixedFromRequest]),
+    );
     const { output, seed: runSeed } = await buildPlanningOutput(
       input,
       locks,
       fixedPreferredEmployees,
+      noDutyFromRequest,
       seed,
     );
     if (!dryRun) {
@@ -879,10 +934,11 @@ export function registerPlanningRoutes(router: Router) {
     try {
       const parsed = parseYearMonth(req, res);
       if (!parsed) return;
-      const { seed } = req.body ?? {};
+      const { seed, specialRules } = req.body ?? {};
       await executePlanningRun(parsed.year, parsed.month, req, res, {
         dryRun: true,
         seed,
+        specialRules,
       });
     } catch (error) {
       console.error("planning preview failed", error);
@@ -894,10 +950,11 @@ export function registerPlanningRoutes(router: Router) {
     try {
       const parsed = parseYearMonth(req, res);
       if (!parsed) return;
-      const { seed, dryRun } = req.body ?? {};
+      const { seed, dryRun, specialRules } = req.body ?? {};
       await executePlanningRun(parsed.year, parsed.month, req, res, {
         dryRun: resolveBooleanValue(dryRun, false),
         seed,
+        specialRules,
       });
     } catch (error) {
       console.error("planning run failed", error);

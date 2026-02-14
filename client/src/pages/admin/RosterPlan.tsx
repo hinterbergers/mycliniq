@@ -1361,7 +1361,9 @@ export default function RosterPlan() {
     payload: GenerationPayload,
   ): Promise<boolean> => {
     const planningOutput: PlanningOutputV1 =
-      await planningRestApi.runPlanningPreview(payload.year, payload.month);
+      await planningRestApi.runPlanningPreview(payload.year, payload.month, {
+        specialRules: payload.specialRules,
+      });
     const shifts = planningOutput.assignments
       .map((assignment): GeneratedShift | null => {
         const parsedEmployeeId = Number(assignment.employeeId);

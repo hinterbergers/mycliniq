@@ -2878,7 +2878,14 @@ export const planningRestApi = {
   run: async (
     year: number,
     month: number,
-    data: { seed?: number | null; dryRun?: boolean },
+    data: {
+      seed?: number | null;
+      dryRun?: boolean;
+      specialRules?: {
+        fixedPreferredEmployeeIds?: number[];
+        noDutyEmployeeIds?: number[];
+      };
+    },
   ): Promise<PlanningOutputV1> => {
     const response = await apiFetch(
       `${API_BASE}/roster/planning/${year}/${month}/run`,
@@ -2894,7 +2901,13 @@ export const planningRestApi = {
   runPlanningPreview: async (
     year: number,
     month: number,
-    data: { seed?: number | null } = {},
+    data: {
+      seed?: number | null;
+      specialRules?: {
+        fixedPreferredEmployeeIds?: number[];
+        noDutyEmployeeIds?: number[];
+      };
+    } = {},
   ): Promise<PlanningOutputV1> => {
     return planningRestApi.run(year, month, { ...data, dryRun: true });
   },
