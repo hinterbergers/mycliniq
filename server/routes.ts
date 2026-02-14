@@ -2340,10 +2340,7 @@ export async function registerRoutes(
       }));
       const existingAbsences = [...generalAbsences, ...plannedAsAbsences];
 
-      const includeDraftWishes = resolvedMode === "draft" && !wishesLocked;
-      const wishStatuses = includeDraftWishes
-        ? ["Eingereicht", "Entwurf"]
-        : ["Eingereicht"];
+      const wishStatuses = ["Eingereicht"];
 
       const wishes = await storage.getShiftWishesByMonth(year, month);
       const shiftWishes = wishes.filter((wish) =>
@@ -5385,11 +5382,11 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
         });
       }
 
-      // Force draft fields on create (server is source of truth)
+      // New flow: a persisted wish is treated as submitted.
       const wish = await storage.createShiftWish({
         ...payload,
-        status: "Entwurf",
-        submittedAt: null,
+        status: "Eingereicht",
+        submittedAt: new Date(),
       });
 
       res.status(201).json(wish);
@@ -5426,16 +5423,16 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
         return res.status(403).json({ error: "Keine Berechtigung" });
       }
 
-      if (existing.status === "Eingereicht") {
-        return res.status(400).json({ error: "Eingereichte Wünsche können nicht bearbeitet werden" });
-      }
-
       const payload = { ...(req.body as any) };
       delete payload.status;
       delete payload.submittedAt;
       delete payload.employeeId;
 
-      const wish = await storage.updateShiftWish(id, payload);
+      const wish = await storage.updateShiftWish(id, {
+        ...payload,
+        status: "Eingereicht",
+        submittedAt: new Date(),
+      });
       if (!wish) {
         return res.status(404).json({ error: "Shift wish not found" });
       }
@@ -5477,10 +5474,6 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
           return res.status(403).json({ error: "Keine Berechtigung" });
         }
 
-        if (existing.status === "Eingereicht") {
-          return res.status(400).json({ error: "Wunsch ist bereits eingereicht" });
-        }
-
         const employee = await storage.getEmployee(existing.employeeId);
         if (!employee) {
           return res.status(404).json({ error: "Mitarbeiter nicht gefunden" });
@@ -5510,40 +5503,10 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
     requireAuth,
     async (req: Request, res: Response) => {
       try {
-        const id = Number(req.params.id);
-        if (Number.isNaN(id)) {
-          return res.status(400).json({ error: "Invalid shift wish id" });
-        }
-
-        const wish = await storage.getShiftWish(id);
-        if (!wish) {
-          return res.status(404).json({ error: "Shift wish not found" });
-        }
-
-        const currentEmployeeId = req.user?.employeeId;
-        if (!currentEmployeeId) {
-          return res.status(401).json({ error: "Nicht authentifiziert" });
-        }
-
-        const isAdmin = Boolean(req.user?.isAdmin || req.user?.appRole === "Admin");
-        if (!isAdmin && wish.employeeId !== currentEmployeeId) {
-          return res.status(403).json({ error: "Keine Berechtigung" });
-        }
-
-        if (wish.status !== "Eingereicht") {
-          return res.status(400).json({ error: "Nur eingereichte Wünsche können wieder geöffnet werden" });
-        }
-
-        const updatedWish = await storage.updateShiftWish(id, {
-          status: "Entwurf",
-          submittedAt: null,
+        return res.status(410).json({
+          error:
+            "Reopen ist deaktiviert. Wünsche bleiben im Status Eingereicht und sind direkt bearbeitbar.",
         });
-
-        if (!updatedWish) {
-          return res.status(404).json({ error: "Shift wish not found" });
-        }
-
-        res.json(updatedWish);
       } catch (error) {
         console.error("Reopen shift wish error:", error);
         res.status(500).json({ error: "Bearbeiten fehlgeschlagen" });

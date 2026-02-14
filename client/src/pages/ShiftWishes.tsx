@@ -42,7 +42,6 @@ import { Separator } from "@/components/ui/separator";
 import {
   Calendar as CalendarIcon,
   Send,
-  Save,
   CheckCircle,
   Clock,
   AlertCircle,
@@ -51,7 +50,6 @@ import {
   Trash2,
   Loader2,
   Info,
-  Pencil,
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -392,14 +390,14 @@ export default function ShiftWishes() {
   };
 
   const toggleWish = (key: string) => {
-    if (isSubmitted || saving) return;
+    if (saving) return;
     const current = getState(key);
     const nextState = current === "wish" ? "neutral" : "wish";
     setDayState(key, nextState);
   };
 
   const toggleBlocked = (key: string) => {
-    if (isSubmitted || saving) return;
+    if (saving) return;
     const current = getState(key);
     const nextState = current === "blocked" ? "neutral" : "blocked";
     setDayState(key, nextState);
@@ -651,7 +649,7 @@ export default function ShiftWishes() {
     }
   };
 
-  const handleSave = async () => {
+  const upsertSubmittedWish = async () => {
     if (!currentUser || !selectedMonth) return;
 
     try {
@@ -682,8 +680,10 @@ export default function ShiftWishes() {
         notes: notes || null,
       };
 
+      let persistedWish: ShiftWish;
       if (wish) {
         const updated = await shiftWishesApi.update(wish.id, wishData);
+        persistedWish = updated;
         setWish(updated);
         applyWishDayStates(
           updated,
@@ -692,6 +692,7 @@ export default function ShiftWishes() {
         );
       } else {
         const created = await shiftWishesApi.create(wishData);
+        persistedWish = created;
         setWish(created);
         applyWishDayStates(
           created,
@@ -715,71 +716,26 @@ export default function ShiftWishes() {
       }
 
       toast({
-        title: "Gespeichert",
-        description: "Ihre Wünsche wurden gespeichert",
-      });
-    } catch (error) {
-      toast({
-        title: "Fehler",
-        description: "Speichern fehlgeschlagen",
-        variant: "destructive",
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSubmit = async () => {
-    if (!wish) {
-      await handleSave();
-    }
-
-    if (!wish?.id) return;
-
-    try {
-      setSaving(true);
-      const updated = await shiftWishesApi.submit(wish.id);
-      setWish(updated);
-
-      toast({
         title: "Eingereicht",
-        description: "Ihre Wünsche wurden erfolgreich eingereicht",
+        description: "Ihre Wünsche wurden gespeichert und eingereicht",
       });
-
-      loadData();
+      return persistedWish;
     } catch (error) {
       toast({
         title: "Fehler",
         description: "Einreichen fehlgeschlagen",
         variant: "destructive",
       });
+      return null;
     } finally {
       setSaving(false);
     }
   };
 
-  const handleReopen = async () => {
-    if (!wish?.id) return;
-
-    try {
-      setSaving(true);
-      const updated = await shiftWishesApi.reopen(wish.id);
-      setWish(updated);
-
-      toast({
-        title: "Bearbeitung aktiviert",
-        description: "Ihr Wunsch ist wieder im Entwurfsstatus und kann bearbeitet werden",
-      });
-
-      loadData();
-    } catch (error) {
-      toast({
-        title: "Fehler",
-        description: "Bearbeiten fehlgeschlagen",
-        variant: "destructive",
-      });
-    } finally {
-      setSaving(false);
+  const handleSubmit = async () => {
+    const persisted = await upsertSubmittedWish();
+    if (persisted) {
+      await loadData();
     }
   };
 
@@ -850,7 +806,6 @@ export default function ShiftWishes() {
   };
 
   const toggleWeekday = (weekday: number) => {
-    if (isSubmitted) return;
     if (avoidWeekdays.includes(weekday)) {
       setAvoidWeekdays(avoidWeekdays.filter((d) => d !== weekday));
     } else {
@@ -915,29 +870,14 @@ export default function ShiftWishes() {
 
           <div className="flex items-center gap-4">
             {isSubmitted ? (
-              <>
-                <Badge variant="default" className="gap-1 bg-green-600">
-                  <CheckCircle className="w-3 h-3" />
-                  Eingereicht
-                </Badge>
-                <Button
-                  variant="outline"
-                  onClick={handleReopen}
-                  disabled={saving}
-                  data-testid="button-reopen"
-                >
-                  {saving ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <Pencil className="w-4 h-4 mr-2" />
-                  )}
-                  Bearbeiten
-                </Button>
-              </>
+              <Badge variant="default" className="gap-1 bg-green-600">
+                <CheckCircle className="w-3 h-3" />
+                Eingereicht
+              </Badge>
             ) : (
-              <Badge variant="secondary" className="gap-1">
+              <Badge variant="outline" className="gap-1">
                 <Clock className="w-3 h-3" />
-                Entwurf
+                Ausstehend
               </Badge>
             )}
           </div>
@@ -1038,7 +978,7 @@ export default function ShiftWishes() {
                                 <button
                                   type="button"
                                   onClick={() => toggleWish(key)}
-                                  disabled={isSubmitted || saving}
+                                  disabled={saving}
                                   className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-blue-200 bg-white/80 text-[10px] text-blue-500 transition disabled:cursor-not-allowed disabled:opacity-40"
                                   aria-label={`Wunsch für ${formattedDate}`}
                                 >
@@ -1047,7 +987,7 @@ export default function ShiftWishes() {
                                 <button
                                   type="button"
                                   onClick={() => toggleBlocked(key)}
-                                  disabled={isSubmitted || saving}
+                                  disabled={saving}
                                   className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-red-200 bg-white/80 text-[10px] text-red-500 transition disabled:cursor-not-allowed disabled:opacity-40"
                                   aria-label={`Nicht möglich für ${formattedDate}`}
                                 >
@@ -1103,7 +1043,7 @@ export default function ShiftWishes() {
                             : "outline"
                         }
                         size="sm"
-                        disabled={isSubmitted}
+                        disabled={saving}
                         onClick={() => toggleWeekday(day.value)}
                         data-testid={`avoid-weekday-${day.value}`}
                       >
@@ -1128,7 +1068,7 @@ export default function ShiftWishes() {
                         v === "none" ? undefined : parseInt(v, 10),
                       )
                     }
-                    disabled={isSubmitted}
+                    disabled={saving}
                   >
                     <SelectTrigger
                       className="w-48"
@@ -1165,7 +1105,7 @@ export default function ShiftWishes() {
                           value ? parseInt(value, 10) : undefined,
                         );
                       }}
-                      disabled={isSubmitted}
+                      disabled={saving}
                       data-testid="input-max-shifts-month"
                     />
                   </div>
@@ -1182,7 +1122,7 @@ export default function ShiftWishes() {
                           v === "none" ? undefined : parseInt(v, 10),
                         )
                       }
-                      disabled={isSubmitted}
+                      disabled={saving}
                     >
                       <SelectTrigger
                         className="w-48"
@@ -1211,7 +1151,7 @@ export default function ShiftWishes() {
                     onChange={(e) => setNotes(e.target.value)}
                     placeholder="Besondere Wünsche oder Hinweise..."
                     rows={3}
-                    disabled={isSubmitted}
+                    disabled={saving}
                     data-testid="input-notes"
                   />
                 </div>
@@ -1220,21 +1160,8 @@ export default function ShiftWishes() {
 
             <div className="flex justify-end gap-3">
               <Button
-                variant="outline"
-                onClick={handleSave}
-                disabled={saving || isSubmitted}
-                data-testid="button-save"
-              >
-                {saving ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <Save className="w-4 h-4 mr-2" />
-                )}
-                Speichern
-              </Button>
-              <Button
                 onClick={handleSubmit}
-                disabled={saving || isSubmitted}
+                disabled={saving}
                 data-testid="button-submit"
               >
                 {saving ? (
@@ -1537,8 +1464,6 @@ export default function ShiftWishes() {
                                   <Badge className="bg-green-600">
                                     Eingereicht
                                   </Badge>
-                                ) : empWish ? (
-                                  <Badge variant="secondary">Entwurf</Badge>
                                 ) : (
                                   <Badge variant="outline">Ausstehend</Badge>
                                 )}
