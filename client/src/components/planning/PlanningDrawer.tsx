@@ -1,5 +1,5 @@
 import { format } from "date-fns";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Employee } from "@shared/schema";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,7 @@ type PlanningDrawerProps = {
   loading?: boolean;
   error?: string | null;
   refresh?: () => void;
+  autoRunTrigger?: number;
 };
 
 const formatMonth = (year: number, month: number) =>
@@ -55,6 +56,7 @@ export function PlanningDrawer({
   loading = false,
   error,
   refresh,
+  autoRunTrigger = 0,
 }: PlanningDrawerProps) {
   const displayMonth = formatMonth(year, month);
   const employeeLookup = useMemo(() => {
@@ -106,6 +108,11 @@ export function PlanningDrawer({
       setPreviewLoading(false);
     }
   }, [year, month]);
+
+  useEffect(() => {
+    if (!open || autoRunTrigger <= 0 || previewLoading) return;
+    handlePreview();
+  }, [open, autoRunTrigger, previewLoading, handlePreview]);
 
   const groupedUnfilled = useMemo(() => {
     const slots = previewResult?.unfilledSlots ?? [];

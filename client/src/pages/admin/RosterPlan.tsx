@@ -63,6 +63,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   Brain,
+  PlayCircle,
   Pencil,
   Calendar,
   Plus,
@@ -370,6 +371,7 @@ export default function RosterPlan() {
   const [isApplying, setIsApplying] = useState(false);
   const [manualEditMode, setManualEditMode] = useState(false);
   const [planningDrawerOpen, setPlanningDrawerOpen] = useState(false);
+  const [planningAutoRunTrigger, setPlanningAutoRunTrigger] = useState(0);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [inspectorSlot, setInspectorSlot] = useState<SlotInspectorInfo | null>(
     null,
@@ -1502,6 +1504,11 @@ export default function RosterPlan() {
     await handleAutoGenerate(); // bleibt offen, schließt bei Erfolg in handleAutoGenerate
   };
 
+  const handleOpenPlanningPreview = () => {
+    setPlanningAutoRunTrigger((prev) => prev + 1);
+    setPlanningDrawerOpen(true);
+  };
+
   const handleApplyGenerated = async () => {
     setIsApplying(true);
 
@@ -1844,6 +1851,17 @@ export default function RosterPlan() {
               >
                 <Brain className="w-4 h-4" />
                 Planung
+              </Button>
+            )}
+            {canEdit && (
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={handleOpenPlanningPreview}
+                data-testid="button-planning-preview-dryrun"
+              >
+                <PlayCircle className="w-4 h-4" />
+                Auto-Vorschau
               </Button>
             )}
             {canEdit && (
@@ -2767,6 +2785,7 @@ export default function RosterPlan() {
         loading={planningLoading}
         error={planningError}
         refresh={refreshPlanning}
+        autoRunTrigger={planningAutoRunTrigger}
       />
       <PlanningInspector
         open={inspectorOpen}
