@@ -609,8 +609,12 @@ export const rosterApi = {
     return handleResponse<RosterShift>(response);
   },
 
-  create: async (data: InsertRosterShift): Promise<RosterShift> => {
-    const response = await apiFetch(`${API_BASE}/roster`, {
+  create: async (
+    data: InsertRosterShift,
+    opts?: { draft?: boolean },
+  ): Promise<RosterShift> => {
+    const query = opts?.draft ? "?draft=1" : "";
+    const response = await apiFetch(`${API_BASE}/roster${query}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
@@ -653,8 +657,10 @@ export const rosterApi = {
   update: async (
     id: number,
     data: Partial<InsertRosterShift>,
+    opts?: { draft?: boolean },
   ): Promise<RosterShift> => {
-    const response = await apiFetch(`${API_BASE}/roster/${id}`, {
+    const query = opts?.draft ? "?draft=1" : "";
+    const response = await apiFetch(`${API_BASE}/roster/${id}${query}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),

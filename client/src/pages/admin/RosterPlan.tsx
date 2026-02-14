@@ -1658,7 +1658,7 @@ export default function RosterPlan() {
             employeeId,
             assigneeFreeText: employeeId ? null : trimmedFreeText,
             isDraft: isDraftMode,
-          });
+          }, { draft: isDraftMode });
           setShifts((prev) =>
             prev.map((item) => (item.id === updated.id ? updated : item)),
           );
@@ -1670,7 +1670,7 @@ export default function RosterPlan() {
             date: dateStr,
             serviceType: type,
             isDraft: isDraftMode,
-          });
+          }, { draft: isDraftMode });
           setShifts((prev) => [...prev, created]);
           clearManualDraft(cellKey);
         }
