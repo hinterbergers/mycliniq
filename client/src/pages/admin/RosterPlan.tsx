@@ -83,6 +83,8 @@ import {
   type NextPlanningMonth,
   type PlannedAbsenceAdmin,
   type PlanningOutputV1,
+  type PlanningOutputViolation,
+  type PlanningUnfilledSlot,
 } from "@/lib/api";
 import type {
   Employee,
@@ -214,6 +216,21 @@ const PLAN_STATUS_LABELS: Record<DutyPlan["status"], string> = {
   Entwurf: "Bearbeitung",
   Vorläufig: "Vorschau",
   Freigegeben: "Freigabe",
+};
+
+const UNFILLED_REASON_LABELS: Record<string, string> = {
+  NO_CANDIDATE: "Keine passende Ressource gefunden",
+  BAN_DATE: "Abwesenheit/Sperrtag",
+  BAN_WEEKDAY: "Wochentag gesperrt",
+  CONSECUTIVE_DAY: "Folgetag-Regel",
+  MAX_SLOTS: "Monatslimit erreicht",
+  MAX_WEEK_SLOTS: "Wochenlimit erreicht",
+  MAX_WEEKEND_SLOTS: "Wochenendlimit erreicht",
+  NO_DUTY_EMPLOYEE: "Mitarbeiter ist auf 'kein Dienst' gesetzt",
+  FIXED_ONLY: "Mitarbeiter hat nur Fixwunschdienste",
+  ROLE_NOT_ALLOWED: "Diensttyp nicht erlaubt",
+  LOCKED_EMPTY: "Slot ist als leer gesperrt",
+  FIX_PREFERRED_CONFLICT: "Fixwunsch kollidiert mit harten Regeln",
 };
 
 const MONTH_NAMES = [
@@ -381,6 +398,14 @@ export default function RosterPlan() {
   const [generatedShifts, setGeneratedShifts] = useState<GeneratedShift[]>([]);
   const [generationReasoning, setGenerationReasoning] = useState("");
   const [generationWarnings, setGenerationWarnings] = useState<string[]>([]);
+  const [generationUnfilledSlots, setGenerationUnfilledSlots] = useState<
+    PlanningUnfilledSlot[]
+  >([]);
+  const [generationViolations, setGenerationViolations] = useState<
+    PlanningOutputViolation[]
+  >([]);
+  const [generationPublishAllowed, setGenerationPublishAllowed] =
+    useState(true);
   const [latestGenerationMode, setLatestGenerationMode] = useState<
     "draft" | "final" | null
   >(null);
@@ -1392,9 +1417,6 @@ export default function RosterPlan() {
         `${planningOutput.unfilledSlots.length} Slots sind unbesetzt (siehe Planning-Vorschau).`,
       );
     }
-    for (const violation of planningOutput.violations) {
-      warnings.push(violation.message);
-    }
 
     setLatestGenerationMode("draft");
     setGeneratedShifts(shifts);
@@ -1402,6 +1424,9 @@ export default function RosterPlan() {
       `Engine ${planningOutput.meta.engine}: Pflichtabdeckung ${planningOutput.summary.coverage.filled}/${planningOutput.summary.coverage.required}, publishAllowed=${planningOutput.publishAllowed ? "ja" : "nein"}.`,
     );
     setGenerationWarnings(warnings);
+    setGenerationUnfilledSlots(planningOutput.unfilledSlots);
+    setGenerationViolations(planningOutput.violations);
+    setGenerationPublishAllowed(planningOutput.publishAllowed);
 
     setRulesDialogOpen(false);
     setGenerationDialogOpen(true);
@@ -2814,7 +2839,7 @@ export default function RosterPlan() {
           open={generationDialogOpen}
           onOpenChange={setGenerationDialogOpen}
         >
-          <DialogContent className="max-w-4xl max-h-[85vh]">
+          <DialogContent className="max-w-5xl w-[95vw] max-h-[85vh] overflow-hidden flex flex-col">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Brain className="w-5 h-5 text-primary" />
@@ -2827,7 +2852,7 @@ export default function RosterPlan() {
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-4">
+            <div className="space-y-4 min-h-0 flex-1">
               {/* Reasoning */}
               {generationReasoning && (
                 <Alert className="bg-primary/5 border-primary/20">
@@ -2850,48 +2875,138 @@ export default function RosterPlan() {
                 </Alert>
               )}
 
-              {/* Generated Shifts Preview */}
-              <div className="border rounded-lg">
-                <div className="p-3 bg-muted/30 border-b flex justify-between items-center">
-                  <span className="font-medium">Generierte Dienste</span>
-                  <Badge variant="secondary">
-                    {generatedShifts.length} Dienste
-                  </Badge>
-                </div>
-                <ScrollArea className="h-[300px]">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Datum</TableHead>
-                        <TableHead>Dienst</TableHead>
-                        <TableHead>Mitarbeiter</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {generatedShifts.map((shift, i) => {
-                        const line = serviceLineLookup.get(shift.serviceType);
-                        const label = line?.label || shift.serviceType;
-                        const badgeClass =
-                          line?.style.cell ||
-                          "bg-slate-100 text-slate-700 border-slate-200";
-                        return (
-                          <TableRow key={i}>
-                            <TableCell className="font-mono text-sm">
-                              {shift.date}
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className={badgeClass}>
-                                {label}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>{shift.employeeName}</TableCell>
+              <Tabs defaultValue="plan" className="flex flex-col gap-3 min-h-0 flex-1">
+                <TabsList className="w-fit">
+                  <TabsTrigger value="plan">Plan</TabsTrigger>
+                  <TabsTrigger value="errors">Fehleranzeige</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="plan" className="min-h-0">
+                  <div className="border rounded-lg">
+                    <div className="p-3 bg-muted/30 border-b flex justify-between items-center">
+                      <span className="font-medium">Generierte Dienste</span>
+                      <Badge variant="secondary">
+                        {generatedShifts.length} Dienste
+                      </Badge>
+                    </div>
+                    <ScrollArea className="h-[42vh]">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Datum</TableHead>
+                            <TableHead>Dienst</TableHead>
+                            <TableHead>Mitarbeiter</TableHead>
                           </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </ScrollArea>
-              </div>
+                        </TableHeader>
+                        <TableBody>
+                          {generatedShifts.map((shift, i) => {
+                            const line = serviceLineLookup.get(shift.serviceType);
+                            const label = line?.label || shift.serviceType;
+                            const badgeClass =
+                              line?.style.cell ||
+                              "bg-slate-100 text-slate-700 border-slate-200";
+                            return (
+                              <TableRow key={i}>
+                                <TableCell className="font-mono text-sm">
+                                  {shift.date}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant="outline" className={badgeClass}>
+                                    {label}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>{shift.employeeName}</TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </ScrollArea>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="errors" className="min-h-0">
+                  <div className="border rounded-lg">
+                    <div className="p-3 bg-muted/30 border-b flex items-center gap-3">
+                      <Badge
+                        variant={generationPublishAllowed ? "default" : "destructive"}
+                      >
+                        Publish {generationPublishAllowed ? "erlaubt" : "blockiert"}
+                      </Badge>
+                      <span className="text-sm text-muted-foreground">
+                        Unbesetzte Slots: {generationUnfilledSlots.length}
+                      </span>
+                      <span className="text-sm text-muted-foreground">
+                        Violations: {generationViolations.length}
+                      </span>
+                    </div>
+
+                    {generationUnfilledSlots.length === 0 &&
+                    generationViolations.length === 0 ? (
+                      <div className="p-4 text-sm text-muted-foreground">
+                        Keine Fehler gefunden.
+                      </div>
+                    ) : (
+                      <ScrollArea className="h-[42vh]">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Datum</TableHead>
+                              <TableHead>Dienst</TableHead>
+                              <TableHead>Grund</TableHead>
+                              <TableHead>Blocker</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {generationUnfilledSlots.map((slot) => {
+                              const line = serviceLineLookup.get(slot.serviceType);
+                              const label = line?.label || slot.serviceType;
+                              const reasonText = slot.reasonCodes
+                                .map((code) => UNFILLED_REASON_LABELS[code] ?? code)
+                                .join(", ");
+                              const blockerText = slot.candidatesBlockedBy
+                                .map((code) => UNFILLED_REASON_LABELS[code] ?? code)
+                                .join(", ");
+                              return (
+                                <TableRow key={slot.slotId}>
+                                  <TableCell className="font-mono text-sm">
+                                    {slot.date}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge variant="outline">{label}</Badge>
+                                  </TableCell>
+                                  <TableCell className="text-sm">
+                                    {reasonText || "-"}
+                                  </TableCell>
+                                  <TableCell className="text-xs text-muted-foreground">
+                                    {blockerText || "-"}
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                            {generationViolations.slice(0, 30).map((violation, idx) => (
+                              <TableRow key={`v-${idx}`}>
+                                <TableCell className="font-mono text-sm">
+                                  {violation.slotId?.slice(0, 10) || "-"}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant="outline">
+                                    {violation.slotId?.slice(11) || violation.code}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-sm">{violation.message}</TableCell>
+                                <TableCell className="text-xs text-muted-foreground">
+                                  {violation.employeeId ? `Mitarbeiter ${violation.employeeId}` : "-"}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </ScrollArea>
+                    )}
+                  </div>
+                </TabsContent>
+              </Tabs>
             </div>
 
             <DialogFooter className="gap-2">
