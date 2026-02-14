@@ -173,6 +173,27 @@ export type PlanningLock = {
   updatedAt: string;
 };
 
+export type PlanningInputSummary = {
+  version: "v1";
+  meta: {
+    timezone: string;
+    createdAt: string;
+    planningKind: "MONTHLY_DUTY" | "WEEKLY_PLAN" | string;
+    source?: string;
+  };
+  period: {
+    startDate: string;
+    endDate: string;
+    year: number;
+    month: number;
+  };
+  slots: number;
+  employees: number;
+  roles: number;
+  hardRules: number;
+  softRules: number;
+};
+
 export type PlanningInputV1 = {
   version: "v1";
   meta: {
@@ -241,6 +262,14 @@ export type PlanningInputV1 = {
       continuity?: number;
     };
   };
+};
+
+export type PlanningInputSummaryResponse = {
+  slots: number;
+  employees: number;
+  roles: number;
+  hardRules: number;
+  softRules: number;
 };
 
 export type PlanningOutputAssignment = {
@@ -2754,6 +2783,13 @@ export const toolsApi = {
 };
 
 // Planning API
+const buildPlanningQuery = (year: number, month: number) => {
+  const params = new URLSearchParams();
+  params.set("year", String(year));
+  params.set("month", String(month));
+  return `?${params.toString()}`;
+};
+
 export const planningRestApi = {
   getInput: async (year: number, month: number): Promise<PlanningInputV1> => {
     const response = await apiFetch(
@@ -2764,9 +2800,22 @@ export const planningRestApi = {
 
   getState: async (year: number, month: number): Promise<PlanningStateResponse> => {
     const response = await apiFetch(
-      `${API_BASE}/roster/planning/${year}/${month}/state`,
+      `${API_BASE}/roster/planning/state${buildPlanningQuery(year, month)}`,
     );
     return handleResponse<PlanningStateResponse>(response);
+  },
+
+  getInputSummary: async (
+    year: number,
+    month: number,
+  ): Promise<PlanningInputSummary> => {
+    const response = await apiFetch(
+      `${API_BASE}/roster/planning/input-summary${buildPlanningQuery(
+        year,
+        month,
+      )}`,
+    );
+    return handleResponse<PlanningInputSummary>(response);
   },
 
   getLocks: async (
@@ -2774,7 +2823,7 @@ export const planningRestApi = {
     month: number,
   ): Promise<PlanningLock[]> => {
     const response = await apiFetch(
-      `${API_BASE}/roster/planning/${year}/${month}/locks`,
+      `${API_BASE}/roster/planning/locks${buildPlanningQuery(year, month)}`,
     );
     return handleResponse<PlanningLock[]>(response);
   },
@@ -2829,7 +2878,7 @@ export const planningRestApi = {
   run: async (
     year: number,
     month: number,
-    data: { seed?: number | null },
+    data: { seed?: number | null; dryRun?: boolean },
   ): Promise<PlanningOutputV1> => {
     const response = await apiFetch(
       `${API_BASE}/roster/planning/${year}/${month}/run`,
@@ -2840,5 +2889,13 @@ export const planningRestApi = {
       },
     );
     return handleResponse<PlanningOutputV1>(response);
+  },
+
+  runPlanningPreview: async (
+    year: number,
+    month: number,
+    data: { seed?: number | null } = {},
+  ): Promise<PlanningOutputV1> => {
+    return planningRestApi.run(year, month, { ...data, dryRun: true });
   },
 };

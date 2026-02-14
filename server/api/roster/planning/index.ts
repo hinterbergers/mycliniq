@@ -640,6 +640,117 @@ export function registerPlanningRoutes(router: Router) {
     return { year, month };
   };
 
+  const parseYearMonthQuery = (req: Request, res: Response) => {
+    const year = Number(req.query.year);
+    const month = Number(req.query.month);
+    if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+      res.status(400).json({ error: "Ungültiges Jahr/Monat" });
+      return null;
+    }
+    return { year, month };
+  };
+
+  const logPlanningRequest = (
+    label: string,
+    year: number,
+    month: number,
+    userId?: number,
+  ) => {
+    if (process.env.NODE_ENV === "production") return;
+    console.debug(
+      `[planning:${label}] year=${year} month=${month} userId=${userId}`,
+    );
+  };
+
+  const buildStateResponse = async (year: number, month: number) => {
+    const [locks, latestRun, submittedCount, employees, rosterSettings] =
+      await Promise.all([
+        getLocks(year, month),
+        getLatestRun(year, month),
+        storage.getSubmittedWishesCount(year, month),
+        storage.getEmployees(),
+        storage.getRosterSettings(),
+      ]);
+    const totalEmployees = employees.filter(
+      (employee) => employee.takesShifts !== false,
+    ).length;
+    const missingCount = Math.max(0, totalEmployees - submittedCount);
+    const lastRunAt = latestRun?.createdAt ? latestRun.createdAt.toISOString() : null;
+    const isDirty =
+      !latestRun ||
+      locks.some((lock) =>
+        latestRun.createdAt ? new Date(lock.updatedAt) > latestRun.createdAt : true,
+      );
+    return {
+      submittedCount,
+      missingCount,
+      lastRunAt,
+      isDirty,
+      fixedPreferredEmployees: rosterSettings?.fixedPreferredEmployees ?? [],
+    };
+  };
+
+  const buildInputSummaryResponse = async (year: number, month: number) => {
+    const input = await buildPlanningInput(year, month);
+    return {
+      version: input.version,
+      meta: input.meta,
+      period: input.period,
+      slots: input.slots.length,
+      employees: input.employees.length,
+      roles: input.roles.length,
+      hardRules: input.rules?.hardRules?.length ?? 0,
+      softRules: input.rules?.softRules?.length ?? 0,
+    };
+  };
+
+  const buildLocksResponse = async (year: number, month: number) =>
+    getLocks(year, month);
+
+  const executePlanningRun = async (
+    year: number,
+    month: number,
+    req: Request,
+    res: Response,
+    options: { dryRun?: boolean; seed?: unknown },
+  ) => {
+    const { dryRun, seed } = options;
+    const label = dryRun ? "preview" : "run";
+    logPlanningRequest(label, year, month, req.user?.employeeId);
+    const [input, locks, settings] = await Promise.all([
+      buildPlanningInput(year, month),
+      getLocks(year, month),
+      storage.getRosterSettings(),
+    ]);
+    const fixedPreferredEmployees = settings?.fixedPreferredEmployees ?? [];
+    const { output, seed: runSeed } = await buildPlanningOutput(
+      input,
+      locks,
+      fixedPreferredEmployees,
+      seed,
+    );
+    if (!dryRun) {
+      const hash = createHash("sha256")
+        .update(JSON.stringify(input))
+        .digest("hex");
+      const userId = req.user?.employeeId;
+      if (!userId) {
+        return res.status(400).json({ error: "EmployeeId fehlt" });
+      }
+      await saveRun({
+        year,
+        month,
+        inputHash: hash,
+        inputJson: input,
+        outputJson: output,
+        engine: PLANNING_ENGINE,
+        seed: runSeed,
+        userId,
+      });
+    }
+    res.json(output);
+  };
+
   router.get("/:year/:month/input", async (req, res) => {
     try {
       const parsed = parseYearMonth(req, res);
@@ -651,49 +762,61 @@ export function registerPlanningRoutes(router: Router) {
     }
   });
 
-  router.get("/:year/:month/state", async (req, res) => {
+  const respondWithState = async (res: Response, year: number, month: number) => {
     try {
-      const parsed = parseYearMonth(req, res);
-      if (!parsed) return;
-      const [locks, latestRun, submittedCount, employees, rosterSettings] =
-        await Promise.all([
-          getLocks(parsed.year, parsed.month),
-          getLatestRun(parsed.year, parsed.month),
-          storage.getSubmittedWishesCount(parsed.year, parsed.month),
-          storage.getEmployees(),
-          storage.getRosterSettings(),
-        ]);
-      const totalEmployees = employees.filter((employee) => employee.takesShifts !== false).length;
-      const missingCount = Math.max(0, totalEmployees - submittedCount);
-      const lastRunAt = latestRun?.createdAt
-        ? latestRun.createdAt.toISOString()
-        : null;
-      const isDirty =
-        !latestRun ||
-        locks.some((lock) =>
-          latestRun.createdAt ? new Date(lock.updatedAt) > latestRun.createdAt : true,
-        );
-      res.json({
-        submittedCount,
-        missingCount,
-        lastRunAt,
-        isDirty,
-        fixedPreferredEmployees: rosterSettings?.fixedPreferredEmployees ?? [],
-      });
+      const state = await buildStateResponse(year, month);
+      res.json(state);
     } catch (error) {
       res.status(500).json({ error: "Fehler beim Laden des Planning-Status" });
     }
-  });
+  };
 
-  router.get("/:year/:month/locks", async (req, res) => {
+  const respondWithInputSummary = async (res: Response, year: number, month: number) => {
     try {
-      const parsed = parseYearMonth(req, res);
-      if (!parsed) return;
-      const locks = await getLocks(parsed.year, parsed.month);
+      const summary = await buildInputSummaryResponse(year, month);
+      res.json(summary);
+    } catch (error) {
+      res.status(500).json({ error: "Fehler beim Erzeugen der Input-Zusammenfassung" });
+    }
+  };
+
+  const respondWithLocks = async (res: Response, year: number, month: number) => {
+    try {
+      const locks = await buildLocksResponse(year, month);
       res.json(locks);
     } catch (error) {
       res.status(500).json({ error: "Fehler beim Laden der Locks" });
     }
+  };
+
+  router.get("/:year/:month/state", async (req, res) => {
+    const parsed = parseYearMonth(req, res);
+    if (!parsed) return;
+    await respondWithState(res, parsed.year, parsed.month);
+  });
+
+  router.get("/state", async (req, res) => {
+    const parsed = parseYearMonthQuery(req, res);
+    if (!parsed) return;
+    await respondWithState(res, parsed.year, parsed.month);
+  });
+
+  router.get("/input-summary", async (req, res) => {
+    const parsed = parseYearMonthQuery(req, res);
+    if (!parsed) return;
+    await respondWithInputSummary(res, parsed.year, parsed.month);
+  });
+
+  router.get("/:year/:month/locks", async (req, res) => {
+    const parsed = parseYearMonth(req, res);
+    if (!parsed) return;
+    await respondWithLocks(res, parsed.year, parsed.month);
+  });
+
+  router.get("/locks", async (req, res) => {
+    const parsed = parseYearMonthQuery(req, res);
+    if (!parsed) return;
+    await respondWithLocks(res, parsed.year, parsed.month);
   });
 
   router.put("/:year/:month/locks", async (req, res) => {
@@ -737,7 +860,7 @@ export function registerPlanningRoutes(router: Router) {
       await deleteLock(parsed.year, parsed.month, req.params.slotId);
       res.status(204).send();
     } catch (error) {
-      res.status(500).json({ error: "Fehler beim Löschen des Locks" });
+      res.status(500).json({ error: "Fehler beim Löschen der Locks" });
     }
   });
 
@@ -745,20 +868,11 @@ export function registerPlanningRoutes(router: Router) {
     try {
       const parsed = parseYearMonth(req, res);
       if (!parsed) return;
-    const { seed } = req.body ?? {};
-    const [input, locks, settings] = await Promise.all([
-      buildPlanningInput(parsed.year, parsed.month),
-      getLocks(parsed.year, parsed.month),
-      storage.getRosterSettings(),
-    ]);
-    const fixedPreferredEmployees = settings?.fixedPreferredEmployees ?? [];
-    const { output } = await buildPlanningOutput(
-      input,
-      locks,
-      fixedPreferredEmployees,
-      seed,
-    );
-      res.json(output);
+      const { seed } = req.body ?? {};
+      await executePlanningRun(parsed.year, parsed.month, req, res, {
+        dryRun: true,
+        seed,
+      });
     } catch (error) {
       res.status(500).json({ error: "Fehler beim Erstellen der Vorschau" });
     }
@@ -768,37 +882,11 @@ export function registerPlanningRoutes(router: Router) {
     try {
       const parsed = parseYearMonth(req, res);
       if (!parsed) return;
-    const { seed } = req.body ?? {};
-    const [input, locks, settings] = await Promise.all([
-      buildPlanningInput(parsed.year, parsed.month),
-      getLocks(parsed.year, parsed.month),
-      storage.getRosterSettings(),
-    ]);
-    const fixedPreferredEmployees = settings?.fixedPreferredEmployees ?? [];
-    const { output, seed: runSeed } = await buildPlanningOutput(
-      input,
-      locks,
-      fixedPreferredEmployees,
-      seed,
-    );
-      const hash = createHash("sha256")
-        .update(JSON.stringify(input))
-        .digest("hex");
-      const userId = req.user?.employeeId;
-      if (!userId) {
-        return res.status(400).json({ error: "EmployeeId fehlt" });
-      }
-      await saveRun({
-        year: parsed.year,
-        month: parsed.month,
-        inputHash: hash,
-        inputJson: input,
-        outputJson: output,
-        engine: PLANNING_ENGINE,
-        seed: runSeed,
-        userId,
+      const { seed } = req.body ?? {};
+      await executePlanningRun(parsed.year, parsed.month, req, res, {
+        dryRun: false,
+        seed,
       });
-      res.json(output);
     } catch (error) {
       res.status(500).json({ error: "Fehler beim Ausführen des Planning-Laufs" });
     }

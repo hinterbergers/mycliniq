@@ -5163,26 +5163,15 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
             lastApprovedMonth: lastApproved.month,
             wishYear: auto.year,
             wishMonth: auto.month,
-            updatedById: settings?.updatedById ?? null,
+            fixedPreferredEmployees: settings?.fixedPreferredEmployees ?? [],
+            updatedById: req.user?.employeeId ?? settings?.updatedById ?? null,
           });
         }
 
         // Get eligible employees and submitted wishes count
         const employeeRows = await storage.getEmployees();
-        const clinicId = (req as any).user?.clinicId;
-        const serviceLineMeta = clinicId
-          ? await db
-              .select({
-                key: serviceLines.key,
-                roleGroup: serviceLines.roleGroup,
-                label: serviceLines.label,
-              })
-              .from(serviceLines)
-              .where(eq(serviceLines.clinicId, clinicId))
-              .orderBy(asc(serviceLines.sortOrder), asc(serviceLines.label))
-          : [];
         const eligibleEmployees = employeeRows
-          .filter((employee) => employeeDoesShifts(employee, serviceLineMeta))
+          .filter((employee) => employeeDoesShifts(employee))
           .filter((employee) => isEligibleForWishMonth(employee, year, month));
         const eligibleEmployeeIds = new Set(
           eligibleEmployees.map((emp) => emp.id),
@@ -5210,6 +5199,7 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
           eligibleEmployeeIds: eligibleEmployees.map((emp) => emp.id),
         });
       } catch (error) {
+        console.error("next planning month error", error);
         res.status(500).json({ error: "Failed to get next planning month" });
       }
     },

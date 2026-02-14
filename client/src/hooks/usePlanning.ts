@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { planningApi, type PlanningInputV1, type PlanningLock, type PlanningStateResponse } from "@/lib/planningApi";
+import {
+  planningApi,
+  type PlanningInputSummary,
+  type PlanningLock,
+  type PlanningStateResponse,
+} from "@/lib/planningApi";
 
 type PlanningCacheEntry = {
-  input?: PlanningInputV1;
+  input?: PlanningInputSummary;
   state?: PlanningStateResponse;
   locks?: PlanningLock[];
 };
@@ -14,7 +19,7 @@ const buildKey = (year: number, month: number) => `${year}-${month}`;
 export function usePlanning(year: number, month: number) {
   const key = useMemo(() => buildKey(year, month), [year, month]);
 
-  const [input, setInput] = useState<PlanningInputV1 | null>(() => {
+  const [input, setInput] = useState<PlanningInputSummary | null>(() => {
     return planningCache.get(key)?.input ?? null;
   });
   const [state, setState] = useState<PlanningStateResponse | null>(() => {
@@ -26,13 +31,20 @@ export function usePlanning(year: number, month: number) {
   const [loading, setLoading] = useState(() => !planningCache.has(key));
   const [error, setError] = useState<string | null>(null);
 
+  const formatErrorMessage = (error: unknown) => {
+    const message =
+      error instanceof Error ? error.message : "Fehler beim Laden der Planung";
+    const status = (error as any)?.status;
+    return status ? `${message} (Status ${status})` : message;
+  };
+
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const [fetchedState, fetchedInput, fetchedLocks] = await Promise.all([
         planningApi.fetchState(year, month),
-        planningApi.fetchInput(year, month),
+        planningApi.fetchInputSummary(year, month),
         planningApi.fetchLocks(year, month),
       ]);
       const entry: PlanningCacheEntry = {
@@ -45,8 +57,7 @@ export function usePlanning(year: number, month: number) {
       setInput(fetchedInput);
       setLocks(fetchedLocks);
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Fehler beim Laden der Planung";
+      const message = formatErrorMessage(err);
       setError(message);
       console.error("Planning fetch error", err);
     } finally {
@@ -70,7 +81,7 @@ export function usePlanning(year: number, month: number) {
       try {
         const [fetchedState, fetchedInput, fetchedLocks] = await Promise.all([
           planningApi.fetchState(year, month),
-          planningApi.fetchInput(year, month),
+          planningApi.fetchInputSummary(year, month),
           planningApi.fetchLocks(year, month),
         ]);
         if (cancelled) return;
@@ -85,8 +96,7 @@ export function usePlanning(year: number, month: number) {
         setLocks(fetchedLocks);
       } catch (err) {
         if (cancelled) return;
-        const message =
-          err instanceof Error ? err.message : "Fehler beim Laden der Planung";
+        const message = formatErrorMessage(err);
         setError(message);
       } finally {
         if (!cancelled) {

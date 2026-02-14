@@ -1,5 +1,5 @@
 import { format } from "date-fns";
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { Employee } from "@shared/schema";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,10 +17,13 @@ import {
   DrawerTitle,
 } from "@/components/ui/drawer";
 import {
-  PlanningInputV1,
+  planningApi,
+  PlanningInputSummary,
   PlanningLock,
+  PlanningOutputV1,
   PlanningStateResponse,
 } from "@/lib/planningApi";
+import { Loader2, PlayCircle } from "lucide-react";
 
 type PlanningDrawerProps = {
   open: boolean;
@@ -28,7 +31,7 @@ type PlanningDrawerProps = {
   year: number;
   month: number;
   employees: Employee[];
-  input: PlanningInputV1 | null;
+  input: PlanningInputSummary | null;
   state: PlanningStateResponse | null;
   locks: PlanningLock[];
   loading?: boolean;
@@ -73,20 +76,51 @@ export function PlanningDrawer({
     [locks, employeeLookup],
   );
 
+  const [previewResult, setPreviewResult] = useState<PlanningOutputV1 | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
+  const formatApiError = (error: unknown) => {
+    const message = error instanceof Error ? error.message : "Fehler beim Berechnen der Vorschau";
+    const status = (error as any)?.status;
+    return status ? `${message} (Status ${status})` : message;
+  };
+
+  const handlePreview = useCallback(async () => {
+    setPreviewLoading(true);
+    setPreviewError(null);
+    try {
+      const result = await planningApi.runPreview(year, month);
+      setPreviewResult(result);
+    } catch (error) {
+      const message = formatApiError(error);
+      setPreviewError(message);
+      console.error("Planning preview error", error);
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, [year, month]);
+
+  const groupedUnfilled = useMemo(() => {
+    const slots = previewResult?.unfilledSlots ?? [];
+    if (!slots.length) return [];
+    const map = new Map<string, typeof slots>();
+    for (const slot of slots) {
+      const existing = map.get(slot.date) ?? [];
+      existing.push(slot);
+      map.set(slot.date, existing);
+    }
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [previewResult]);
+
   const inputSummary = useMemo(() => {
     if (!input) return [];
     return [
-      { label: "Mitarbeiter", value: input.employees.length },
-      { label: "Slots", value: input.slots.length },
-      { label: "Rollen", value: input.roles.length },
-      {
-        label: "Regeln (hart)",
-        value: input.rules?.hardRules?.length ?? 0,
-      },
-      {
-        label: "Regeln (weich)",
-        value: input.rules?.softRules?.length ?? 0,
-      },
+      { label: "Mitarbeiter", value: input.employees },
+      { label: "Slots", value: input.slots },
+      { label: "Rollen", value: input.roles },
+      { label: "Regeln (hart)", value: input.hardRules },
+      { label: "Regeln (weich)", value: input.softRules },
     ];
   }, [input]);
 
@@ -108,7 +142,7 @@ export function PlanningDrawer({
               </DrawerClose>
             </div>
             <Separator className="my-2" />
-            <div className="flex items-center gap-2 text-sm">
+            <div className="flex flex-wrap items-center gap-2 text-sm">
               {state?.isDirty ? (
                 <Badge variant="secondary">Neue Eingänge</Badge>
               ) : (
@@ -123,6 +157,20 @@ export function PlanningDrawer({
                 </span>
               )}
               <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={() => handlePreview()}
+                disabled={previewLoading}
+              >
+                {previewLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <PlayCircle className="w-4 h-4" />
+                )}
+                Vorschau berechnen
+              </Button>
+              <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => refresh?.()}
@@ -131,6 +179,95 @@ export function PlanningDrawer({
                 Akt.
               </Button>
             </div>
+            {previewLoading && (
+              <p className="text-xs text-muted-foreground px-2">
+                Vorschau wird berechnet...
+              </p>
+            )}
+            {previewError && (
+              <p className="text-xs text-destructive px-2">{previewError}</p>
+            )}
+            {previewResult && (
+              <div className="space-y-3 px-3 py-2 rounded-lg border border-border bg-background/50">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <Badge
+                    variant={previewResult.publishAllowed ? "secondary" : "destructive"}
+                    className="text-xs"
+                  >
+                    {previewResult.publishAllowed
+                      ? "Publikation möglich"
+                      : "Publikation blockiert"}
+                  </Badge>
+                  <span className="text-muted-foreground">
+                    Score: {previewResult.summary.score.toFixed(2)}
+                  </span>
+                  <span className="text-muted-foreground">
+                    Pflichtdienste {previewResult.summary.coverage.filled}/
+                    {previewResult.summary.coverage.required}
+                  </span>
+                  <span className="text-muted-foreground">
+                    Verletzungen: {previewResult.violations.length}
+                  </span>
+                  <span className="text-muted-foreground">
+                    Unfilled: {previewResult.unfilledSlots.length}
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground">
+                      Violations (max 30)
+                    </p>
+                    {previewResult.violations.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">Keine Verletzungen.</p>
+                    ) : (
+                      previewResult.violations.slice(0, 30).map((violation, index) => (
+                        <div
+                          key={`${violation.code}-${violation.slotId ?? violation.employeeId ?? index}`}
+                          className="text-xs text-muted-foreground"
+                        >
+                          <span className="font-semibold">{violation.code}</span>: {violation.message}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground">
+                      Unfilled Slots (nach Datum)
+                    </p>
+                    {groupedUnfilled.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">Keine offenen Slots.</p>
+                    ) : (
+                      groupedUnfilled.map(([date, slots]) => (
+                        <div key={date} className="space-y-1 text-xs">
+                          <p className="font-semibold text-muted-foreground">{date}</p>
+                          {slots.map((slot) => (
+                            <div
+                              key={slot.slotId}
+                              className="flex flex-wrap items-center gap-2 rounded-md px-2 py-1 bg-muted/30"
+                            >
+                              <span className="font-medium">{slot.serviceType}</span>
+                              {slot.blocksPublish && (
+                                <Badge variant="destructive" className="text-[10px] px-1">
+                                  Pflicht
+                                </Badge>
+                              )}
+                              <span className="text-muted-foreground text-xs">
+                                {slot.reasonCodes.join(", ")}
+                              </span>
+                              {slot.candidatesBlockedBy.length > 0 && (
+                                <span className="text-[10px] text-muted-foreground">
+                                  Gründe: {slot.candidatesBlockedBy.join(", ")}
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </DrawerHeader>
 
           <Tabs defaultValue="state" className="px-4 pb-4">
