@@ -4,7 +4,13 @@
     "title": "PlanningOutputV1",
     "type": "object",
     "additionalProperties": false,
-    "required": ["version", "meta", "assignments", "summary"],
+    "required": [
+      "version",
+      "meta",
+      "assignments",
+      "summary",
+      "publishAllowed"
+    ],
     "properties": {
       "version": { "const": "v1" },
   
@@ -28,7 +34,8 @@
           "required": ["slotId", "employeeId"],
           "properties": {
             "slotId": { "type": "string" },
-            "employeeId": { "type": "string" }
+            "employeeId": { "type": "string" },
+            "locked": { "type": "boolean" }
           }
         }
       },
@@ -54,14 +61,33 @@
         "items": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["slotId", "reasons"],
+          "required": [
+            "slotId",
+            "date",
+            "serviceType",
+            "reasonCodes",
+            "candidatesBlockedBy",
+            "blocksPublish"
+          ],
           "properties": {
             "slotId": { "type": "string" },
-            "reasons": { "type": "array", "items": { "type": "string" } }
+            "date": { "type": "string", "format": "date" },
+            "serviceType": { "type": "string" },
+            "reasonCodes": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "candidatesBlockedBy": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "blocksPublish": { "type": "boolean" }
           }
         }
       },
   
+      "publishAllowed": { "type": "boolean" },
+
       "summary": {
         "type": "object",
         "additionalProperties": false,

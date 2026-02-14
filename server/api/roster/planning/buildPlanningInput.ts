@@ -143,6 +143,9 @@ const normalizeShiftWish = (wish?: ShiftWish) => {
     maxShiftsPerWeek: Number.isFinite(wish.maxShiftsPerWeek ?? NaN)
       ? wish.maxShiftsPerWeek
       : undefined,
+    maxWeekendShifts: Number.isFinite(wish.maxWeekendShifts ?? NaN)
+      ? wish.maxWeekendShifts
+      : undefined,
   };
 };
 
@@ -221,6 +224,10 @@ export async function buildPlanningInput(year: number, month: number) {
           maxSlotsInPeriod,
           minSlotsInPeriod: 0,
           maxSlotsPerIsoWeek: maxSlotsPerWeek,
+          maxWeekendSlotsInPeriod:
+            typeof normalizedWish?.maxWeekendShifts === "number"
+              ? normalizedWish.maxWeekendShifts
+              : undefined,
         },
         hard: {
           banDates: Array.from(absenceSet),
@@ -230,6 +237,8 @@ export async function buildPlanningInput(year: number, month: number) {
         soft: {
           preferDates: normalizedWish?.preferDates ?? [],
           avoidDates: normalizedWish?.avoidDates ?? [],
+          preferServiceTypes: normalizedWish?.preferredServiceTypes ?? [],
+          avoidServiceTypes: normalizedWish?.avoidServiceTypes ?? [],
         },
       },
     };

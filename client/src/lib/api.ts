@@ -159,6 +159,7 @@ export type PlanningStateResponse = {
   missingCount: number;
   lastRunAt: string | null;
   isDirty: boolean;
+  fixedPreferredEmployees: number[];
 };
 
 export type PlanningLock = {
@@ -215,6 +216,7 @@ export type PlanningInputV1 = {
         maxSlotsInPeriod?: number;
         minSlotsInPeriod?: number;
         maxSlotsPerIsoWeek?: number;
+        maxWeekendSlotsInPeriod?: number;
       };
       hard?: {
         banDates?: string[];
@@ -223,6 +225,8 @@ export type PlanningInputV1 = {
       soft?: {
         preferDates?: string[];
         avoidDates?: string[];
+        preferServiceTypes?: string[];
+        avoidServiceTypes?: string[];
       };
     };
   }>;
@@ -242,6 +246,7 @@ export type PlanningInputV1 = {
 export type PlanningOutputAssignment = {
   slotId: string;
   employeeId: string;
+  locked?: boolean;
 };
 
 export type PlanningOutputViolation = {
@@ -250,6 +255,15 @@ export type PlanningOutputViolation = {
   message: string;
   slotId?: string;
   employeeId?: string;
+};
+
+export type PlanningUnfilledSlot = {
+  slotId: string;
+  date: string;
+  serviceType: string;
+  reasonCodes: string[];
+  candidatesBlockedBy: string[];
+  blocksPublish: boolean;
 };
 
 export type PlanningOutputV1 = {
@@ -262,7 +276,8 @@ export type PlanningOutputV1 = {
   };
   assignments: PlanningOutputAssignment[];
   violations: PlanningOutputViolation[];
-  unfilledSlots: Array<{ slotId: string; reasons: string[] }>;
+  unfilledSlots: PlanningUnfilledSlot[];
+  publishAllowed: boolean;
   summary: {
     score: number;
     coverage: {

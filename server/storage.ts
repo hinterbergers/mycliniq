@@ -88,8 +88,15 @@ const normalizeLongTermWishRules = (
       if (typeof r.serviceType === "string") {
         (out as any).serviceType = r.serviceType;
       }
-      return out;
-    });
+    return out;
+  });
+};
+
+const normalizeFixedPreferredEmployees = (value: unknown): number[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => Number(entry))
+    .filter((entry): entry is number => Number.isFinite(entry));
 };
 
 export interface IStorage {
@@ -980,7 +987,15 @@ export class DatabaseStorage implements IStorage {
   // Roster settings methods
   async getRosterSettings(): Promise<RosterSettings | undefined> {
     const result = await db.select().from(rosterSettings);
-    return result[0];
+    const settings = result[0];
+    if (!settings) return undefined;
+    const normalizedFixed = normalizeFixedPreferredEmployees(
+      settings.fixedPreferredEmployees,
+    );
+    return {
+      ...settings,
+      fixedPreferredEmployees: normalizedFixed,
+    };
   }
 
   async getLatestDutyPlanByStatus(
@@ -1000,16 +1015,31 @@ export class DatabaseStorage implements IStorage {
   ): Promise<RosterSettings> {
     const existing = await this.getRosterSettings();
     if (existing) {
+      const normalizedFixed = normalizeFixedPreferredEmployees(
+        settings.fixedPreferredEmployees,
+      );
+      const payload = {
+        ...settings,
+        fixedPreferredEmployees: normalizedFixed,
+        updatedAt: new Date(),
+      };
       const result = await db
         .update(rosterSettings)
-        .set({ ...settings, updatedAt: new Date() })
+        .set(payload)
         .where(eq(rosterSettings.id, existing.id))
         .returning();
       return result[0];
     } else {
+      const normalizedFixed = normalizeFixedPreferredEmployees(
+        settings.fixedPreferredEmployees,
+      );
+      const payload = {
+        ...settings,
+        fixedPreferredEmployees: normalizedFixed,
+      };
       const result = await db
         .insert(rosterSettings)
-        .values(settings)
+        .values(payload)
         .returning();
       return result[0];
     }

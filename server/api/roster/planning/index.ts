@@ -1,7 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { Router, Request, Response } from "express";
 import { createHash } from "crypto";
-import { parseISO, getISOWeek } from "date-fns";
+import { addDays, formatISO, parseISO, getISOWeek } from "date-fns";
 import { db } from "../../../lib/db";
 import { storage } from "../../../storage";
 import {
@@ -169,6 +169,9 @@ const resolveSeedValue = (value: unknown): number | undefined => {
   return undefined;
 };
 
+const SOLVER_ROLES = ["gyn", "kreiszimmer", "turnus"];
+const REQUIRED_SERVICE_ROLES = new Set(["gyn", "kreiszimmer"]);
+
 type PlannerEmployeeState = {
   id: string;
   canRoleIds: Set<string>;
@@ -176,26 +179,17 @@ type PlannerEmployeeState = {
   banWeekdays: Set<number>;
   maxSlots: number;
   maxSlotsPerWeek: number;
+  maxWeekendSlots: number;
   assignedCount: number;
   assignedPerWeek: Record<number, number>;
   assignedDates: Set<string>;
-};
-
-const createSeededRng = (seed: number) => {
-  let state = Math.max(1, Math.floor(seed));
-  return () => {
-    state = (state * 16807) % 2147483647;
-    return (state - 1) / 2147483646;
+  assignedWeekends: number;
+  preferences: {
+    preferDates: Set<string>;
+    avoidDates: Set<string>;
+    preferServiceTypes: Set<string>;
+    avoidServiceTypes: Set<string>;
   };
-};
-
-const shuffleArray = <T>(values: T[], rng: () => number): T[] => {
-  const result = values.slice();
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [result[i], result[j]] = [result[j], result[i]];
-  }
-  return result;
 };
 
 const buildEmployeeStates = (employees: Array<{ id: string; capabilities: { canRoleIds: string[] }; constraints: any }>) => {
@@ -203,11 +197,17 @@ const buildEmployeeStates = (employees: Array<{ id: string; capabilities: { canR
   for (const employee of employees) {
     const limits = employee.constraints?.limits ?? {};
     const hard = employee.constraints?.hard ?? {};
+    const soft = employee.constraints?.soft ?? {};
     const maxSlots = Number.isFinite(limits?.maxSlotsInPeriod ?? NaN)
       ? limits.maxSlotsInPeriod
       : Number.MAX_SAFE_INTEGER;
     const maxSlotsPerWeek = Number.isFinite(limits?.maxSlotsPerIsoWeek ?? NaN)
       ? limits.maxSlotsPerIsoWeek
+      : Number.MAX_SAFE_INTEGER;
+    const maxWeekendSlots = Number.isFinite(
+      limits?.maxWeekendSlotsInPeriod ?? NaN,
+    )
+      ? limits.maxWeekendSlotsInPeriod
       : Number.MAX_SAFE_INTEGER;
     const banDates = new Set<string>(normalizeStringArray(hard?.banDates ?? []));
     const banWeekdays = new Set<number>(
@@ -226,6 +226,16 @@ const buildEmployeeStates = (employees: Array<{ id: string; capabilities: { canR
     if (!canRoleIds.size) {
       canRoleIds.add("overduty");
     }
+    const preferences = {
+      preferDates: new Set(normalizeStringArray(soft?.preferDates ?? [])),
+      avoidDates: new Set(normalizeStringArray(soft?.avoidDates ?? [])),
+      preferServiceTypes: new Set(
+        normalizeStringArray(soft?.preferServiceTypes ?? []),
+      ),
+      avoidServiceTypes: new Set(
+        normalizeStringArray(soft?.avoidServiceTypes ?? []),
+      ),
+    };
 
     states.set(employee.id, {
       id: employee.id,
@@ -233,29 +243,111 @@ const buildEmployeeStates = (employees: Array<{ id: string; capabilities: { canR
       banDates,
       banWeekdays,
       maxSlots: maxSlots > 0 ? maxSlots : Number.MAX_SAFE_INTEGER,
-      maxSlotsPerWeek: maxSlotsPerWeek > 0 ? maxSlotsPerWeek : Number.MAX_SAFE_INTEGER,
+      maxSlotsPerWeek:
+        maxSlotsPerWeek > 0 ? maxSlotsPerWeek : Number.MAX_SAFE_INTEGER,
+      maxWeekendSlots:
+        maxWeekendSlots > 0 ? maxWeekendSlots : Number.MAX_SAFE_INTEGER,
       assignedCount: 0,
       assignedPerWeek: {},
       assignedDates: new Set(),
+      assignedWeekends: 0,
+      preferences,
     });
   }
   return states;
 };
 
-const recordAssignment = (state: PlannerEmployeeState, slotDate: string) => {
+const recordAssignment = (
+  state: PlannerEmployeeState,
+  slotDate: string,
+  isoWeek: number,
+  isWeekend: boolean,
+) => {
   state.assignedCount += 1;
   state.assignedDates.add(slotDate);
-  const isoWeek = getISOWeek(parseISO(slotDate));
   state.assignedPerWeek[isoWeek] = (state.assignedPerWeek[isoWeek] ?? 0) + 1;
+  if (isWeekend) {
+    state.assignedWeekends += 1;
+  }
+};
+
+type PlanningAssignment = {
+  slotId: string;
+  employeeId: string;
+  locked?: boolean;
+};
+
+type PlanningUnfilledSlot = {
+  slotId: string;
+  date: string;
+  serviceType: string;
+  reasonCodes: string[];
+  candidatesBlockedBy: string[];
+  blocksPublish: boolean;
+};
+
+const evaluateEmployeeForSlot = (
+  state: PlannerEmployeeState,
+  slot: { date: string; roleId: string; isWeekend?: boolean },
+  slotDateObj: Date,
+  isoWeek: number,
+) => {
+  const reasons = new Set<string>();
+  if (!state.canRoleIds.has(slot.roleId)) {
+    reasons.add("ROLE_NOT_ALLOWED");
+  }
+  if (state.banDates.has(slot.date)) {
+    reasons.add("BAN_DATE");
+  }
+  const weekday = slotDateObj.getDay();
+  if (state.banWeekdays.has(weekday)) {
+    reasons.add("BAN_WEEKDAY");
+  }
+  if (state.assignedDates.has(slot.date)) {
+    reasons.add("ALREADY_ASSIGNED");
+  }
+  const prevDate = formatISO(addDays(slotDateObj, -1), { representation: "date" });
+  if (state.assignedDates.has(prevDate)) {
+    reasons.add("CONSECUTIVE_DAY");
+  }
+  const nextDate = formatISO(addDays(slotDateObj, 1), { representation: "date" });
+  if (state.assignedDates.has(nextDate)) {
+    reasons.add("CONSECUTIVE_DAY");
+  }
+  if (state.assignedCount >= state.maxSlots) {
+    reasons.add("MAX_SLOTS");
+  }
+  const weekCount = state.assignedPerWeek[isoWeek] ?? 0;
+  if (weekCount >= state.maxSlotsPerWeek) {
+    reasons.add("MAX_WEEK_SLOTS");
+  }
+  const isWeekend = Boolean(slot.isWeekend);
+  if (isWeekend && state.assignedWeekends >= state.maxWeekendSlots) {
+    reasons.add("MAX_WEEKEND_SLOTS");
+  }
+  return { ok: reasons.size === 0, reasons: Array.from(reasons) };
+};
+
+const scoreCandidateForSlot = (
+  state: PlannerEmployeeState,
+  slot: { date: string; roleId: string },
+) => {
+  let score = 0;
+  if (state.preferences.preferDates.has(slot.date)) score += 100;
+  if (state.preferences.avoidDates.has(slot.date)) score -= 100;
+  if (state.preferences.preferServiceTypes.has(slot.roleId)) score += 30;
+  if (state.preferences.avoidServiceTypes.has(slot.roleId)) score -= 30;
+  score -= state.assignedCount * 0.5;
+  return score;
 };
 
 const createAssignments = (
   input: any,
   locks: RosterPlanningLock[],
-  seed: number,
+  fixedPreferredEmployees: number[],
 ) => {
   const employeeStates = buildEmployeeStates(input.employees);
-  const assignments: Array<{ slotId: string; employeeId: string }> = [];
+  const assignments: PlanningAssignment[] = [];
   const violations: Array<{
     code: string;
     hard: boolean;
@@ -263,62 +355,180 @@ const createAssignments = (
     slotId?: string;
     employeeId?: string;
   }> = [];
-  const unfilledSlots: Array<{ slotId: string; reasons: string[] }> = [];
+  const unfilledSlots: PlanningUnfilledSlot[] = [];
   const lockMap = new Map(locks.map((lock) => [lock.slotId, lock]));
-  for (let index = 0; index < input.slots.length; index += 1) {
-    const slot = input.slots[index];
-    const slotDate = slot.date;
-    const slotDateObj = parseISO(slotDate);
-    const weekday = slotDateObj.getDay();
-    const isoWeek = getISOWeek(slotDateObj);
+  const assignedSlotIds = new Set<string>();
 
+  for (const slot of input.slots) {
     const lock = lockMap.get(slot.id);
-    if (lock) {
-      if (lock.employeeId === null) {
-        unfilledSlots.push({ slotId: slot.id, reasons: ["slot locked empty"] });
-      } else {
-        const employeeId = String(lock.employeeId);
-        const employeeState = employeeStates.get(employeeId);
-        if (employeeState) {
-          recordAssignment(employeeState, slotDate);
-          assignments.push({ slotId: slot.id, employeeId });
-        } else {
-          violations.push({
-            code: "LOCK_INVALID_EMPLOYEE",
-            hard: true,
-            slotId: slot.id,
-            employeeId,
-            message: `Lock references missing employee ${employeeId}`,
-          });
-          unfilledSlots.push({
-            slotId: slot.id,
-            reasons: ["locked employee not found"],
-          });
-        }
-      }
-      continue;
-    }
-
-    const rng = createSeededRng(seed + index + 1);
-    const candidates = shuffleArray(Array.from(employeeStates.values()), rng);
-    const candidate = candidates.find((employee) => {
-      if (!employee.canRoleIds.has(slot.roleId)) return false;
-      if (employee.banDates.has(slotDate)) return false;
-      if (employee.banWeekdays.has(weekday)) return false;
-      if (employee.assignedCount >= employee.maxSlots) return false;
-      const weekCount = employee.assignedPerWeek[isoWeek] ?? 0;
-      if (weekCount >= employee.maxSlotsPerWeek) return false;
-      if (employee.assignedDates.has(slotDate)) return false;
-      return true;
-    });
-
-    if (candidate) {
-      recordAssignment(candidate, slotDate);
-      assignments.push({ slotId: slot.id, employeeId: candidate.id });
-    } else {
+    if (!lock) continue;
+    if (lock.employeeId === null) {
+      assignedSlotIds.add(slot.id);
       unfilledSlots.push({
         slotId: slot.id,
-        reasons: ["no eligible employee available"],
+        date: slot.date,
+        serviceType: slot.roleId,
+        reasonCodes: ["LOCKED_EMPTY"],
+        candidatesBlockedBy: ["LOCKED_EMPTY"],
+        blocksPublish: REQUIRED_SERVICE_ROLES.has(slot.roleId),
+      });
+      continue;
+    }
+    const employeeId = String(lock.employeeId);
+    const employeeState = employeeStates.get(employeeId);
+    if (!employeeState) {
+      violations.push({
+        code: "LOCK_INVALID_EMPLOYEE",
+        hard: true,
+        slotId: slot.id,
+        employeeId,
+        message: `Lock references missing employee ${employeeId}`,
+      });
+      unfilledSlots.push({
+        slotId: slot.id,
+        date: slot.date,
+        serviceType: slot.roleId,
+        reasonCodes: ["LOCKED_INVALID_EMPLOYEE"],
+        candidatesBlockedBy: ["LOCKED_INVALID_EMPLOYEE"],
+        blocksPublish: REQUIRED_SERVICE_ROLES.has(slot.roleId),
+      });
+      continue;
+    }
+    const slotDateObj = parseISO(slot.date);
+    const isoWeek = getISOWeek(slotDateObj);
+    recordAssignment(
+      employeeState,
+      slot.date,
+      isoWeek,
+      Boolean(slot.isWeekend),
+    );
+    assignments.push({ slotId: slot.id, employeeId, locked: true });
+    assignedSlotIds.add(slot.id);
+  }
+
+  const slotsByDate = new Map<string, any[]>();
+  for (const slot of input.slots) {
+    if (!SOLVER_ROLES.includes(slot.roleId)) continue;
+    const existing = slotsByDate.get(slot.date) ?? [];
+    existing.push(slot);
+    slotsByDate.set(slot.date, existing);
+  }
+
+  for (const employeeId of fixedPreferredEmployees ?? []) {
+    const state = employeeStates.get(String(employeeId));
+    if (!state) continue;
+    const preferredDates = Array.from(state.preferences.preferDates).sort();
+    for (const date of preferredDates) {
+      const daySlots = slotsByDate.get(date);
+      if (!daySlots || daySlots.length === 0) continue;
+      const fallbackRoles = SOLVER_ROLES.filter((role) =>
+        state.canRoleIds.has(role),
+      );
+      const preferenceRoles =
+        state.preferences.preferServiceTypes.size === 1
+          ? Array.from(state.preferences.preferServiceTypes)
+          : fallbackRoles;
+      const candidateRoles = preferenceRoles
+        .filter((role) => state.canRoleIds.has(role))
+        .sort(
+          (a, b) => SOLVER_ROLES.indexOf(a) - SOLVER_ROLES.indexOf(b),
+        );
+      const normalizedRoles = candidateRoles.length
+        ? candidateRoles
+        : fallbackRoles;
+      if (!normalizedRoles.length) continue;
+
+      let assignedFixed = false;
+      const failureReasons = new Set<string>();
+      let attemptedSlot: any | null = null;
+      for (const role of normalizedRoles) {
+        const slotToTry = daySlots.find(
+          (slot) => slot.roleId === role && !assignedSlotIds.has(slot.id),
+        );
+        if (!slotToTry) continue;
+        attemptedSlot = slotToTry;
+        const slotDateObj = parseISO(slotToTry.date);
+        const isoWeek = getISOWeek(slotDateObj);
+        const evaluation = evaluateEmployeeForSlot(
+          state,
+          slotToTry,
+          slotDateObj,
+          isoWeek,
+        );
+        if (evaluation.ok) {
+          recordAssignment(
+            state,
+            slotToTry.date,
+            isoWeek,
+            Boolean(slotToTry.isWeekend),
+          );
+          assignments.push({
+            slotId: slotToTry.id,
+            employeeId: state.id,
+            locked: true,
+          });
+          assignedSlotIds.add(slotToTry.id);
+          assignedFixed = true;
+          break;
+        }
+        evaluation.reasons.forEach((reason) => failureReasons.add(reason));
+      }
+
+      if (!assignedFixed && attemptedSlot) {
+        unfilledSlots.push({
+          slotId: attemptedSlot.id,
+          date,
+          serviceType: attemptedSlot.roleId,
+          reasonCodes: ["FIX_PREFERRED_CONFLICT"],
+          candidatesBlockedBy:
+            failureReasons.size > 0
+              ? Array.from(failureReasons)
+              : ["FIX_PREFERRED_CONFLICT"],
+          blocksPublish: REQUIRED_SERVICE_ROLES.has(attemptedSlot.roleId),
+        });
+      }
+    }
+  }
+
+  for (const slot of input.slots) {
+    if (!SOLVER_ROLES.includes(slot.roleId)) continue;
+    if (assignedSlotIds.has(slot.id)) continue;
+    const slotDateObj = parseISO(slot.date);
+    const isoWeek = getISOWeek(slotDateObj);
+    const failureReasons = new Set<string>();
+    const candidates: Array<{
+      state: PlannerEmployeeState;
+      score: number;
+    }> = [];
+
+    for (const employeeState of employeeStates.values()) {
+      const evaluation = evaluateEmployeeForSlot(
+        employeeState,
+        slot,
+        slotDateObj,
+        isoWeek,
+      );
+      if (!evaluation.ok) {
+        evaluation.reasons.forEach((reason) => failureReasons.add(reason));
+        continue;
+      }
+      candidates.push({
+        state: employeeState,
+        score: scoreCandidateForSlot(employeeState, slot),
+      });
+    }
+
+    if (!candidates.length) {
+      unfilledSlots.push({
+        slotId: slot.id,
+        date: slot.date,
+        serviceType: slot.roleId,
+        reasonCodes: ["NO_CANDIDATE"],
+        candidatesBlockedBy:
+          failureReasons.size > 0
+            ? Array.from(failureReasons)
+            : ["NO_CANDIDATE"],
+        blocksPublish: REQUIRED_SERVICE_ROLES.has(slot.roleId),
       });
       violations.push({
         code: "NO_CANDIDATE",
@@ -326,16 +536,42 @@ const createAssignments = (
         slotId: slot.id,
         message: "Keine passende Ressource gefunden",
       });
+      continue;
     }
+
+    candidates.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (a.state.assignedCount !== b.state.assignedCount) {
+        return a.state.assignedCount - b.state.assignedCount;
+      }
+      return a.state.id.localeCompare(b.state.id);
+    });
+    const winner = candidates[0];
+    recordAssignment(
+      winner.state,
+      slot.date,
+      isoWeek,
+      Boolean(slot.isWeekend),
+    );
+    assignments.push({ slotId: slot.id, employeeId: winner.state.id });
+    assignedSlotIds.add(slot.id);
   }
 
+  const requiredSlotCount = input.slots.filter((slot: any) =>
+    REQUIRED_SERVICE_ROLES.has(slot.roleId),
+  ).length;
+  const filledRequiredCount = assignments.filter((assignment) => {
+    const slot = input.slots.find((s: any) => s.id === assignment.slotId);
+    return slot && REQUIRED_SERVICE_ROLES.has(slot.roleId);
+  }).length;
+
   const summary = {
-    score: input.slots.length
-      ? assignments.length / input.slots.length
-      : 0,
+    score: requiredSlotCount
+      ? filledRequiredCount / requiredSlotCount
+      : 1,
     coverage: {
-      filled: assignments.length,
-      required: input.slots.length,
+      filled: filledRequiredCount,
+      required: requiredSlotCount,
     },
   };
 
@@ -345,13 +581,18 @@ const createAssignments = (
 const buildPlanningOutput = async (
   input: any,
   locks: RosterPlanningLock[],
+  fixedPreferredEmployees: number[],
   seed?: unknown,
 ) => {
   const resolvedSeed = resolveSeedValue(seed);
   const runSeed = Number.isFinite(resolvedSeed ?? NaN)
     ? (resolvedSeed as number)
     : Date.now();
-  const result = createAssignments(input, locks, runSeed);
+  const result = createAssignments(
+    input,
+    locks,
+    fixedPreferredEmployees ?? [],
+  );
   const output = {
     version: "v1",
     meta: {
@@ -367,10 +608,18 @@ const buildPlanningOutput = async (
       score: result.summary.score,
       coverage: result.summary.coverage,
     },
+    publishAllowed: !result.unfilledSlots.some((slot) => slot.blocksPublish),
   };
   assertValidPlanningOutput(output);
   return { output, seed: runSeed };
 };
+
+export {
+  evaluateEmployeeForSlot,
+  scoreCandidateForSlot,
+  createAssignments,
+};
+export type { PlannerEmployeeState };
 
 export function registerPlanningRoutes(router: Router) {
   router.use(requireAuth);
@@ -406,12 +655,14 @@ export function registerPlanningRoutes(router: Router) {
     try {
       const parsed = parseYearMonth(req, res);
       if (!parsed) return;
-      const [locks, latestRun, submittedCount, employees] = await Promise.all([
-        getLocks(parsed.year, parsed.month),
-        getLatestRun(parsed.year, parsed.month),
-        storage.getSubmittedWishesCount(parsed.year, parsed.month),
-        storage.getEmployees(),
-      ]);
+      const [locks, latestRun, submittedCount, employees, rosterSettings] =
+        await Promise.all([
+          getLocks(parsed.year, parsed.month),
+          getLatestRun(parsed.year, parsed.month),
+          storage.getSubmittedWishesCount(parsed.year, parsed.month),
+          storage.getEmployees(),
+          storage.getRosterSettings(),
+        ]);
       const totalEmployees = employees.filter((employee) => employee.takesShifts !== false).length;
       const missingCount = Math.max(0, totalEmployees - submittedCount);
       const lastRunAt = latestRun?.createdAt
@@ -422,7 +673,13 @@ export function registerPlanningRoutes(router: Router) {
         locks.some((lock) =>
           latestRun.createdAt ? new Date(lock.updatedAt) > latestRun.createdAt : true,
         );
-      res.json({ submittedCount, missingCount, lastRunAt, isDirty });
+      res.json({
+        submittedCount,
+        missingCount,
+        lastRunAt,
+        isDirty,
+        fixedPreferredEmployees: rosterSettings?.fixedPreferredEmployees ?? [],
+      });
     } catch (error) {
       res.status(500).json({ error: "Fehler beim Laden des Planning-Status" });
     }
@@ -488,12 +745,19 @@ export function registerPlanningRoutes(router: Router) {
     try {
       const parsed = parseYearMonth(req, res);
       if (!parsed) return;
-      const { seed } = req.body ?? {};
-      const [input, locks] = await Promise.all([
-        buildPlanningInput(parsed.year, parsed.month),
-        getLocks(parsed.year, parsed.month),
-      ]);
-      const { output } = await buildPlanningOutput(input, locks, seed);
+    const { seed } = req.body ?? {};
+    const [input, locks, settings] = await Promise.all([
+      buildPlanningInput(parsed.year, parsed.month),
+      getLocks(parsed.year, parsed.month),
+      storage.getRosterSettings(),
+    ]);
+    const fixedPreferredEmployees = settings?.fixedPreferredEmployees ?? [];
+    const { output } = await buildPlanningOutput(
+      input,
+      locks,
+      fixedPreferredEmployees,
+      seed,
+    );
       res.json(output);
     } catch (error) {
       res.status(500).json({ error: "Fehler beim Erstellen der Vorschau" });
@@ -504,12 +768,19 @@ export function registerPlanningRoutes(router: Router) {
     try {
       const parsed = parseYearMonth(req, res);
       if (!parsed) return;
-      const { seed } = req.body ?? {};
-      const [input, locks] = await Promise.all([
-        buildPlanningInput(parsed.year, parsed.month),
-        getLocks(parsed.year, parsed.month),
-      ]);
-      const { output, seed: runSeed } = await buildPlanningOutput(input, locks, seed);
+    const { seed } = req.body ?? {};
+    const [input, locks, settings] = await Promise.all([
+      buildPlanningInput(parsed.year, parsed.month),
+      getLocks(parsed.year, parsed.month),
+      storage.getRosterSettings(),
+    ]);
+    const fixedPreferredEmployees = settings?.fixedPreferredEmployees ?? [];
+    const { output, seed: runSeed } = await buildPlanningOutput(
+      input,
+      locks,
+      fixedPreferredEmployees,
+      seed,
+    );
       const hash = createHash("sha256")
         .update(JSON.stringify(input))
         .digest("hex");

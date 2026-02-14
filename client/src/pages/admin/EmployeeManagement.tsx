@@ -2931,6 +2931,7 @@ export default function EmployeeManagement() {
                       <TableHead>App-Rolle</TableHead>
                       <TableHead>Haupteinsatzbereich</TableHead>
                       <TableHead>Einsetzbar für</TableHead>
+                      <TableHead className="text-right">User ID</TableHead>
                       <TableHead className="text-right">Aktionen</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -3006,6 +3007,9 @@ export default function EmployeeManagement() {
                                 ))}
                               </div>
                             )}
+                          </TableCell>
+                          <TableCell className="text-right text-xs text-muted-foreground">
+                            {emp.userId ?? emp.id}
                           </TableCell>
                           <TableCell className="text-right">
                             {canManageEmployees && (

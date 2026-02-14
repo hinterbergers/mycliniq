@@ -141,7 +141,8 @@
             "properties": {
               "maxSlotsInPeriod": { "type": "integer", "minimum": 0, "maximum": 31 },
               "minSlotsInPeriod": { "type": "integer", "minimum": 0, "maximum": 31 },
-              "maxSlotsPerIsoWeek": { "type": "integer", "minimum": 0, "maximum": 7 }
+              "maxSlotsPerIsoWeek": { "type": "integer", "minimum": 0, "maximum": 7 },
+              "maxWeekendSlotsInPeriod": { "type": "integer", "minimum": 0, "maximum": 31 }
             }
           },
   
@@ -168,7 +169,9 @@
             "properties": {
               "preferDates": { "type": "array", "items": { "type": "string", "format": "date" } },
               "avoidDates": { "type": "array", "items": { "type": "string", "format": "date" } },
-  
+              "preferServiceTypes": { "type": "array", "items": { "type": "string" } },
+              "avoidServiceTypes": { "type": "array", "items": { "type": "string" } },
+
               "preferSlotIds": { "type": "array", "items": { "type": "string" } },
               "avoidSlotIds": { "type": "array", "items": { "type": "string" } },
   

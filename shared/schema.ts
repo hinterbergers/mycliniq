@@ -1857,6 +1857,10 @@ export const rosterSettings = pgTable("roster_settings", {
   wishMonth: integer("wish_month"),
   vacationLockFrom: date("vacation_lock_from"),
   vacationLockUntil: date("vacation_lock_until"),
+  fixedPreferredEmployees: jsonb("fixed_preferred_employees")
+    .$type<number[]>()
+    .default(sql`'[]'::jsonb`)
+    .notNull(),
   updatedById: integer("updated_by_id").references(() => employees.id),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

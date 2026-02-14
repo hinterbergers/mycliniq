@@ -5022,15 +5022,16 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
       const settings = await storage.getRosterSettings();
       if (!settings) {
         // Default: January 2026 as last approved month
-        return res.json({
-          lastApprovedYear: 2026,
-          lastApprovedMonth: 1,
-          wishYear: null,
-          wishMonth: null,
-          vacationLockFrom: null,
-          vacationLockUntil: null,
-        });
-      }
+      return res.json({
+        lastApprovedYear: 2026,
+        lastApprovedMonth: 1,
+        wishYear: null,
+        wishMonth: null,
+        vacationLockFrom: null,
+        vacationLockUntil: null,
+        fixedPreferredEmployees: [],
+      });
+    }
       res.json(settings);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch roster settings" });
@@ -5045,6 +5046,7 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
         updatedById,
         vacationLockFrom,
         vacationLockUntil,
+        fixedPreferredEmployees,
       } = req.body;
       const settings = await storage.upsertRosterSettings({
         lastApprovedYear,
@@ -5052,6 +5054,7 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
         updatedById,
         vacationLockFrom,
         vacationLockUntil,
+        fixedPreferredEmployees,
       });
       res.json(settings);
     } catch (error) {

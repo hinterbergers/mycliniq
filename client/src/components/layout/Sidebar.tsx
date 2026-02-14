@@ -33,7 +33,7 @@ export function Sidebar({
   className,
 }: SidebarProps) {
   const [location, setLocation] = useLocation();
-  const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
   const {
     employee,
     user,
@@ -191,20 +191,17 @@ export function Sidebar({
               const isGroupOpen =
                 variant === "mobile" ||
                 isGroupActive ||
-                hoveredGroup === item.label;
+                openGroup === item.label;
               return (
                 <div
                   key={item.label}
-                  className="rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200"
+                  className="rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 cursor-pointer"
                   aria-expanded={isGroupOpen}
-                  onMouseEnter={() => {
+                  onClick={() => {
                     if (variant === "desktop") {
-                      setHoveredGroup(item.label);
-                    }
-                  }}
-                  onMouseLeave={() => {
-                    if (variant === "desktop") {
-                      setHoveredGroup(null);
+                      setOpenGroup((prev) =>
+                        prev === item.label ? null : item.label,
+                      );
                     }
                   }}
                 >
