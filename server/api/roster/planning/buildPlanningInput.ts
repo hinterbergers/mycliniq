@@ -207,6 +207,10 @@ export async function buildPlanningInput(year: number, month: number) {
       typeof normalizedWish?.maxShiftsPerWeek === "number"
         ? normalizedWish.maxShiftsPerWeek
         : 2;
+    const maxWeekendSlotsInPeriod =
+      typeof normalizedWish?.maxWeekendShifts === "number"
+        ? normalizedWish.maxWeekendShifts
+        : null;
 
     return {
       id: String(employee.id),
@@ -224,10 +228,9 @@ export async function buildPlanningInput(year: number, month: number) {
           maxSlotsInPeriod,
           minSlotsInPeriod: 0,
           maxSlotsPerIsoWeek: maxSlotsPerWeek,
-          maxWeekendSlotsInPeriod:
-            typeof normalizedWish?.maxWeekendShifts === "number"
-              ? normalizedWish.maxWeekendShifts
-              : undefined,
+          ...(maxWeekendSlotsInPeriod !== null
+            ? { maxWeekendSlotsInPeriod }
+            : {}),
         },
         hard: {
           banDates: Array.from(absenceSet),
