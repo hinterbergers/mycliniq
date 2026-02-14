@@ -251,7 +251,6 @@ type PlannerSpecialRules = {
   version: number;
   fixedPreferredEmployeeIds: number[];
   noDutyEmployeeIds: number[];
-  christophTurnusAssistantRule: boolean;
 };
 
 const DEFAULT_AI_RULES: AiRules = {
@@ -275,7 +274,6 @@ const DEFAULT_SPECIAL_RULES: PlannerSpecialRules = {
   version: 1,
   fixedPreferredEmployeeIds: [],
   noDutyEmployeeIds: [],
-  christophTurnusAssistantRule: false,
 };
 
 const clampWeight = (value: number) => Math.max(0, Math.min(10, value));
@@ -543,9 +541,6 @@ export default function RosterPlan() {
             : DEFAULT_SPECIAL_RULES.version,
         fixedPreferredEmployeeIds,
         noDutyEmployeeIds,
-        christophTurnusAssistantRule: Boolean(
-          parsed.christophTurnusAssistantRule,
-        ),
       });
     } catch {
       // ignore
@@ -1587,10 +1582,7 @@ export default function RosterPlan() {
 
   const eligibleSpecialRuleEmployees = useMemo(
     () =>
-      employees
-        .filter((employee) => employee.takesShifts !== false)
-        .slice()
-        .sort((a, b) => a.name.localeCompare(b.name, "de")),
+      employees.slice().sort((a, b) => a.name.localeCompare(b.name, "de")),
     [employees],
   );
 
@@ -2658,25 +2650,6 @@ export default function RosterPlan() {
               </TabsContent>
               <TabsContent value="special">
                 <div className="space-y-4">
-                  <div className="flex items-center gap-2 rounded-md border px-3 py-2">
-                    <Checkbox
-                      id="rule-christoph-turnus-ass"
-                      checked={specialRules.christophTurnusAssistantRule}
-                      onCheckedChange={(value) =>
-                        setSpecialRules((prev) => ({
-                          ...prev,
-                          christophTurnusAssistantRule: Boolean(value),
-                        }))
-                      }
-                    />
-                    <Label
-                      htmlFor="rule-christoph-turnus-ass"
-                      className="text-sm cursor-pointer"
-                    >
-                      Wenn Christoph Dienst hat, Turnus mit Assistenzarzt besetzen
-                    </Label>
-                  </div>
-
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label className="text-xs uppercase tracking-wide">
