@@ -95,6 +95,12 @@ export type DashboardZeInfo = {
   accepted: boolean;
 };
 
+export type DashboardDutyInfo = {
+  serviceType: string | null;
+  labelShort: string | null;
+  othersOnDuty: DashboardTeammate[];
+};
+
 export type DashboardDay = {
   date: string;
   statusLabel: string | null;
@@ -102,10 +108,11 @@ export type DashboardDay = {
   teammates: DashboardTeammate[];
   absenceReason: string | null;
   ze?: DashboardZeInfo | null;
+  duty?: DashboardDutyInfo | null;
 };
 
 export type DashboardResponse = {
-  today: DashboardDay & { ze: DashboardZeInfo | null };
+  today: DashboardDay;
   birthday: null | { firstName: string | null; lastName: string | null };
   weekPreview: DashboardDay[];
   attendanceWidget: DashboardAttendanceWidget | null;

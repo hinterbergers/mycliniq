@@ -2624,6 +2624,8 @@ export async function registerRoutes(
             and(
               gte(rosterShifts.date, startDate),
               lte(rosterShifts.date, endDate),
+              // final-only filter keeps dashboard data consistent and avoids draft spill-over
+              eq(rosterShifts.isDraft, false),
             ),
           );
 
@@ -3065,6 +3067,81 @@ const buildAttendanceMembers = (
             absenceReason,
           };
         });
+
+        const todayWeekEntry = weekPreview[0] ?? null;
+        const todayDutyShift = userShifts.get(todayVienna);
+
+        const buildDutyTeammate = (
+          shift: (typeof shiftRows)[0],
+        ): { firstName: string | null; lastName: string | null } | null => {
+          const firstName = normalizeName(shift.firstName);
+          const lastName = normalizeName(shift.lastName);
+          if (firstName || lastName) {
+            return { firstName, lastName };
+          }
+          const fallback = normalize(shift.assigneeFreeText);
+          if (fallback) {
+            return { firstName: null, lastName: fallback };
+          }
+          return null;
+        };
+
+        const todayOthersOnDuty: Array<{
+          firstName: string | null;
+          lastName: string | null;
+        }> = [];
+        const seenDutyIdentities = new Set<string>();
+        shiftRows.forEach((shift) => {
+          if (
+            shift.date !== todayVienna ||
+            shift.employeeId === user.employeeId ||
+            !shift.serviceType ||
+            shift.serviceType === OVERDUTY_KEY
+          ) {
+            return;
+          }
+          const teammate = buildDutyTeammate(shift);
+          if (!teammate) {
+            return;
+          }
+          const identityKey = shift.employeeId
+            ? `employee-${shift.employeeId}`
+            : `text-${teammate.lastName ?? ""}-${teammate.firstName ?? ""}`;
+          if (seenDutyIdentities.has(identityKey)) {
+            return;
+          }
+          seenDutyIdentities.add(identityKey);
+          todayOthersOnDuty.push(teammate);
+        });
+        todayOthersOnDuty.sort((a, b) => {
+          const lastCompare = (a.lastName ?? "").localeCompare(
+            b.lastName ?? "",
+            "de",
+          );
+          if (lastCompare !== 0) return lastCompare;
+          return (a.firstName ?? "").localeCompare(b.firstName ?? "", "de");
+        });
+
+        const todayDutyLabel = todayDutyShift
+          ? getServiceLabel(todayDutyShift.serviceType)
+          : null;
+        const todayDuty = todayDutyShift
+          ? {
+              serviceType: todayDutyShift.serviceType ?? null,
+              labelShort: todayDutyLabel,
+              othersOnDuty: todayOthersOnDuty,
+            }
+          : null;
+
+        const todayPayloadBase = {
+          date: todayVienna,
+          statusLabel: todayDutyLabel,
+          workplace: todayWeekEntry?.workplace ?? null,
+          teammates: todayWeekEntry?.teammates ?? [],
+          absenceReason: todayWeekEntry?.absenceReason ?? null,
+          duty: todayDuty,
+          ze: null,
+        };
         // --- Attendance widget (Heute / Morgen) -----------------------------------
         const todayMeta = previewMeta[0];
         const tomorrowMeta = previewMeta[1];
@@ -3108,7 +3185,6 @@ const buildAttendanceMembers = (
                 },
               }
             : null;
-        const todayEntry = weekPreview[0];
         let todayZe: { id: number; possible: true; accepted: boolean } | null =
           null;
         if (user.employeeId) {
@@ -3163,19 +3239,14 @@ const buildAttendanceMembers = (
             }
           : null;
 
-          res.json({
-            today: {
-              date: todayEntry.date,
-              statusLabel: todayEntry.statusLabel,
-              workplace: todayEntry.workplace,
-              teammates: todayEntry.teammates,
-              absenceReason: todayEntry.absenceReason ?? null,
-              ze: todayZe,
-            },
-            birthday,
-            weekPreview,
-            attendanceWidget,
-          });
+        const todayPayload = { ...todayPayloadBase, ze: todayZe };
+
+        res.json({
+          today: todayPayload,
+          birthday,
+          weekPreview,
+          attendanceWidget,
+        });
         } catch (error) {
           console.error("[Dashboard] Error:", error);
           res.status(500).json({ error: "Fehler beim Laden des Dashboards" });

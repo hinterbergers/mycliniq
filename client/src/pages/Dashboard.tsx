@@ -334,8 +334,6 @@ export default function Dashboard() {
     : todayEntry?.statusLabel
       ? `Heute: ${todayEntry.statusLabel}`
       : "Willkommen zurück.";
-  const showTeammates =
-    !dashboardError && (todayEntry?.teammates?.length ?? 0) > 0;
   const todayTeamNames = useMemo(
     () =>
       (todayEntry?.teammates ?? [])
@@ -343,6 +341,30 @@ export default function Dashboard() {
         .filter(Boolean),
     [todayEntry?.teammates],
   );
+  const todayTeamLine = useMemo(() => {
+    if (!todayEntry) return null;
+    const hasWorkplace = Boolean(todayEntry.workplace);
+    const hasNames = todayTeamNames.length > 0;
+    if (!hasWorkplace && !hasNames) return null;
+    if (hasWorkplace && hasNames) {
+      return `${todayEntry.workplace} mit ${todayTeamNames.join(", ")}`;
+    }
+    if (hasWorkplace) return todayEntry.workplace;
+    return `Mit: ${todayTeamNames.join(", ")}`;
+  }, [todayEntry?.workplace, todayTeamNames]);
+  const todayDutyLine = useMemo(() => {
+    const duty = todayEntry?.duty;
+    if (!duty) return null;
+    const label = duty.labelShort ?? duty.serviceType ?? "Dienst";
+    const baseLabel = label === "Dienst" ? "Dienst" : `Dienst (${label})`;
+    const otherNames = (duty.othersOnDuty ?? [])
+      .map((mate) => buildFullName(mate.firstName, mate.lastName))
+      .filter(Boolean);
+    if (otherNames.length) {
+      return `${baseLabel} mit ${otherNames.join(", ")}`;
+    }
+    return baseLabel;
+  }, [todayEntry?.duty]);
   const showZeBadge =
     !dashboardError &&
     Boolean(todayEntry?.ze?.possible) &&
@@ -513,9 +535,14 @@ export default function Dashboard() {
         <span className="text-2xl">{heroEmoji}</span>
         <span>{heroMessage}</span>
       </p>
-      {showTeammates && (
+      {todayTeamLine && (
         <p className="text-sm text-primary-foreground/70 mt-1">
-          Mit: {todayTeamNames.join(", ")}
+          {todayTeamLine}
+        </p>
+      )}
+      {todayDutyLine && (
+        <p className="text-sm text-primary-foreground/70 mt-1">
+          {todayDutyLine}
         </p>
       )}
       <div className="mt-6 flex gap-3">
