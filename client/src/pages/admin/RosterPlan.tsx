@@ -72,6 +72,7 @@ import {
 import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   employeeApi,
+  planningRestApi,
   rosterApi,
   plannedAbsencesAdminApi,
   longTermAbsencesApi,
@@ -81,6 +82,7 @@ import {
   getServiceLineContextFromEmployee,
   type NextPlanningMonth,
   type PlannedAbsenceAdmin,
+  type PlanningOutputV1,
 } from "@/lib/api";
 import type {
   Employee,
@@ -1358,98 +1360,53 @@ export default function RosterPlan() {
   const executeGeneration = async (
     payload: GenerationPayload,
   ): Promise<boolean> => {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
-    }
-
-    const response = await fetch(`${API_BASE}/roster/generate`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      const text = (await response.text()).trim();
-      throw new Error(text || "Generierung fehlgeschlagen");
-    }
-
-    const payloadData = await response.json().catch(() => ({}));
-    const result =
-      payloadData && typeof payloadData === "object"
-        ? (payloadData as Record<string, any>)
-        : ({} as Record<string, any>);
-    const rawShifts = Array.isArray(result.shifts) ? result.shifts : [];
-    const shifts: GeneratedShift[] = rawShifts
-      .filter(
-        (
-          shift,
-        ): shift is GeneratedShift =>
-          Boolean(shift) &&
-          typeof shift.date === "string" &&
-          typeof shift.serviceType === "string" &&
-          ("employeeId" in shift),
-      )
-      .map((shift) => ({
-        date: shift.date,
-        serviceType: shift.serviceType,
-        employeeId: shift.employeeId,
-        employeeName:
-          typeof (shift as any).employeeName === "string" ? (shift as any).employeeName : "",
-        assigneeFreeText:
-          typeof (shift as any).assigneeFreeText === "string" ? (shift as any).assigneeFreeText : null,
-      }));
-    const reasoning =
-      typeof result.reasoning === "string" ? result.reasoning : "";
-    const warnings = Array.isArray(result.warnings)
-      ? result.warnings.filter((item): item is string => typeof item === "string")
-      : [];
-    const generatedCount =
-      typeof result.generatedShifts === "number"
-        ? result.generatedShifts
-        : shifts.length;
-    const success = Boolean(result.success);
-
-    if (!success) {
-      const message =
-        typeof result.error === "string"
-          ? result.error
-          : result.message || "Generierung fehlgeschlagen";
-      throw new Error(message);
-    }
-
-    const generationMode =
-      result.mode === "draft"
-        ? "draft"
-        : result.mode === "final"
-          ? "final"
-          : null;
-    setLatestGenerationMode(generationMode);
-    const nextIsDraft = planStatus === "Entwurf" || generationMode === "draft";
-
-    // Keep the AI output for the preview/apply dialog. The roster table uses `shifts` state,
-    // which we refresh separately.
-    setGeneratedShifts(shifts);
-
-    try {
-      await reloadRosterShifts(nextIsDraft);
-    } catch (refreshError) {
-      console.error(
-        "Failed to refresh roster shifts after generation:",
-        refreshError,
+    const planningOutput: PlanningOutputV1 =
+      await planningRestApi.runPlanningPreview(payload.year, payload.month);
+    const shifts = planningOutput.assignments
+      .map((assignment): GeneratedShift | null => {
+        const parsedEmployeeId = Number(assignment.employeeId);
+        if (!Number.isFinite(parsedEmployeeId)) return null;
+        const date = assignment.slotId.slice(0, 10);
+        const serviceType = assignment.slotId.slice(11);
+        if (!date || !serviceType) return null;
+        const employee = employees.find((item) => item.id === parsedEmployeeId);
+        return {
+          date,
+          serviceType,
+          employeeId: parsedEmployeeId,
+          employeeName: employee?.name ?? `ID ${parsedEmployeeId}`,
+          assigneeFreeText: null,
+        };
+      })
+      .filter((shift): shift is GeneratedShift => shift !== null);
+    const warnings: string[] = [];
+    if (!planningOutput.publishAllowed) {
+      warnings.push(
+        "Pflichtdienste sind noch unbesetzt. Veröffentlichen ist aktuell blockiert.",
       );
     }
-    setGenerationReasoning(reasoning);
+    if (planningOutput.unfilledSlots.length > 0) {
+      warnings.push(
+        `${planningOutput.unfilledSlots.length} Slots sind unbesetzt (siehe Planning-Vorschau).`,
+      );
+    }
+    for (const violation of planningOutput.violations) {
+      warnings.push(violation.message);
+    }
+
+    setLatestGenerationMode("draft");
+    setGeneratedShifts(shifts);
+    setGenerationReasoning(
+      `Engine ${planningOutput.meta.engine}: Pflichtabdeckung ${planningOutput.summary.coverage.filled}/${planningOutput.summary.coverage.required}, publishAllowed=${planningOutput.publishAllowed ? "ja" : "nein"}.`,
+    );
     setGenerationWarnings(warnings);
 
     setRulesDialogOpen(false);
     setGenerationDialogOpen(true);
 
     toast({
-      title: "Generierung erfolgreich",
-      description: `${generatedCount} Dienste wurden erstellt`,
+      title: "Vorschau berechnet",
+      description: `${shifts.length} Dienste aus dem Solver wurden vorbereitet`,
     });
     return true;
   };
@@ -1550,17 +1507,11 @@ export default function RosterPlan() {
     setIsGenerating(true);
     toast({
       title: "Dienstplan-Generierung",
-      description: "Dienstplan wird automatisch erstellt...",
+      description: "Solver berechnet den Dienstplan...",
     });
     const payload = buildGenerationPayload();
 
     try {
-      if (promptPreviewSupported) {
-        const previewShown = await requestPromptPreview(payload);
-        if (previewShown) {
-          return false;
-        }
-      }
       await executeGeneration(payload);
       return true;
     } catch (error: any) {
