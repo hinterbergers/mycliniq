@@ -5152,10 +5152,10 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
             .status(403)
             .json({ success: false, error: "Eingeschränkter Zugriff" });
         }
-        const { settings, lastApproved, auto, current, shouldPersist } =
+        const { settings, lastApproved, auto, shouldPersist } =
           await resolvePlanningMonth();
-        const year = current.year;
-        const month = current.month;
+        const year = auto.year;
+        const month = auto.month;
 
         if (shouldPersist) {
           await storage.upsertRosterSettings({
