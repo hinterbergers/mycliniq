@@ -2853,7 +2853,7 @@ export default function RosterPlan() {
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-4 min-h-0 flex-1">
+            <div className="space-y-4 min-h-0 flex-1 overflow-hidden">
               {/* Reasoning */}
               {generationReasoning && (
                 <Alert className="bg-primary/5 border-primary/20">
@@ -2876,21 +2876,21 @@ export default function RosterPlan() {
                 </Alert>
               )}
 
-              <Tabs defaultValue="plan" className="flex flex-col gap-3 min-h-0 flex-1">
+              <Tabs defaultValue="plan" className="flex flex-col gap-3 min-h-0 flex-1 overflow-hidden">
                 <TabsList className="w-fit">
                   <TabsTrigger value="plan">Plan</TabsTrigger>
                   <TabsTrigger value="errors">Fehleranzeige</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="plan" className="min-h-0">
-                  <div className="border rounded-lg">
+                  <div className="border rounded-lg flex flex-col">
                     <div className="p-3 bg-muted/30 border-b flex justify-between items-center">
                       <span className="font-medium">Generierte Dienste</span>
                       <Badge variant="secondary">
                         {generatedShifts.length} Dienste
                       </Badge>
                     </div>
-                    <ScrollArea className="h-[42vh]">
+                    <ScrollArea className="h-[30vh]">
                       <Table>
                         <TableHeader>
                           <TableRow>
@@ -2927,7 +2927,7 @@ export default function RosterPlan() {
                 </TabsContent>
 
                 <TabsContent value="errors" className="min-h-0">
-                  <div className="border rounded-lg">
+                  <div className="border rounded-lg flex flex-col">
                     <div className="p-3 bg-muted/30 border-b flex items-center gap-3">
                       <Badge
                         variant={generationPublishAllowed ? "default" : "destructive"}
@@ -2948,7 +2948,7 @@ export default function RosterPlan() {
                         Keine Fehler gefunden.
                       </div>
                     ) : (
-                      <ScrollArea className="h-[42vh]">
+                      <ScrollArea className="h-[30vh]">
                         <Table>
                           <TableHeader>
                             <TableRow>
@@ -3010,7 +3010,7 @@ export default function RosterPlan() {
               </Tabs>
             </div>
 
-            <DialogFooter className="gap-2 shrink-0 border-t pt-3 bg-background">
+            <DialogFooter className="gap-2 shrink-0 border-t pt-3 bg-background relative z-20">
               <Button
                 variant="outline"
                 onClick={() => setGenerationDialogOpen(false)}
