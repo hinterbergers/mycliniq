@@ -1438,7 +1438,7 @@ export default function RosterPlan() {
     setPendingGenerationPayload(null);
     setIsGenerating(true);
     toast({
-      title: "KI-Generierung",
+      title: "Dienstplan-Generierung",
       description: "Dienstplan wird automatisch erstellt...",
     });
     try {
@@ -1478,7 +1478,7 @@ export default function RosterPlan() {
   const handleAutoGenerate = async (): Promise<boolean> => {
     setIsGenerating(true);
     toast({
-      title: "KI-Generierung",
+      title: "Dienstplan-Generierung",
       description: "Dienstplan wird automatisch erstellt...",
     });
     const payload = buildGenerationPayload();
@@ -1876,7 +1876,7 @@ export default function RosterPlan() {
                 ) : (
                   <Sparkles className="w-4 h-4" />
                 )}
-                KI generieren
+                Dienstplan generieren
               </Button>
             )}
             {canEdit && planStatus === "Entwurf" && (
@@ -2405,7 +2405,7 @@ export default function RosterPlan() {
           </CardContent>
         </Card>
 
-        {/* KI-Regelwerk Dialog */}
+        {/* Regelwerk Dialog */}
         <Dialog
           open={rulesDialogOpen}
           onOpenChange={(open) => {
@@ -2417,7 +2417,7 @@ export default function RosterPlan() {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Brain className="w-5 h-5 text-primary" />
-                KI-Regelwerk
+                Regelwerk
               </DialogTitle>
               <DialogDescription>
                 Legen Sie Vorgaben für die automatische Generierung fest. Harte
@@ -2431,7 +2431,7 @@ export default function RosterPlan() {
               <Alert className="bg-primary/5 border-primary/20">
                 <Loader2 className="w-4 h-4 animate-spin" />
                 <AlertDescription>
-                  KI generiert gerade den Dienstplan – bitte das Fenster nicht schließen.
+                  Dienstplan wird gerade generiert – bitte das Fenster nicht schließen.
                 </AlertDescription>
               </Alert>
             ) : null}
@@ -2532,7 +2532,7 @@ export default function RosterPlan() {
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground mt-2">
-                  Werte 0–10: Je höher, desto wichtiger für die KI.
+                  Werte 0–10: Je höher, desto wichtiger für die Planung.
                 </p>
               </TabsContent>
             </Tabs>
@@ -2580,7 +2580,7 @@ export default function RosterPlan() {
             <DialogHeader>
               <DialogTitle>Prompt-Vorschau</DialogTitle>
               <DialogDescription>
-                Überprüfen oder passen Sie den Prompt für die KI-Generierung an.
+                Überprüfen oder passen Sie den Prompt für die Dienstplan-Generierung an.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -2673,7 +2673,7 @@ export default function RosterPlan() {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Brain className="w-5 h-5 text-primary" />
-                KI-generierter Dienstplan -{" "}
+                Generierter Dienstplan -{" "}
                 {format(currentDate, "MMMM yyyy", { locale: de })}
               </DialogTitle>
               <DialogDescription>
