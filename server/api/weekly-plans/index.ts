@@ -338,6 +338,15 @@ const weeklyYearWeekParamSchema = z.object({
   week: z.string().regex(/^\d+$/).transform(Number),
 });
 
+const isMissingWeeklyRuleProfileColumnError = (error: unknown): boolean => {
+  if (typeof error !== "object" || error === null) return false;
+  const maybeErr = error as { code?: string; message?: string };
+  if (maybeErr.code === "42703") {
+    return (maybeErr.message ?? "").toLowerCase().includes("weekly_rule_profile");
+  }
+  return (maybeErr.message ?? "").toLowerCase().includes("weekly_rule_profile");
+};
+
 /**
  * Weekly Plan (Wochenplan) API Routes
  * Base path: /api/weekly-plans
@@ -410,9 +419,17 @@ export function registerWeeklyPlanRoutes(router: Router) {
     options?: { ruleProfile?: unknown },
   ): Promise<WeeklyPlanningResult> => {
     const { from, to, start } = getWeekRangeFromUi(yearNumber, weekNumber);
-    const [settings] = await db.select().from(rosterSettings).limit(1);
+    let settingsWeeklyRuleProfile: unknown = null;
+    try {
+      const [settings] = await db.select().from(rosterSettings).limit(1);
+      settingsWeeklyRuleProfile = settings?.weeklyRuleProfile ?? null;
+    } catch (loadError) {
+      if (!isMissingWeeklyRuleProfileColumnError(loadError)) {
+        throw loadError;
+      }
+    }
     const profile = normalizeWeeklyRuleProfile(
-      options?.ruleProfile ?? settings?.weeklyRuleProfile ?? null,
+      options?.ruleProfile ?? settingsWeeklyRuleProfile ?? null,
     );
 
     const roomsList = await db

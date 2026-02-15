@@ -559,6 +559,15 @@ const isMissingCalendarTokensTableError = (error: unknown): boolean => {
   return maybeErr.message?.toLowerCase().includes("calendar_tokens") ?? false;
 };
 
+const isMissingWeeklyRuleProfileColumnError = (error: unknown): boolean => {
+  if (typeof error !== "object" || error === null) return false;
+  const maybeErr = error as { code?: string; message?: string };
+  if (maybeErr.code === "42703") {
+    return (maybeErr.message ?? "").toLowerCase().includes("weekly_rule_profile");
+  }
+  return (maybeErr.message ?? "").toLowerCase().includes("weekly_rule_profile");
+};
+
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const isValidEmail = (value: string) =>
   EMAIL_REGEX.test(value) && !/[^\x00-\x7F]/.test(value);
@@ -5053,6 +5062,12 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
     }
       res.json(settings);
     } catch (error) {
+      if (isMissingWeeklyRuleProfileColumnError(error)) {
+        return res.status(409).json({
+          error:
+            "Datenbank-Migration fehlt (roster_settings.weekly_rule_profile). Bitte `npm run db:push` ausfuehren.",
+        });
+      }
       res.status(500).json({ error: "Failed to fetch roster settings" });
     }
   });
@@ -5079,6 +5094,12 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
       });
       res.json(settings);
     } catch (error) {
+      if (isMissingWeeklyRuleProfileColumnError(error)) {
+        return res.status(409).json({
+          error:
+            "Datenbank-Migration fehlt (roster_settings.weekly_rule_profile). Bitte `npm run db:push` ausfuehren.",
+        });
+      }
       res.status(500).json({ error: "Failed to update roster settings" });
     }
   });
@@ -5096,6 +5117,12 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
           weeklyRuleProfile: settings?.weeklyRuleProfile ?? null,
         });
       } catch (error) {
+        if (isMissingWeeklyRuleProfileColumnError(error)) {
+          return res.status(409).json({
+            error:
+              "Datenbank-Migration fehlt (roster_settings.weekly_rule_profile). Bitte `npm run db:push` ausfuehren.",
+          });
+        }
         res.status(500).json({ error: "Failed to fetch weekly rule profile" });
       }
     },
@@ -5136,6 +5163,12 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
           weeklyRuleProfile: updated.weeklyRuleProfile ?? null,
         });
       } catch (error) {
+        if (isMissingWeeklyRuleProfileColumnError(error)) {
+          return res.status(409).json({
+            error:
+              "Datenbank-Migration fehlt (roster_settings.weekly_rule_profile). Bitte `npm run db:push` ausfuehren.",
+          });
+        }
         res.status(500).json({ error: "Failed to update weekly rule profile" });
       }
     },

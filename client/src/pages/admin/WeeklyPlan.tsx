@@ -1338,17 +1338,29 @@ export default function WeeklyPlan() {
     try {
       let totalApplied = 0;
       let totalHardConflicts = 0;
+      const failedWeeks: Array<{ week: number; year: number; error: string }> = [];
       for (const date of dates) {
         const { week, year } = getWeekKey(date);
-        const runResponse = await weeklyPlanApi.runGeneration(
-          year,
-          week,
-          ruleProfile,
-        );
-        totalApplied += runResponse.appliedAssignments;
-        totalHardConflicts += runResponse.result.stats.hardConflicts;
-        if (year === weekYear && week === weekNumber) {
-          setWeeklyPlan(runResponse.plan);
+        try {
+          const runResponse = await weeklyPlanApi.runGeneration(
+            year,
+            week,
+            ruleProfile,
+          );
+          totalApplied += runResponse.appliedAssignments;
+          totalHardConflicts += runResponse.result.stats.hardConflicts;
+          if (year === weekYear && week === weekNumber) {
+            setWeeklyPlan(runResponse.plan);
+          }
+        } catch (runError) {
+          failedWeeks.push({
+            week,
+            year,
+            error:
+              runError instanceof Error
+                ? runError.message
+                : "Übernahme fehlgeschlagen",
+          });
         }
       }
 
@@ -1362,6 +1374,14 @@ export default function WeeklyPlan() {
         toast({
           title: "Konflikte erkannt",
           description: `${totalHardConflicts} harte Konflikte im Zeitraum.`,
+          variant: "destructive",
+        });
+      }
+      if (failedWeeks.length > 0) {
+        const firstFailed = failedWeeks[0];
+        toast({
+          title: "Teilweise übernommen",
+          description: `${failedWeeks.length} Woche(n) fehlgeschlagen, z.B. KW ${firstFailed.week}/${firstFailed.year}.`,
           variant: "destructive",
         });
       }
@@ -1577,6 +1597,30 @@ export default function WeeklyPlan() {
       .filter((row) => planningAreaFilter === "all" || row.area === planningAreaFilter)
       .sort((a, b) => a.area.localeCompare(b.area, "de"));
   }, [generationPreview, planningAreaFilter, roomsById]);
+
+  const planningPreviewErrorGroups = useMemo(() => {
+    const grouped = new Map<
+      string,
+      { message: string; weeks: Array<{ week: number; year: number }> }
+    >();
+    planningPreviewEntries
+      .filter((entry) => Boolean(entry.error))
+      .forEach((entry) => {
+        const message = entry.error?.trim() || "Unbekannter Fehler";
+        const bucket = grouped.get(message) ?? { message, weeks: [] };
+        bucket.weeks.push({ week: entry.week, year: entry.year });
+        grouped.set(message, bucket);
+      });
+
+    return Array.from(grouped.values())
+      .map((item) => ({
+        ...item,
+        weeks: item.weeks.sort((a, b) =>
+          `${a.year}-${a.week}`.localeCompare(`${b.year}-${b.week}`),
+        ),
+      }))
+      .sort((a, b) => b.weeks.length - a.weeks.length);
+  }, [planningPreviewEntries]);
 
   const getManualPreviewCandidates = useCallback(
     (slot: WeeklyPlanningResult["unfilledSlots"][number]) => {
@@ -2748,6 +2792,24 @@ export default function WeeklyPlan() {
             {isGenerationPreviewLoading && (
               <div className="text-sm text-muted-foreground">
                 Vorschau wird berechnet...
+              </div>
+            )}
+            {planningPreviewErrorGroups.length > 0 && (
+              <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 space-y-2">
+                <p className="text-xs font-semibold text-rose-700">
+                  Fehler im Zeitraum ({planningPreviewErrorGroups.length})
+                </p>
+                {planningPreviewErrorGroups.map((item, index) => (
+                  <div key={`preview-error-group-${index}`} className="text-xs text-rose-700">
+                    <p className="font-medium">{item.message}</p>
+                    <p className="text-rose-600">
+                      KW:{" "}
+                      {item.weeks
+                        .map((week) => `${week.week}/${week.year}`)
+                        .join(", ")}
+                    </p>
+                  </div>
+                ))}
               </div>
             )}
             {generationPreviewError && (
