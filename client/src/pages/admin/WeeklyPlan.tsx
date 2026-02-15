@@ -1181,107 +1181,31 @@ export default function WeeklyPlan() {
     }
 
     setIsSaving(true);
-    const newAssignments: WeeklyPlanAssignmentResponse[] = [];
 
     try {
-      if (ruleProfile.globalHardRules.requireDutyPlanCoverage) {
-        const weekDateKeys = new Set(days.map((day) => format(day, "yyyy-MM-dd")));
-        const coverageDates = new Set(
-          rosterShifts
-            .filter((shift) => weekDateKeys.has(shift.date))
-            .map((shift) => shift.date),
-        );
-        if (coverageDates.size === 0) {
-          toast({
-            title: "Konflikt: kein Dienstplan im Zeitraum",
-            description:
-              "Fuer die gewaehlte Woche liegt kein Dienstplan zur Abdeckung vor.",
-            variant: "destructive",
-          });
-          return;
-        }
-      }
-
-      for (const day of days) {
-        const weekday = day.getDay() === 0 ? 7 : day.getDay();
-        if (lockedWeekdays.includes(weekday)) continue;
-
-        const available = availabilityByWeekday.get(weekday) ?? [];
-        const assignedIds = new Set(
-          (assignmentsByWeekday.get(weekday) ?? [])
-            .map((assignment) => assignment.employeeId)
-            .filter((id): id is number => typeof id === "number"),
-        );
-
-        const roomsForDay = activeRoomsByDay.get(weekday) ?? [];
-        for (const { room, setting } of roomsForDay) {
-          if (!setting || setting.isClosed) continue;
-
-          const existing =
-            assignmentsByDayRoom.get(`${weekday}-${room.id}`) ?? [];
-          const hasBlocked = existing.some(
-            (assignment) => assignment.isBlocked,
-          );
-          const hasEmployee = existing.some(
-            (assignment) => assignment.employeeId,
-          );
-          if (hasBlocked || hasEmployee) continue;
-
-          const eligible = available.filter(
-            (employee) =>
-              !assignedIds.has(employee.id) &&
-              isEmployeeEligibleForRoom(employee, room),
-          );
-
-          const eligibleAfterForbidden = eligible.filter((employee) => {
-            const employeeRule = employeeRuleById.get(employee.id);
-            return !employeeRule?.forbiddenAreaIds.includes(room.id);
-          });
-
-          if (eligibleAfterForbidden.length === 0) continue;
-
-          const scoredCandidates = eligibleAfterForbidden.map((employee) => {
-            const employeeRule = employeeRuleById.get(employee.id);
-            const priorityIds = employeeRule?.priorityAreaIds ?? [];
-            const index = priorityIds.indexOf(room.id);
-            const priorityScore =
-              index === 0 ? 300 : index === 1 ? 200 : index === 2 ? 100 : 10;
-            return {
-              employee,
-              priorityScore,
-            };
-          });
-
-          scoredCandidates.sort((a, b) => {
-            if (b.priorityScore !== a.priorityScore) {
-              return b.priorityScore - a.priorityScore;
-            }
-            return compareAvailabilityEmployees(a.employee, b.employee);
-          });
-
-          const candidate = scoredCandidates[0]?.employee;
-          if (!candidate) continue;
-          const assignment = await weeklyPlanApi.assign(weeklyPlan.id, {
-            roomId: room.id,
-            weekday,
-            employeeId: candidate.id,
-            assignmentType: "Plan",
-          });
-          newAssignments.push(assignment);
-          assignedIds.add(candidate.id);
-        }
-      }
-
-      setWeeklyPlan((prev) =>
-        prev
-          ? { ...prev, assignments: [...prev.assignments, ...newAssignments] }
-          : prev,
+      const runResponse = await weeklyPlanApi.runGeneration(
+        weekYear,
+        weekNumber,
+        ruleProfile,
       );
+      setWeeklyPlan(runResponse.plan);
 
       toast({
         title: "Wochenplan erstellt",
-        description: "Die passenden Mitarbeitenden wurden vorgeschlagen.",
+        description:
+          runResponse.appliedAssignments > 0
+            ? `${runResponse.appliedAssignments} Zuweisungen wurden übernommen.`
+            : "Keine neuen Zuweisungen übernommen.",
       });
+
+      const hardConflicts = runResponse.result.stats.hardConflicts;
+      if (hardConflicts > 0) {
+        toast({
+          title: "Konflikte erkannt",
+          description: `${hardConflicts} harte Konflikte in der Vorschau erkannt.`,
+          variant: "destructive",
+        });
+      }
     } catch (error) {
       console.error("Failed to generate AI weekly plan", error);
       toast({

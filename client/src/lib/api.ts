@@ -1372,6 +1372,63 @@ export type WeeklyPlanAssignmentInput = {
   isBlocked?: boolean;
 };
 
+export type WeeklyPlanningGeneratedAssignment = {
+  slotId: string;
+  date: string;
+  weekday: number;
+  roomId: number;
+  roomName: string;
+  employeeId: number;
+  employeeName: string;
+  score: number;
+};
+
+export type WeeklyPlanningUnfilledSlot = {
+  slotId: string;
+  date: string;
+  weekday: number;
+  roomId: number;
+  roomName: string;
+  reasonCodes: string[];
+  candidatesBlockedBy: string[];
+  blocksPublish: boolean;
+};
+
+export type WeeklyPlanningViolation = {
+  code: string;
+  hard: boolean;
+  message: string;
+  date?: string;
+  roomId?: number;
+};
+
+export type WeeklyPlanningResult = {
+  meta: {
+    year: number;
+    week: number;
+    from: string;
+    to: string;
+  };
+  profile: Record<string, unknown>;
+  stats: {
+    generatedAssignments: number;
+    existingAssignments: number;
+    unfilledSlots: number;
+    hardConflicts: number;
+    softConflicts: number;
+  };
+  generatedAssignments: WeeklyPlanningGeneratedAssignment[];
+  unfilledSlots: WeeklyPlanningUnfilledSlot[];
+  violations: WeeklyPlanningViolation[];
+  publishAllowed: boolean;
+};
+
+export type WeeklyPlanningRunResponse = {
+  plan: WeeklyPlanResponse;
+  result: WeeklyPlanningResult;
+  appliedAssignments: number;
+};
+
 export const weeklyPlanApi = {
   getByWeek: async (
     year: number,
@@ -1441,6 +1498,36 @@ export const weeklyPlanApi = {
       },
     );
     return handleResponse<void>(response);
+  },
+  previewGeneration: async (
+    year: number,
+    week: number,
+    ruleProfile?: unknown,
+  ): Promise<WeeklyPlanningResult> => {
+    const response = await apiFetch(
+      `${API_BASE}/weekly-plans/week/${year}/${week}/preview`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ruleProfile }),
+      },
+    );
+    return handleResponse<WeeklyPlanningResult>(response);
+  },
+  runGeneration: async (
+    year: number,
+    week: number,
+    ruleProfile?: unknown,
+  ): Promise<WeeklyPlanningRunResponse> => {
+    const response = await apiFetch(
+      `${API_BASE}/weekly-plans/week/${year}/${week}/run`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ruleProfile }),
+      },
+    );
+    return handleResponse<WeeklyPlanningRunResponse>(response);
   },
 };
 

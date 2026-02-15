@@ -1,6 +1,7 @@
 import type { Router } from "express";
 import { z } from "zod";
-import { db, eq, and, asc } from "../../lib/db";
+import { db, eq, and, asc, inArray, gte, lte, ne } from "../../lib/db";
+import { addDays, format, startOfWeek } from "date-fns";
 import {
   ok,
   created,
@@ -22,6 +23,13 @@ import {
   dutyDays,
   dutySlots,
   dutyAssignments,
+  roomWeekdaySettings,
+  roomRequiredCompetencies,
+  competencies,
+  plannedAbsences,
+  longTermAbsences,
+  rosterShifts,
+  rosterSettings,
 } from "@shared/schema";
 
 /**
@@ -80,6 +88,10 @@ const updateLockedWeekdaysSchema = z.object({
   lockedWeekdays: z.array(z.number().min(1).max(7)).default([]),
 });
 
+const weeklyPlanningRequestSchema = z.object({
+  ruleProfile: z.unknown().optional(),
+});
+
 /**
  * Assignment ID param schema
  */
@@ -123,6 +135,208 @@ function isWithinFullAccessWindow(emp: any, dateIso: string): boolean {
     target.getTime() <= fullAccessEnd.getTime()
   );
 }
+
+type WeeklyRuleProfile = {
+  version: 1;
+  updatedAt: string;
+  globalHardRules: {
+    afterDutyBlocked: boolean;
+    absenceBlocked: boolean;
+    longTermAbsenceBlocked: boolean;
+    roomClosedBlocked: boolean;
+    requireDutyPlanCoverage: boolean;
+  };
+  employeeRules: Array<{
+    employeeId: number;
+    priorityAreaIds: number[];
+    forbiddenAreaIds: number[];
+  }>;
+};
+
+type WeeklyPlanningResult = {
+  meta: {
+    year: number;
+    week: number;
+    from: string;
+    to: string;
+  };
+  profile: WeeklyRuleProfile;
+  stats: {
+    generatedAssignments: number;
+    existingAssignments: number;
+    unfilledSlots: number;
+    hardConflicts: number;
+    softConflicts: number;
+  };
+  generatedAssignments: Array<{
+    slotId: string;
+    date: string;
+    weekday: number;
+    roomId: number;
+    roomName: string;
+    employeeId: number;
+    employeeName: string;
+    score: number;
+  }>;
+  unfilledSlots: Array<{
+    slotId: string;
+    date: string;
+    weekday: number;
+    roomId: number;
+    roomName: string;
+    reasonCodes: string[];
+    candidatesBlockedBy: string[];
+    blocksPublish: boolean;
+  }>;
+  violations: Array<{
+    code: string;
+    hard: boolean;
+    message: string;
+    date?: string;
+    roomId?: number;
+  }>;
+  publishAllowed: boolean;
+};
+
+const DEFAULT_WEEKLY_RULE_PROFILE: WeeklyRuleProfile = {
+  version: 1,
+  updatedAt: new Date().toISOString(),
+  globalHardRules: {
+    afterDutyBlocked: true,
+    absenceBlocked: true,
+    longTermAbsenceBlocked: true,
+    roomClosedBlocked: true,
+    requireDutyPlanCoverage: true,
+  },
+  employeeRules: [],
+};
+
+const normalizeIdList = (value: unknown, maxLength?: number): number[] => {
+  if (!Array.isArray(value)) return [];
+  const out = Array.from(
+    new Set(
+      value
+        .map((entry) => Number(entry))
+        .filter((entry) => Number.isInteger(entry) && entry > 0),
+    ),
+  );
+  return typeof maxLength === "number" ? out.slice(0, maxLength) : out;
+};
+
+const normalizeWeeklyRuleProfile = (value: unknown): WeeklyRuleProfile => {
+  if (!value || typeof value !== "object") return DEFAULT_WEEKLY_RULE_PROFILE;
+  const raw = value as Partial<WeeklyRuleProfile>;
+  const hard = raw.globalHardRules ?? DEFAULT_WEEKLY_RULE_PROFILE.globalHardRules;
+  return {
+    version: 1,
+    updatedAt:
+      typeof raw.updatedAt === "string" ? raw.updatedAt : new Date().toISOString(),
+    globalHardRules: {
+      afterDutyBlocked:
+        hard.afterDutyBlocked ??
+        DEFAULT_WEEKLY_RULE_PROFILE.globalHardRules.afterDutyBlocked,
+      absenceBlocked:
+        hard.absenceBlocked ??
+        DEFAULT_WEEKLY_RULE_PROFILE.globalHardRules.absenceBlocked,
+      longTermAbsenceBlocked:
+        hard.longTermAbsenceBlocked ??
+        DEFAULT_WEEKLY_RULE_PROFILE.globalHardRules.longTermAbsenceBlocked,
+      roomClosedBlocked:
+        hard.roomClosedBlocked ??
+        DEFAULT_WEEKLY_RULE_PROFILE.globalHardRules.roomClosedBlocked,
+      requireDutyPlanCoverage:
+        hard.requireDutyPlanCoverage ??
+        DEFAULT_WEEKLY_RULE_PROFILE.globalHardRules.requireDutyPlanCoverage,
+    },
+    employeeRules: Array.isArray(raw.employeeRules)
+      ? raw.employeeRules
+          .map((rule) => ({
+            employeeId: Number(rule.employeeId),
+            priorityAreaIds: normalizeIdList(rule.priorityAreaIds, 3),
+            forbiddenAreaIds: normalizeIdList(rule.forbiddenAreaIds),
+          }))
+          .filter((rule) => Number.isInteger(rule.employeeId) && rule.employeeId > 0)
+      : [],
+  };
+};
+
+const getWeekRangeFromUi = (year: number, week: number) => {
+  const seed = new Date(year, 0, 1 + (week - 1) * 7);
+  const start = startOfWeek(seed, { weekStartsOn: 1 });
+  const end = addDays(start, 6);
+  return {
+    start,
+    end,
+    from: format(start, "yyyy-MM-dd"),
+    to: format(end, "yyyy-MM-dd"),
+  };
+};
+
+const normalizeText = (value?: string | null) =>
+  (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+
+const getEmployeeRoleKeys = (role?: string | null): string[] => {
+  const normalized = normalizeText(role);
+  if (!normalized) return [];
+  const keys: string[] = [];
+  if (normalized.includes("primar")) keys.push("primararzt");
+  if (
+    normalized.includes("oberarzt") ||
+    normalized.includes("facharzt") ||
+    normalized.includes("funktionsoberarzt") ||
+    normalized.includes("ausbildungsoberarzt")
+  ) {
+    keys.push("facharzt");
+  }
+  if (
+    normalized.includes("assistenz") ||
+    normalized.includes("turnus") ||
+    normalized.includes("student")
+  ) {
+    keys.push("assistenzarzt");
+  }
+  if (normalized.includes("sekretar") || normalized.includes("sekreta")) {
+    keys.push("sekretaerin");
+  }
+  return Array.from(new Set(keys));
+};
+
+const employeeMatchesRoleRules = (
+  role?: string | null,
+  required: string[] = [],
+  alternative: string[] = [],
+) => {
+  const keys = getEmployeeRoleKeys(role);
+  if (required.length > 0 && !required.every((value) => keys.includes(value))) {
+    return false;
+  }
+  if (alternative.length > 0 && !alternative.some((value) => keys.includes(value))) {
+    return false;
+  }
+  return true;
+};
+
+const weekdayOccurrence = (date: Date) => Math.floor((date.getDate() - 1) / 7) + 1;
+
+const matchesRecurrence = (
+  recurrence: "weekly" | "monthly_first_third" | "monthly_once" | null | undefined,
+  date: Date,
+) => {
+  if (!recurrence || recurrence === "weekly") return true;
+  const occurrence = weekdayOccurrence(date);
+  if (recurrence === "monthly_first_third") return occurrence === 1 || occurrence === 3;
+  if (recurrence === "monthly_once") return occurrence === 1;
+  return true;
+};
+
+const weeklyYearWeekParamSchema = z.object({
+  year: z.string().regex(/^\d+$/).transform(Number),
+  week: z.string().regex(/^\d+$/).transform(Number),
+});
 
 /**
  * Weekly Plan (Wochenplan) API Routes
@@ -189,6 +403,405 @@ export function registerWeeklyPlanRoutes(router: Router) {
       },
     };
   }
+
+  const computeWeeklyPlanningResult = async (
+    yearNumber: number,
+    weekNumber: number,
+    options?: { ruleProfile?: unknown },
+  ): Promise<WeeklyPlanningResult> => {
+    const { from, to, start } = getWeekRangeFromUi(yearNumber, weekNumber);
+    const [settings] = await db.select().from(rosterSettings).limit(1);
+    const profile = normalizeWeeklyRuleProfile(
+      options?.ruleProfile ?? settings?.weeklyRuleProfile ?? null,
+    );
+
+    const roomsList = await db
+      .select()
+      .from(rooms)
+      .where(and(eq(rooms.useInWeeklyPlan, true), eq(rooms.isActive, true)))
+      .orderBy(asc(rooms.weeklyPlanSortOrder), asc(rooms.name));
+    const roomIds = roomsList.map((room) => room.id);
+
+    const [plan] = await db
+      .select()
+      .from(weeklyPlans)
+      .where(
+        and(
+          eq(weeklyPlans.year, yearNumber),
+          eq(weeklyPlans.weekNumber, weekNumber),
+        ),
+      );
+
+    const existingAssignments =
+      plan && roomIds.length > 0
+        ? await db
+            .select()
+            .from(weeklyPlanAssignments)
+            .where(eq(weeklyPlanAssignments.weeklyPlanId, plan.id))
+        : [];
+
+    const weekdaySettings =
+      roomIds.length > 0
+        ? await db
+            .select()
+            .from(roomWeekdaySettings)
+            .where(inArray(roomWeekdaySettings.roomId, roomIds))
+        : [];
+
+    const requiredCompetencyRows =
+      roomIds.length > 0
+        ? await db
+            .select({
+              roomId: roomRequiredCompetencies.roomId,
+              relationType: roomRequiredCompetencies.relationType,
+              competencyCode: competencies.code,
+              competencyName: competencies.name,
+            })
+            .from(roomRequiredCompetencies)
+            .leftJoin(
+              competencies,
+              eq(roomRequiredCompetencies.competencyId, competencies.id),
+            )
+            .where(inArray(roomRequiredCompetencies.roomId, roomIds))
+        : [];
+
+    const employeeRows = await db
+      .select()
+      .from(employees)
+      .where(eq(employees.isActive, true));
+
+    const plannedAbsenceRows = await db
+      .select()
+      .from(plannedAbsences)
+      .where(
+        and(
+          lte(plannedAbsences.startDate, to),
+          gte(plannedAbsences.endDate, from),
+          ne(plannedAbsences.status, "Abgelehnt"),
+        ),
+      );
+
+    const longTermAbsenceRows = await db
+      .select()
+      .from(longTermAbsences)
+      .where(
+        and(
+          lte(longTermAbsences.startDate, to),
+          gte(longTermAbsences.endDate, from),
+          eq(longTermAbsences.status, "Genehmigt"),
+        ),
+      );
+
+    const rosterRows = await db
+      .select()
+      .from(rosterShifts)
+      .where(and(gte(rosterShifts.date, from), lte(rosterShifts.date, to)));
+
+    const violations: WeeklyPlanningResult["violations"] = [];
+    if (
+      profile.globalHardRules.requireDutyPlanCoverage &&
+      !rosterRows.some((row) => row.serviceType !== "overduty")
+    ) {
+      violations.push({
+        code: "NO_DUTY_PLAN_IN_PERIOD",
+        hard: true,
+        message: "Kein Dienstplan im gewählten Zeitraum vorhanden.",
+      });
+    }
+
+    const settingsByRoom = new Map<number, (typeof weekdaySettings)>();
+    weekdaySettings.forEach((setting) => {
+      const list = settingsByRoom.get(setting.roomId) ?? [];
+      list.push(setting);
+      settingsByRoom.set(setting.roomId, list);
+    });
+
+    const competenciesByRoom = new Map<number, (typeof requiredCompetencyRows)>();
+    requiredCompetencyRows.forEach((entry) => {
+      const list = competenciesByRoom.get(entry.roomId) ?? [];
+      list.push(entry);
+      competenciesByRoom.set(entry.roomId, list);
+    });
+
+    const existingBySlot = new Map<string, (typeof existingAssignments)>();
+    existingAssignments.forEach((assignment) => {
+      const key = `${assignment.weekday}-${assignment.roomId}`;
+      const list = existingBySlot.get(key) ?? [];
+      list.push(assignment);
+      existingBySlot.set(key, list);
+    });
+
+    const existingCountByEmployee = new Map<number, number>();
+    existingAssignments.forEach((assignment) => {
+      if (!assignment.employeeId) return;
+      existingCountByEmployee.set(
+        assignment.employeeId,
+        (existingCountByEmployee.get(assignment.employeeId) ?? 0) + 1,
+      );
+    });
+
+    const employeeRulesById = new Map(
+      profile.employeeRules.map((rule) => [rule.employeeId, rule]),
+    );
+
+    const plannedAbsencesByEmployee = new Map<number, (typeof plannedAbsenceRows)>();
+    plannedAbsenceRows.forEach((absence) => {
+      const list = plannedAbsencesByEmployee.get(absence.employeeId) ?? [];
+      list.push(absence);
+      plannedAbsencesByEmployee.set(absence.employeeId, list);
+    });
+
+    const longTermAbsencesByEmployee = new Map<number, (typeof longTermAbsenceRows)>();
+    longTermAbsenceRows.forEach((absence) => {
+      const list = longTermAbsencesByEmployee.get(absence.employeeId) ?? [];
+      list.push(absence);
+      longTermAbsencesByEmployee.set(absence.employeeId, list);
+    });
+
+    const rosterByEmployee = new Map<number, (typeof rosterRows)>();
+    rosterRows.forEach((shift) => {
+      if (!shift.employeeId) return;
+      const list = rosterByEmployee.get(shift.employeeId) ?? [];
+      list.push(shift);
+      rosterByEmployee.set(shift.employeeId, list);
+    });
+
+    const activeEmployees = employeeRows.filter((employee) => {
+      const roleNorm = normalizeText(employee.role);
+      return !roleNorm.includes("sekret");
+    });
+
+    const unfilledSlots: WeeklyPlanningResult["unfilledSlots"] = [];
+    const generatedAssignments: WeeklyPlanningResult["generatedAssignments"] = [];
+
+    for (let offset = 0; offset < 7; offset += 1) {
+      const day = addDays(start, offset);
+      const dayDate = format(day, "yyyy-MM-dd");
+      const weekday = day.getDay() === 0 ? 7 : day.getDay();
+      const previousDate = format(addDays(day, -1), "yyyy-MM-dd");
+
+      if (plan?.lockedWeekdays?.includes(weekday)) continue;
+
+      const dayRooms = roomsList
+        .map((room) => {
+          const setting =
+            settingsByRoom
+              .get(room.id)
+              ?.find(
+                (entry) =>
+                  entry.weekday === weekday &&
+                  matchesRecurrence(entry.recurrence, day),
+              ) ?? null;
+          return { room, setting };
+        })
+        .filter((entry) => Boolean(entry.setting));
+
+      for (const { room, setting } of dayRooms) {
+        if (!setting) continue;
+        if (setting.isClosed && profile.globalHardRules.roomClosedBlocked) continue;
+
+        const slotId = `${dayDate}-${room.id}`;
+        const slotKey = `${weekday}-${room.id}`;
+        const existing = existingBySlot.get(slotKey) ?? [];
+        const hasBlocked = existing.some(
+          (assignment) => assignment.isBlocked && !assignment.employeeId,
+        );
+        const hasEmployee = existing.some((assignment) => Boolean(assignment.employeeId));
+        if (hasBlocked) {
+          unfilledSlots.push({
+            slotId,
+            date: dayDate,
+            weekday,
+            roomId: room.id,
+            roomName: room.name,
+            reasonCodes: ["LOCKED_EMPTY"],
+            candidatesBlockedBy: ["LOCKED_EMPTY"],
+            blocksPublish: false,
+          });
+          continue;
+        }
+        if (hasEmployee) continue;
+
+        const requiredCompetencies = competenciesByRoom.get(room.id) ?? [];
+        const reasonPool = new Set<string>();
+
+        const candidates = activeEmployees
+          .map((employee) => {
+            const reasons = new Set<string>();
+            const rule = employeeRulesById.get(employee.id);
+            if (rule?.forbiddenAreaIds.includes(room.id)) {
+              reasons.add("FORBIDDEN_AREA");
+            }
+
+            if (
+              profile.globalHardRules.absenceBlocked &&
+              (plannedAbsencesByEmployee.get(employee.id) ?? []).some(
+                (absence) => absence.startDate <= dayDate && absence.endDate >= dayDate,
+              )
+            ) {
+              reasons.add("ABSENCE_BLOCKED");
+            }
+
+            if (
+              profile.globalHardRules.longTermAbsenceBlocked &&
+              (longTermAbsencesByEmployee.get(employee.id) ?? []).some(
+                (absence) => absence.startDate <= dayDate && absence.endDate >= dayDate,
+              )
+            ) {
+              reasons.add("LONG_TERM_ABSENCE_BLOCKED");
+            }
+
+            if (
+              profile.globalHardRules.afterDutyBlocked &&
+              (rosterByEmployee.get(employee.id) ?? []).some(
+                (shift) =>
+                  shift.date === previousDate && shift.serviceType !== "overduty",
+              )
+            ) {
+              reasons.add("AFTER_DUTY_BLOCKED");
+            }
+
+            if (
+              !employeeMatchesRoleRules(
+                employee.role,
+                room.requiredRoleCompetencies ?? [],
+                room.alternativeRoleCompetencies ?? [],
+              )
+            ) {
+              reasons.add("MISSING_REQUIRED_ROLE");
+            }
+
+            if (requiredCompetencies.length > 0) {
+              const employeeSkills = (employee.competencies ?? []).map((value) =>
+                normalizeText(value),
+              );
+              const hasSkill = (value?: string | null) =>
+                value ? employeeSkills.includes(normalizeText(value)) : false;
+
+              const andRules = requiredCompetencies.filter(
+                (entry) => entry.relationType === "AND",
+              );
+              const orRules = requiredCompetencies.filter(
+                (entry) => entry.relationType === "OR",
+              );
+              if (
+                andRules.some(
+                  (entry) =>
+                    !hasSkill(entry.competencyCode) &&
+                    !hasSkill(entry.competencyName),
+                )
+              ) {
+                reasons.add("MISSING_REQUIRED_SKILL");
+              }
+              if (
+                orRules.length > 0 &&
+                !orRules.some(
+                  (entry) =>
+                    hasSkill(entry.competencyCode) || hasSkill(entry.competencyName),
+                )
+              ) {
+                reasons.add("MISSING_REQUIRED_SKILL");
+              }
+            }
+
+            if (
+              employee.inactiveFrom &&
+              employee.inactiveFrom <= dayDate &&
+              (!employee.inactiveUntil || employee.inactiveUntil >= dayDate)
+            ) {
+              reasons.add("EMPLOYEE_INACTIVE");
+            }
+
+            if (reasons.size > 0) {
+              reasons.forEach((reason) => reasonPool.add(reason));
+              return null;
+            }
+
+            const priorityIds = rule?.priorityAreaIds ?? [];
+            const priorityIndex = priorityIds.indexOf(room.id);
+            const priorityScore =
+              priorityIndex === 0 ? 300 : priorityIndex === 1 ? 200 : priorityIndex === 2 ? 100 : 10;
+            const assignedCount =
+              (existingCountByEmployee.get(employee.id) ?? 0) +
+              generatedAssignments.filter((entry) => entry.employeeId === employee.id).length;
+            const score = priorityScore - assignedCount * 15;
+            return { employee, score, priorityScore };
+          })
+          .filter((entry): entry is { employee: (typeof activeEmployees)[number]; score: number; priorityScore: number } => Boolean(entry));
+
+        if (!candidates.length) {
+          unfilledSlots.push({
+            slotId,
+            date: dayDate,
+            weekday,
+            roomId: room.id,
+            roomName: room.name,
+            reasonCodes: ["NO_ELIGIBLE_CANDIDATE"],
+            candidatesBlockedBy:
+              reasonPool.size > 0 ? Array.from(reasonPool) : ["NO_ELIGIBLE_CANDIDATE"],
+            blocksPublish: true,
+          });
+          continue;
+        }
+
+        candidates.sort((a, b) => {
+          if (b.score !== a.score) return b.score - a.score;
+          const aName = `${a.employee.lastName ?? ""} ${a.employee.firstName ?? ""}`;
+          const bName = `${b.employee.lastName ?? ""} ${b.employee.firstName ?? ""}`;
+          return aName.localeCompare(bName, "de");
+        });
+        const winner = candidates[0];
+        if (winner.priorityScore <= 10) {
+          violations.push({
+            code: "LOW_PRIORITY_AREA_MATCH",
+            hard: false,
+            message: `${winner.employee.lastName ?? winner.employee.name} wurde außerhalb Top-3 zugeteilt`,
+            date: dayDate,
+            roomId: room.id,
+          });
+        }
+        generatedAssignments.push({
+          slotId,
+          date: dayDate,
+          weekday,
+          roomId: room.id,
+          roomName: room.name,
+          employeeId: winner.employee.id,
+          employeeName:
+            winner.employee.lastName ||
+            winner.employee.name ||
+            `Mitarbeiter ${winner.employee.id}`,
+          score: winner.score,
+        });
+      }
+    }
+
+    const hardConflicts =
+      unfilledSlots.filter((slot) => slot.blocksPublish).length +
+      violations.filter((violation) => violation.hard).length;
+    const softConflicts = violations.filter((violation) => !violation.hard).length;
+
+    return {
+      meta: {
+        year: yearNumber,
+        week: weekNumber,
+        from,
+        to,
+      },
+      profile,
+      stats: {
+        generatedAssignments: generatedAssignments.length,
+        existingAssignments: existingAssignments.filter((entry) => entry.employeeId).length,
+        unfilledSlots: unfilledSlots.length,
+        hardConflicts,
+        softConflicts,
+      },
+      generatedAssignments,
+      unfilledSlots,
+      violations,
+      publishAllowed: hardConflicts === 0,
+    };
+  };
 
   /**
    * GET /api/weekly-plans
@@ -284,6 +897,117 @@ export function registerWeeklyPlanRoutes(router: Router) {
       }
 
       return ok(res, planData);
+    }),
+  );
+
+  /**
+   * POST /api/weekly-plans/week/:year/:week/preview
+   * Build weekly planning suggestion without persisting assignments
+   */
+  router.post(
+    "/week/:year/:week/preview",
+    validateParams(weeklyYearWeekParamSchema),
+    validateBody(weeklyPlanningRequestSchema),
+    asyncHandler(async (req, res) => {
+      const { year, week } = req.params;
+      const yearNumber = Number(year);
+      const weekNumber = Number(week);
+
+      const result = await computeWeeklyPlanningResult(yearNumber, weekNumber, {
+        ruleProfile: req.body?.ruleProfile,
+      });
+
+      return ok(res, result);
+    }),
+  );
+
+  /**
+   * POST /api/weekly-plans/week/:year/:week/run
+   * Build and apply weekly planning suggestion
+   */
+  router.post(
+    "/week/:year/:week/run",
+    validateParams(weeklyYearWeekParamSchema),
+    validateBody(weeklyPlanningRequestSchema),
+    asyncHandler(async (req, res) => {
+      const { year, week } = req.params;
+      const yearNumber = Number(year);
+      const weekNumber = Number(week);
+
+      let [plan] = await db
+        .select()
+        .from(weeklyPlans)
+        .where(
+          and(
+            eq(weeklyPlans.year, yearNumber),
+            eq(weeklyPlans.weekNumber, weekNumber),
+          ),
+        );
+
+      if (!plan) {
+        const [createdPlan] = await db
+          .insert(weeklyPlans)
+          .values({
+            year: yearNumber,
+            weekNumber,
+            status: "Entwurf",
+            createdById: req.user?.employeeId ?? null,
+          })
+          .returning();
+        plan = createdPlan;
+      }
+
+      if (plan.status === "Freigegeben") {
+        return validationError(
+          res,
+          "Freigegebener Wochenplan kann nicht automatisch überschrieben werden.",
+        );
+      }
+
+      const result = await computeWeeklyPlanningResult(yearNumber, weekNumber, {
+        ruleProfile: req.body?.ruleProfile,
+      });
+
+      const existingAssignments = await db
+        .select()
+        .from(weeklyPlanAssignments)
+        .where(eq(weeklyPlanAssignments.weeklyPlanId, plan.id));
+      const existingSlotKeys = new Set(
+        existingAssignments
+          .filter((assignment) => assignment.employeeId || assignment.isBlocked)
+          .map((assignment) => `${assignment.weekday}-${assignment.roomId}`),
+      );
+
+      const rowsToInsert = result.generatedAssignments
+        .filter(
+          (assignment) =>
+            !existingSlotKeys.has(`${assignment.weekday}-${assignment.roomId}`),
+        )
+        .map((assignment) => ({
+          weeklyPlanId: plan.id,
+          roomId: assignment.roomId,
+          weekday: assignment.weekday,
+          employeeId: assignment.employeeId,
+          assignmentType: "Plan" as const,
+          roleLabel: null,
+          note: null,
+          isBlocked: false,
+        }));
+
+      if (rowsToInsert.length > 0) {
+        await db.insert(weeklyPlanAssignments).values(rowsToInsert);
+      }
+
+      const planData = await buildWeeklyPlanResponse(plan.id);
+      if (!planData) {
+        return notFound(res, "Wochenplan");
+      }
+
+      return ok(res, {
+        plan: planData,
+        result,
+        appliedAssignments: rowsToInsert.length,
+      });
     }),
   );
 
