@@ -256,6 +256,17 @@ const buildWeekDateRange = (fromValue: string, toValue: string): Date[] => {
 const formatDateRange = (start: Date, end: Date) =>
   `${format(start, "dd.MM.", { locale: de })} – ${format(end, "dd.MM.yyyy", { locale: de })}`;
 
+const toIsoDateOnly = (value: unknown): string | null => {
+  if (!value) return null;
+  if (typeof value === "string") {
+    return value.length >= 10 ? value.slice(0, 10) : null;
+  }
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return format(value, "yyyy-MM-dd");
+  }
+  return null;
+};
+
 type NoteDialogState = {
   roomId: number;
   weekday: number;
@@ -627,23 +638,34 @@ export default function WeeklyPlan() {
 
   const employeesForRules = useMemo(() => {
     const overlapsRange = (start?: string | null, end?: string | null) => {
-      if (!start) return false;
-      if (start > ruleProfileRange.to) return false;
-      if (!end) return true;
-      return end >= ruleProfileRange.from;
+      const startIso = toIsoDateOnly(start);
+      const endIso = toIsoDateOnly(end);
+      if (!startIso) return false;
+      if (startIso > ruleProfileRange.to) return false;
+      if (!endIso) return true;
+      return endIso >= ruleProfileRange.from;
     };
 
     return [...employees]
       .filter((employee) => employee.isActive)
       .filter((employee) => getRoleGroupKey(employee.role) !== "sekretariat")
       .filter((employee) => {
-        const inactiveHit = overlapsRange(employee.inactiveFrom, employee.inactiveUntil);
+        const inactiveHit = overlapsRange(
+          employee.inactiveFrom as string | null | undefined,
+          employee.inactiveUntil as string | null | undefined,
+        );
         if (inactiveHit) return false;
         const longTermHit = ruleProfileLongTermAbsences.some(
-          (absence) =>
-            absence.employeeId === employee.id &&
-            absence.startDate <= ruleProfileRange.to &&
-            absence.endDate >= ruleProfileRange.from,
+          (absence) => {
+            const startIso = toIsoDateOnly(absence.startDate);
+            const endIso = toIsoDateOnly(absence.endDate);
+            if (!startIso || !endIso) return false;
+            return (
+              absence.employeeId === employee.id &&
+              startIso <= ruleProfileRange.to &&
+              endIso >= ruleProfileRange.from
+            );
+          },
         );
         return !longTermHit;
       })
