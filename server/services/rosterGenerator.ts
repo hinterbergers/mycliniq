@@ -373,7 +373,8 @@ function buildRosterPromptContext(
         e.maxShiftsPerWeek ||
         prefs?.maxShiftsPerWeek ||
         5,
-      month: wish?.maxShiftsPerMonth || prefs?.maxShiftsPerMonth || null,
+      // Default monthly cap for neutral auto-assignment when no explicit limit is set.
+      month: wish?.maxShiftsPerMonth || prefs?.maxShiftsPerMonth || 6,
       weekend: wish?.maxWeekendShifts || prefs?.maxWeekendShifts || null,
     };
     const wishesCompact = {
@@ -953,6 +954,8 @@ export async function generateRosterPlan(
         id: number;
         score: number;
         weekendCount: number;
+        monthCount: number;
+        weekCount: number;
       }> = [];
       for (const employeeMeta of employeeSummary) {
         if (!employeeMeta.allowedServiceTypes.includes(serviceType)) continue;
@@ -1001,10 +1004,14 @@ export async function generateRosterPlan(
           id: employeeMeta.id,
           score: candidateScore,
           weekendCount: meta.weekendCount,
+          monthCount: meta.monthCount,
+          weekCount: meta.weekCounts.get(weekNumber) ?? 0,
         });
       }
       candidateDetails.sort((a, b) => {
         if (a.score !== b.score) return b.score - a.score;
+        if (a.monthCount !== b.monthCount) return a.monthCount - b.monthCount;
+        if (a.weekCount !== b.weekCount) return a.weekCount - b.weekCount;
         if (a.weekendCount !== b.weekendCount)
           return a.weekendCount - b.weekendCount;
         return a.id - b.id;
