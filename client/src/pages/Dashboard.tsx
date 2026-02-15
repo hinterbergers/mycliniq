@@ -32,9 +32,11 @@ import {
 } from "lucide-react";
 import {
   dashboardApi,
+  rosterSettingsApi,
   type DashboardAbsencesResponse,
   type DashboardAttendanceMember,
   type DashboardResponse,
+  type NextPlanningMonth,
 } from "@/lib/api";
 import { getAuthToken, useAuth } from "@/lib/auth";
 import { useLocation } from "wouter";
@@ -211,6 +213,20 @@ const STAFF_BADGE_NORMAL = "bg-slate-50 text-slate-700 border-slate-200";
 const STAFF_NAME_CLASS = "text-sm";
 const STAFF_WORKPLACE_CLASS =
   "text-[10px] sm:text-xs text-muted-foreground leading-tight";
+const MONTH_NAMES = [
+  "Jänner",
+  "Februar",
+  "März",
+  "April",
+  "Mai",
+  "Juni",
+  "Juli",
+  "August",
+  "September",
+  "Oktober",
+  "November",
+  "Dezember",
+];
 
 export default function Dashboard() {
   const { employee, user, can, token } = useAuth();
@@ -237,6 +253,9 @@ export default function Dashboard() {
   const [absencesLoading, setAbsencesLoading] = useState(false);
   const [absencesError, setAbsencesError] = useState<string | null>(null);
   const [enabledWidgetsOverride, setEnabledWidgetsOverride] = useState<string[] | null>(null);
+  const [wishMonthInfo, setWishMonthInfo] = useState<NextPlanningMonth | null>(
+    null,
+  );
   useEffect(() => {
     let cancelled = false;
 
@@ -267,6 +286,30 @@ export default function Dashboard() {
       cancelled = true;
     };
   }, [token]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void rosterSettingsApi
+      .getNextPlanningMonth()
+      .then((data) => {
+        if (cancelled) return;
+        setWishMonthInfo(data);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setWishMonthInfo(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const wishMonthLabel = useMemo(() => {
+    if (!wishMonthInfo) return null;
+    const idx = wishMonthInfo.month - 1;
+    if (idx < 0 || idx >= MONTH_NAMES.length) return null;
+    return MONTH_NAMES[idx];
+  }, [wishMonthInfo]);
 
   const fetchDashboard = useCallback(() => dashboardApi.get(), []);
   const refreshDashboard = useCallback(async () => {
@@ -560,7 +603,14 @@ export default function Dashboard() {
           onClick={() => setLocation("/dienstwuensche")}
           data-testid="button-request-vacation"
         >
-          Dienstwünsche
+          <span className="flex flex-col leading-tight text-left">
+            <span>Dienstwünsche</span>
+            {wishMonthLabel ? (
+              <span className="text-[11px] text-primary-foreground/80">
+                {wishMonthLabel}
+              </span>
+            ) : null}
+          </span>
         </Button>
       </div>
       {showZeBadge && (
