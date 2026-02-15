@@ -44,7 +44,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -237,6 +236,93 @@ type NoteDialogState = {
   assignmentId?: number | null;
 };
 
+type WeeklyRuleGlobalHardRules = {
+  afterDutyBlocked: boolean;
+  absenceBlocked: boolean;
+  longTermAbsenceBlocked: boolean;
+  roomClosedBlocked: boolean;
+  requireDutyPlanCoverage: boolean;
+};
+
+type WeeklyEmployeeRule = {
+  employeeId: number;
+  priorityAreaIds: number[];
+  forbiddenAreaIds: number[];
+};
+
+type WeeklyRuleProfile = {
+  version: 1;
+  updatedAt: string;
+  globalHardRules: WeeklyRuleGlobalHardRules;
+  employeeRules: WeeklyEmployeeRule[];
+};
+
+const WEEKLY_RULE_PROFILE_STORAGE_KEY = "mycliniq.weekly.ruleProfile.v1";
+
+const DEFAULT_WEEKLY_RULE_PROFILE: WeeklyRuleProfile = {
+  version: 1,
+  updatedAt: new Date().toISOString(),
+  globalHardRules: {
+    afterDutyBlocked: true,
+    absenceBlocked: true,
+    longTermAbsenceBlocked: true,
+    roomClosedBlocked: true,
+    requireDutyPlanCoverage: true,
+  },
+  employeeRules: [],
+};
+
+const sanitizeIdList = (value: unknown, maxLength?: number): number[] => {
+  if (!Array.isArray(value)) return [];
+  const ids = Array.from(
+    new Set(
+      value
+        .map((entry) => Number(entry))
+        .filter((entry) => Number.isInteger(entry) && entry > 0),
+    ),
+  );
+  return typeof maxLength === "number" ? ids.slice(0, maxLength) : ids;
+};
+
+const normalizeRuleProfile = (value: unknown): WeeklyRuleProfile => {
+  if (!value || typeof value !== "object") return DEFAULT_WEEKLY_RULE_PROFILE;
+  const raw = value as Partial<WeeklyRuleProfile>;
+  const hard = raw.globalHardRules ?? DEFAULT_WEEKLY_RULE_PROFILE.globalHardRules;
+  return {
+    version: 1,
+    updatedAt:
+      typeof raw.updatedAt === "string"
+        ? raw.updatedAt
+        : new Date().toISOString(),
+    globalHardRules: {
+      afterDutyBlocked:
+        hard.afterDutyBlocked ??
+        DEFAULT_WEEKLY_RULE_PROFILE.globalHardRules.afterDutyBlocked,
+      absenceBlocked:
+        hard.absenceBlocked ??
+        DEFAULT_WEEKLY_RULE_PROFILE.globalHardRules.absenceBlocked,
+      longTermAbsenceBlocked:
+        hard.longTermAbsenceBlocked ??
+        DEFAULT_WEEKLY_RULE_PROFILE.globalHardRules.longTermAbsenceBlocked,
+      roomClosedBlocked:
+        hard.roomClosedBlocked ??
+        DEFAULT_WEEKLY_RULE_PROFILE.globalHardRules.roomClosedBlocked,
+      requireDutyPlanCoverage:
+        hard.requireDutyPlanCoverage ??
+        DEFAULT_WEEKLY_RULE_PROFILE.globalHardRules.requireDutyPlanCoverage,
+    },
+    employeeRules: Array.isArray(raw.employeeRules)
+      ? raw.employeeRules
+          .map((rule) => ({
+            employeeId: Number(rule.employeeId),
+            priorityAreaIds: sanitizeIdList(rule.priorityAreaIds, 3),
+            forbiddenAreaIds: sanitizeIdList(rule.forbiddenAreaIds),
+          }))
+          .filter((rule) => Number.isInteger(rule.employeeId) && rule.employeeId > 0)
+      : [],
+  };
+};
+
 export default function WeeklyPlan() {
   const { employee: currentUser } = useAuth();
   const { toast } = useToast();
@@ -254,6 +340,13 @@ export default function WeeklyPlan() {
   );
   const [rosterShifts, setRosterShifts] = useState<RosterShift[]>([]);
   const [noteDialog, setNoteDialog] = useState<NoteDialogState | null>(null);
+  const [ruleProfileDialogOpen, setRuleProfileDialogOpen] = useState(false);
+  const [ruleProfile, setRuleProfile] = useState<WeeklyRuleProfile>(
+    DEFAULT_WEEKLY_RULE_PROFILE,
+  );
+  const [selectedRuleEmployeeId, setSelectedRuleEmployeeId] = useState<
+    number | null
+  >(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isReorderMode, setIsReorderMode] = useState(false);
@@ -320,6 +413,26 @@ export default function WeeklyPlan() {
     });
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem(WEEKLY_RULE_PROFILE_STORAGE_KEY);
+    if (!stored) return;
+    try {
+      const parsed = JSON.parse(stored);
+      setRuleProfile(normalizeRuleProfile(parsed));
+    } catch {
+      // ignore malformed local profile
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      WEEKLY_RULE_PROFILE_STORAGE_KEY,
+      JSON.stringify(ruleProfile),
+    );
+  }, [ruleProfile]);
+
   const assignments = weeklyPlan?.assignments ?? [];
   const lockedWeekdays = weeklyPlan?.lockedWeekdays ?? [];
   const isPlanReleased = weeklyPlan?.status === "Freigegeben";
@@ -327,6 +440,46 @@ export default function WeeklyPlan() {
   const employeesById = useMemo(() => {
     return new Map(employees.map((employee) => [employee.id, employee]));
   }, [employees]);
+
+  const employeesForRules = useMemo(
+    () =>
+      [...employees]
+        .filter((employee) => employee.isActive)
+        .filter((employee) => getRoleGroupKey(employee.role) !== "sekretariat")
+        .sort(compareAvailabilityEmployees),
+    [employees],
+  );
+
+  const roomOptionsForRules = useMemo(
+    () =>
+      [...rooms]
+        .filter((room) => room.useInWeeklyPlan !== false)
+        .sort((a, b) => {
+          const orderDiff =
+            (a.weeklyPlanSortOrder ?? 0) - (b.weeklyPlanSortOrder ?? 0);
+          if (orderDiff !== 0) return orderDiff;
+          return a.name.localeCompare(b.name);
+        }),
+    [rooms],
+  );
+
+  const employeeRuleById = useMemo(
+    () => new Map(ruleProfile.employeeRules.map((rule) => [rule.employeeId, rule])),
+    [ruleProfile.employeeRules],
+  );
+
+  useEffect(() => {
+    if (!employeesForRules.length) {
+      setSelectedRuleEmployeeId(null);
+      return;
+    }
+    setSelectedRuleEmployeeId((prev) => {
+      if (prev && employeesForRules.some((employee) => employee.id === prev)) {
+        return prev;
+      }
+      return employeesForRules[0]?.id ?? null;
+    });
+  }, [employeesForRules]);
 
   const assignmentsByDayRoom = useMemo(() => {
     const map = new Map<string, WeeklyPlanAssignmentResponse[]>();
@@ -923,6 +1076,72 @@ export default function WeeklyPlan() {
     }
   };
 
+  const updateEmployeeRule = useCallback(
+    (
+      employeeId: number,
+      updater: (current: WeeklyEmployeeRule) => WeeklyEmployeeRule,
+    ) => {
+      setRuleProfile((prev) => {
+        const existing = prev.employeeRules.find(
+          (rule) => rule.employeeId === employeeId,
+        ) ?? {
+          employeeId,
+          priorityAreaIds: [],
+          forbiddenAreaIds: [],
+        };
+        const nextRule = updater(existing);
+        const cleaned: WeeklyEmployeeRule = {
+          employeeId,
+          priorityAreaIds: sanitizeIdList(nextRule.priorityAreaIds, 3),
+          forbiddenAreaIds: sanitizeIdList(nextRule.forbiddenAreaIds),
+        };
+        return {
+          ...prev,
+          updatedAt: new Date().toISOString(),
+          employeeRules: [
+            ...prev.employeeRules.filter((rule) => rule.employeeId !== employeeId),
+            cleaned,
+          ],
+        };
+      });
+    },
+    [],
+  );
+
+  const selectedRule = useMemo(() => {
+    if (!selectedRuleEmployeeId) return null;
+    return (
+      employeeRuleById.get(selectedRuleEmployeeId) ?? {
+        employeeId: selectedRuleEmployeeId,
+        priorityAreaIds: [],
+        forbiddenAreaIds: [],
+      }
+    );
+  }, [employeeRuleById, selectedRuleEmployeeId]);
+
+  const selectedPrioritySlots = useMemo(() => {
+    const priority = selectedRule?.priorityAreaIds ?? [];
+    return [priority[0] ?? null, priority[1] ?? null, priority[2] ?? null];
+  }, [selectedRule]);
+
+  const ruleProfilePreviewJson = useMemo(
+    () =>
+      JSON.stringify(
+        {
+          version: 1,
+          planningKind: "WEEKLY_PLAN",
+          period: {
+            from: format(weekStart, "yyyy-MM-dd"),
+            to: format(weekEnd, "yyyy-MM-dd"),
+          },
+          rules: ruleProfile,
+        },
+        null,
+        2,
+      ),
+    [ruleProfile, weekEnd, weekStart],
+  );
+
   const handleGenerateAI = async () => {
     if (!weeklyPlan) return;
     if (isPlanReleased) {
@@ -939,6 +1158,24 @@ export default function WeeklyPlan() {
     const newAssignments: WeeklyPlanAssignmentResponse[] = [];
 
     try {
+      if (ruleProfile.globalHardRules.requireDutyPlanCoverage) {
+        const weekDateKeys = new Set(days.map((day) => format(day, "yyyy-MM-dd")));
+        const coverageDates = new Set(
+          rosterShifts
+            .filter((shift) => weekDateKeys.has(shift.date))
+            .map((shift) => shift.date),
+        );
+        if (coverageDates.size === 0) {
+          toast({
+            title: "Konflikt: kein Dienstplan im Zeitraum",
+            description:
+              "Fuer die gewaehlte Woche liegt kein Dienstplan zur Abdeckung vor.",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+
       for (const day of days) {
         const weekday = day.getDay() === 0 ? 7 : day.getDay();
         if (lockedWeekdays.includes(weekday)) continue;
@@ -970,9 +1207,34 @@ export default function WeeklyPlan() {
               isEmployeeEligibleForRoom(employee, room),
           );
 
-          if (eligible.length === 0) continue;
+          const eligibleAfterForbidden = eligible.filter((employee) => {
+            const employeeRule = employeeRuleById.get(employee.id);
+            return !employeeRule?.forbiddenAreaIds.includes(room.id);
+          });
 
-          const candidate = eligible[0];
+          if (eligibleAfterForbidden.length === 0) continue;
+
+          const scoredCandidates = eligibleAfterForbidden.map((employee) => {
+            const employeeRule = employeeRuleById.get(employee.id);
+            const priorityIds = employeeRule?.priorityAreaIds ?? [];
+            const index = priorityIds.indexOf(room.id);
+            const priorityScore =
+              index === 0 ? 300 : index === 1 ? 200 : index === 2 ? 100 : 10;
+            return {
+              employee,
+              priorityScore,
+            };
+          });
+
+          scoredCandidates.sort((a, b) => {
+            if (b.priorityScore !== a.priorityScore) {
+              return b.priorityScore - a.priorityScore;
+            }
+            return compareAvailabilityEmployees(a.employee, b.employee);
+          });
+
+          const candidate = scoredCandidates[0]?.employee;
+          if (!candidate) continue;
           const assignment = await weeklyPlanApi.assign(weeklyPlan.id, {
             roomId: room.id,
             weekday,
@@ -1030,6 +1292,15 @@ export default function WeeklyPlan() {
       a.localeCompare(b, "de"),
     );
   }, [selectedAbsences]);
+
+  const configuredRuleEmployeeCount = useMemo(
+    () =>
+      ruleProfile.employeeRules.filter(
+        (rule) =>
+          rule.priorityAreaIds.length > 0 || rule.forbiddenAreaIds.length > 0,
+      ).length,
+    [ruleProfile.employeeRules],
+  );
 
   const displayRooms = useMemo(() => {
     if (!isReorderMode || roomOrderIds.length === 0) {
@@ -1197,6 +1468,15 @@ export default function WeeklyPlan() {
                   </div>
 
                   <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-2"
+                      onClick={() => setRuleProfileDialogOpen(true)}
+                      disabled={isSaving || isReorderMode}
+                    >
+                      Regelprofil
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
@@ -2058,6 +2338,234 @@ export default function WeeklyPlan() {
           </p>
         </div>
       </div>
+
+      <Dialog
+        open={ruleProfileDialogOpen}
+        onOpenChange={setRuleProfileDialogOpen}
+      >
+        <DialogContent className="sm:max-w-[860px]">
+          <DialogHeader>
+            <DialogTitle>Regelprofil Wochenplanung (Phase 1)</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 max-h-[70vh] overflow-y-auto pr-1">
+            <div className="space-y-4">
+              <div className="rounded-lg border p-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium">Globale Hard Rules</p>
+                  <Badge variant="outline">{configuredRuleEmployeeCount} Profile</Badge>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium">Nach Dienst blockieren</p>
+                      <p className="text-xs text-muted-foreground">
+                        Keine Einteilung am Folgetag.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={ruleProfile.globalHardRules.afterDutyBlocked}
+                      onCheckedChange={(checked) =>
+                        setRuleProfile((prev) => ({
+                          ...prev,
+                          updatedAt: new Date().toISOString(),
+                          globalHardRules: {
+                            ...prev.globalHardRules,
+                            afterDutyBlocked: checked,
+                          },
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium">Dienstplan-Abdeckung Pflicht</p>
+                      <p className="text-xs text-muted-foreground">
+                        Warnung, wenn kein Dienstplan im Zeitraum vorhanden ist.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={ruleProfile.globalHardRules.requireDutyPlanCoverage}
+                      onCheckedChange={(checked) =>
+                        setRuleProfile((prev) => ({
+                          ...prev,
+                          updatedAt: new Date().toISOString(),
+                          globalHardRules: {
+                            ...prev.globalHardRules,
+                            requireDutyPlanCoverage: checked,
+                          },
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border p-3 space-y-3">
+                <p className="text-sm font-medium">Benutzerregeln</p>
+                <div className="space-y-2">
+                  <label className="text-xs text-muted-foreground">
+                    Mitarbeiter
+                  </label>
+                  <Select
+                    value={selectedRuleEmployeeId ? String(selectedRuleEmployeeId) : ""}
+                    onValueChange={(value) => setSelectedRuleEmployeeId(Number(value))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Mitarbeiter wählen" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {employeesForRules.map((employee) => (
+                        <SelectItem key={employee.id} value={String(employee.id)}>
+                          {getEmployeeDisplayName(employee)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {selectedRuleEmployeeId && (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {[0, 1, 2].map((index) => (
+                        <div key={index} className="space-y-1">
+                          <label className="text-xs text-muted-foreground">
+                            Top {index + 1} Einsatzbereich
+                          </label>
+                          <Select
+                            value={
+                              selectedPrioritySlots[index]
+                                ? String(selectedPrioritySlots[index])
+                                : "__none__"
+                            }
+                            onValueChange={(value) => {
+                              const selectedRoomId =
+                                value === "__none__" ? null : Number(value);
+                              updateEmployeeRule(
+                                selectedRuleEmployeeId,
+                                (current) => {
+                                  const nextSlots: Array<number | null> = [
+                                    current.priorityAreaIds[0] ?? null,
+                                    current.priorityAreaIds[1] ?? null,
+                                    current.priorityAreaIds[2] ?? null,
+                                  ];
+                                  if (selectedRoomId === null) {
+                                    nextSlots[index] = null;
+                                  } else {
+                                    for (let i = 0; i < nextSlots.length; i++) {
+                                      if (i !== index && nextSlots[i] === selectedRoomId) {
+                                        nextSlots[i] = null;
+                                      }
+                                    }
+                                    nextSlots[index] = selectedRoomId;
+                                  }
+                                  return {
+                                    ...current,
+                                    priorityAreaIds: nextSlots.filter(
+                                      (entry): entry is number =>
+                                        typeof entry === "number",
+                                    ),
+                                  };
+                                },
+                              );
+                            }}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Bitte wählen" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__">Keine Priorität</SelectItem>
+                              {roomOptionsForRules.map((room) => (
+                                <SelectItem key={room.id} value={String(room.id)}>
+                                  {room.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-xs text-muted-foreground">
+                        Nicht einsetzen in
+                      </label>
+                      <div className="rounded-md border p-2 max-h-44 overflow-y-auto space-y-1">
+                        {roomOptionsForRules.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">
+                            Keine Arbeitsplätze vorhanden.
+                          </p>
+                        ) : (
+                          roomOptionsForRules.map((room) => {
+                            const checked = Boolean(
+                              selectedRule?.forbiddenAreaIds.includes(room.id),
+                            );
+                            return (
+                              <label
+                                key={room.id}
+                                className="flex items-center gap-2 text-sm"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={(event) => {
+                                    updateEmployeeRule(
+                                      selectedRuleEmployeeId,
+                                      (current) => {
+                                        const nextForbidden = event.target.checked
+                                          ? Array.from(
+                                              new Set([
+                                                ...current.forbiddenAreaIds,
+                                                room.id,
+                                              ]),
+                                            )
+                                          : current.forbiddenAreaIds.filter(
+                                              (id) => id !== room.id,
+                                            );
+                                        return {
+                                          ...current,
+                                          forbiddenAreaIds: nextForbidden,
+                                        };
+                                      },
+                                    );
+                                  }}
+                                />
+                                <span>{room.name}</span>
+                              </label>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm font-medium">JSON Vorschau</p>
+              <Textarea
+                value={ruleProfilePreviewJson}
+                readOnly
+                rows={24}
+                className="font-mono text-xs"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setRuleProfile(DEFAULT_WEEKLY_RULE_PROFILE);
+              }}
+            >
+              Reset
+            </Button>
+            <Button variant="outline" onClick={() => setRuleProfileDialogOpen(false)}>
+              Schließen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={Boolean(noteDialog)}
