@@ -3338,7 +3338,7 @@ export default function WeeklyPlan() {
                       <SelectTrigger>
                         <SelectValue placeholder="Mitarbeiter wählen" />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className="max-h-72 overflow-y-auto">
                         {employeesForRules.map((employee) => (
                           <SelectItem key={employee.id} value={String(employee.id)}>
                             {getEmployeeDisplayName(employee)}
@@ -3424,7 +3424,7 @@ export default function WeeklyPlan() {
                               <SelectTrigger>
                                 <SelectValue placeholder="Bitte wählen" />
                               </SelectTrigger>
-                              <SelectContent>
+                              <SelectContent className="max-h-72 overflow-y-auto">
                                 <SelectItem value="__none__">Keine Priorität</SelectItem>
                                 {roomOptionsForRules.map((room) => (
                                   <SelectItem key={room.id} value={String(room.id)}>
