@@ -63,7 +63,6 @@ import {
   CheckCircle2,
   AlertTriangle,
   Brain,
-  PlayCircle,
   Pencil,
   Calendar,
   Plus,
@@ -412,7 +411,7 @@ export default function RosterPlan() {
   const [isApplying, setIsApplying] = useState(false);
   const [manualEditMode, setManualEditMode] = useState(false);
   const [planningDrawerOpen, setPlanningDrawerOpen] = useState(false);
-  const [planningAutoRunTrigger, setPlanningAutoRunTrigger] = useState(0);
+  const [planningAutoRunTrigger] = useState(0);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [inspectorSlot, setInspectorSlot] = useState<SlotInspectorInfo | null>(
     null,
@@ -1332,7 +1331,7 @@ export default function RosterPlan() {
       const url = window.URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `dienstplan-${year}-${String(month).padStart(2, "0")}.xls`;
+      anchor.download = `dienstplan-${year}-${String(month).padStart(2, "0")}.csv`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -1552,11 +1551,6 @@ export default function RosterPlan() {
 
   const handleGenerateFromRules = async () => {
     await handleAutoGenerate(); // bleibt offen, schließt bei Erfolg in handleAutoGenerate
-  };
-
-  const handleOpenPlanningPreview = () => {
-    setPlanningAutoRunTrigger((prev) => prev + 1);
-    setPlanningDrawerOpen(true);
   };
 
   const eligibleSpecialRuleEmployees = useMemo(
@@ -1935,28 +1929,6 @@ export default function RosterPlan() {
                 {manualEditMode
                   ? "Manuelle Eingabe aktiv"
                   : "Manuell bearbeiten"}
-              </Button>
-            )}
-            {canEdit && (
-              <Button
-                variant="outline"
-                className="gap-2"
-                onClick={() => setPlanningDrawerOpen(true)}
-                data-testid="button-planning-drawer"
-              >
-                <Brain className="w-4 h-4" />
-                Planung
-              </Button>
-            )}
-            {canEdit && (
-              <Button
-                variant="outline"
-                className="gap-2"
-                onClick={handleOpenPlanningPreview}
-                data-testid="button-planning-preview-dryrun"
-              >
-                <PlayCircle className="w-4 h-4" />
-                Auto-Vorschau
               </Button>
             )}
             {canEdit && (

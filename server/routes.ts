@@ -4240,13 +4240,10 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
         const csv =
           "\uFEFF" +
           rows.map((row) => row.map(escapeCsv).join(";")).join("\r\n");
-        res.setHeader(
-          "Content-Type",
-          "application/vnd.ms-excel; charset=utf-8",
-        );
+        res.setHeader("Content-Type", "text/csv; charset=utf-8");
         res.setHeader(
           "Content-Disposition",
-          `attachment; filename="dienstplan-${year}-${String(month).padStart(2, "0")}.xls"`,
+          `attachment; filename="dienstplan-${year}-${String(month).padStart(2, "0")}.csv"`,
         );
         res.send(csv);
       } catch (error: any) {
@@ -5173,10 +5170,10 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
             .status(403)
             .json({ success: false, error: "Eingeschränkter Zugriff" });
         }
-        const { settings, lastApproved, auto, shouldPersist } =
+        const { settings, lastApproved, auto, current, shouldPersist } =
           await resolvePlanningMonth();
-        const year = auto.year;
-        const month = auto.month;
+        const year = current.year;
+        const month = current.month;
 
         if (shouldPersist) {
           try {
