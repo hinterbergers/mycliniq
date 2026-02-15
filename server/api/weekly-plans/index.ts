@@ -150,6 +150,7 @@ type WeeklyRuleProfile = {
     employeeId: number;
     priorityAreaIds: number[];
     forbiddenAreaIds: number[];
+    continuityLevel?: "strict" | "balanced" | "flexible";
   }>;
 };
 
@@ -223,6 +224,13 @@ const normalizeIdList = (value: unknown, maxLength?: number): number[] => {
   return typeof maxLength === "number" ? out.slice(0, maxLength) : out;
 };
 
+const normalizeContinuityLevel = (
+  value: unknown,
+): "strict" | "balanced" | "flexible" => {
+  if (value === "strict" || value === "flexible") return value;
+  return "balanced";
+};
+
 const normalizeWeeklyRuleProfile = (value: unknown): WeeklyRuleProfile => {
   if (!value || typeof value !== "object") return DEFAULT_WEEKLY_RULE_PROFILE;
   const raw = value as Partial<WeeklyRuleProfile>;
@@ -254,6 +262,7 @@ const normalizeWeeklyRuleProfile = (value: unknown): WeeklyRuleProfile => {
             employeeId: Number(rule.employeeId),
             priorityAreaIds: normalizeIdList(rule.priorityAreaIds, 3),
             forbiddenAreaIds: normalizeIdList(rule.forbiddenAreaIds),
+            continuityLevel: normalizeContinuityLevel(rule.continuityLevel),
           }))
           .filter((rule) => Number.isInteger(rule.employeeId) && rule.employeeId > 0)
       : [],
@@ -755,10 +764,25 @@ export function registerWeeklyPlanRoutes(router: Router) {
             const priorityIndex = priorityIds.indexOf(room.id);
             const priorityScore =
               priorityIndex === 0 ? 300 : priorityIndex === 1 ? 200 : priorityIndex === 2 ? 100 : 10;
+            const continuityLevel = rule?.continuityLevel ?? "balanced";
+            const continuityMatches =
+              existingAssignments.some(
+                (entry) => entry.employeeId === employee.id && entry.roomId === room.id,
+              ) ||
+              generatedAssignments.some(
+                (entry) => entry.employeeId === employee.id && entry.roomId === room.id,
+              );
+            const continuityBonus = continuityMatches
+              ? continuityLevel === "strict"
+                ? 120
+                : continuityLevel === "flexible"
+                  ? 20
+                  : 60
+              : 0;
             const assignedCount =
               (existingCountByEmployee.get(employee.id) ?? 0) +
               generatedAssignments.filter((entry) => entry.employeeId === employee.id).length;
-            const score = priorityScore - assignedCount * 15;
+            const score = priorityScore + continuityBonus - assignedCount * 15;
             return { employee, score, priorityScore };
           })
           .filter((entry): entry is { employee: (typeof activeEmployees)[number]; score: number; priorityScore: number } => Boolean(entry));

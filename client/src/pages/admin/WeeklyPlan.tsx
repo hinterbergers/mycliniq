@@ -276,6 +276,7 @@ type WeeklyEmployeeRule = {
   employeeId: number;
   priorityAreaIds: number[];
   forbiddenAreaIds: number[];
+  continuityLevel?: "strict" | "balanced" | "flexible";
 };
 
 type WeeklyRuleProfile = {
@@ -312,6 +313,13 @@ const sanitizeIdList = (value: unknown, maxLength?: number): number[] => {
   return typeof maxLength === "number" ? ids.slice(0, maxLength) : ids;
 };
 
+const normalizeContinuityLevel = (
+  value: unknown,
+): "strict" | "balanced" | "flexible" => {
+  if (value === "strict" || value === "flexible") return value;
+  return "balanced";
+};
+
 const normalizeRuleProfile = (value: unknown): WeeklyRuleProfile => {
   if (!value || typeof value !== "object") return DEFAULT_WEEKLY_RULE_PROFILE;
   const raw = value as Partial<WeeklyRuleProfile>;
@@ -345,6 +353,7 @@ const normalizeRuleProfile = (value: unknown): WeeklyRuleProfile => {
             employeeId: Number(rule.employeeId),
             priorityAreaIds: sanitizeIdList(rule.priorityAreaIds, 3),
             forbiddenAreaIds: sanitizeIdList(rule.forbiddenAreaIds),
+            continuityLevel: normalizeContinuityLevel(rule.continuityLevel),
           }))
           .filter((rule) => Number.isInteger(rule.employeeId) && rule.employeeId > 0)
       : [],
@@ -1187,12 +1196,14 @@ export default function WeeklyPlan() {
           employeeId,
           priorityAreaIds: [],
           forbiddenAreaIds: [],
+          continuityLevel: "balanced",
         };
         const nextRule = updater(existing);
         const cleaned: WeeklyEmployeeRule = {
           employeeId,
           priorityAreaIds: sanitizeIdList(nextRule.priorityAreaIds, 3),
           forbiddenAreaIds: sanitizeIdList(nextRule.forbiddenAreaIds),
+          continuityLevel: normalizeContinuityLevel(nextRule.continuityLevel),
         };
         return {
           ...prev,
@@ -1214,6 +1225,7 @@ export default function WeeklyPlan() {
         employeeId: selectedRuleEmployeeId,
         priorityAreaIds: [],
         forbiddenAreaIds: [],
+        continuityLevel: "balanced",
       }
     );
   }, [employeeRuleById, selectedRuleEmployeeId]);
@@ -3133,6 +3145,69 @@ export default function WeeklyPlan() {
                       }
                     />
                   </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium">Abwesenheiten blockieren</p>
+                      <p className="text-xs text-muted-foreground">
+                        Genehmigte/aktive Abwesenheiten werden nicht belegt.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={ruleProfile.globalHardRules.absenceBlocked}
+                      onCheckedChange={(checked) =>
+                        setRuleProfile((prev) => ({
+                          ...prev,
+                          updatedAt: new Date().toISOString(),
+                          globalHardRules: {
+                            ...prev.globalHardRules,
+                            absenceBlocked: checked,
+                          },
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium">Langzeitabwesenheit blockieren</p>
+                      <p className="text-xs text-muted-foreground">
+                        Genehmigte Langzeitabwesenheiten sperren den Slot.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={ruleProfile.globalHardRules.longTermAbsenceBlocked}
+                      onCheckedChange={(checked) =>
+                        setRuleProfile((prev) => ({
+                          ...prev,
+                          updatedAt: new Date().toISOString(),
+                          globalHardRules: {
+                            ...prev.globalHardRules,
+                            longTermAbsenceBlocked: checked,
+                          },
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium">Geschlossene Räume blockieren</p>
+                      <p className="text-xs text-muted-foreground">
+                        Als geschlossen markierte Räume werden ausgelassen.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={ruleProfile.globalHardRules.roomClosedBlocked}
+                      onCheckedChange={(checked) =>
+                        setRuleProfile((prev) => ({
+                          ...prev,
+                          updatedAt: new Date().toISOString(),
+                          globalHardRules: {
+                            ...prev.globalHardRules,
+                            roomClosedBlocked: checked,
+                          },
+                        }))
+                      }
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -3161,6 +3236,33 @@ export default function WeeklyPlan() {
 
                 {selectedRuleEmployeeId && (
                   <div className="space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">
+                        Kontinuität
+                      </label>
+                      <Select
+                        value={selectedRule?.continuityLevel ?? "balanced"}
+                        onValueChange={(value) =>
+                          updateEmployeeRule(selectedRuleEmployeeId, (current) => ({
+                            ...current,
+                            continuityLevel:
+                              value === "strict" || value === "flexible"
+                                ? value
+                                : "balanced",
+                          }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Kontinuität wählen" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="strict">Strikt</SelectItem>
+                          <SelectItem value="balanced">Ausgeglichen</SelectItem>
+                          <SelectItem value="flexible">Flexibel</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                       {[0, 1, 2].map((index) => (
                         <div key={index} className="space-y-1">
@@ -3233,7 +3335,7 @@ export default function WeeklyPlan() {
                         ) : (
                           roomOptionsForRules.map((room) => {
                             const checked = Boolean(
-                              selectedRule?.forbiddenAreaIds.includes(room.id),
+                              (selectedRule?.forbiddenAreaIds ?? []).includes(room.id),
                             );
                             return (
                               <label
