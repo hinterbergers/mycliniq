@@ -426,9 +426,11 @@ export default function WeeklyPlan() {
   );
   const [rosterShifts, setRosterShifts] = useState<RosterShift[]>([]);
   const [noteDialog, setNoteDialog] = useState<NoteDialogState | null>(null);
-  const [ruleProfileDialogOpen, setRuleProfileDialogOpen] = useState(false);
   const [generationPreviewDialogOpen, setGenerationPreviewDialogOpen] =
     useState(false);
+  const [planningDialogTab, setPlanningDialogTab] = useState<
+    "create" | "rules"
+  >("create");
   const [planningFromWeekValue, setPlanningFromWeekValue] = useState("");
   const [planningToWeekValue, setPlanningToWeekValue] = useState("");
   const [planningAreaFilter, setPlanningAreaFilter] = useState("all");
@@ -1322,6 +1324,7 @@ export default function WeeklyPlan() {
     setGenerationPreview(null);
     setGenerationPreviewError(null);
     setManualPreviewAssignBySlot({});
+    setPlanningDialogTab("create");
     setGenerationPreviewDialogOpen(true);
     await handleBuildPlanningPreview(currentWeekValue, currentWeekValue);
   };
@@ -1548,7 +1551,8 @@ export default function WeeklyPlan() {
         title: "Regelprofil gespeichert",
         description: "Das Regelprofil wurde serverseitig aktualisiert.",
       });
-      setRuleProfileDialogOpen(false);
+      setGenerationPreviewDialogOpen(false);
+      setPlanningDialogTab("create");
     } catch (error) {
       console.error("Failed to save weekly rule profile", error);
       toast({
@@ -1892,15 +1896,6 @@ export default function WeeklyPlan() {
                   </div>
 
                   <div className="flex flex-wrap gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="gap-2"
-                      onClick={() => setRuleProfileDialogOpen(true)}
-                      disabled={isSaving || isReorderMode}
-                    >
-                      Regelprofil
-                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
@@ -2776,7 +2771,19 @@ export default function WeeklyPlan() {
           <DialogHeader>
             <DialogTitle>Wochenplan Planungstool</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+          <Tabs
+            value={planningDialogTab}
+            onValueChange={(value) =>
+              setPlanningDialogTab(value === "rules" ? "rules" : "create")
+            }
+          >
+            <TabsList className="w-full grid grid-cols-2">
+              <TabsTrigger value="create">Wochenplan erstellen</TabsTrigger>
+              <TabsTrigger value="rules">Regelprofil</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          {planningDialogTab === "create" && (
+            <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
             <div className="rounded-lg border p-3 space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                 <div className="space-y-1">
@@ -3146,383 +3153,380 @@ export default function WeeklyPlan() {
                 </div>
               </>
             )}
-          </div>
-          <DialogFooter className="gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setGenerationPreviewDialogOpen(false)}
-              disabled={isGenerationApplying || isGenerationPreviewLoading}
-            >
-              Abbrechen
-            </Button>
-            <Button
-              onClick={handleApplyPlanningRange}
-              disabled={
-                isGenerationPreviewLoading ||
-                isGenerationApplying ||
-                planningPreviewEntries.length === 0
-              }
-            >
-              {isGenerationApplying ? "Übernimmt..." : "Zeitraum übernehmen"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={ruleProfileDialogOpen}
-        onOpenChange={setRuleProfileDialogOpen}
-      >
-        <DialogContent className="sm:max-w-[860px]">
-          <DialogHeader>
-            <DialogTitle>Regelprofil Wochenplanung</DialogTitle>
-          </DialogHeader>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 max-h-[70vh] overflow-y-auto pr-1">
-            <div className="space-y-4">
-              <div className="rounded-lg border p-3 space-y-2">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-medium">Regelprofil-Preset</p>
-                  <Badge variant="outline">
+            </div>
+          )}
+          {planningDialogTab === "rules" && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 max-h-[70vh] overflow-y-auto pr-1">
+              <div className="space-y-4">
+                <div className="rounded-lg border p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium">Regelprofil-Preset</p>
+                    <Badge variant="outline">
+                      {detectedPresetKey
+                        ? WEEKLY_RULE_PRESETS[detectedPresetKey].label
+                        : "Individuell"}
+                    </Badge>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {(Object.entries(WEEKLY_RULE_PRESETS) as Array<
+                      [WeeklyRulePresetKey, (typeof WEEKLY_RULE_PRESETS)[WeeklyRulePresetKey]]
+                    >).map(([key, preset]) => (
+                      <Button
+                        key={`preset-${key}`}
+                        type="button"
+                        variant={detectedPresetKey === key ? "default" : "outline"}
+                        className="h-auto py-2 px-3 justify-start text-left"
+                        onClick={() => applyRulePreset(key)}
+                        disabled={isRuleProfileSaving}
+                      >
+                        <span className="text-xs font-semibold">{preset.label}</span>
+                      </Button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
                     {detectedPresetKey
-                      ? WEEKLY_RULE_PRESETS[detectedPresetKey].label
-                      : "Individuell"}
-                  </Badge>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  {(Object.entries(WEEKLY_RULE_PRESETS) as Array<
-                    [WeeklyRulePresetKey, (typeof WEEKLY_RULE_PRESETS)[WeeklyRulePresetKey]]
-                  >).map(([key, preset]) => (
-                    <Button
-                      key={`preset-${key}`}
-                      type="button"
-                      variant={detectedPresetKey === key ? "default" : "outline"}
-                      className="h-auto py-2 px-3 justify-start text-left"
-                      onClick={() => applyRulePreset(key)}
-                      disabled={isRuleProfileSaving}
-                    >
-                      <span className="text-xs font-semibold">{preset.label}</span>
-                    </Button>
-                  ))}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {detectedPresetKey
-                    ? WEEKLY_RULE_PRESETS[detectedPresetKey].description
-                    : "Profil wurde individuell angepasst."}
-                </p>
-              </div>
-
-              <div className="rounded-lg border p-3 space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium">Globale Hard Rules</p>
-                  <Badge variant="outline">{configuredRuleEmployeeCount} Profile</Badge>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium">Nach Dienst blockieren</p>
-                      <p className="text-xs text-muted-foreground">
-                        Keine Einteilung am Folgetag.
-                      </p>
-                    </div>
-                    <Switch
-                      checked={ruleProfile.globalHardRules.afterDutyBlocked}
-                      onCheckedChange={(checked) =>
-                        setRuleProfile((prev) => ({
-                          ...prev,
-                          updatedAt: new Date().toISOString(),
-                          globalHardRules: {
-                            ...prev.globalHardRules,
-                            afterDutyBlocked: checked,
-                          },
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium">Dienstplan-Abdeckung Pflicht</p>
-                      <p className="text-xs text-muted-foreground">
-                        Warnung, wenn kein Dienstplan im Zeitraum vorhanden ist.
-                      </p>
-                    </div>
-                    <Switch
-                      checked={ruleProfile.globalHardRules.requireDutyPlanCoverage}
-                      onCheckedChange={(checked) =>
-                        setRuleProfile((prev) => ({
-                          ...prev,
-                          updatedAt: new Date().toISOString(),
-                          globalHardRules: {
-                            ...prev.globalHardRules,
-                            requireDutyPlanCoverage: checked,
-                          },
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium">Abwesenheiten blockieren</p>
-                      <p className="text-xs text-muted-foreground">
-                        Genehmigte/aktive Abwesenheiten werden nicht belegt.
-                      </p>
-                    </div>
-                    <Switch
-                      checked={ruleProfile.globalHardRules.absenceBlocked}
-                      onCheckedChange={(checked) =>
-                        setRuleProfile((prev) => ({
-                          ...prev,
-                          updatedAt: new Date().toISOString(),
-                          globalHardRules: {
-                            ...prev.globalHardRules,
-                            absenceBlocked: checked,
-                          },
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium">Langzeitabwesenheit blockieren</p>
-                      <p className="text-xs text-muted-foreground">
-                        Genehmigte Langzeitabwesenheiten sperren den Slot.
-                      </p>
-                    </div>
-                    <Switch
-                      checked={ruleProfile.globalHardRules.longTermAbsenceBlocked}
-                      onCheckedChange={(checked) =>
-                        setRuleProfile((prev) => ({
-                          ...prev,
-                          updatedAt: new Date().toISOString(),
-                          globalHardRules: {
-                            ...prev.globalHardRules,
-                            longTermAbsenceBlocked: checked,
-                          },
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium">Geschlossene Räume blockieren</p>
-                      <p className="text-xs text-muted-foreground">
-                        Als geschlossen markierte Räume werden ausgelassen.
-                      </p>
-                    </div>
-                    <Switch
-                      checked={ruleProfile.globalHardRules.roomClosedBlocked}
-                      onCheckedChange={(checked) =>
-                        setRuleProfile((prev) => ({
-                          ...prev,
-                          updatedAt: new Date().toISOString(),
-                          globalHardRules: {
-                            ...prev.globalHardRules,
-                            roomClosedBlocked: checked,
-                          },
-                        }))
-                      }
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-lg border p-3 space-y-3">
-                <p className="text-sm font-medium">Benutzerregeln</p>
-                <div className="space-y-2">
-                  <label className="text-xs text-muted-foreground">
-                    Mitarbeiter
-                  </label>
-                  <Select
-                    value={selectedRuleEmployeeId ? String(selectedRuleEmployeeId) : ""}
-                    onValueChange={(value) => setSelectedRuleEmployeeId(Number(value))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Mitarbeiter wählen" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {employeesForRules.map((employee) => (
-                        <SelectItem key={employee.id} value={String(employee.id)}>
-                          {getEmployeeDisplayName(employee)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                      ? WEEKLY_RULE_PRESETS[detectedPresetKey].description
+                      : "Profil wurde individuell angepasst."}
+                  </p>
                 </div>
 
-                {selectedRuleEmployeeId && (
-                  <div className="space-y-3">
-                    <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">
-                        Kontinuität
-                      </label>
-                      <Select
-                        value={selectedRule?.continuityLevel ?? "balanced"}
-                        onValueChange={(value) =>
-                          updateEmployeeRule(selectedRuleEmployeeId, (current) => ({
-                            ...current,
-                            continuityLevel:
-                              value === "strict" || value === "flexible"
-                                ? value
-                                : "balanced",
+                <div className="rounded-lg border p-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">Globale Hard Rules</p>
+                    <Badge variant="outline">{configuredRuleEmployeeCount} Profile</Badge>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium">Nach Dienst blockieren</p>
+                        <p className="text-xs text-muted-foreground">
+                          Keine Einteilung am Folgetag.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={ruleProfile.globalHardRules.afterDutyBlocked}
+                        onCheckedChange={(checked) =>
+                          setRuleProfile((prev) => ({
+                            ...prev,
+                            updatedAt: new Date().toISOString(),
+                            globalHardRules: {
+                              ...prev.globalHardRules,
+                              afterDutyBlocked: checked,
+                            },
                           }))
                         }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Kontinuität wählen" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="strict">Strikt</SelectItem>
-                          <SelectItem value="balanced">Ausgeglichen</SelectItem>
-                          <SelectItem value="flexible">Flexibel</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      />
                     </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      {[0, 1, 2].map((index) => (
-                        <div key={index} className="space-y-1">
-                          <label className="text-xs text-muted-foreground">
-                            Top {index + 1} Einsatzbereich
-                          </label>
-                          <Select
-                            value={
-                              selectedPrioritySlots[index]
-                                ? String(selectedPrioritySlots[index])
-                                : "__none__"
-                            }
-                            onValueChange={(value) => {
-                              const selectedRoomId =
-                                value === "__none__" ? null : Number(value);
-                              updateEmployeeRule(
-                                selectedRuleEmployeeId,
-                                (current) => {
-                                  const nextSlots: Array<number | null> = [
-                                    current.priorityAreaIds[0] ?? null,
-                                    current.priorityAreaIds[1] ?? null,
-                                    current.priorityAreaIds[2] ?? null,
-                                  ];
-                                  if (selectedRoomId === null) {
-                                    nextSlots[index] = null;
-                                  } else {
-                                    for (let i = 0; i < nextSlots.length; i++) {
-                                      if (i !== index && nextSlots[i] === selectedRoomId) {
-                                        nextSlots[i] = null;
-                                      }
-                                    }
-                                    nextSlots[index] = selectedRoomId;
-                                  }
-                                  return {
-                                    ...current,
-                                    priorityAreaIds: nextSlots.filter(
-                                      (entry): entry is number =>
-                                        typeof entry === "number",
-                                    ),
-                                  };
-                                },
-                              );
-                            }}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Bitte wählen" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="__none__">Keine Priorität</SelectItem>
-                              {roomOptionsForRules.map((room) => (
-                                <SelectItem key={room.id} value={String(room.id)}>
-                                  {room.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-xs text-muted-foreground">
-                        Nicht einsetzen in
-                      </label>
-                      <div className="rounded-md border p-2 max-h-44 overflow-y-auto space-y-1">
-                        {roomOptionsForRules.length === 0 ? (
-                          <p className="text-xs text-muted-foreground">
-                            Keine Arbeitsplätze vorhanden.
-                          </p>
-                        ) : (
-                          roomOptionsForRules.map((room) => {
-                            const checked = Boolean(
-                              (selectedRule?.forbiddenAreaIds ?? []).includes(room.id),
-                            );
-                            return (
-                              <label
-                                key={room.id}
-                                className="flex items-center gap-2 text-sm"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={(event) => {
-                                    updateEmployeeRule(
-                                      selectedRuleEmployeeId,
-                                      (current) => {
-                                        const nextForbidden = event.target.checked
-                                          ? Array.from(
-                                              new Set([
-                                                ...current.forbiddenAreaIds,
-                                                room.id,
-                                              ]),
-                                            )
-                                          : current.forbiddenAreaIds.filter(
-                                              (id) => id !== room.id,
-                                            );
-                                        return {
-                                          ...current,
-                                          forbiddenAreaIds: nextForbidden,
-                                        };
-                                      },
-                                    );
-                                  }}
-                                />
-                                <span>{room.name}</span>
-                              </label>
-                            );
-                          })
-                        )}
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium">Dienstplan-Abdeckung Pflicht</p>
+                        <p className="text-xs text-muted-foreground">
+                          Warnung, wenn kein Dienstplan im Zeitraum vorhanden ist.
+                        </p>
                       </div>
+                      <Switch
+                        checked={ruleProfile.globalHardRules.requireDutyPlanCoverage}
+                        onCheckedChange={(checked) =>
+                          setRuleProfile((prev) => ({
+                            ...prev,
+                            updatedAt: new Date().toISOString(),
+                            globalHardRules: {
+                              ...prev.globalHardRules,
+                              requireDutyPlanCoverage: checked,
+                            },
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium">Abwesenheiten blockieren</p>
+                        <p className="text-xs text-muted-foreground">
+                          Genehmigte/aktive Abwesenheiten werden nicht belegt.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={ruleProfile.globalHardRules.absenceBlocked}
+                        onCheckedChange={(checked) =>
+                          setRuleProfile((prev) => ({
+                            ...prev,
+                            updatedAt: new Date().toISOString(),
+                            globalHardRules: {
+                              ...prev.globalHardRules,
+                              absenceBlocked: checked,
+                            },
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium">Langzeitabwesenheit blockieren</p>
+                        <p className="text-xs text-muted-foreground">
+                          Genehmigte Langzeitabwesenheiten sperren den Slot.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={ruleProfile.globalHardRules.longTermAbsenceBlocked}
+                        onCheckedChange={(checked) =>
+                          setRuleProfile((prev) => ({
+                            ...prev,
+                            updatedAt: new Date().toISOString(),
+                            globalHardRules: {
+                              ...prev.globalHardRules,
+                              longTermAbsenceBlocked: checked,
+                            },
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium">Geschlossene Räume blockieren</p>
+                        <p className="text-xs text-muted-foreground">
+                          Als geschlossen markierte Räume werden ausgelassen.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={ruleProfile.globalHardRules.roomClosedBlocked}
+                        onCheckedChange={(checked) =>
+                          setRuleProfile((prev) => ({
+                            ...prev,
+                            updatedAt: new Date().toISOString(),
+                            globalHardRules: {
+                              ...prev.globalHardRules,
+                              roomClosedBlocked: checked,
+                            },
+                          }))
+                        }
+                      />
                     </div>
                   </div>
-                )}
+                </div>
+
+                <div className="rounded-lg border p-3 space-y-3">
+                  <p className="text-sm font-medium">Benutzerregeln</p>
+                  <div className="space-y-2">
+                    <label className="text-xs text-muted-foreground">
+                      Mitarbeiter
+                    </label>
+                    <Select
+                      value={selectedRuleEmployeeId ? String(selectedRuleEmployeeId) : ""}
+                      onValueChange={(value) => setSelectedRuleEmployeeId(Number(value))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Mitarbeiter wählen" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {employeesForRules.map((employee) => (
+                          <SelectItem key={employee.id} value={String(employee.id)}>
+                            {getEmployeeDisplayName(employee)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {selectedRuleEmployeeId && (
+                    <div className="space-y-3">
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">
+                          Kontinuität
+                        </label>
+                        <Select
+                          value={selectedRule?.continuityLevel ?? "balanced"}
+                          onValueChange={(value) =>
+                            updateEmployeeRule(selectedRuleEmployeeId, (current) => ({
+                              ...current,
+                              continuityLevel:
+                                value === "strict" || value === "flexible"
+                                  ? value
+                                  : "balanced",
+                            }))
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Kontinuität wählen" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="strict">Strikt</SelectItem>
+                            <SelectItem value="balanced">Ausgeglichen</SelectItem>
+                            <SelectItem value="flexible">Flexibel</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        {[0, 1, 2].map((index) => (
+                          <div key={index} className="space-y-1">
+                            <label className="text-xs text-muted-foreground">
+                              Top {index + 1} Einsatzbereich
+                            </label>
+                            <Select
+                              value={
+                                selectedPrioritySlots[index]
+                                  ? String(selectedPrioritySlots[index])
+                                  : "__none__"
+                              }
+                              onValueChange={(value) => {
+                                const selectedRoomId =
+                                  value === "__none__" ? null : Number(value);
+                                updateEmployeeRule(
+                                  selectedRuleEmployeeId,
+                                  (current) => {
+                                    const nextSlots: Array<number | null> = [
+                                      current.priorityAreaIds[0] ?? null,
+                                      current.priorityAreaIds[1] ?? null,
+                                      current.priorityAreaIds[2] ?? null,
+                                    ];
+                                    if (selectedRoomId === null) {
+                                      nextSlots[index] = null;
+                                    } else {
+                                      for (let i = 0; i < nextSlots.length; i++) {
+                                        if (i !== index && nextSlots[i] === selectedRoomId) {
+                                          nextSlots[i] = null;
+                                        }
+                                      }
+                                      nextSlots[index] = selectedRoomId;
+                                    }
+                                    return {
+                                      ...current,
+                                      priorityAreaIds: nextSlots.filter(
+                                        (entry): entry is number =>
+                                          typeof entry === "number",
+                                      ),
+                                    };
+                                  },
+                                );
+                              }}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Bitte wählen" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__">Keine Priorität</SelectItem>
+                                {roomOptionsForRules.map((room) => (
+                                  <SelectItem key={room.id} value={String(room.id)}>
+                                    {room.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-xs text-muted-foreground">
+                          Nicht einsetzen in
+                        </label>
+                        <div className="rounded-md border p-2 max-h-44 overflow-y-auto space-y-1">
+                          {roomOptionsForRules.length === 0 ? (
+                            <p className="text-xs text-muted-foreground">
+                              Keine Arbeitsplätze vorhanden.
+                            </p>
+                          ) : (
+                            roomOptionsForRules.map((room) => {
+                              const checked = Boolean(
+                                (selectedRule?.forbiddenAreaIds ?? []).includes(room.id),
+                              );
+                              return (
+                                <label
+                                  key={room.id}
+                                  className="flex items-center gap-2 text-sm"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={(event) => {
+                                      updateEmployeeRule(
+                                        selectedRuleEmployeeId,
+                                        (current) => {
+                                          const nextForbidden = event.target.checked
+                                            ? Array.from(
+                                                new Set([
+                                                  ...current.forbiddenAreaIds,
+                                                  room.id,
+                                                ]),
+                                              )
+                                            : current.forbiddenAreaIds.filter(
+                                                (id) => id !== room.id,
+                                              );
+                                          return {
+                                            ...current,
+                                            forbiddenAreaIds: nextForbidden,
+                                          };
+                                        },
+                                      );
+                                    }}
+                                  />
+                                  <span>{room.name}</span>
+                                </label>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-medium">JSON Vorschau</p>
+                <Textarea
+                  value={ruleProfilePreviewJson}
+                  readOnly
+                  rows={24}
+                  className="font-mono text-xs"
+                />
               </div>
             </div>
-
-            <div className="space-y-2">
-              <p className="text-sm font-medium">JSON Vorschau</p>
-              <Textarea
-                value={ruleProfilePreviewJson}
-                readOnly
-                rows={24}
-                className="font-mono text-xs"
-              />
-            </div>
-          </div>
+          )}
           <DialogFooter className="gap-2">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setRuleProfile(DEFAULT_WEEKLY_RULE_PROFILE);
-              }}
-              disabled={isRuleProfileSaving}
-            >
-              Reset
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => setRuleProfileDialogOpen(false)}
-              disabled={isRuleProfileSaving}
-            >
-              Schließen
-            </Button>
-            <Button onClick={handleSaveRuleProfile} disabled={isRuleProfileSaving}>
-              {isRuleProfileSaving ? "Speichert..." : "Speichern"}
-            </Button>
+            {planningDialogTab === "create" ? (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => setGenerationPreviewDialogOpen(false)}
+                  disabled={isGenerationApplying || isGenerationPreviewLoading}
+                >
+                  Abbrechen
+                </Button>
+                <Button
+                  onClick={handleApplyPlanningRange}
+                  disabled={
+                    isGenerationPreviewLoading ||
+                    isGenerationApplying ||
+                    planningPreviewEntries.length === 0
+                  }
+                >
+                  {isGenerationApplying ? "Übernimmt..." : "Zeitraum übernehmen"}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setRuleProfile(DEFAULT_WEEKLY_RULE_PROFILE);
+                  }}
+                  disabled={isRuleProfileSaving}
+                >
+                  Reset
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setGenerationPreviewDialogOpen(false)}
+                  disabled={isRuleProfileSaving}
+                >
+                  Schließen
+                </Button>
+                <Button onClick={handleSaveRuleProfile} disabled={isRuleProfileSaving}>
+                  {isRuleProfileSaving ? "Speichert..." : "Speichern"}
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
