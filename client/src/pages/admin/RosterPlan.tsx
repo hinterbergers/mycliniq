@@ -111,6 +111,10 @@ import {
   type ServiceType,
 } from "@shared/shiftTypes";
 import { getAustrianHoliday } from "@/lib/holidays";
+import {
+  getWeeklyPlanningReasonLabel,
+  getWeeklyPlanningReasonMeta,
+} from "@/lib/weeklyPlanningReasonMap";
 
 interface GeneratedShift {
   date: string;
@@ -215,21 +219,6 @@ const PLAN_STATUS_LABELS: Record<DutyPlan["status"], string> = {
   Entwurf: "Bearbeitung",
   Vorläufig: "Vorschau",
   Freigegeben: "Freigabe",
-};
-
-const UNFILLED_REASON_LABELS: Record<string, string> = {
-  NO_CANDIDATE: "Keine passende Ressource gefunden",
-  BAN_DATE: "Abwesenheit/Sperrtag",
-  BAN_WEEKDAY: "Wochentag gesperrt",
-  CONSECUTIVE_DAY: "Folgetag-Regel",
-  MAX_SLOTS: "Monatslimit erreicht",
-  MAX_WEEK_SLOTS: "Wochenlimit erreicht",
-  MAX_WEEKEND_SLOTS: "Wochenendlimit erreicht",
-  NO_DUTY_EMPLOYEE: "Mitarbeiter ist auf 'kein Dienst' gesetzt",
-  FIXED_ONLY: "Mitarbeiter hat nur Fixwunschdienste",
-  ROLE_NOT_ALLOWED: "Diensttyp nicht erlaubt",
-  LOCKED_EMPTY: "Slot ist als leer gesperrt",
-  FIX_PREFERRED_CONFLICT: "Fixwunsch kollidiert mit harten Regeln",
 };
 
 const MONTH_NAMES = [
@@ -2938,12 +2927,10 @@ export default function RosterPlan() {
                             {generationUnfilledSlots.map((slot) => {
                               const line = serviceLineLookup.get(slot.serviceType);
                               const label = line?.label || slot.serviceType;
-                              const reasonText = slot.reasonCodes
-                                .map((code) => UNFILLED_REASON_LABELS[code] ?? code)
-                                .join(", ");
-                              const blockerText = slot.candidatesBlockedBy
-                                .map((code) => UNFILLED_REASON_LABELS[code] ?? code)
-                                .join(", ");
+                              const reasonCodes = Array.from(new Set(slot.reasonCodes));
+                              const blockerCodes = Array.from(
+                                new Set(slot.candidatesBlockedBy),
+                              );
                               return (
                                 <TableRow key={slot.slotId}>
                                   <TableCell className="font-mono text-sm">
@@ -2953,10 +2940,52 @@ export default function RosterPlan() {
                                     <Badge variant="outline">{label}</Badge>
                                   </TableCell>
                                   <TableCell className="text-sm">
-                                    {reasonText || "-"}
+                                    {reasonCodes.length > 0 ? (
+                                      <div className="flex flex-wrap gap-1">
+                                        {reasonCodes.map((code) => {
+                                          const meta = getWeeklyPlanningReasonMeta(code);
+                                          return (
+                                            <Badge
+                                              key={`${slot.slotId}-reason-${code}`}
+                                              variant="outline"
+                                              className={
+                                                meta.severity === "hard"
+                                                  ? "bg-rose-50 text-rose-700 border-rose-200"
+                                                  : "bg-amber-50 text-amber-700 border-amber-200"
+                                              }
+                                            >
+                                              {getWeeklyPlanningReasonLabel(code)}
+                                            </Badge>
+                                          );
+                                        })}
+                                      </div>
+                                    ) : (
+                                      "-"
+                                    )}
                                   </TableCell>
                                   <TableCell className="text-xs text-muted-foreground">
-                                    {blockerText || "-"}
+                                    {blockerCodes.length > 0 ? (
+                                      <div className="flex flex-wrap gap-1">
+                                        {blockerCodes.map((code) => {
+                                          const meta = getWeeklyPlanningReasonMeta(code);
+                                          return (
+                                            <Badge
+                                              key={`${slot.slotId}-blocker-${code}`}
+                                              variant="outline"
+                                              className={
+                                                meta.severity === "hard"
+                                                  ? "bg-rose-50 text-rose-700 border-rose-200"
+                                                  : "bg-amber-50 text-amber-700 border-amber-200"
+                                              }
+                                            >
+                                              {getWeeklyPlanningReasonLabel(code)}
+                                            </Badge>
+                                          );
+                                        })}
+                                      </div>
+                                    ) : (
+                                      "-"
+                                    )}
                                   </TableCell>
                                 </TableRow>
                               );
@@ -2971,7 +3000,22 @@ export default function RosterPlan() {
                                     {violation.slotId?.slice(11) || violation.code}
                                   </Badge>
                                 </TableCell>
-                                <TableCell className="text-sm">{violation.message}</TableCell>
+                                <TableCell className="text-sm">
+                                  <div className="space-y-1">
+                                    <Badge
+                                      variant="outline"
+                                      className={
+                                        violation.hard
+                                          ? "bg-rose-50 text-rose-700 border-rose-200"
+                                          : "bg-amber-50 text-amber-700 border-amber-200"
+                                      }
+                                    >
+                                      {violation.hard ? "Hard" : "Soft"} ·{" "}
+                                      {getWeeklyPlanningReasonLabel(violation.code)}
+                                    </Badge>
+                                    <div>{violation.message}</div>
+                                  </div>
+                                </TableCell>
                                 <TableCell className="text-xs text-muted-foreground">
                                   {violation.employeeId ? `Mitarbeiter ${violation.employeeId}` : "-"}
                                 </TableCell>

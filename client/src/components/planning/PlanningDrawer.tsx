@@ -24,6 +24,10 @@ import {
   PlanningOutputV1,
   PlanningStateResponse,
 } from "@/lib/planningApi";
+import {
+  getWeeklyPlanningReasonLabel,
+  getWeeklyPlanningReasonMeta,
+} from "@/lib/weeklyPlanningReasonMap";
 import { Loader2, PlayCircle } from "lucide-react";
 
 type PlanningDrawerProps = {
@@ -313,9 +317,20 @@ export function PlanningDrawer({
                       previewResult.violations.slice(0, 30).map((violation, index) => (
                         <div
                           key={`${violation.code}-${violation.slotId ?? violation.employeeId ?? index}`}
-                          className="text-xs text-muted-foreground"
+                          className="text-xs text-muted-foreground space-y-1"
                         >
-                          <span className="font-semibold">{violation.code}</span>: {violation.message}
+                          <Badge
+                            variant="outline"
+                            className={
+                              violation.hard
+                                ? "bg-rose-50 text-rose-700 border-rose-200"
+                                : "bg-amber-50 text-amber-700 border-amber-200"
+                            }
+                          >
+                            {violation.hard ? "Hard" : "Soft"} ·{" "}
+                            {getWeeklyPlanningReasonLabel(violation.code)}
+                          </Badge>
+                          <p>{violation.message}</p>
                         </div>
                       ))
                     )}
@@ -341,13 +356,46 @@ export function PlanningDrawer({
                                   Pflicht
                                 </Badge>
                               )}
-                              <span className="text-muted-foreground text-xs">
-                                {slot.reasonCodes.join(", ")}
-                              </span>
+                              <div className="flex flex-wrap items-center gap-1">
+                                {Array.from(new Set(slot.reasonCodes)).map((code) => {
+                                  const meta = getWeeklyPlanningReasonMeta(code);
+                                  return (
+                                    <Badge
+                                      key={`${slot.slotId}-reason-${code}`}
+                                      variant="outline"
+                                      className={
+                                        meta.severity === "hard"
+                                          ? "bg-rose-50 text-rose-700 border-rose-200"
+                                          : "bg-amber-50 text-amber-700 border-amber-200"
+                                      }
+                                    >
+                                      {getWeeklyPlanningReasonLabel(code)}
+                                    </Badge>
+                                  );
+                                })}
+                              </div>
                               {slot.candidatesBlockedBy.length > 0 && (
-                                <span className="text-[10px] text-muted-foreground">
-                                  Gründe: {slot.candidatesBlockedBy.join(", ")}
-                                </span>
+                                <div className="flex flex-wrap items-center gap-1">
+                                  <span className="text-[10px] text-muted-foreground">
+                                    Gründe:
+                                  </span>
+                                  {Array.from(new Set(slot.candidatesBlockedBy)).map((code) => {
+                                    const meta = getWeeklyPlanningReasonMeta(code);
+                                    return (
+                                      <Badge
+                                        key={`${slot.slotId}-blocker-${code}`}
+                                        variant="outline"
+                                        className={
+                                          meta.severity === "hard"
+                                            ? "bg-rose-50 text-rose-700 border-rose-200"
+                                            : "bg-amber-50 text-amber-700 border-amber-200"
+                                        }
+                                      >
+                                        {getWeeklyPlanningReasonLabel(code)}
+                                      </Badge>
+                                    );
+                                  })}
+                                </div>
                               )}
                             </div>
                           ))}
