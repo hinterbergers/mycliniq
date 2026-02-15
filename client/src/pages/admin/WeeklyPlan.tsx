@@ -286,6 +286,8 @@ type WeeklyRuleProfile = {
   employeeRules: WeeklyEmployeeRule[];
 };
 
+type WeeklyRulePresetKey = "strict" | "balanced" | "flexible";
+
 const WEEKLY_RULE_PROFILE_STORAGE_KEY = "mycliniq.weekly.ruleProfile.v1";
 
 const DEFAULT_WEEKLY_RULE_PROFILE: WeeklyRuleProfile = {
@@ -318,6 +320,53 @@ const normalizeContinuityLevel = (
 ): "strict" | "balanced" | "flexible" => {
   if (value === "strict" || value === "flexible") return value;
   return "balanced";
+};
+
+const WEEKLY_RULE_PRESETS: Record<
+  WeeklyRulePresetKey,
+  {
+    label: string;
+    description: string;
+    globalHardRules: WeeklyRuleGlobalHardRules;
+    continuityLevel: "strict" | "balanced" | "flexible";
+  }
+> = {
+  strict: {
+    label: "Strikt",
+    description: "Maximale Sperren und hohe Kontinuität.",
+    globalHardRules: {
+      afterDutyBlocked: true,
+      absenceBlocked: true,
+      longTermAbsenceBlocked: true,
+      roomClosedBlocked: true,
+      requireDutyPlanCoverage: true,
+    },
+    continuityLevel: "strict",
+  },
+  balanced: {
+    label: "Ausgeglichen",
+    description: "Standardprofil mit stabiler Verteilung.",
+    globalHardRules: {
+      afterDutyBlocked: true,
+      absenceBlocked: true,
+      longTermAbsenceBlocked: true,
+      roomClosedBlocked: true,
+      requireDutyPlanCoverage: true,
+    },
+    continuityLevel: "balanced",
+  },
+  flexible: {
+    label: "Flexibel",
+    description: "Mehr Freiheitsgrad bei Besetzungen.",
+    globalHardRules: {
+      afterDutyBlocked: true,
+      absenceBlocked: true,
+      longTermAbsenceBlocked: false,
+      roomClosedBlocked: true,
+      requireDutyPlanCoverage: false,
+    },
+    continuityLevel: "flexible",
+  },
 };
 
 const normalizeRuleProfile = (value: unknown): WeeklyRuleProfile => {
@@ -1545,6 +1594,39 @@ export default function WeeklyPlan() {
       ).length,
     [ruleProfile.employeeRules],
   );
+
+  const detectedPresetKey = useMemo<WeeklyRulePresetKey | null>(() => {
+    const presetEntries = Object.entries(WEEKLY_RULE_PRESETS) as Array<
+      [WeeklyRulePresetKey, (typeof WEEKLY_RULE_PRESETS)[WeeklyRulePresetKey]]
+    >;
+    for (const [key, preset] of presetEntries) {
+      const matchesGlobal =
+        JSON.stringify(ruleProfile.globalHardRules) ===
+        JSON.stringify(preset.globalHardRules);
+      const employeeLevels =
+        ruleProfile.employeeRules.length === 0 ||
+        ruleProfile.employeeRules.every(
+          (rule) =>
+            normalizeContinuityLevel(rule.continuityLevel) ===
+            preset.continuityLevel,
+        );
+      if (matchesGlobal && employeeLevels) return key;
+    }
+    return null;
+  }, [ruleProfile.employeeRules, ruleProfile.globalHardRules]);
+
+  const applyRulePreset = useCallback((presetKey: WeeklyRulePresetKey) => {
+    const preset = WEEKLY_RULE_PRESETS[presetKey];
+    setRuleProfile((prev) => ({
+      ...prev,
+      updatedAt: new Date().toISOString(),
+      globalHardRules: { ...preset.globalHardRules },
+      employeeRules: prev.employeeRules.map((rule) => ({
+        ...rule,
+        continuityLevel: preset.continuityLevel,
+      })),
+    }));
+  }, []);
 
   const generationPreviewGrouped = useMemo(() => {
     const result = generationPreview;
@@ -3093,10 +3175,42 @@ export default function WeeklyPlan() {
       >
         <DialogContent className="sm:max-w-[860px]">
           <DialogHeader>
-            <DialogTitle>Regelprofil Wochenplanung (Phase 1)</DialogTitle>
+            <DialogTitle>Regelprofil Wochenplanung</DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 max-h-[70vh] overflow-y-auto pr-1">
             <div className="space-y-4">
+              <div className="rounded-lg border p-3 space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-medium">Regelprofil-Preset</p>
+                  <Badge variant="outline">
+                    {detectedPresetKey
+                      ? WEEKLY_RULE_PRESETS[detectedPresetKey].label
+                      : "Individuell"}
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {(Object.entries(WEEKLY_RULE_PRESETS) as Array<
+                    [WeeklyRulePresetKey, (typeof WEEKLY_RULE_PRESETS)[WeeklyRulePresetKey]]
+                  >).map(([key, preset]) => (
+                    <Button
+                      key={`preset-${key}`}
+                      type="button"
+                      variant={detectedPresetKey === key ? "default" : "outline"}
+                      className="h-auto py-2 px-3 justify-start text-left"
+                      onClick={() => applyRulePreset(key)}
+                      disabled={isRuleProfileSaving}
+                    >
+                      <span className="text-xs font-semibold">{preset.label}</span>
+                    </Button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {detectedPresetKey
+                    ? WEEKLY_RULE_PRESETS[detectedPresetKey].description
+                    : "Profil wurde individuell angepasst."}
+                </p>
+              </div>
+
               <div className="rounded-lg border p-3 space-y-3">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-medium">Globale Hard Rules</p>
