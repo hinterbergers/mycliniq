@@ -231,6 +231,28 @@ const getWeekKey = (date: Date) => ({
   week: getWeek(date, { weekStartsOn: 1 }),
 });
 
+const weekValueToDate = (value: string): Date | null => {
+  const [weekRaw, yearRaw] = value.split("-").map(Number);
+  if (!Number.isInteger(weekRaw) || !Number.isInteger(yearRaw)) return null;
+  const date = new Date(yearRaw, 0, 1 + (weekRaw - 1) * 7);
+  return startOfWeek(date, { weekStartsOn: 1 });
+};
+
+const buildWeekDateRange = (fromValue: string, toValue: string): Date[] => {
+  const fromDate = weekValueToDate(fromValue);
+  const toDate = weekValueToDate(toValue);
+  if (!fromDate || !toDate) return [];
+  const start = fromDate <= toDate ? fromDate : toDate;
+  const end = fromDate <= toDate ? toDate : fromDate;
+  const dates: Date[] = [];
+  let cursor = start;
+  while (cursor <= end) {
+    dates.push(cursor);
+    cursor = addWeeks(cursor, 1);
+  }
+  return dates;
+};
+
 const formatDateRange = (start: Date, end: Date) =>
   `${format(start, "dd.MM.", { locale: de })} – ${format(end, "dd.MM.yyyy", { locale: de })}`;
 
@@ -349,6 +371,20 @@ export default function WeeklyPlan() {
   const [ruleProfileDialogOpen, setRuleProfileDialogOpen] = useState(false);
   const [generationPreviewDialogOpen, setGenerationPreviewDialogOpen] =
     useState(false);
+  const [planningFromWeekValue, setPlanningFromWeekValue] = useState("");
+  const [planningToWeekValue, setPlanningToWeekValue] = useState("");
+  const [planningAreaFilter, setPlanningAreaFilter] = useState("all");
+  const [planningSelectedWeekValue, setPlanningSelectedWeekValue] =
+    useState<string>("");
+  const [planningPreviewEntries, setPlanningPreviewEntries] = useState<
+    Array<{
+      weekValue: string;
+      year: number;
+      week: number;
+      result?: WeeklyPlanningResult;
+      error?: string;
+    }>
+  >([]);
   const [generationPreview, setGenerationPreview] =
     useState<WeeklyPlanningResult | null>(null);
   const [generationPreviewError, setGenerationPreviewError] = useState<
@@ -425,6 +461,13 @@ export default function WeeklyPlan() {
     ? format(selectedDayDate, "yyyy-MM-dd")
     : "";
 
+  useEffect(() => {
+    const currentWeekValue = `${weekNumber}-${weekYear}`;
+    setPlanningFromWeekValue(currentWeekValue);
+    setPlanningToWeekValue(currentWeekValue);
+    setPlanningSelectedWeekValue(currentWeekValue);
+  }, [weekNumber, weekYear]);
+
   const weekOptions = useMemo(() => {
     return Array.from({ length: 16 }, (_, i) => {
       const date = addWeeks(new Date(), i - 6);
@@ -432,6 +475,14 @@ export default function WeeklyPlan() {
       return { week, year, date };
     });
   }, []);
+
+  const planningWeekOptions = useMemo(() => {
+    return Array.from({ length: 36 }, (_, i) => {
+      const date = addWeeks(currentDate, i - 8);
+      const { week, year } = getWeekKey(date);
+      return { week, year, date, value: `${week}-${year}` };
+    });
+  }, [currentDate]);
 
   useEffect(() => {
     let active = true;
@@ -1191,7 +1242,6 @@ export default function WeeklyPlan() {
   );
 
   const handleGenerateAI = async () => {
-    if (!weeklyPlan) return;
     if (isPlanReleased) {
       toast({
         title: "Plan ist freigegeben",
@@ -1202,77 +1252,154 @@ export default function WeeklyPlan() {
       return;
     }
 
-    setIsGenerationPreviewLoading(true);
-    setGenerationPreviewError(null);
+    const currentWeekValue = `${weekNumber}-${weekYear}`;
+    setPlanningFromWeekValue(currentWeekValue);
+    setPlanningToWeekValue(currentWeekValue);
+    setPlanningSelectedWeekValue(currentWeekValue);
+    setPlanningAreaFilter("all");
+    setPlanningPreviewEntries([]);
     setGenerationPreview(null);
+    setGenerationPreviewError(null);
     setManualPreviewAssignBySlot({});
-
-    try {
-      const previewResponse = await weeklyPlanApi.previewGeneration(
-        weekYear,
-        weekNumber,
-        ruleProfile,
-      );
-      setGenerationPreview(previewResponse);
-      setGenerationPreviewDialogOpen(true);
-    } catch (error) {
-      console.error("Failed to generate AI weekly plan", error);
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Die automatische Vorschau konnte nicht erstellt werden.";
-      setGenerationPreviewError(message);
-      toast({
-        title: "Wochenplan-Vorschau fehlgeschlagen",
-        description: message,
-        variant: "destructive",
-      });
-    } finally {
-      setIsGenerationPreviewLoading(false);
-    }
+    setGenerationPreviewDialogOpen(true);
+    await handleBuildPlanningPreview(currentWeekValue, currentWeekValue);
   };
 
-  const handleApplyGeneratedPreview = async () => {
+  const handleBuildPlanningPreview = useCallback(
+    async (fromValue?: string, toValue?: string) => {
+      const from = fromValue ?? planningFromWeekValue;
+      const to = toValue ?? planningToWeekValue;
+      const dates = buildWeekDateRange(from, to);
+      if (!dates.length) {
+        setGenerationPreviewError("Ungültiger Zeitraum.");
+        return;
+      }
+
+      setIsGenerationPreviewLoading(true);
+      setGenerationPreviewError(null);
+      setPlanningPreviewEntries([]);
+      setGenerationPreview(null);
+      setManualPreviewAssignBySlot({});
+
+      try {
+        const entries: Array<{
+          weekValue: string;
+          year: number;
+          week: number;
+          result?: WeeklyPlanningResult;
+          error?: string;
+        }> = [];
+
+        for (const date of dates) {
+          const { week, year } = getWeekKey(date);
+          const weekValue = `${week}-${year}`;
+          try {
+            const result = await weeklyPlanApi.previewGeneration(
+              year,
+              week,
+              ruleProfile,
+            );
+            entries.push({ weekValue, year, week, result });
+          } catch (error) {
+            entries.push({
+              weekValue,
+              year,
+              week,
+              error: error instanceof Error ? error.message : "Preview fehlgeschlagen",
+            });
+          }
+        }
+
+        setPlanningPreviewEntries(entries);
+        const selected =
+          entries.find((entry) => entry.weekValue === planningSelectedWeekValue) ??
+          entries[0];
+        setPlanningSelectedWeekValue(selected.weekValue);
+        setGenerationPreview(selected.result ?? null);
+        if (!selected.result && selected.error) {
+          setGenerationPreviewError(selected.error);
+        }
+      } finally {
+        setIsGenerationPreviewLoading(false);
+      }
+    },
+    [
+      planningFromWeekValue,
+      planningToWeekValue,
+      planningSelectedWeekValue,
+      ruleProfile,
+    ],
+  );
+
+  const handleApplyPlanningRange = useCallback(async () => {
+    const dates = buildWeekDateRange(planningFromWeekValue, planningToWeekValue);
+    if (!dates.length) return;
     setIsGenerationApplying(true);
     try {
-      const runResponse = await weeklyPlanApi.runGeneration(
-        weekYear,
-        weekNumber,
-        ruleProfile,
-      );
-      setWeeklyPlan(runResponse.plan);
-      setGenerationPreview(runResponse.result);
+      let totalApplied = 0;
+      let totalHardConflicts = 0;
+      for (const date of dates) {
+        const { week, year } = getWeekKey(date);
+        const runResponse = await weeklyPlanApi.runGeneration(
+          year,
+          week,
+          ruleProfile,
+        );
+        totalApplied += runResponse.appliedAssignments;
+        totalHardConflicts += runResponse.result.stats.hardConflicts;
+        if (year === weekYear && week === weekNumber) {
+          setWeeklyPlan(runResponse.plan);
+        }
+      }
+
+      await handleBuildPlanningPreview(planningFromWeekValue, planningToWeekValue);
 
       toast({
-        title: "Wochenplan erstellt",
-        description:
-          runResponse.appliedAssignments > 0
-            ? `${runResponse.appliedAssignments} Zuweisungen wurden übernommen.`
-            : "Keine neuen Zuweisungen übernommen.",
+        title: "Planung übernommen",
+        description: `${totalApplied} Zuweisungen im Zeitraum übernommen.`,
       });
-
-      if (runResponse.result.stats.hardConflicts > 0) {
+      if (totalHardConflicts > 0) {
         toast({
           title: "Konflikte erkannt",
-          description: `${runResponse.result.stats.hardConflicts} harte Konflikte in der Vorschau erkannt.`,
+          description: `${totalHardConflicts} harte Konflikte im Zeitraum.`,
           variant: "destructive",
         });
       }
-      setGenerationPreviewDialogOpen(false);
     } catch (error) {
-      console.error("Failed to apply weekly plan generation", error);
+      console.error("Failed to apply planning range", error);
       toast({
         title: "Übernahme fehlgeschlagen",
         description:
           error instanceof Error
             ? error.message
-            : "Die Vorschau konnte nicht übernommen werden.",
+            : "Zeitraum konnte nicht übernommen werden.",
         variant: "destructive",
       });
     } finally {
       setIsGenerationApplying(false);
     }
-  };
+  }, [
+    handleBuildPlanningPreview,
+    planningFromWeekValue,
+    planningToWeekValue,
+    ruleProfile,
+    toast,
+    weekNumber,
+    weekYear,
+  ]);
+
+  const handleSelectPlanningPreviewWeek = useCallback(
+    (value: string) => {
+      setPlanningSelectedWeekValue(value);
+      const selected = planningPreviewEntries.find(
+        (entry) => entry.weekValue === value,
+      );
+      setGenerationPreview(selected?.result ?? null);
+      setGenerationPreviewError(selected?.error ?? null);
+      setManualPreviewAssignBySlot({});
+    },
+    [planningPreviewEntries],
+  );
 
   const handleAssignFromPreviewSlot = async (
     slot: WeeklyPlanningResult["unfilledSlots"][number],
@@ -1416,6 +1543,40 @@ export default function WeeklyPlan() {
     const softViolations = result.violations.filter((violation) => !violation.hard);
     return { hardUnfilled, softUnfilled, hardViolations, softViolations };
   }, [generationPreview]);
+
+  const planningAreaOptions = useMemo(() => {
+    const categories = Array.from(
+      new Set(
+        rooms
+          .map((room) => room.category?.trim())
+          .filter((value): value is string => Boolean(value && value.length)),
+      ),
+    ).sort((a, b) => a.localeCompare(b, "de"));
+    return categories;
+  }, [rooms]);
+
+  const generationPreviewAreaRows = useMemo(() => {
+    if (!generationPreview) return [];
+    const totals = new Map<string, { generated: number; unfilled: number }>();
+    generationPreview.generatedAssignments.forEach((assignment) => {
+      const room = roomsById.get(assignment.roomId);
+      const area = room?.category || "Ohne Bereich";
+      const bucket = totals.get(area) ?? { generated: 0, unfilled: 0 };
+      bucket.generated += 1;
+      totals.set(area, bucket);
+    });
+    generationPreview.unfilledSlots.forEach((slot) => {
+      const room = roomsById.get(slot.roomId);
+      const area = room?.category || "Ohne Bereich";
+      const bucket = totals.get(area) ?? { generated: 0, unfilled: 0 };
+      bucket.unfilled += 1;
+      totals.set(area, bucket);
+    });
+    return Array.from(totals.entries())
+      .map(([area, stats]) => ({ area, ...stats }))
+      .filter((row) => planningAreaFilter === "all" || row.area === planningAreaFilter)
+      .sort((a, b) => a.area.localeCompare(b.area, "de"));
+  }, [generationPreview, planningAreaFilter, roomsById]);
 
   const getManualPreviewCandidates = useCallback(
     (slot: WeeklyPlanningResult["unfilledSlots"][number]) => {
@@ -2475,9 +2636,115 @@ export default function WeeklyPlan() {
       >
         <DialogContent className="sm:max-w-[920px]">
           <DialogHeader>
-            <DialogTitle>Wochenplan Vorschau</DialogTitle>
+            <DialogTitle>Wochenplan Planungstool</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+            <div className="rounded-lg border p-3 space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Von KW</label>
+                  <Select
+                    value={planningFromWeekValue}
+                    onValueChange={setPlanningFromWeekValue}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Startwoche" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {planningWeekOptions.map((option) => (
+                        <SelectItem key={`from-${option.value}`} value={option.value}>
+                          KW {option.week} / {option.year}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Bis KW</label>
+                  <Select
+                    value={planningToWeekValue}
+                    onValueChange={setPlanningToWeekValue}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Endwoche" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {planningWeekOptions.map((option) => (
+                        <SelectItem key={`to-${option.value}`} value={option.value}>
+                          KW {option.week} / {option.year}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Bereich</label>
+                  <Select value={planningAreaFilter} onValueChange={setPlanningAreaFilter}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Bereich filtern" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Alle Bereiche</SelectItem>
+                      {planningAreaOptions.map((area) => (
+                        <SelectItem key={`area-${area}`} value={area}>
+                          {area}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    handleBuildPlanningPreview(
+                      planningFromWeekValue,
+                      planningToWeekValue,
+                    )
+                  }
+                  disabled={isGenerationPreviewLoading || isGenerationApplying}
+                >
+                  {isGenerationPreviewLoading ? "Berechnet..." : "Vorschau erstellen"}
+                </Button>
+                <Button
+                  onClick={handleApplyPlanningRange}
+                  disabled={
+                    isGenerationPreviewLoading ||
+                    isGenerationApplying ||
+                    planningPreviewEntries.length === 0
+                  }
+                >
+                  {isGenerationApplying
+                    ? "Übernimmt..."
+                    : "Zeitraum übernehmen"}
+                </Button>
+              </div>
+              {planningPreviewEntries.length > 0 && (
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">
+                    Vorschau-Woche
+                  </label>
+                  <Select
+                    value={planningSelectedWeekValue}
+                    onValueChange={handleSelectPlanningPreviewWeek}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Woche wählen" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {planningPreviewEntries.map((entry) => (
+                        <SelectItem key={`preview-${entry.weekValue}`} value={entry.weekValue}>
+                          KW {entry.week} / {entry.year}
+                          {entry.error ? " (Fehler)" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+
             {isGenerationPreviewLoading && (
               <div className="text-sm text-muted-foreground">
                 Vorschau wird berechnet...
@@ -2505,6 +2772,31 @@ export default function WeeklyPlan() {
                   <span className="text-xs text-muted-foreground">
                     Soft: {generationPreview.stats.softConflicts}
                   </span>
+                </div>
+
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs font-semibold text-muted-foreground mb-2">
+                    Vorschauplan nach Bereichen
+                  </p>
+                  {generationPreviewAreaRows.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      Keine Bereichsdaten vorhanden.
+                    </p>
+                  ) : (
+                    <div className="space-y-1">
+                      {generationPreviewAreaRows.map((row) => (
+                        <div
+                          key={`area-row-${row.area}`}
+                          className="flex items-center justify-between text-xs rounded border px-2 py-1"
+                        >
+                          <span className="font-medium">{row.area}</span>
+                          <span className="text-muted-foreground">
+                            Geplant: {row.generated} · Unbesetzt: {row.unfilled}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -2703,15 +2995,19 @@ export default function WeeklyPlan() {
             <Button
               variant="outline"
               onClick={() => setGenerationPreviewDialogOpen(false)}
-              disabled={isGenerationApplying}
+              disabled={isGenerationApplying || isGenerationPreviewLoading}
             >
               Abbrechen
             </Button>
             <Button
-              onClick={handleApplyGeneratedPreview}
-              disabled={!generationPreview || isGenerationApplying}
+              onClick={handleApplyPlanningRange}
+              disabled={
+                isGenerationPreviewLoading ||
+                isGenerationApplying ||
+                planningPreviewEntries.length === 0
+              }
             >
-              {isGenerationApplying ? "Übernimmt..." : "Vorschau übernehmen"}
+              {isGenerationApplying ? "Übernimmt..." : "Zeitraum übernehmen"}
             </Button>
           </DialogFooter>
         </DialogContent>
