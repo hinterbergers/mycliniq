@@ -424,6 +424,8 @@ export default function WeeklyPlan() {
   const [longTermAbsences, setLongTermAbsences] = useState<LongTermAbsence[]>(
     [],
   );
+  const [ruleProfileLongTermAbsences, setRuleProfileLongTermAbsences] =
+    useState<LongTermAbsence[]>([]);
   const [rosterShifts, setRosterShifts] = useState<RosterShift[]>([]);
   const [noteDialog, setNoteDialog] = useState<NoteDialogState | null>(null);
   const [generationPreviewDialogOpen, setGenerationPreviewDialogOpen] =
@@ -601,6 +603,20 @@ export default function WeeklyPlan() {
   const lockedWeekdays = weeklyPlan?.lockedWeekdays ?? [];
   const isPlanReleased = weeklyPlan?.status === "Freigegeben";
 
+  const ruleProfileRange = useMemo(() => {
+    const dates = buildWeekDateRange(planningFromWeekValue, planningToWeekValue);
+    if (!dates.length) {
+      return {
+        from: format(weekStart, "yyyy-MM-dd"),
+        to: format(weekEnd, "yyyy-MM-dd"),
+      };
+    }
+    return {
+      from: format(dates[0], "yyyy-MM-dd"),
+      to: format(addDays(dates[dates.length - 1], 6), "yyyy-MM-dd"),
+    };
+  }, [planningFromWeekValue, planningToWeekValue, weekEnd, weekStart]);
+
   const employeesById = useMemo(() => {
     return new Map(employees.map((employee) => [employee.id, employee]));
   }, [employees]);
@@ -609,14 +625,30 @@ export default function WeeklyPlan() {
     [rooms],
   );
 
-  const employeesForRules = useMemo(
-    () =>
-      [...employees]
-        .filter((employee) => employee.isActive)
-        .filter((employee) => getRoleGroupKey(employee.role) !== "sekretariat")
-        .sort(compareAvailabilityEmployees),
-    [employees],
-  );
+  const employeesForRules = useMemo(() => {
+    const overlapsRange = (start?: string | null, end?: string | null) => {
+      if (!start) return false;
+      if (start > ruleProfileRange.to) return false;
+      if (!end) return true;
+      return end >= ruleProfileRange.from;
+    };
+
+    return [...employees]
+      .filter((employee) => employee.isActive)
+      .filter((employee) => getRoleGroupKey(employee.role) !== "sekretariat")
+      .filter((employee) => {
+        const inactiveHit = overlapsRange(employee.inactiveFrom, employee.inactiveUntil);
+        if (inactiveHit) return false;
+        const longTermHit = ruleProfileLongTermAbsences.some(
+          (absence) =>
+            absence.employeeId === employee.id &&
+            absence.startDate <= ruleProfileRange.to &&
+            absence.endDate >= ruleProfileRange.from,
+        );
+        return !longTermHit;
+      })
+      .sort(compareAvailabilityEmployees);
+  }, [employees, ruleProfileLongTermAbsences, ruleProfileRange.from, ruleProfileRange.to]);
 
   const roomOptionsForRules = useMemo(
     () =>
@@ -648,6 +680,29 @@ export default function WeeklyPlan() {
       return employeesForRules[0]?.id ?? null;
     });
   }, [employeesForRules]);
+
+  useEffect(() => {
+    let active = true;
+    const loadRuleProfileAbsences = async () => {
+      try {
+        const items = await longTermAbsencesApi.getByStatus(
+          "Genehmigt",
+          ruleProfileRange.from,
+          ruleProfileRange.to,
+        );
+        if (!active) return;
+        setRuleProfileLongTermAbsences(items);
+      } catch {
+        if (!active) return;
+        setRuleProfileLongTermAbsences([]);
+      }
+    };
+
+    loadRuleProfileAbsences();
+    return () => {
+      active = false;
+    };
+  }, [ruleProfileRange.from, ruleProfileRange.to]);
 
   const assignmentsByDayRoom = useMemo(() => {
     const map = new Map<string, WeeklyPlanAssignmentResponse[]>();
