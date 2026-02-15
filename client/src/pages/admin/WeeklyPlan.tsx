@@ -707,13 +707,29 @@ export default function WeeklyPlan() {
     let active = true;
     const loadRuleProfileAbsences = async () => {
       try {
-        const items = await longTermAbsencesApi.getByStatus(
-          "Genehmigt",
-          ruleProfileRange.from,
-          ruleProfileRange.to,
+        const [drafts, submitted, approved] = await Promise.all([
+          longTermAbsencesApi.getByStatus(
+            "Entwurf",
+            ruleProfileRange.from,
+            ruleProfileRange.to,
+          ),
+          longTermAbsencesApi.getByStatus(
+            "Eingereicht",
+            ruleProfileRange.from,
+            ruleProfileRange.to,
+          ),
+          longTermAbsencesApi.getByStatus(
+            "Genehmigt",
+            ruleProfileRange.from,
+            ruleProfileRange.to,
+          ),
+        ]);
+        const merged = [...drafts, ...submitted, ...approved];
+        const deduped = Array.from(
+          new Map(merged.map((item) => [item.id, item])).values(),
         );
         if (!active) return;
-        setRuleProfileLongTermAbsences(items);
+        setRuleProfileLongTermAbsences(deduped);
       } catch {
         if (!active) return;
         setRuleProfileLongTermAbsences([]);
