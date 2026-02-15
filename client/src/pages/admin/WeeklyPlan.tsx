@@ -640,8 +640,13 @@ export default function WeeklyPlan() {
     const overlapsRange = (start?: string | null, end?: string | null) => {
       const startIso = toIsoDateOnly(start);
       const endIso = toIsoDateOnly(end);
-      if (!startIso) return false;
-      if (startIso > ruleProfileRange.to) return false;
+      // Legacy employee deactivation data can contain only inactive_until.
+      // In that case, treat the absence as active from "always" until end date.
+      if (!startIso && !endIso) return false;
+      if (!startIso && endIso) {
+        return endIso >= ruleProfileRange.from;
+      }
+      if (startIso && startIso > ruleProfileRange.to) return false;
       if (!endIso) return true;
       return endIso >= ruleProfileRange.from;
     };
