@@ -64,6 +64,7 @@ import {
   rosterSettingsApi,
   weeklyPlanApi,
   type PlannedAbsenceAdmin,
+  type WeeklyPlanningResult,
   type WeeklyPlanAssignmentResponse,
   type WeeklyPlanResponse,
 } from "@/lib/api";
@@ -83,6 +84,10 @@ import {
   isEmployeeEligibleForRoom,
   isEmployeeOnDutyDate,
 } from "@/lib/weeklyPlanUtils";
+import {
+  getWeeklyPlanningReasonLabel,
+  getWeeklyPlanningReasonMeta,
+} from "@/lib/weeklyPlanningReasonMap";
 
 const ROLE_COLORS: Record<string, string> = {
   Primararzt: "bg-purple-100 text-purple-800 border-purple-200",
@@ -342,6 +347,16 @@ export default function WeeklyPlan() {
   const [rosterShifts, setRosterShifts] = useState<RosterShift[]>([]);
   const [noteDialog, setNoteDialog] = useState<NoteDialogState | null>(null);
   const [ruleProfileDialogOpen, setRuleProfileDialogOpen] = useState(false);
+  const [generationPreviewDialogOpen, setGenerationPreviewDialogOpen] =
+    useState(false);
+  const [generationPreview, setGenerationPreview] =
+    useState<WeeklyPlanningResult | null>(null);
+  const [generationPreviewError, setGenerationPreviewError] = useState<
+    string | null
+  >(null);
+  const [isGenerationPreviewLoading, setIsGenerationPreviewLoading] =
+    useState(false);
+  const [isGenerationApplying, setIsGenerationApplying] = useState(false);
   const [ruleProfile, setRuleProfile] = useState<WeeklyRuleProfile>(
     DEFAULT_WEEKLY_RULE_PROFILE,
   );
@@ -1180,8 +1195,37 @@ export default function WeeklyPlan() {
       return;
     }
 
-    setIsSaving(true);
+    setIsGenerationPreviewLoading(true);
+    setGenerationPreviewError(null);
+    setGenerationPreview(null);
 
+    try {
+      const previewResponse = await weeklyPlanApi.previewGeneration(
+        weekYear,
+        weekNumber,
+        ruleProfile,
+      );
+      setGenerationPreview(previewResponse);
+      setGenerationPreviewDialogOpen(true);
+    } catch (error) {
+      console.error("Failed to generate AI weekly plan", error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Die automatische Vorschau konnte nicht erstellt werden.";
+      setGenerationPreviewError(message);
+      toast({
+        title: "Wochenplan-Vorschau fehlgeschlagen",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsGenerationPreviewLoading(false);
+    }
+  };
+
+  const handleApplyGeneratedPreview = async () => {
+    setIsGenerationApplying(true);
     try {
       const runResponse = await weeklyPlanApi.runGeneration(
         weekYear,
@@ -1189,6 +1233,7 @@ export default function WeeklyPlan() {
         ruleProfile,
       );
       setWeeklyPlan(runResponse.plan);
+      setGenerationPreview(runResponse.result);
 
       toast({
         title: "Wochenplan erstellt",
@@ -1198,23 +1243,26 @@ export default function WeeklyPlan() {
             : "Keine neuen Zuweisungen übernommen.",
       });
 
-      const hardConflicts = runResponse.result.stats.hardConflicts;
-      if (hardConflicts > 0) {
+      if (runResponse.result.stats.hardConflicts > 0) {
         toast({
           title: "Konflikte erkannt",
-          description: `${hardConflicts} harte Konflikte in der Vorschau erkannt.`,
+          description: `${runResponse.result.stats.hardConflicts} harte Konflikte in der Vorschau erkannt.`,
           variant: "destructive",
         });
       }
+      setGenerationPreviewDialogOpen(false);
     } catch (error) {
-      console.error("Failed to generate AI weekly plan", error);
+      console.error("Failed to apply weekly plan generation", error);
       toast({
-        title: "Wochenplan-Erstellung fehlgeschlagen",
-        description: "Die automatische Zuteilung konnte nicht erstellt werden.",
+        title: "Übernahme fehlgeschlagen",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Die Vorschau konnte nicht übernommen werden.",
         variant: "destructive",
       });
     } finally {
-      setIsSaving(false);
+      setIsGenerationApplying(false);
     }
   };
 
@@ -1278,6 +1326,36 @@ export default function WeeklyPlan() {
       ).length,
     [ruleProfile.employeeRules],
   );
+
+  const generationPreviewGrouped = useMemo(() => {
+    const result = generationPreview;
+    if (!result) {
+      return {
+        hardUnfilled: [] as WeeklyPlanningResult["unfilledSlots"],
+        softUnfilled: [] as WeeklyPlanningResult["unfilledSlots"],
+        hardViolations: [] as WeeklyPlanningResult["violations"],
+        softViolations: [] as WeeklyPlanningResult["violations"],
+      };
+    }
+
+    const hardUnfilled = result.unfilledSlots.filter(
+      (slot) =>
+        slot.blocksPublish ||
+        slot.reasonCodes.some(
+          (code) => getWeeklyPlanningReasonMeta(code).severity === "hard",
+        ),
+    );
+    const softUnfilled = result.unfilledSlots.filter(
+      (slot) =>
+        !slot.blocksPublish &&
+        !slot.reasonCodes.some(
+          (code) => getWeeklyPlanningReasonMeta(code).severity === "hard",
+        ),
+    );
+    const hardViolations = result.violations.filter((violation) => violation.hard);
+    const softViolations = result.violations.filter((violation) => !violation.hard);
+    return { hardUnfilled, softUnfilled, hardViolations, softViolations };
+  }, [generationPreview]);
 
   const displayRooms = useMemo(() => {
     if (!isReorderMode || roomOrderIds.length === 0) {
@@ -1459,7 +1537,12 @@ export default function WeeklyPlan() {
                       size="sm"
                       className="gap-2"
                       onClick={handleGenerateAI}
-                      disabled={isSaving || isReorderMode}
+                      disabled={
+                        isSaving ||
+                        isReorderMode ||
+                        isGenerationPreviewLoading ||
+                        isGenerationApplying
+                      }
                     >
                       <Sparkles className="w-3.5 h-3.5" />
                       Wochenplan erstellen
@@ -2315,6 +2398,178 @@ export default function WeeklyPlan() {
           </p>
         </div>
       </div>
+
+      <Dialog
+        open={generationPreviewDialogOpen}
+        onOpenChange={setGenerationPreviewDialogOpen}
+      >
+        <DialogContent className="sm:max-w-[920px]">
+          <DialogHeader>
+            <DialogTitle>Wochenplan Vorschau</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+            {isGenerationPreviewLoading && (
+              <div className="text-sm text-muted-foreground">
+                Vorschau wird berechnet...
+              </div>
+            )}
+            {generationPreviewError && (
+              <div className="text-sm text-destructive">{generationPreviewError}</div>
+            )}
+            {generationPreview && (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge
+                    variant={generationPreview.publishAllowed ? "secondary" : "destructive"}
+                  >
+                    {generationPreview.publishAllowed
+                      ? "Publish erlaubt"
+                      : "Publish blockiert"}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    Neue Zuweisungen: {generationPreview.stats.generatedAssignments}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    Hard: {generationPreview.stats.hardConflicts}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    Soft: {generationPreview.stats.softConflicts}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  <div className="rounded-lg border p-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant="outline"
+                        className="bg-rose-50 text-rose-700 border-rose-200"
+                      >
+                        Hard Konflikte
+                      </Badge>
+                    </div>
+                    <div className="space-y-2">
+                      {generationPreviewGrouped.hardUnfilled.map((slot) => (
+                        <div
+                          key={`hard-slot-${slot.slotId}`}
+                          className="rounded-md border p-2"
+                        >
+                          <div className="text-xs font-medium">
+                            {slot.date} · {slot.roomName}
+                          </div>
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {slot.reasonCodes.map((code) => (
+                              <Badge
+                                key={`${slot.slotId}-${code}`}
+                                variant="outline"
+                                className={
+                                  getWeeklyPlanningReasonMeta(code).severity === "hard"
+                                    ? "bg-rose-50 text-rose-700 border-rose-200"
+                                    : "bg-amber-50 text-amber-700 border-amber-200"
+                                }
+                              >
+                                {getWeeklyPlanningReasonLabel(code)}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                      {generationPreviewGrouped.hardViolations.map((violation, index) => (
+                        <div
+                          key={`hard-violation-${index}`}
+                          className="rounded-md border p-2"
+                        >
+                          <Badge
+                            variant="outline"
+                            className="bg-rose-50 text-rose-700 border-rose-200"
+                          >
+                            {getWeeklyPlanningReasonLabel(violation.code)}
+                          </Badge>
+                          <p className="text-xs mt-1">{violation.message}</p>
+                        </div>
+                      ))}
+                      {generationPreviewGrouped.hardUnfilled.length === 0 &&
+                        generationPreviewGrouped.hardViolations.length === 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            Keine harten Konflikte.
+                          </p>
+                        )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border p-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant="outline"
+                        className="bg-amber-50 text-amber-700 border-amber-200"
+                      >
+                        Soft Hinweise
+                      </Badge>
+                    </div>
+                    <div className="space-y-2">
+                      {generationPreviewGrouped.softUnfilled.map((slot) => (
+                        <div
+                          key={`soft-slot-${slot.slotId}`}
+                          className="rounded-md border p-2"
+                        >
+                          <div className="text-xs font-medium">
+                            {slot.date} · {slot.roomName}
+                          </div>
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {slot.reasonCodes.map((code) => (
+                              <Badge
+                                key={`${slot.slotId}-${code}`}
+                                variant="outline"
+                                className="bg-amber-50 text-amber-700 border-amber-200"
+                              >
+                                {getWeeklyPlanningReasonLabel(code)}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                      {generationPreviewGrouped.softViolations.map((violation, index) => (
+                        <div
+                          key={`soft-violation-${index}`}
+                          className="rounded-md border p-2"
+                        >
+                          <Badge
+                            variant="outline"
+                            className="bg-amber-50 text-amber-700 border-amber-200"
+                          >
+                            {getWeeklyPlanningReasonLabel(violation.code)}
+                          </Badge>
+                          <p className="text-xs mt-1">{violation.message}</p>
+                        </div>
+                      ))}
+                      {generationPreviewGrouped.softUnfilled.length === 0 &&
+                        generationPreviewGrouped.softViolations.length === 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            Keine soft Hinweise.
+                          </p>
+                        )}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setGenerationPreviewDialogOpen(false)}
+              disabled={isGenerationApplying}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              onClick={handleApplyGeneratedPreview}
+              disabled={!generationPreview || isGenerationApplying}
+            >
+              {isGenerationApplying ? "Übernimmt..." : "Vorschau übernehmen"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={ruleProfileDialogOpen}
