@@ -539,6 +539,13 @@ export function registerWeeklyPlanRoutes(router: Router) {
         (existingCountByEmployee.get(assignment.employeeId) ?? 0) + 1,
       );
     });
+    const existingWeekdaysByEmployee = new Map<number, Set<number>>();
+    existingAssignments.forEach((assignment) => {
+      if (!assignment.employeeId) return;
+      const weekdays = existingWeekdaysByEmployee.get(assignment.employeeId) ?? new Set<number>();
+      weekdays.add(assignment.weekday);
+      existingWeekdaysByEmployee.set(assignment.employeeId, weekdays);
+    });
 
     const employeeRulesById = new Map(
       profile.employeeRules.map((rule) => [rule.employeeId, rule]),
@@ -631,6 +638,16 @@ export function registerWeeklyPlanRoutes(router: Router) {
             const rule = employeeRulesById.get(employee.id);
             if (rule?.forbiddenAreaIds.includes(room.id)) {
               reasons.add("FORBIDDEN_AREA");
+            }
+
+            if (
+              existingWeekdaysByEmployee.get(employee.id)?.has(weekday) ||
+              generatedAssignments.some(
+                (entry) =>
+                  entry.employeeId === employee.id && entry.weekday === weekday,
+              )
+            ) {
+              reasons.add("ALREADY_ASSIGNED_SAME_TIME");
             }
 
             if (

@@ -354,6 +354,9 @@ export default function WeeklyPlan() {
   const [generationPreviewError, setGenerationPreviewError] = useState<
     string | null
   >(null);
+  const [manualPreviewAssignBySlot, setManualPreviewAssignBySlot] = useState<
+    Record<string, string>
+  >({});
   const [isGenerationPreviewLoading, setIsGenerationPreviewLoading] =
     useState(false);
   const [isGenerationApplying, setIsGenerationApplying] = useState(false);
@@ -481,6 +484,10 @@ export default function WeeklyPlan() {
   const employeesById = useMemo(() => {
     return new Map(employees.map((employee) => [employee.id, employee]));
   }, [employees]);
+  const roomsById = useMemo(
+    () => new Map(rooms.map((room) => [room.id, room])),
+    [rooms],
+  );
 
   const employeesForRules = useMemo(
     () =>
@@ -1198,6 +1205,7 @@ export default function WeeklyPlan() {
     setIsGenerationPreviewLoading(true);
     setGenerationPreviewError(null);
     setGenerationPreview(null);
+    setManualPreviewAssignBySlot({});
 
     try {
       const previewResponse = await weeklyPlanApi.previewGeneration(
@@ -1263,6 +1271,58 @@ export default function WeeklyPlan() {
       });
     } finally {
       setIsGenerationApplying(false);
+    }
+  };
+
+  const handleAssignFromPreviewSlot = async (
+    slot: WeeklyPlanningResult["unfilledSlots"][number],
+  ) => {
+    if (!weeklyPlan) return;
+    const rawEmployeeId = manualPreviewAssignBySlot[slot.slotId];
+    const employeeId = Number(rawEmployeeId);
+    if (!Number.isInteger(employeeId) || employeeId <= 0) return;
+
+    setIsSaving(true);
+    try {
+      const assignment = await weeklyPlanApi.assign(weeklyPlan.id, {
+        roomId: slot.roomId,
+        weekday: slot.weekday,
+        employeeId,
+        assignmentType: "Plan",
+      });
+      setWeeklyPlan((prev) =>
+        prev
+          ? { ...prev, assignments: [...prev.assignments, assignment] }
+          : prev,
+      );
+
+      const refreshedPreview = await weeklyPlanApi.previewGeneration(
+        weekYear,
+        weekNumber,
+        ruleProfile,
+      );
+      setGenerationPreview(refreshedPreview);
+      setManualPreviewAssignBySlot((prev) => {
+        const next = { ...prev };
+        delete next[slot.slotId];
+        return next;
+      });
+      toast({
+        title: "Manuell zugewiesen",
+        description: `${slot.roomName} wurde manuell ergänzt.`,
+      });
+    } catch (error) {
+      console.error("Failed to assign preview slot manually", error);
+      toast({
+        title: "Manuelle Zuweisung fehlgeschlagen",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Slot konnte nicht manuell zugewiesen werden.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -1356,6 +1416,16 @@ export default function WeeklyPlan() {
     const softViolations = result.violations.filter((violation) => !violation.hard);
     return { hardUnfilled, softUnfilled, hardViolations, softViolations };
   }, [generationPreview]);
+
+  const getManualPreviewCandidates = useCallback(
+    (slot: WeeklyPlanningResult["unfilledSlots"][number]) => {
+      const room = roomsById.get(slot.roomId);
+      if (!room) return [];
+      const available = availabilityByWeekday.get(slot.weekday) ?? [];
+      return available.filter((employee) => isEmployeeEligibleForRoom(employee, room));
+    },
+    [availabilityByWeekday, roomsById],
+  );
 
   const displayRooms = useMemo(() => {
     if (!isReorderMode || roomOrderIds.length === 0) {
@@ -2471,6 +2541,44 @@ export default function WeeklyPlan() {
                               </Badge>
                             ))}
                           </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <Select
+                              value={manualPreviewAssignBySlot[slot.slotId] ?? "__none__"}
+                              onValueChange={(value) =>
+                                setManualPreviewAssignBySlot((prev) => ({
+                                  ...prev,
+                                  [slot.slotId]: value,
+                                }))
+                              }
+                            >
+                              <SelectTrigger className="h-8 min-w-[220px]">
+                                <SelectValue placeholder="Anwesenden Benutzer wählen" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__">Nicht zuweisen</SelectItem>
+                                {getManualPreviewCandidates(slot).map((employee) => (
+                                  <SelectItem
+                                    key={`${slot.slotId}-hard-${employee.id}`}
+                                    value={String(employee.id)}
+                                  >
+                                    {getEmployeeDisplayName(employee)}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              size="sm"
+                              onClick={() => handleAssignFromPreviewSlot(slot)}
+                              disabled={
+                                isSaving ||
+                                isGenerationApplying ||
+                                !manualPreviewAssignBySlot[slot.slotId] ||
+                                manualPreviewAssignBySlot[slot.slotId] === "__none__"
+                              }
+                            >
+                              Jetzt zuweisen
+                            </Button>
+                          </div>
                         </div>
                       ))}
                       {generationPreviewGrouped.hardViolations.map((violation, index) => (
@@ -2524,6 +2632,44 @@ export default function WeeklyPlan() {
                                 {getWeeklyPlanningReasonLabel(code)}
                               </Badge>
                             ))}
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <Select
+                              value={manualPreviewAssignBySlot[slot.slotId] ?? "__none__"}
+                              onValueChange={(value) =>
+                                setManualPreviewAssignBySlot((prev) => ({
+                                  ...prev,
+                                  [slot.slotId]: value,
+                                }))
+                              }
+                            >
+                              <SelectTrigger className="h-8 min-w-[220px]">
+                                <SelectValue placeholder="Anwesenden Benutzer wählen" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__">Nicht zuweisen</SelectItem>
+                                {getManualPreviewCandidates(slot).map((employee) => (
+                                  <SelectItem
+                                    key={`${slot.slotId}-soft-${employee.id}`}
+                                    value={String(employee.id)}
+                                  >
+                                    {getEmployeeDisplayName(employee)}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              size="sm"
+                              onClick={() => handleAssignFromPreviewSlot(slot)}
+                              disabled={
+                                isSaving ||
+                                isGenerationApplying ||
+                                !manualPreviewAssignBySlot[slot.slotId] ||
+                                manualPreviewAssignBySlot[slot.slotId] === "__none__"
+                              }
+                            >
+                              Jetzt zuweisen
+                            </Button>
                           </div>
                         </div>
                       ))}
