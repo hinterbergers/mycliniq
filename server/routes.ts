@@ -5048,6 +5048,7 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
         vacationLockFrom: null,
         vacationLockUntil: null,
         fixedPreferredEmployees: [],
+        weeklyRuleProfile: null,
       });
     }
       res.json(settings);
@@ -5065,6 +5066,7 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
         vacationLockFrom,
         vacationLockUntil,
         fixedPreferredEmployees,
+        weeklyRuleProfile,
       } = req.body;
       const settings = await storage.upsertRosterSettings({
         lastApprovedYear,
@@ -5073,12 +5075,71 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
         vacationLockFrom,
         vacationLockUntil,
         fixedPreferredEmployees,
+        weeklyRuleProfile,
       });
       res.json(settings);
     } catch (error) {
       res.status(500).json({ error: "Failed to update roster settings" });
     }
   });
+
+  app.get(
+    "/api/roster-settings/weekly-rule-profile",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        if (!canViewPlanningData(req)) {
+          return res.status(403).json({ error: "Keine Berechtigung" });
+        }
+        const settings = await storage.getRosterSettings();
+        return res.json({
+          weeklyRuleProfile: settings?.weeklyRuleProfile ?? null,
+        });
+      } catch (error) {
+        res.status(500).json({ error: "Failed to fetch weekly rule profile" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/roster-settings/weekly-rule-profile",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        if (!canViewPlanningData(req)) {
+          return res.status(403).json({ error: "Keine Berechtigung" });
+        }
+
+        const settings = await storage.getRosterSettings();
+        const { weeklyRuleProfile } = req.body ?? {};
+        const existingProfile =
+          settings && typeof settings.weeklyRuleProfile !== "undefined"
+            ? settings.weeklyRuleProfile
+            : null;
+        const nextProfile =
+          weeklyRuleProfile === undefined ? existingProfile : weeklyRuleProfile;
+
+        const updated = await storage.upsertRosterSettings({
+          lastApprovedYear: settings?.lastApprovedYear ?? 2026,
+          lastApprovedMonth: settings?.lastApprovedMonth ?? 1,
+          wishYear: settings?.wishYear ?? null,
+          wishMonth: settings?.wishMonth ?? null,
+          vacationLockFrom: settings?.vacationLockFrom ?? null,
+          vacationLockUntil: settings?.vacationLockUntil ?? null,
+          fixedPreferredEmployees: settings?.fixedPreferredEmployees ?? [],
+          weeklyRuleProfile:
+            (nextProfile as Record<string, unknown> | null | undefined) ?? null,
+          updatedById: req.user?.employeeId ?? settings?.updatedById ?? null,
+        });
+
+        return res.json({
+          weeklyRuleProfile: updated.weeklyRuleProfile ?? null,
+        });
+      } catch (error) {
+        res.status(500).json({ error: "Failed to update weekly rule profile" });
+      }
+    },
+  );
 
   app.get(
     "/api/online-users",

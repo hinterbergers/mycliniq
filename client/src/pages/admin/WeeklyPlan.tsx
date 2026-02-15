@@ -61,6 +61,7 @@ import {
   plannedAbsencesAdminApi,
   roomApi,
   rosterApi,
+  rosterSettingsApi,
   weeklyPlanApi,
   type PlannedAbsenceAdmin,
   type WeeklyPlanAssignmentResponse,
@@ -344,6 +345,7 @@ export default function WeeklyPlan() {
   const [ruleProfile, setRuleProfile] = useState<WeeklyRuleProfile>(
     DEFAULT_WEEKLY_RULE_PROFILE,
   );
+  const [isRuleProfileSaving, setIsRuleProfileSaving] = useState(false);
   const [selectedRuleEmployeeId, setSelectedRuleEmployeeId] = useState<
     number | null
   >(null);
@@ -414,15 +416,39 @@ export default function WeeklyPlan() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const stored = window.localStorage.getItem(WEEKLY_RULE_PROFILE_STORAGE_KEY);
-    if (!stored) return;
-    try {
-      const parsed = JSON.parse(stored);
-      setRuleProfile(normalizeRuleProfile(parsed));
-    } catch {
-      // ignore malformed local profile
-    }
+    let active = true;
+    const loadRuleProfile = async () => {
+      let localProfile: WeeklyRuleProfile | null = null;
+      if (typeof window !== "undefined") {
+        const stored = window.localStorage.getItem(
+          WEEKLY_RULE_PROFILE_STORAGE_KEY,
+        );
+        if (stored) {
+          try {
+            localProfile = normalizeRuleProfile(JSON.parse(stored));
+          } catch {
+            localProfile = null;
+          }
+        }
+      }
+      if (localProfile && active) {
+        setRuleProfile(localProfile);
+      }
+
+      try {
+        const response = await rosterSettingsApi.getWeeklyRuleProfile();
+        const serverProfile = normalizeRuleProfile(response.weeklyRuleProfile);
+        if (!active) return;
+        setRuleProfile(serverProfile);
+      } catch {
+        // keep local fallback
+      }
+    };
+
+    loadRuleProfile();
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -1265,6 +1291,33 @@ export default function WeeklyPlan() {
       });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleSaveRuleProfile = async () => {
+    setIsRuleProfileSaving(true);
+    try {
+      const payload = {
+        ...ruleProfile,
+        updatedAt: new Date().toISOString(),
+      };
+      const response = await rosterSettingsApi.updateWeeklyRuleProfile(payload);
+      const normalized = normalizeRuleProfile(response.weeklyRuleProfile);
+      setRuleProfile(normalized);
+      toast({
+        title: "Regelprofil gespeichert",
+        description: "Das Regelprofil wurde serverseitig aktualisiert.",
+      });
+      setRuleProfileDialogOpen(false);
+    } catch (error) {
+      console.error("Failed to save weekly rule profile", error);
+      toast({
+        title: "Speichern fehlgeschlagen",
+        description: "Regelprofil konnte nicht gespeichert werden.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRuleProfileSaving(false);
     }
   };
 
@@ -2557,11 +2610,19 @@ export default function WeeklyPlan() {
               onClick={() => {
                 setRuleProfile(DEFAULT_WEEKLY_RULE_PROFILE);
               }}
+              disabled={isRuleProfileSaving}
             >
               Reset
             </Button>
-            <Button variant="outline" onClick={() => setRuleProfileDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setRuleProfileDialogOpen(false)}
+              disabled={isRuleProfileSaving}
+            >
               Schließen
+            </Button>
+            <Button onClick={handleSaveRuleProfile} disabled={isRuleProfileSaving}>
+              {isRuleProfileSaving ? "Speichert..." : "Speichern"}
             </Button>
           </DialogFooter>
         </DialogContent>

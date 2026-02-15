@@ -2339,6 +2339,10 @@ export interface NextPlanningMonth {
   eligibleEmployeeIds?: number[];
 }
 
+export type WeeklyRuleProfileResponse = {
+  weeklyRuleProfile: Record<string, unknown> | null;
+};
+
 export const rosterSettingsApi = {
   get: async (): Promise<RosterSettings> => {
     const response = await apiFetch(`${API_BASE}/roster-settings`);
@@ -2371,6 +2375,27 @@ export const rosterSettingsApi = {
       body: JSON.stringify({ year, month }),
     });
     return handleResponse<RosterSettings>(response);
+  },
+
+  getWeeklyRuleProfile: async (): Promise<WeeklyRuleProfileResponse> => {
+    const response = await apiFetch(
+      `${API_BASE}/roster-settings/weekly-rule-profile`,
+    );
+    return handleResponse<WeeklyRuleProfileResponse>(response);
+  },
+
+  updateWeeklyRuleProfile: async (
+    weeklyRuleProfile: unknown,
+  ): Promise<WeeklyRuleProfileResponse> => {
+    const response = await apiFetch(
+      `${API_BASE}/roster-settings/weekly-rule-profile`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ weeklyRuleProfile }),
+      },
+    );
+    return handleResponse<WeeklyRuleProfileResponse>(response);
   },
 };
 

@@ -99,6 +99,15 @@ const normalizeFixedPreferredEmployees = (value: unknown): number[] => {
     .filter((entry): entry is number => Number.isFinite(entry));
 };
 
+const normalizeWeeklyRuleProfile = (
+  value: unknown,
+): Record<string, unknown> | null | undefined => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+};
+
 export interface IStorage {
   // User methods
   getUser(id: string): Promise<User | undefined>;
@@ -1018,9 +1027,13 @@ export class DatabaseStorage implements IStorage {
       const normalizedFixed = normalizeFixedPreferredEmployees(
         settings.fixedPreferredEmployees,
       );
+      const normalizedWeeklyRuleProfile = normalizeWeeklyRuleProfile(
+        settings.weeklyRuleProfile,
+      );
       const payload = {
         ...settings,
         fixedPreferredEmployees: normalizedFixed,
+        weeklyRuleProfile: normalizedWeeklyRuleProfile,
         updatedAt: new Date(),
       };
       const result = await db
@@ -1033,9 +1046,13 @@ export class DatabaseStorage implements IStorage {
       const normalizedFixed = normalizeFixedPreferredEmployees(
         settings.fixedPreferredEmployees,
       );
+      const normalizedWeeklyRuleProfile = normalizeWeeklyRuleProfile(
+        settings.weeklyRuleProfile,
+      );
       const payload = {
         ...settings,
         fixedPreferredEmployees: normalizedFixed,
+        weeklyRuleProfile: normalizedWeeklyRuleProfile,
       };
       const result = await db
         .insert(rosterSettings)

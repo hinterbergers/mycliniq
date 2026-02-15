@@ -1861,6 +1861,9 @@ export const rosterSettings = pgTable("roster_settings", {
     .$type<number[]>()
     .default(sql`'[]'::jsonb`)
     .notNull(),
+  weeklyRuleProfile: jsonb("weekly_rule_profile").$type<
+    Record<string, unknown> | null
+  >(),
   updatedById: integer("updated_by_id").references(() => employees.id),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
