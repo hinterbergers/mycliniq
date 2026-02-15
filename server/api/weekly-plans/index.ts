@@ -107,6 +107,25 @@ function toDateOnly(value?: string | null): Date | null {
   return date;
 }
 
+function isEmployeeInactiveOnDate(
+  inactiveFrom: string | null | undefined,
+  inactiveUntil: string | null | undefined,
+  dayIso: string,
+): boolean {
+  const day = toDateOnly(dayIso);
+  if (!day) return false;
+  const from = toDateOnly(inactiveFrom);
+  const until = toDateOnly(inactiveUntil);
+
+  if (!from && !until) return false;
+  if (!from && until) return day.getTime() <= until.getTime();
+  if (from && !until) return day.getTime() >= from.getTime();
+  return (
+    day.getTime() >= (from as Date).getTime() &&
+    day.getTime() <= (until as Date).getTime()
+  );
+}
+
 function addMonths(date: Date, months: number): Date {
   const next = new Date(date);
   next.setMonth(next.getMonth() + months);
@@ -748,9 +767,11 @@ export function registerWeeklyPlanRoutes(router: Router) {
             }
 
             if (
-              employee.inactiveFrom &&
-              employee.inactiveFrom <= dayDate &&
-              (!employee.inactiveUntil || employee.inactiveUntil >= dayDate)
+              isEmployeeInactiveOnDate(
+                employee.inactiveFrom,
+                employee.inactiveUntil,
+                dayDate,
+              )
             ) {
               reasons.add("EMPLOYEE_INACTIVE");
             }
