@@ -459,6 +459,9 @@ export default function WeeklyPlan() {
   const [ruleProfile, setRuleProfile] = useState<WeeklyRuleProfile>(
     DEFAULT_WEEKLY_RULE_PROFILE,
   );
+  const [ruleProfileWarning, setRuleProfileWarning] = useState<string | null>(
+    null,
+  );
   const [isRuleProfileSaving, setIsRuleProfileSaving] = useState(false);
   const [selectedRuleEmployeeId, setSelectedRuleEmployeeId] = useState<
     number | null
@@ -569,8 +572,14 @@ export default function WeeklyPlan() {
         const serverProfile = normalizeRuleProfile(response.weeklyRuleProfile);
         if (!active) return;
         setRuleProfile(serverProfile);
-      } catch {
-        // keep local fallback
+        setRuleProfileWarning(null);
+      } catch (error) {
+        if (!active) return;
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Regelprofil konnte nicht vom Server geladen werden.";
+        setRuleProfileWarning(message);
       }
     };
 
@@ -1547,6 +1556,7 @@ export default function WeeklyPlan() {
       const response = await rosterSettingsApi.updateWeeklyRuleProfile(payload);
       const normalized = normalizeRuleProfile(response.weeklyRuleProfile);
       setRuleProfile(normalized);
+      setRuleProfileWarning(null);
       toast({
         title: "Regelprofil gespeichert",
         description: "Das Regelprofil wurde serverseitig aktualisiert.",
@@ -1557,7 +1567,10 @@ export default function WeeklyPlan() {
       console.error("Failed to save weekly rule profile", error);
       toast({
         title: "Speichern fehlgeschlagen",
-        description: "Regelprofil konnte nicht gespeichert werden.",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Regelprofil konnte nicht gespeichert werden.",
         variant: "destructive",
       });
     } finally {
@@ -3158,6 +3171,14 @@ export default function WeeklyPlan() {
           {planningDialogTab === "rules" && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 max-h-[70vh] overflow-y-auto pr-1">
               <div className="space-y-4">
+                {ruleProfileWarning && (
+                  <div className="rounded-lg border border-rose-200 bg-rose-50 p-3">
+                    <p className="text-xs font-semibold text-rose-700">
+                      Regelprofil-Serverhinweis
+                    </p>
+                    <p className="text-xs text-rose-700 mt-1">{ruleProfileWarning}</p>
+                  </div>
+                )}
                 <div className="rounded-lg border p-3 space-y-2">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm font-medium">Regelprofil-Preset</p>
