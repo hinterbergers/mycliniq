@@ -650,6 +650,32 @@ export default function RosterPlan() {
     return new Map(serviceLineDisplay.map((line) => [line.key, line]));
   }, [serviceLineDisplay]);
 
+  const groupedGenerationErrors = useMemo(() => {
+    const hardUnfilled = generationUnfilledSlots.filter((slot) =>
+      slot.reasonCodes.some(
+        (code) => getWeeklyPlanningReasonMeta(code).severity === "hard",
+      ),
+    );
+    const softUnfilled = generationUnfilledSlots.filter(
+      (slot) =>
+        !slot.reasonCodes.some(
+          (code) => getWeeklyPlanningReasonMeta(code).severity === "hard",
+        ),
+    );
+    const hardViolations = generationViolations.filter(
+      (violation) => violation.hard,
+    );
+    const softViolations = generationViolations.filter(
+      (violation) => !violation.hard,
+    );
+    return {
+      hardUnfilled,
+      softUnfilled,
+      hardViolations,
+      softViolations,
+    };
+  }, [generationUnfilledSlots, generationViolations]);
+
   const toggleAbsenceColumn = useCallback(() => {
     setShowAbsenceColumn((prev) => !prev);
   }, []);
@@ -2905,6 +2931,22 @@ export default function RosterPlan() {
                       <span className="text-sm text-muted-foreground">
                         Violations: {generationViolations.length}
                       </span>
+                      <Badge
+                        variant="outline"
+                        className="bg-rose-50 text-rose-700 border-rose-200"
+                      >
+                        Hard{" "}
+                        {groupedGenerationErrors.hardUnfilled.length +
+                          groupedGenerationErrors.hardViolations.length}
+                      </Badge>
+                      <Badge
+                        variant="outline"
+                        className="bg-amber-50 text-amber-700 border-amber-200"
+                      >
+                        Soft{" "}
+                        {groupedGenerationErrors.softUnfilled.length +
+                          groupedGenerationErrors.softViolations.length}
+                      </Badge>
                     </div>
 
                     {generationUnfilledSlots.length === 0 &&
@@ -2914,115 +2956,176 @@ export default function RosterPlan() {
                       </div>
                     ) : (
                       <ScrollArea className="h-[30vh]">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Datum</TableHead>
-                              <TableHead>Dienst</TableHead>
-                              <TableHead>Grund</TableHead>
-                              <TableHead>Blocker</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {generationUnfilledSlots.map((slot) => {
-                              const line = serviceLineLookup.get(slot.serviceType);
-                              const label = line?.label || slot.serviceType;
-                              const reasonCodes = Array.from(new Set(slot.reasonCodes));
-                              const blockerCodes = Array.from(
-                                new Set(slot.candidatesBlockedBy),
-                              );
-                              return (
-                                <TableRow key={slot.slotId}>
-                                  <TableCell className="font-mono text-sm">
-                                    {slot.date}
-                                  </TableCell>
-                                  <TableCell>
-                                    <Badge variant="outline">{label}</Badge>
-                                  </TableCell>
-                                  <TableCell className="text-sm">
-                                    {reasonCodes.length > 0 ? (
-                                      <div className="flex flex-wrap gap-1">
-                                        {reasonCodes.map((code) => {
-                                          const meta = getWeeklyPlanningReasonMeta(code);
-                                          return (
-                                            <Badge
-                                              key={`${slot.slotId}-reason-${code}`}
-                                              variant="outline"
-                                              className={
-                                                meta.severity === "hard"
-                                                  ? "bg-rose-50 text-rose-700 border-rose-200"
-                                                  : "bg-amber-50 text-amber-700 border-amber-200"
-                                              }
-                                            >
-                                              {getWeeklyPlanningReasonLabel(code)}
+                        <div className="space-y-4 p-2">
+                          {[
+                            {
+                              key: "hard" as const,
+                              title: "Hard Konflikte",
+                              tone: "bg-rose-50 text-rose-700 border-rose-200",
+                              slots: groupedGenerationErrors.hardUnfilled,
+                              violations: groupedGenerationErrors.hardViolations,
+                            },
+                            {
+                              key: "soft" as const,
+                              title: "Soft Konflikte",
+                              tone: "bg-amber-50 text-amber-700 border-amber-200",
+                              slots: groupedGenerationErrors.softUnfilled,
+                              violations: groupedGenerationErrors.softViolations,
+                            },
+                          ].map((group) => (
+                            <div key={group.key} className="space-y-2">
+                              <div className="flex items-center gap-2 px-1">
+                                <Badge variant="outline" className={group.tone}>
+                                  {group.title}
+                                </Badge>
+                                <span className="text-xs text-muted-foreground">
+                                  Slots: {group.slots.length}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  Violations: {group.violations.length}
+                                </span>
+                              </div>
+                              {group.slots.length === 0 &&
+                              group.violations.length === 0 ? (
+                                <div className="px-1 text-xs text-muted-foreground">
+                                  Keine Einträge.
+                                </div>
+                              ) : (
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead>Datum</TableHead>
+                                      <TableHead>Dienst</TableHead>
+                                      <TableHead>Grund</TableHead>
+                                      <TableHead>Blocker</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {group.slots.map((slot) => {
+                                      const line = serviceLineLookup.get(
+                                        slot.serviceType,
+                                      );
+                                      const label = line?.label || slot.serviceType;
+                                      const reasonCodes = Array.from(
+                                        new Set(slot.reasonCodes),
+                                      );
+                                      const blockerCodes = Array.from(
+                                        new Set(slot.candidatesBlockedBy),
+                                      );
+                                      return (
+                                        <TableRow key={`${group.key}-${slot.slotId}`}>
+                                          <TableCell className="font-mono text-sm">
+                                            {slot.date}
+                                          </TableCell>
+                                          <TableCell>
+                                            <Badge variant="outline">{label}</Badge>
+                                          </TableCell>
+                                          <TableCell className="text-sm">
+                                            {reasonCodes.length > 0 ? (
+                                              <div className="flex flex-wrap gap-1">
+                                                {reasonCodes.map((code) => {
+                                                  const meta =
+                                                    getWeeklyPlanningReasonMeta(
+                                                      code,
+                                                    );
+                                                  return (
+                                                    <Badge
+                                                      key={`${slot.slotId}-reason-${code}`}
+                                                      variant="outline"
+                                                      className={
+                                                        meta.severity === "hard"
+                                                          ? "bg-rose-50 text-rose-700 border-rose-200"
+                                                          : "bg-amber-50 text-amber-700 border-amber-200"
+                                                      }
+                                                    >
+                                                      {getWeeklyPlanningReasonLabel(
+                                                        code,
+                                                      )}
+                                                    </Badge>
+                                                  );
+                                                })}
+                                              </div>
+                                            ) : (
+                                              "-"
+                                            )}
+                                          </TableCell>
+                                          <TableCell className="text-xs text-muted-foreground">
+                                            {blockerCodes.length > 0 ? (
+                                              <div className="flex flex-wrap gap-1">
+                                                {blockerCodes.map((code) => {
+                                                  const meta =
+                                                    getWeeklyPlanningReasonMeta(
+                                                      code,
+                                                    );
+                                                  return (
+                                                    <Badge
+                                                      key={`${slot.slotId}-blocker-${code}`}
+                                                      variant="outline"
+                                                      className={
+                                                        meta.severity === "hard"
+                                                          ? "bg-rose-50 text-rose-700 border-rose-200"
+                                                          : "bg-amber-50 text-amber-700 border-amber-200"
+                                                      }
+                                                    >
+                                                      {getWeeklyPlanningReasonLabel(
+                                                        code,
+                                                      )}
+                                                    </Badge>
+                                                  );
+                                                })}
+                                              </div>
+                                            ) : (
+                                              "-"
+                                            )}
+                                          </TableCell>
+                                        </TableRow>
+                                      );
+                                    })}
+                                    {group.violations
+                                      .slice(0, 30)
+                                      .map((violation, idx) => (
+                                        <TableRow key={`${group.key}-v-${idx}`}>
+                                          <TableCell className="font-mono text-sm">
+                                            {violation.slotId?.slice(0, 10) || "-"}
+                                          </TableCell>
+                                          <TableCell>
+                                            <Badge variant="outline">
+                                              {violation.slotId?.slice(11) ||
+                                                violation.code}
                                             </Badge>
-                                          );
-                                        })}
-                                      </div>
-                                    ) : (
-                                      "-"
-                                    )}
-                                  </TableCell>
-                                  <TableCell className="text-xs text-muted-foreground">
-                                    {blockerCodes.length > 0 ? (
-                                      <div className="flex flex-wrap gap-1">
-                                        {blockerCodes.map((code) => {
-                                          const meta = getWeeklyPlanningReasonMeta(code);
-                                          return (
-                                            <Badge
-                                              key={`${slot.slotId}-blocker-${code}`}
-                                              variant="outline"
-                                              className={
-                                                meta.severity === "hard"
-                                                  ? "bg-rose-50 text-rose-700 border-rose-200"
-                                                  : "bg-amber-50 text-amber-700 border-amber-200"
-                                              }
-                                            >
-                                              {getWeeklyPlanningReasonLabel(code)}
-                                            </Badge>
-                                          );
-                                        })}
-                                      </div>
-                                    ) : (
-                                      "-"
-                                    )}
-                                  </TableCell>
-                                </TableRow>
-                              );
-                            })}
-                            {generationViolations.slice(0, 30).map((violation, idx) => (
-                              <TableRow key={`v-${idx}`}>
-                                <TableCell className="font-mono text-sm">
-                                  {violation.slotId?.slice(0, 10) || "-"}
-                                </TableCell>
-                                <TableCell>
-                                  <Badge variant="outline">
-                                    {violation.slotId?.slice(11) || violation.code}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell className="text-sm">
-                                  <div className="space-y-1">
-                                    <Badge
-                                      variant="outline"
-                                      className={
-                                        violation.hard
-                                          ? "bg-rose-50 text-rose-700 border-rose-200"
-                                          : "bg-amber-50 text-amber-700 border-amber-200"
-                                      }
-                                    >
-                                      {violation.hard ? "Hard" : "Soft"} ·{" "}
-                                      {getWeeklyPlanningReasonLabel(violation.code)}
-                                    </Badge>
-                                    <div>{violation.message}</div>
-                                  </div>
-                                </TableCell>
-                                <TableCell className="text-xs text-muted-foreground">
-                                  {violation.employeeId ? `Mitarbeiter ${violation.employeeId}` : "-"}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
+                                          </TableCell>
+                                          <TableCell className="text-sm">
+                                            <div className="space-y-1">
+                                              <Badge
+                                                variant="outline"
+                                                className={
+                                                  violation.hard
+                                                    ? "bg-rose-50 text-rose-700 border-rose-200"
+                                                    : "bg-amber-50 text-amber-700 border-amber-200"
+                                                }
+                                              >
+                                                {violation.hard ? "Hard" : "Soft"}{" "}
+                                                ·{" "}
+                                                {getWeeklyPlanningReasonLabel(
+                                                  violation.code,
+                                                )}
+                                              </Badge>
+                                              <div>{violation.message}</div>
+                                            </div>
+                                          </TableCell>
+                                          <TableCell className="text-xs text-muted-foreground">
+                                            {violation.employeeId
+                                              ? `Mitarbeiter ${violation.employeeId}`
+                                              : "-"}
+                                          </TableCell>
+                                        </TableRow>
+                                      ))}
+                                  </TableBody>
+                                </Table>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       </ScrollArea>
                     )}
                   </div>

@@ -130,6 +130,33 @@ export function PlanningDrawer({
     return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
   }, [previewResult]);
 
+  const groupedUnfilledBySeverity = useMemo(() => {
+    const hard = groupedUnfilled.filter(([, slots]) =>
+      slots.some((slot) =>
+        slot.reasonCodes.some(
+          (code) => getWeeklyPlanningReasonMeta(code).severity === "hard",
+        ),
+      ),
+    );
+    const soft = groupedUnfilled.filter(
+      ([, slots]) =>
+        !slots.some((slot) =>
+          slot.reasonCodes.some(
+            (code) => getWeeklyPlanningReasonMeta(code).severity === "hard",
+          ),
+        ),
+    );
+    return { hard, soft };
+  }, [groupedUnfilled]);
+
+  const groupedViolationsBySeverity = useMemo(() => {
+    const violations = previewResult?.violations ?? [];
+    return {
+      hard: violations.filter((violation) => violation.hard),
+      soft: violations.filter((violation) => !violation.hard),
+    };
+  }, [previewResult]);
+
   const inputSummary = useMemo(() => {
     if (!input) return [];
     return [
@@ -273,6 +300,26 @@ export function PlanningDrawer({
                   <span className="text-muted-foreground">
                     Unfilled: {previewResult.unfilledSlots.length}
                   </span>
+                  <Badge
+                    variant="outline"
+                    className="bg-rose-50 text-rose-700 border-rose-200"
+                  >
+                    Hard{" "}
+                    {groupedUnfilledBySeverity.hard.reduce(
+                      (sum, [, slots]) => sum + slots.length,
+                      0,
+                    ) + groupedViolationsBySeverity.hard.length}
+                  </Badge>
+                  <Badge
+                    variant="outline"
+                    className="bg-amber-50 text-amber-700 border-amber-200"
+                  >
+                    Soft{" "}
+                    {groupedUnfilledBySeverity.soft.reduce(
+                      (sum, [, slots]) => sum + slots.length,
+                      0,
+                    ) + groupedViolationsBySeverity.soft.length}
+                  </Badge>
                 </div>
                 <div className="space-y-2">
                   {previewWishSummary && (
@@ -314,25 +361,50 @@ export function PlanningDrawer({
                     {previewResult.violations.length === 0 ? (
                       <p className="text-xs text-muted-foreground">Keine Verletzungen.</p>
                     ) : (
-                      previewResult.violations.slice(0, 30).map((violation, index) => (
-                        <div
-                          key={`${violation.code}-${violation.slotId ?? violation.employeeId ?? index}`}
-                          className="text-xs text-muted-foreground space-y-1"
-                        >
-                          <Badge
-                            variant="outline"
-                            className={
-                              violation.hard
-                                ? "bg-rose-50 text-rose-700 border-rose-200"
-                                : "bg-amber-50 text-amber-700 border-amber-200"
-                            }
-                          >
-                            {violation.hard ? "Hard" : "Soft"} ·{" "}
-                            {getWeeklyPlanningReasonLabel(violation.code)}
-                          </Badge>
-                          <p>{violation.message}</p>
-                        </div>
-                      ))
+                      <div className="space-y-2">
+                        {[
+                          {
+                            key: "hard" as const,
+                            title: "Hard",
+                            tone: "bg-rose-50 text-rose-700 border-rose-200",
+                            entries: groupedViolationsBySeverity.hard,
+                          },
+                          {
+                            key: "soft" as const,
+                            title: "Soft",
+                            tone: "bg-amber-50 text-amber-700 border-amber-200",
+                            entries: groupedViolationsBySeverity.soft,
+                          },
+                        ].map((group) => (
+                          <div key={group.key} className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className={group.tone}>
+                                {group.title}
+                              </Badge>
+                              <span className="text-[11px] text-muted-foreground">
+                                {group.entries.length}
+                              </span>
+                            </div>
+                            {group.entries.length === 0 ? (
+                              <p className="text-xs text-muted-foreground">
+                                Keine Einträge.
+                              </p>
+                            ) : (
+                              group.entries.slice(0, 30).map((violation, index) => (
+                                <div
+                                  key={`${group.key}-${violation.code}-${violation.slotId ?? violation.employeeId ?? index}`}
+                                  className="text-xs text-muted-foreground space-y-1"
+                                >
+                                  <Badge variant="outline" className={group.tone}>
+                                    {getWeeklyPlanningReasonLabel(violation.code)}
+                                  </Badge>
+                                  <p>{violation.message}</p>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
                   <div>
@@ -342,65 +414,105 @@ export function PlanningDrawer({
                     {groupedUnfilled.length === 0 ? (
                       <p className="text-xs text-muted-foreground">Keine offenen Slots.</p>
                     ) : (
-                      groupedUnfilled.map(([date, slots]) => (
-                        <div key={date} className="space-y-1 text-xs">
-                          <p className="font-semibold text-muted-foreground">{date}</p>
-                          {slots.map((slot) => (
-                            <div
-                              key={slot.slotId}
-                              className="flex flex-wrap items-center gap-2 rounded-md px-2 py-1 bg-muted/30"
-                            >
-                              <span className="font-medium">{slot.serviceType}</span>
-                              {slot.blocksPublish && (
-                                <Badge variant="destructive" className="text-[10px] px-1">
-                                  Pflicht
-                                </Badge>
-                              )}
-                              <div className="flex flex-wrap items-center gap-1">
-                                {Array.from(new Set(slot.reasonCodes)).map((code) => {
-                                  const meta = getWeeklyPlanningReasonMeta(code);
-                                  return (
-                                    <Badge
-                                      key={`${slot.slotId}-reason-${code}`}
-                                      variant="outline"
-                                      className={
-                                        meta.severity === "hard"
-                                          ? "bg-rose-50 text-rose-700 border-rose-200"
-                                          : "bg-amber-50 text-amber-700 border-amber-200"
-                                      }
-                                    >
-                                      {getWeeklyPlanningReasonLabel(code)}
-                                    </Badge>
-                                  );
-                                })}
-                              </div>
-                              {slot.candidatesBlockedBy.length > 0 && (
-                                <div className="flex flex-wrap items-center gap-1">
-                                  <span className="text-[10px] text-muted-foreground">
-                                    Gründe:
-                                  </span>
-                                  {Array.from(new Set(slot.candidatesBlockedBy)).map((code) => {
-                                    const meta = getWeeklyPlanningReasonMeta(code);
-                                    return (
-                                      <Badge
-                                        key={`${slot.slotId}-blocker-${code}`}
-                                        variant="outline"
-                                        className={
-                                          meta.severity === "hard"
-                                            ? "bg-rose-50 text-rose-700 border-rose-200"
-                                            : "bg-amber-50 text-amber-700 border-amber-200"
-                                        }
-                                      >
-                                        {getWeeklyPlanningReasonLabel(code)}
-                                      </Badge>
-                                    );
-                                  })}
-                                </div>
-                              )}
+                      <div className="space-y-2">
+                        {[
+                          {
+                            key: "hard" as const,
+                            title: "Hard",
+                            tone: "bg-rose-50 text-rose-700 border-rose-200",
+                            groups: groupedUnfilledBySeverity.hard,
+                          },
+                          {
+                            key: "soft" as const,
+                            title: "Soft",
+                            tone: "bg-amber-50 text-amber-700 border-amber-200",
+                            groups: groupedUnfilledBySeverity.soft,
+                          },
+                        ].map((severityGroup) => (
+                          <div key={severityGroup.key} className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                variant="outline"
+                                className={severityGroup.tone}
+                              >
+                                {severityGroup.title}
+                              </Badge>
+                              <span className="text-[11px] text-muted-foreground">
+                                {severityGroup.groups.reduce(
+                                  (sum, [, slots]) => sum + slots.length,
+                                  0,
+                                )}{" "}
+                                Slots
+                              </span>
                             </div>
-                          ))}
-                        </div>
-                      ))
+                            {severityGroup.groups.length === 0 ? (
+                              <p className="text-xs text-muted-foreground">
+                                Keine Einträge.
+                              </p>
+                            ) : (
+                              severityGroup.groups.map(([date, slots]) => (
+                                <div key={`${severityGroup.key}-${date}`} className="space-y-1 text-xs">
+                                  <p className="font-semibold text-muted-foreground">{date}</p>
+                                  {slots.map((slot) => (
+                                    <div
+                                      key={slot.slotId}
+                                      className="flex flex-wrap items-center gap-2 rounded-md px-2 py-1 bg-muted/30"
+                                    >
+                                      <span className="font-medium">{slot.serviceType}</span>
+                                      {slot.blocksPublish && (
+                                        <Badge variant="destructive" className="text-[10px] px-1">
+                                          Pflicht
+                                        </Badge>
+                                      )}
+                                      <div className="flex flex-wrap items-center gap-1">
+                                        {Array.from(new Set(slot.reasonCodes)).map((code) => {
+                                          const meta = getWeeklyPlanningReasonMeta(code);
+                                          return (
+                                            <Badge
+                                              key={`${slot.slotId}-reason-${code}`}
+                                              variant="outline"
+                                              className={
+                                                meta.severity === "hard"
+                                                  ? "bg-rose-50 text-rose-700 border-rose-200"
+                                                  : "bg-amber-50 text-amber-700 border-amber-200"
+                                              }
+                                            >
+                                              {getWeeklyPlanningReasonLabel(code)}
+                                            </Badge>
+                                          );
+                                        })}
+                                      </div>
+                                      {slot.candidatesBlockedBy.length > 0 && (
+                                        <div className="flex flex-wrap items-center gap-1">
+                                          <span className="text-[10px] text-muted-foreground">
+                                            Gründe:
+                                          </span>
+                                          {Array.from(new Set(slot.candidatesBlockedBy)).map((code) => {
+                                            const meta = getWeeklyPlanningReasonMeta(code);
+                                            return (
+                                              <Badge
+                                                key={`${slot.slotId}-blocker-${code}`}
+                                                variant="outline"
+                                                className={
+                                                  meta.severity === "hard"
+                                                    ? "bg-rose-50 text-rose-700 border-rose-200"
+                                                    : "bg-amber-50 text-amber-700 border-amber-200"
+                                                }
+                                              >
+                                                {getWeeklyPlanningReasonLabel(code)}
+                                              </Badge>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
                 </div>
