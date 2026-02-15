@@ -27,7 +27,6 @@ import {
   X,
   GripVertical,
   User,
-  Plus,
   Info,
   Lock,
   Unlock,
@@ -399,22 +398,6 @@ export default function WeeklyPlan() {
     return map;
   }, [days, employees, plannedAbsences, longTermAbsences, rosterShifts]);
 
-  const unassignedAvailableByWeekday = useMemo(() => {
-    const map = new Map<number, Employee[]>();
-    availabilityByWeekday.forEach((available, weekday) => {
-      const assignedIds = new Set(
-        (assignmentsByWeekday.get(weekday) ?? [])
-          .map((assignment) => assignment.employeeId)
-          .filter((id): id is number => typeof id === "number"),
-      );
-      map.set(
-        weekday,
-        available.filter((employee) => !assignedIds.has(employee.id)),
-      );
-    });
-    return map;
-  }, [availabilityByWeekday, assignmentsByWeekday]);
-
   const absencesByDate = useMemo(() => {
     const map = new Map<string, PlannedAbsenceLike[]>();
     plannedAbsences.forEach((absence) => {
@@ -630,14 +613,6 @@ export default function WeeklyPlan() {
     } finally {
       setIsSaving(false);
     }
-  };
-
-  const handleDuplicateAssignment = async (
-    roomId: number,
-    weekday: number,
-    employeeId: number,
-  ) => {
-    await handleAssignEmployee(roomId, weekday, employeeId);
   };
 
   const handleMoveAssignment = async (
@@ -1016,13 +991,13 @@ export default function WeeklyPlan() {
       );
 
       toast({
-        title: "KI-Vorschlag",
+        title: "Wochenplan erstellt",
         description: "Die passenden Mitarbeitenden wurden vorgeschlagen.",
       });
     } catch (error) {
       console.error("Failed to generate AI weekly plan", error);
       toast({
-        title: "KI-Vorschlag fehlgeschlagen",
+        title: "Wochenplan-Erstellung fehlgeschlagen",
         description: "Die automatische Zuteilung konnte nicht erstellt werden.",
         variant: "destructive",
       });
@@ -1032,9 +1007,29 @@ export default function WeeklyPlan() {
   };
 
   const selectedRooms = activeRoomsByDay.get(selectedWeekday) ?? [];
-  const availableEmployees =
-    unassignedAvailableByWeekday.get(selectedWeekday) ?? [];
+  const availableEmployees = availabilityByWeekday.get(selectedWeekday) ?? [];
+  const assignedEmployeeIdsForSelectedDay = useMemo(
+    () =>
+      new Set(
+        (assignmentsByWeekday.get(selectedWeekday) ?? [])
+          .map((assignment) => assignment.employeeId)
+          .filter((id): id is number => typeof id === "number"),
+      ),
+    [assignmentsByWeekday, selectedWeekday],
+  );
   const selectedAbsences = absencesByDate.get(selectedDateKey) ?? [];
+  const selectedAbsencesByReason = useMemo(() => {
+    const grouped = new Map<string, typeof selectedAbsences>();
+    selectedAbsences.forEach((absence) => {
+      const reason = absence.reason?.trim() || "Ohne Grund";
+      const entries = grouped.get(reason) ?? [];
+      entries.push(absence);
+      grouped.set(reason, entries);
+    });
+    return Array.from(grouped.entries()).sort(([a], [b]) =>
+      a.localeCompare(b, "de"),
+    );
+  }, [selectedAbsences]);
 
   const displayRooms = useMemo(() => {
     if (!isReorderMode || roomOrderIds.length === 0) {
@@ -1210,7 +1205,7 @@ export default function WeeklyPlan() {
                       disabled={isSaving || isReorderMode}
                     >
                       <Sparkles className="w-3.5 h-3.5" />
-                      KI-Vorschlag
+                      Wochenplan erstellen
                     </Button>
                     <Button
                       variant="outline"
@@ -1673,22 +1668,6 @@ export default function WeeklyPlan() {
                                   <Button
                                     size="icon"
                                     variant="ghost"
-                                    className="h-7 w-7"
-                                    onClick={() =>
-                                      assignment.employeeId &&
-                                      handleDuplicateAssignment(
-                                        room.id,
-                                        selectedWeekday,
-                                        assignment.employeeId,
-                                      )
-                                    }
-                                    disabled={disableEditing}
-                                  >
-                                    <Plus className="w-4 h-4" />
-                                  </Button>
-                                  <Button
-                                    size="icon"
-                                    variant="ghost"
                                     className="h-7 w-7 text-red-600"
                                     onClick={() =>
                                       handleDeleteAssignment(assignment.id)
@@ -1873,6 +1852,16 @@ export default function WeeklyPlan() {
                                       "Keine Kompetenzen"}
                                   </div>
                                 </div>
+                                {assignedEmployeeIdsForSelectedDay.has(
+                                  employee.id,
+                                ) && (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] bg-amber-50 text-amber-700 border-amber-200"
+                                  >
+                                    Bereits eingeteilt
+                                  </Badge>
+                                )}
                               </div>
                             );
                           })(),
@@ -2026,30 +2015,33 @@ export default function WeeklyPlan() {
                     </p>
                   </CardHeader>
                   <CardContent className="flex-1 min-h-0 overflow-y-auto space-y-2">
-                    {selectedAbsences.length === 0 ? (
+                    {selectedAbsencesByReason.length === 0 ? (
                       <div className="text-sm text-muted-foreground">
                         Keine Abwesenheiten
                       </div>
                     ) : (
-                      selectedAbsences.map((absence, index) => {
-                        const employee = employeesById.get(absence.employeeId);
-                        return (
-                          <div
-                            key={`${absence.employeeId}-${index}`}
-                            className="text-xs"
-                          >
-                            <span className="font-medium">
-                              {employee?.lastName ||
-                                employee?.name ||
-                                "Unbekannt"}
-                            </span>
-                            <span className="text-muted-foreground">
-                              {" "}
-                              · {absence.reason}
-                            </span>
+                      selectedAbsencesByReason.map(([reason, entries]) => (
+                        <div key={reason} className="space-y-1">
+                          <div className="text-xs font-semibold text-foreground">
+                            {reason} ({entries.length})
                           </div>
-                        );
-                      })
+                          {entries.map((absence, index) => {
+                            const employee = employeesById.get(
+                              absence.employeeId,
+                            );
+                            return (
+                              <div
+                                key={`${reason}-${absence.employeeId}-${index}`}
+                                className="text-xs text-muted-foreground"
+                              >
+                                {employee?.lastName ||
+                                  employee?.name ||
+                                  "Unbekannt"}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ))
                     )}
                   </CardContent>
                 </Card>
@@ -2061,8 +2053,8 @@ export default function WeeklyPlan() {
         <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 flex gap-3">
           <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
           <p className="text-sm text-blue-700">
-            Die KI belegt nur offene Tage ohne Sperre. Gesperrte Tage werden
-            nicht ueberschrieben.
+            Die automatische Planung belegt nur offene Tage ohne Sperre.
+            Gesperrte Tage werden nicht ueberschrieben.
           </p>
         </div>
       </div>
