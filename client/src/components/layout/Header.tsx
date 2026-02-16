@@ -299,6 +299,15 @@ export function Header({
     return `${first} ${last}`;
   };
 
+  const handlePlannerNotificationClick = (notificationId: string) => {
+    if (notificationId === "swap-requests") {
+      setLocation("/dienstplaene?swap=incoming");
+      window.dispatchEvent(new Event("mycliniq:openSwapIncoming"));
+      return;
+    }
+    setLocation("/dienstplaene");
+  };
+
   return (
     <header className="h-16 kabeg-header sticky top-0 z-10 px-6 flex items-center justify-between shadow-sm">
       <div className="flex items-center gap-2 min-w-0">
@@ -437,7 +446,25 @@ export function Header({
                     return (
                       <div
                         key={note.id}
-                        className={`flex items-start gap-3 p-3 rounded-lg border ${toneStyles}`}
+                        className={`flex items-start gap-3 p-3 rounded-lg border ${toneStyles} ${
+                          note.id === "swap-requests"
+                            ? "cursor-pointer hover:brightness-95"
+                            : ""
+                        }`}
+                        role={note.id === "swap-requests" ? "button" : undefined}
+                        tabIndex={note.id === "swap-requests" ? 0 : undefined}
+                        onClick={() => {
+                          if (note.id === "swap-requests") {
+                            handlePlannerNotificationClick(note.id);
+                          }
+                        }}
+                        onKeyDown={(event) => {
+                          if (note.id !== "swap-requests") return;
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            handlePlannerNotificationClick(note.id);
+                          }
+                        }}
                       >
                         <Icon className="w-5 h-5 mt-0.5" />
                         <div>

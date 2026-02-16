@@ -264,6 +264,9 @@ export default function Personal() {
     useAuth();
   const { toast } = useToast();
   const [swapDialogOpen, setSwapDialogOpen] = useState(false);
+  const [swapDialogInitialTab, setSwapDialogInitialTab] = useState<
+    "new" | "my" | "incoming"
+  >("new");
   const [exporting, setExporting] = useState(false);
   const isExternalDuty = user?.accessScope === "external_duty";
   const [unassignedCount, setUnassignedCount] = useState(0);
@@ -322,6 +325,29 @@ export default function Personal() {
         "mycliniq:unassignedDebug",
         handler as unknown as EventListener,
       );
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const openIncomingSwap = () => {
+      setSwapDialogInitialTab("incoming");
+      setSwapDialogOpen(true);
+    };
+    window.addEventListener("mycliniq:openSwapIncoming", openIncomingSwap);
+    return () =>
+      window.removeEventListener("mycliniq:openSwapIncoming", openIncomingSwap);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("swap") !== "incoming") return;
+    setSwapDialogInitialTab("incoming");
+    setSwapDialogOpen(true);
+    params.delete("swap");
+    const nextSearch = params.toString();
+    const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`;
+    window.history.replaceState(window.history.state, "", nextUrl);
   }, []);
 
   useEffect(() => {
@@ -475,7 +501,10 @@ export default function Personal() {
           <Button
             variant="outline"
             className="gap-2"
-            onClick={() => setSwapDialogOpen(true)}
+            onClick={() => {
+              setSwapDialogInitialTab("new");
+              setSwapDialogOpen(true);
+            }}
             data-testid="button-swap"
           >
             <RefreshCw className="w-4 h-4" />
@@ -621,6 +650,7 @@ export default function Personal() {
         onOpenChange={setSwapDialogOpen}
         currentDate={currentDate}
         onIncomingPendingCountChange={setPendingSwapRequestCount}
+        initialTab={swapDialogInitialTab}
       />
     </Layout>
   );
@@ -1539,11 +1569,13 @@ function ShiftSwapRosterDialog({
   onOpenChange,
   currentDate,
   onIncomingPendingCountChange,
+  initialTab,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currentDate: Date;
   onIncomingPendingCountChange?: (count: number) => void;
+  initialTab?: "new" | "my" | "incoming";
 }) {
   const { employee: currentUser } = useAuth();
   const { toast } = useToast();
@@ -1563,6 +1595,7 @@ function ShiftSwapRosterDialog({
   const [sourceShiftId, setSourceShiftId] = useState("");
   const [targetShiftIds, setTargetShiftIds] = useState<number[]>([]);
   const [reason, setReason] = useState("");
+  const [activeTab, setActiveTab] = useState<"new" | "my" | "incoming">("new");
 
   const normalizeShiftId = (value: unknown): number | null => {
     const numeric = Number(value);
@@ -1571,9 +1604,10 @@ function ShiftSwapRosterDialog({
 
   useEffect(() => {
     if (open) {
+      setActiveTab(initialTab ?? "new");
       loadData();
     }
-  }, [open, currentDate]);
+  }, [open, currentDate, initialTab]);
 
   const loadData = async () => {
     if (!currentUser) return;
@@ -1882,7 +1916,13 @@ function ShiftSwapRosterDialog({
             <Loader2 className="w-6 h-6 animate-spin" />
           </div>
         ) : (
-          <Tabs defaultValue="new" className="w-full">
+          <Tabs
+            value={activeTab}
+            onValueChange={(value) =>
+              setActiveTab((value as "new" | "my" | "incoming") ?? "new")
+            }
+            className="w-full"
+          >
             <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="new">Neue Anfrage</TabsTrigger>
               <TabsTrigger value="my">Meine Anfragen</TabsTrigger>
