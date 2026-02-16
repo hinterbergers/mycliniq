@@ -480,6 +480,11 @@ export default function Personal() {
           >
             <RefreshCw className="w-4 h-4" />
             Diensttausch
+            {pendingSwapRequestCount > 0 && (
+              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-xs font-semibold text-white">
+                !
+              </span>
+            )}
           </Button>
           <Button
             variant="outline"
@@ -489,11 +494,6 @@ export default function Personal() {
           >
             <CalendarDays className="w-4 h-4" />
             Dienstwünsche
-            {pendingSwapRequestCount > 0 && (
-              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-xs font-semibold text-white">
-                !
-              </span>
-            )}
           </Button>
           {showTakeShiftButton && (
             <Button
@@ -1564,6 +1564,11 @@ function ShiftSwapRosterDialog({
   const [targetShiftIds, setTargetShiftIds] = useState<number[]>([]);
   const [reason, setReason] = useState("");
 
+  const normalizeShiftId = (value: unknown): number | null => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  };
+
   useEffect(() => {
     if (open) {
       loadData();
@@ -1603,12 +1608,10 @@ function ShiftSwapRosterDialog({
 
       const referencedShiftIds = new Set<number>();
       [...myData, ...incomingData].forEach((request) => {
-        if (typeof request.requesterShiftId === "number") {
-          referencedShiftIds.add(request.requesterShiftId);
-        }
-        if (typeof request.targetShiftId === "number") {
-          referencedShiftIds.add(request.targetShiftId);
-        }
+        const requesterShiftId = normalizeShiftId(request.requesterShiftId);
+        const targetShiftId = normalizeShiftId(request.targetShiftId);
+        if (requesterShiftId !== null) referencedShiftIds.add(requesterShiftId);
+        if (targetShiftId !== null) referencedShiftIds.add(targetShiftId);
       });
       const loadedShiftIds = new Set(shiftData.map((shift) => shift.id));
       const missingShiftIds = [...referencedShiftIds].filter(
@@ -1833,9 +1836,10 @@ function ShiftSwapRosterDialog({
   };
 
   const renderShiftSummary = (shiftId?: number | null) => {
-    if (!shiftId) return "Unbekannter Dienst";
-    const shift = shiftsById.get(shiftId);
-    if (!shift) return `Dienst #${shiftId}`;
+    const normalizedShiftId = normalizeShiftId(shiftId);
+    if (normalizedShiftId === null) return "Unbekannter Dienst";
+    const shift = shiftsById.get(normalizedShiftId);
+    if (!shift) return "Dienstdatum nicht verfuegbar";
     const parsedDate = parseISO(shift.date);
     const weekdayShort = format(parsedDate, "EEE", { locale: de }).replace(
       ".",
