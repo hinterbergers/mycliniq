@@ -260,12 +260,14 @@ type RosterAbsenceEntry = {
 export default function Personal() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [, setLocation] = useLocation();
-  const { token, user, isAdmin, isTechnicalAdmin } = useAuth();
+  const { token, user, employee: currentEmployee, isAdmin, isTechnicalAdmin } =
+    useAuth();
   const { toast } = useToast();
   const [swapDialogOpen, setSwapDialogOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const isExternalDuty = user?.accessScope === "external_duty";
   const [unassignedCount, setUnassignedCount] = useState(0);
+  const [pendingSwapRequestCount, setPendingSwapRequestCount] = useState(0);
   const [unassignedDebug, setUnassignedDebug] =
     useState<OpenShiftDebugDetail | null>(null);
   const {
@@ -321,6 +323,27 @@ export default function Personal() {
         handler as unknown as EventListener,
       );
   }, []);
+
+  useEffect(() => {
+    const loadPendingSwapRequests = async () => {
+      if (!currentEmployee?.id) {
+        setPendingSwapRequestCount(0);
+        return;
+      }
+      try {
+        const incoming = await shiftSwapApi.getByTargetEmployee(
+          currentEmployee.id,
+        );
+        const pendingCount = incoming.filter(
+          (request) => request.status === "Ausstehend",
+        ).length;
+        setPendingSwapRequestCount(pendingCount);
+      } catch {
+        setPendingSwapRequestCount(0);
+      }
+    };
+    loadPendingSwapRequests();
+  }, [currentEmployee?.id]);
 
   const handleSubscribe = async () => {
     if (!token) {
@@ -466,6 +489,11 @@ export default function Personal() {
           >
             <CalendarDays className="w-4 h-4" />
             Dienstwünsche
+            {pendingSwapRequestCount > 0 && (
+              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-xs font-semibold text-white">
+                !
+              </span>
+            )}
           </Button>
           {showTakeShiftButton && (
             <Button
@@ -592,6 +620,7 @@ export default function Personal() {
         open={swapDialogOpen}
         onOpenChange={setSwapDialogOpen}
         currentDate={currentDate}
+        onIncomingPendingCountChange={setPendingSwapRequestCount}
       />
     </Layout>
   );
@@ -1509,10 +1538,12 @@ function ShiftSwapRosterDialog({
   open,
   onOpenChange,
   currentDate,
+  onIncomingPendingCountChange,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currentDate: Date;
+  onIncomingPendingCountChange?: (count: number) => void;
 }) {
   const { employee: currentUser } = useAuth();
   const { toast } = useToast();
@@ -1526,6 +1557,9 @@ function ShiftSwapRosterDialog({
   const [incomingRequests, setIncomingRequests] = useState<ShiftSwapRequest[]>(
     [],
   );
+  const [swapShiftDetails, setSwapShiftDetails] = useState<
+    Record<number, RosterShift>
+  >({});
   const [sourceShiftId, setSourceShiftId] = useState("");
   const [targetShiftIds, setTargetShiftIds] = useState<number[]>([]);
   const [reason, setReason] = useState("");
@@ -1563,6 +1597,37 @@ function ShiftSwapRosterDialog({
       setServiceLines(serviceLineData);
       setMyRequests(myData);
       setIncomingRequests(incomingData);
+      onIncomingPendingCountChange?.(
+        incomingData.filter((request) => request.status === "Ausstehend").length,
+      );
+
+      const referencedShiftIds = new Set<number>();
+      [...myData, ...incomingData].forEach((request) => {
+        if (typeof request.requesterShiftId === "number") {
+          referencedShiftIds.add(request.requesterShiftId);
+        }
+        if (typeof request.targetShiftId === "number") {
+          referencedShiftIds.add(request.targetShiftId);
+        }
+      });
+      const loadedShiftIds = new Set(shiftData.map((shift) => shift.id));
+      const missingShiftIds = [...referencedShiftIds].filter(
+        (shiftId) => !loadedShiftIds.has(shiftId),
+      );
+      if (missingShiftIds.length === 0) {
+        setSwapShiftDetails({});
+      } else {
+        const extraShiftResults = await Promise.allSettled(
+          missingShiftIds.map((shiftId) => rosterApi.getById(shiftId)),
+        );
+        const extraShifts: Record<number, RosterShift> = {};
+        extraShiftResults.forEach((result) => {
+          if (result.status === "fulfilled") {
+            extraShifts[result.value.id] = result.value;
+          }
+        });
+        setSwapShiftDetails(extraShifts);
+      }
     } catch (error: any) {
       toast({
         title: "Fehler",
@@ -1576,7 +1641,12 @@ function ShiftSwapRosterDialog({
   };
 
   const employeesById = new Map(employees.map((emp) => [emp.id, emp]));
-  const shiftsById = new Map(shifts.map((shift) => [shift.id, shift]));
+  const shiftsById = useMemo(() => {
+    const map = new Map<number, RosterShift>();
+    shifts.forEach((shift) => map.set(shift.id, shift));
+    Object.values(swapShiftDetails).forEach((shift) => map.set(shift.id, shift));
+    return map;
+  }, [shifts, swapShiftDetails]);
   const serviceLineLabelLookup = useMemo(() => {
     const map = new Map<string, string>();
     FALLBACK_SERVICE_LINES.forEach((line) => map.set(line.key, line.label));
@@ -1766,12 +1836,17 @@ function ShiftSwapRosterDialog({
     if (!shiftId) return "Unbekannter Dienst";
     const shift = shiftsById.get(shiftId);
     if (!shift) return `Dienst #${shiftId}`;
-    const dateLabel = format(parseISO(shift.date), "dd.MM.yyyy", {
+    const parsedDate = parseISO(shift.date);
+    const weekdayShort = format(parsedDate, "EEE", { locale: de }).replace(
+      ".",
+      "",
+    );
+    const dateLabel = format(parsedDate, "dd.MM.", {
       locale: de,
     });
     const serviceLabel =
       serviceLineLabelLookup.get(shift.serviceType) || shift.serviceType;
-    return `${dateLabel} · ${serviceLabel}`;
+    return `${weekdayShort} den ${dateLabel} · ${serviceLabel}`;
   };
 
   const renderStatusBadge = (status: string) => {
