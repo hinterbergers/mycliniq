@@ -24,7 +24,7 @@ import {
   rosterShifts,
 } from "@shared/schema";
 import { requireEditor } from "../middleware/auth";
-import { syncDraftFromFinal } from "../../lib/roster";
+import { syncDraftFromFinal, syncFinalFromDraft } from "../../lib/roster";
 
 /**
  * Schema for creating a new duty plan
@@ -414,6 +414,11 @@ export function registerDutyPlanRoutes(router: Router) {
         .set(updateData)
         .where(eq(dutyPlans.id, planId))
         .returning();
+
+      if (status === "Vorläufig") {
+        // Preview is based on draft edits; replace final month data to avoid duplicate calendar entries.
+        await syncFinalFromDraft(existing.year, existing.month);
+      }
 
       if (status === "Freigegeben") {
         const existingSettings = await db.select().from(rosterSettings);
