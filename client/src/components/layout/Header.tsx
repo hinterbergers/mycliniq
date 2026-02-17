@@ -78,6 +78,7 @@ export function Header({
 }) {
   const {
     employee,
+    user,
     capabilities,
     isAdmin,
     isTechnicalAdmin,
@@ -108,6 +109,7 @@ export function Header({
     isAdmin || isTechnicalAdmin || capabilities.includes("dutyplan.edit");
   const canPublishPlan =
     isAdmin || isTechnicalAdmin || capabilities.includes("dutyplan.publish");
+  const canUseViewAsUserToggle = isAdminActual || user?.appRole === "Editor";
   const serviceLineMeta = useMemo(
     () =>
       serviceLines.map((line) => ({
@@ -532,7 +534,7 @@ export function Header({
           </HoverCard>
         )}
 
-        {isAdminActual && (
+        {canUseViewAsUserToggle && (
           <div className="hidden md:flex items-center gap-2 text-white/80">
             <span className="text-xs">Als User</span>
             <Switch checked={viewAsUser} onCheckedChange={setViewAsUser} />

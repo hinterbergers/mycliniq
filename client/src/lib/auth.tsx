@@ -142,6 +142,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return user.systemRole !== "employee";
   }, [user]);
 
+  const canUseViewAsUserMode = useMemo(() => {
+    if (!user) return false;
+    return isAdminActual || user.appRole === "Editor";
+  }, [user, isAdminActual]);
+
   const isAdmin = useMemo(
     () => isAdminActual && !viewAsUser,
     [isAdminActual, viewAsUser],
@@ -196,10 +201,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const setViewAsUser = useCallback(
     (value: boolean) => {
-      if (!isAdminActual) return;
+      if (!canUseViewAsUserMode) return;
       setViewAsUserState(value);
     },
-    [isAdminActual],
+    [canUseViewAsUserMode],
   );
 
   const resetAuthState = () => {
@@ -366,17 +371,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     try {
       const stored = localStorage.getItem(VIEW_AS_USER_KEY);
-      setViewAsUserState(stored === "1");
+      if (stored === null) {
+        setViewAsUserState(user?.appRole === "Editor");
+      } else {
+        setViewAsUserState(stored === "1");
+      }
     } catch {
       // ignore
     }
-  }, []);
+  }, [user?.appRole]);
 
   useEffect(() => {
-    if (!isAdminActual && viewAsUser) {
+    if (!canUseViewAsUserMode && viewAsUser) {
       setViewAsUserState(false);
     }
-  }, [isAdminActual, viewAsUser]);
+  }, [canUseViewAsUserMode, viewAsUser]);
 
   useEffect(() => {
     try {
