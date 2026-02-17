@@ -1697,8 +1697,10 @@ export default function RosterPlan() {
     }
   };
 
-  const handleUpdatePlanStatus = async (nextStatus: DutyPlan["status"]) => {
-    if (!currentUser) return;
+  const handleUpdatePlanStatus = async (
+    nextStatus: DutyPlan["status"],
+  ): Promise<boolean> => {
+    if (!currentUser) return false;
     setIsStatusUpdating(true);
     try {
       const year = currentDate.getFullYear();
@@ -1741,15 +1743,30 @@ export default function RosterPlan() {
         // This page edits roster shifts directly; an auto "publish-to-roster" call can overwrite/wipe the month.
         await loadData();
       }
+      return true;
     } catch (error: any) {
       toast({
         title: "Status-Update fehlgeschlagen",
         description: error.message || "Bitte später erneut versuchen",
         variant: "destructive",
       });
+      return false;
     } finally {
       setIsStatusUpdating(false);
     }
+  };
+
+  const handleManualEditToggle = async () => {
+    if (manualEditMode) {
+      setManualEditMode(false);
+      return;
+    }
+
+    if (planStatus !== "Entwurf") {
+      const switched = await handleUpdatePlanStatus("Entwurf");
+      if (!switched) return;
+    }
+    setManualEditMode(true);
   };
 
   const handleSetWishMonth = async () => {
@@ -1937,7 +1954,7 @@ export default function RosterPlan() {
               <Button
                 variant={manualEditMode ? "default" : "outline"}
                 className="gap-2"
-                onClick={() => setManualEditMode((prev) => !prev)}
+                onClick={handleManualEditToggle}
                 data-testid="button-manual-edit"
               >
                 <Pencil className="w-4 h-4" />

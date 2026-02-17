@@ -1,5 +1,5 @@
-import { db, and, eq, gte, lte } from "./db";
-import { rosterShifts } from "@shared/schema";
+import { db, and, eq, gte, lte, inArray, or } from "./db";
+import { rosterShifts, shiftSwapRequests } from "@shared/schema";
 
 const padTwo = (value: number) => String(value).padStart(2, "0");
 
@@ -56,6 +56,30 @@ export async function syncDraftFromFinal(year: number, month: number) {
 
 export async function syncFinalFromDraft(year: number, month: number) {
   const { monthStart, monthEnd } = getMonthRange(year, month);
+
+  const finalShiftRows = await db
+    .select({ id: rosterShifts.id })
+    .from(rosterShifts)
+    .where(
+      and(
+        eq(rosterShifts.isDraft, false),
+        gte(rosterShifts.date, monthStart),
+        lte(rosterShifts.date, monthEnd),
+      ),
+    );
+  const finalShiftIds = finalShiftRows.map((row) => row.id);
+
+  if (finalShiftIds.length > 0) {
+    // Drop stale swap requests referencing final month shifts before replacing rows.
+    await db
+      .delete(shiftSwapRequests)
+      .where(
+        or(
+          inArray(shiftSwapRequests.requesterShiftId, finalShiftIds),
+          inArray(shiftSwapRequests.targetShiftId, finalShiftIds),
+        ),
+      );
+  }
 
   await db
     .delete(rosterShifts)
