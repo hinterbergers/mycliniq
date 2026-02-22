@@ -2017,7 +2017,9 @@ export default function VacationPlanEditor({
                                     </button>
                                   </PopoverTrigger>
                                 </TooltipTrigger>
-                                <TooltipContent>{breakdownPanel}</TooltipContent>
+                                <TooltipContent className="bg-white text-foreground border border-border shadow-md">
+                                  {breakdownPanel}
+                                </TooltipContent>
                               </Tooltip>
                               <PopoverContent align="center" className="w-auto p-3">
                                 {breakdownPanel}
@@ -2085,7 +2087,9 @@ export default function VacationPlanEditor({
                                       </button>
                                     </PopoverTrigger>
                                   </TooltipTrigger>
-                                  <TooltipContent>{employeeInfoPanel}</TooltipContent>
+                                  <TooltipContent className="bg-white text-foreground border border-border shadow-md">
+                                    {employeeInfoPanel}
+                                  </TooltipContent>
                                 </Tooltip>
                                 <PopoverContent align="start" className="w-56 p-3">
                                   {employeeInfoPanel}
