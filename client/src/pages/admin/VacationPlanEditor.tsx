@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addMonths,
   differenceInCalendarDays,
@@ -63,6 +63,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import {
   competencyApi,
@@ -149,6 +155,8 @@ const VISIBILITY_GROUP_LABELS: Record<VacationVisibilityGroup, string> = {
   TA: "Turnus & Studierende",
   SEK: "Sekretariat",
 };
+
+const COMPACT_DAY_CELL_PX = 28;
 
 type ShiftPreferences = {
   vacationVisibilityRoleGroups?: VacationVisibilityGroup[];
@@ -327,6 +335,8 @@ export default function VacationPlanEditor({
   const [selectedCompetencyIds, setSelectedCompetencyIds] = useState<number[]>(
     [],
   );
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<number[]>([]);
+  const [employeeFilterQuery, setEmployeeFilterQuery] = useState("");
   const [absenceDraft, setAbsenceDraft] = useState<AbsenceDraft>({
     employeeId: currentUser?.id ?? null,
     reason: "Urlaub",
@@ -345,6 +355,10 @@ export default function VacationPlanEditor({
     notes: "",
   });
   const [updatingId, setUpdatingId] = useState<number | null>(null);
+  const gridScrollRef = useRef<HTMLDivElement | null>(null);
+  const stickyEmployeeHeaderRef = useRef<HTMLTableCellElement | null>(null);
+  const [visibleMonthLabel, setVisibleMonthLabel] = useState("");
+  const [visibleMonthKey, setVisibleMonthKey] = useState("");
 
   const canEditRules = isAdmin || capabilities.includes("vacation.lock");
   const canApprove = isAdmin || capabilities.includes("vacation.approve");
@@ -560,6 +574,26 @@ export default function VacationPlanEditor({
     [competencyNameLookup, selectedCompetencyIds],
   );
 
+  const employeeFilterCandidates = useMemo(() => {
+    return sortedEmployees.filter((emp) => {
+      const group = ROLE_GROUPS[normalizeRole(emp.role)] ?? null;
+      return Boolean(group && visibilityGroups.includes(group));
+    });
+  }, [sortedEmployees, visibilityGroups]);
+
+  const filteredEmployeeFilterCandidates = useMemo(() => {
+    const query = employeeFilterQuery.trim().toLowerCase();
+    if (!query) return employeeFilterCandidates;
+    return employeeFilterCandidates.filter((emp) => {
+      const name = [emp.lastName, emp.firstName, emp.name]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      const role = (emp.role ?? "").toLowerCase();
+      return name.includes(query) || role.includes(query);
+    });
+  }, [employeeFilterCandidates, employeeFilterQuery]);
+
   const visibleEmployees = useMemo(() => {
     const effectiveRoles = selectedRoleGroups.length
       ? selectedRoleGroups
@@ -573,9 +607,11 @@ export default function VacationPlanEditor({
       const empCompetencies = Array.isArray(emp.competencies)
         ? emp.competencies
         : [];
-      return selectedCompetencyNames.some((name) =>
+      const competencyMatch = selectedCompetencyNames.some((name) =>
         empCompetencies.includes(name),
       );
+      if (!competencyMatch) return false;
+      return true;
     });
   }, [
     selectedCompetencyNames,
@@ -584,15 +620,21 @@ export default function VacationPlanEditor({
     visibilityGroups,
   ]);
 
+  const visibleEmployeesWithSelectedPeople = useMemo(() => {
+    if (!selectedEmployeeIds.length) return visibleEmployees;
+    const selected = new Set(selectedEmployeeIds);
+    return visibleEmployees.filter((emp) => selected.has(emp.id));
+  }, [selectedEmployeeIds, visibleEmployees]);
+
   const displayEmployees = useMemo(() => {
-    if (!embedded || !showOnlySelf) return visibleEmployees;
+    if (!embedded || !showOnlySelf) return visibleEmployeesWithSelectedPeople;
     if (!currentUser) return [];
-    return visibleEmployees.filter((emp) => emp.id === currentUser.id);
-  }, [currentUser, embedded, showOnlySelf, visibleEmployees]);
+    return visibleEmployeesWithSelectedPeople.filter((emp) => emp.id === currentUser.id);
+  }, [currentUser, embedded, showOnlySelf, visibleEmployeesWithSelectedPeople]);
 
   const visibleEmployeeIds = useMemo(
-    () => new Set(visibleEmployees.map((emp) => emp.id)),
-    [visibleEmployees],
+    () => new Set(visibleEmployeesWithSelectedPeople.map((emp) => emp.id)),
+    [visibleEmployeesWithSelectedPeople],
   );
 
   const visibleCalendarAbsences = useMemo(
@@ -882,7 +924,7 @@ export default function VacationPlanEditor({
     const start = quarterStart;
     const end = quarterEnd;
     const map = new Map<number, Record<string, number>>();
-    visibleEmployees.forEach((emp) => {
+    visibleEmployeesWithSelectedPeople.forEach((emp) => {
       const entry: Record<string, number> = {};
       SUMMARY_REASON_KEYS.forEach((reason) => {
         entry[reason] = 0;
@@ -902,11 +944,16 @@ export default function VacationPlanEditor({
       entry[absence.styleKey] = (entry[absence.styleKey] ?? 0) + days;
     });
 
-    return visibleEmployees.map((emp) => ({
+    return visibleEmployeesWithSelectedPeople.map((emp) => ({
       employee: emp,
       counts: map.get(emp.id) ?? {},
     }));
-  }, [quarterEnd, quarterStart, visibleCalendarAbsences, visibleEmployees]);
+  }, [
+    quarterEnd,
+    quarterStart,
+    visibleCalendarAbsences,
+    visibleEmployeesWithSelectedPeople,
+  ]);
 
   const getDayClass = (date: Date) => {
     const holiday = getAustrianHoliday(date);
@@ -916,6 +963,17 @@ export default function VacationPlanEditor({
     if (holiday) return "bg-rose-50";
     if (schoolHoliday) return "bg-amber-50";
     if (isWeekend) return "bg-slate-50";
+    return "";
+  };
+
+  const getDayInsetClass = (date: Date) => {
+    const holiday = getAustrianHoliday(date);
+    const schoolHoliday = getSchoolHoliday(date, holidayLocation);
+    const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+
+    if (holiday) return "border-rose-300";
+    if (schoolHoliday) return "border-amber-300";
+    if (isWeekend) return "border-slate-300";
     return "";
   };
 
@@ -963,15 +1021,51 @@ export default function VacationPlanEditor({
     );
   };
 
+  const toggleEmployeeFilter = (employeeId: number) => {
+    setSelectedEmployeeIds((prev) =>
+      prev.includes(employeeId)
+        ? prev.filter((item) => item !== employeeId)
+        : [...prev, employeeId],
+    );
+  };
+
   const resetFilters = () => {
     setSelectedRoleGroups(visibilityGroups);
     setSelectedCompetencyIds([]);
+    setSelectedEmployeeIds([]);
+    setEmployeeFilterQuery("");
   };
 
   const filterActive =
+    selectedEmployeeIds.length > 0 ||
     selectedCompetencyIds.length > 0 ||
     (selectedRoleGroups.length > 0 &&
       selectedRoleGroups.length !== visibilityGroups.length);
+
+  useEffect(() => {
+    const container = gridScrollRef.current;
+    if (!container || !days.length) return;
+
+    const updateVisibleMonth = () => {
+      const firstColWidth = stickyEmployeeHeaderRef.current?.offsetWidth ?? 220;
+      const dayOffset = Math.max(0, container.scrollLeft - firstColWidth);
+      const dayIndex = Math.max(
+        0,
+        Math.min(days.length - 1, Math.floor(dayOffset / COMPACT_DAY_CELL_PX)),
+      );
+      const activeDate = days[dayIndex] ?? days[0];
+      setVisibleMonthLabel(format(activeDate, "MMMM yyyy", { locale: de }));
+      setVisibleMonthKey(format(activeDate, "yyyy-MM"));
+    };
+
+    updateVisibleMonth();
+    container.addEventListener("scroll", updateVisibleMonth, { passive: true });
+    window.addEventListener("resize", updateVisibleMonth);
+    return () => {
+      container.removeEventListener("scroll", updateVisibleMonth);
+      window.removeEventListener("resize", updateVisibleMonth);
+    };
+  }, [days]);
 
   const hasVacationLock = Boolean(vacationLockFrom || vacationLockUntil);
 
@@ -1216,6 +1310,22 @@ export default function VacationPlanEditor({
     }
   };
 
+  const selectedEmployeeLookup = useMemo(
+    () => new Set(selectedEmployeeIds),
+    [selectedEmployeeIds],
+  );
+
+  const selectedEmployeeNames = useMemo(() => {
+    if (!selectedEmployeeIds.length) return [];
+    return employeeFilterCandidates
+      .filter((emp) => selectedEmployeeLookup.has(emp.id))
+      .map((emp) =>
+        [emp.lastName, emp.firstName].filter(Boolean).join(" ").trim() ||
+        emp.name ||
+        "Unbekannt",
+      );
+  }, [employeeFilterCandidates, selectedEmployeeIds, selectedEmployeeLookup]);
+
   const handleRuleToggle = async (rule: VacationRule, value: boolean) => {
     try {
       const updated = await vacationRulesApi.update(rule.id, {
@@ -1337,7 +1447,7 @@ export default function VacationPlanEditor({
                       <div className="text-xs font-semibold uppercase text-muted-foreground">
                         Rollen
                       </div>
-                      <div className="space-y-2">
+                      <div className="max-h-32 overflow-y-auto space-y-2 pr-1">
                         {visibilityGroups.map((group) => (
                           <div key={group} className="flex items-center gap-2">
                             <Checkbox
@@ -1353,6 +1463,61 @@ export default function VacationPlanEditor({
                             </Label>
                           </div>
                         ))}
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-xs font-semibold uppercase text-muted-foreground">
+                          Mitarbeiter
+                        </div>
+                        {selectedEmployeeIds.length > 0 && (
+                          <span className="text-[11px] text-muted-foreground">
+                            {selectedEmployeeIds.length} gewaehlt
+                          </span>
+                        )}
+                      </div>
+                      <Input
+                        value={employeeFilterQuery}
+                        onChange={(e) => setEmployeeFilterQuery(e.target.value)}
+                        placeholder="Mitarbeiter suchen..."
+                        className="h-8"
+                      />
+                      <div className="max-h-44 overflow-y-auto space-y-2 pr-1">
+                        {filteredEmployeeFilterCandidates.map((emp) => {
+                          const label =
+                            [emp.lastName, emp.firstName]
+                              .filter(Boolean)
+                              .join(" ")
+                              .trim() || emp.name || "Unbekannt";
+                          return (
+                            <div
+                              key={`filter-emp-${emp.id}`}
+                              className="flex items-start gap-2"
+                            >
+                              <Checkbox
+                                id={`filter-emp-${emp.id}`}
+                                checked={selectedEmployeeIds.includes(emp.id)}
+                                onCheckedChange={() => toggleEmployeeFilter(emp.id)}
+                              />
+                              <Label
+                                htmlFor={`filter-emp-${emp.id}`}
+                                className="text-sm font-normal cursor-pointer leading-tight"
+                              >
+                                <div>{label}</div>
+                                {emp.role ? (
+                                  <div className="text-[11px] text-muted-foreground">
+                                    {emp.role}
+                                  </div>
+                                ) : null}
+                              </Label>
+                            </div>
+                          );
+                        })}
+                        {!filteredEmployeeFilterCandidates.length && (
+                          <p className="text-xs text-muted-foreground">
+                            Keine passenden Mitarbeiter
+                          </p>
+                        )}
                       </div>
                     </div>
                     <div className="space-y-2">
@@ -1629,7 +1794,26 @@ export default function VacationPlanEditor({
             <Badge variant="outline" className={STATUS_STYLES.Abgelehnt}>
               Abgelehnt: {counts.abgelehnt}
             </Badge>
+            {selectedEmployeeIds.length > 0 && (
+              <Badge variant="secondary">
+                Mitarbeiter: {selectedEmployeeIds.length}
+              </Badge>
+            )}
           </div>
+          {selectedEmployeeNames.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {selectedEmployeeNames.slice(0, 6).map((name) => (
+                <Badge key={name} variant="outline" className="text-[11px] px-2 py-0">
+                  {name}
+                </Badge>
+              ))}
+              {selectedEmployeeNames.length > 6 && (
+                <Badge variant="outline" className="text-[11px] px-2 py-0">
+                  +{selectedEmployeeNames.length - 6} weitere
+                </Badge>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -1714,212 +1898,308 @@ export default function VacationPlanEditor({
               Daten werden geladen...
             </div>
           ) : (
-            <div className="max-h-[70vh] overflow-auto border border-border rounded-xl">
-              <table className="min-w-max border-collapse text-xs">
-                <thead>
-                  <tr>
-                    <th className="sticky left-0 top-0 z-40 bg-white border border-border px-3 py-2 text-left min-w-[220px]">
-                      Mitarbeiter
-                    </th>
-                    {monthSegments.map((segment) => (
+            <TooltipProvider delayDuration={120}>
+              <div
+                ref={gridScrollRef}
+                className="max-h-[70vh] overflow-auto border border-border rounded-xl"
+              >
+                <table className="min-w-max border-collapse text-xs">
+                  <thead>
+                    <tr>
                       <th
-                        key={segment.label}
-                        colSpan={segment.days.length}
-                        className="sticky top-0 z-30 border border-border bg-slate-50 px-2 py-1 text-center font-semibold"
+                        ref={stickyEmployeeHeaderRef}
+                        className="sticky left-0 top-0 z-40 bg-white border border-border px-2 py-2 text-left min-w-[190px]"
                       >
-                        {segment.label}
+                        <div className="flex items-center justify-between gap-2">
+                          <span>Mitarbeiter</span>
+                          <span className="text-[11px] font-normal text-muted-foreground whitespace-nowrap">
+                            {visibleMonthLabel || quarterLabel}
+                          </span>
+                        </div>
                       </th>
-                    ))}
-                  </tr>
-                  <tr>
-                    <th className="sticky left-0 top-[32px] z-30 bg-white border border-border px-3 py-2 text-left">
-                      Tag
-                    </th>
-                    {days.map((date) => {
-                      const dayKey = formatDateInput(date);
-                      const dayLabel = getDayLabel(date);
-                      return (
-                        <th
-                          key={dayKey}
-                          title={dayLabel}
-                          className={cn(
-                            "sticky top-[32px] z-20 border border-border px-1 py-1 text-center font-normal bg-white",
-                            getDayClass(date),
-                            conflictDates.has(dayKey) ? "bg-amber-100" : "",
-                          )}
-                        >
-                          <div className="text-[10px]">
-                            {format(date, "EE", { locale: de })}
-                          </div>
-                          <div className="font-semibold">
-                            {format(date, "d")}
-                          </div>
-                        </th>
-                      );
-                    })}
-                  </tr>
-                  <tr>
-                    <th className="sticky left-0 top-[64px] z-20 bg-white border border-border px-3 py-2 text-left">
-                      Fehlt (gesamt)
-                    </th>
-                    {days.map((date) => {
-                      const dayKey = formatDateInput(date);
-                      const count = dayAbsenceMap.get(dayKey)?.length ?? 0;
-                      const breakdown = (
-                        dayAbsenceMap.get(dayKey) ?? []
-                      ).reduce(
-                        (acc, absence) => {
-                          const group = employeeRoleGroupById.get(
-                            absence.employeeId,
-                          );
-                          if (group === "OA") acc.OA += 1;
-                          if (group === "ASS") acc.ASS += 1;
-                          if (group === "TA") acc.TA += 1;
-                          return acc;
-                        },
-                        { OA: 0, ASS: 0, TA: 0 },
-                      );
-                      const breakdownLabel = `ASS: ${breakdown.ASS} | OA: ${breakdown.OA} | TA: ${breakdown.TA}`;
-                      return (
-                        <th
-                          key={`count-${dayKey}`}
-                          title={breakdownLabel}
-                          className={cn(
-                            "sticky top-[64px] z-10 border border-border px-1 py-1 text-center bg-white",
-                            getDayClass(date),
-                          )}
-                        >
-                          {count > 0 && (
-                            <div className="space-y-0.5">
-                              <div className="text-[10px] font-semibold">
-                                {count}
-                              </div>
-                              <div className="text-[9px] text-muted-foreground">
-                                A:{breakdown.ASS} O:{breakdown.OA} T:
-                                {breakdown.TA}
-                              </div>
-                            </div>
-                          )}
-                        </th>
-                      );
-                    })}
-                  </tr>
-                </thead>
-                <tbody>
-                  {displayEmployees.map((emp) => {
-                    const entitlement = emp.vacationEntitlement;
-                    const usedDays = countVacationDaysForEmployee(emp.id);
-                    const entitlementExceeded =
-                      typeof entitlement === "number" && usedDays > entitlement;
-                    const canEditRow =
-                      emp.id === currentUser?.id || canEditOthers;
-                    return (
-                      <tr
-                        key={emp.id}
-                        className={
-                          emp.id === currentUser?.id ? "bg-blue-50/40" : ""
-                        }
-                      >
-                        <td className="sticky left-0 z-10 bg-white border border-border px-3 py-2 text-left">
-                          <div className="flex items-center justify-between gap-2">
-                            <div>
-                              <div className="font-medium">
-                                {emp.lastName} {emp.firstName}
-                              </div>
-                              <div className="text-[11px] text-muted-foreground">
-                                {emp.role}
-                              </div>
-                              <div
-                                className={cn(
-                                  "text-[11px]",
-                                  entitlementExceeded
-                                    ? "text-red-600"
-                                    : "text-muted-foreground",
-                                )}
-                              >
-                                Urlaub: {usedDays} / {entitlement ?? "-"}
-                              </div>
-                            </div>
-                            {canEditRow && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => openAbsenceDialog(emp.id)}
-                                title="Abwesenheit erfassen"
-                              >
-                                <Plus className="w-4 h-4" />
-                              </Button>
+                      {monthSegments.map((segment) => {
+                        const segmentKey = format(segment.days[0], "yyyy-MM");
+                        const isVisibleMonth = visibleMonthKey === segmentKey;
+                        return (
+                          <th
+                            key={segment.label}
+                            colSpan={segment.days.length}
+                            className={cn(
+                              "sticky top-0 z-30 border border-border px-2 py-1 text-center font-semibold",
+                              isVisibleMonth
+                                ? "bg-blue-50 text-blue-800"
+                                : "bg-slate-50",
                             )}
+                          >
+                            {segment.label}
+                          </th>
+                        );
+                      })}
+                    </tr>
+                    <tr>
+                      <th className="sticky left-0 top-[32px] z-30 bg-white border border-border px-2 py-2 text-left">
+                        Tag
+                      </th>
+                      {days.map((date) => {
+                        const dayKey = formatDateInput(date);
+                        const dayLabel = getDayLabel(date);
+                        return (
+                          <th
+                            key={dayKey}
+                            title={dayLabel}
+                            className={cn(
+                              "sticky top-[32px] z-20 border border-border p-0 text-center font-normal bg-white w-7 min-w-7",
+                              getDayClass(date),
+                              conflictDates.has(dayKey) ? "bg-amber-100" : "",
+                            )}
+                          >
+                            <div className="py-0.5">
+                              <div className="text-[9px] leading-none">
+                                {format(date, "EE", { locale: de })}
+                              </div>
+                              <div className="font-semibold leading-tight">
+                                {format(date, "d")}
+                              </div>
+                            </div>
+                          </th>
+                        );
+                      })}
+                    </tr>
+                    <tr>
+                      <th className="sticky left-0 top-[64px] z-20 bg-white border border-border px-2 py-2 text-left">
+                        Fehlt (gesamt)
+                      </th>
+                      {days.map((date) => {
+                        const dayKey = formatDateInput(date);
+                        const count = dayAbsenceMap.get(dayKey)?.length ?? 0;
+                        const breakdown = (
+                          dayAbsenceMap.get(dayKey) ?? []
+                        ).reduce(
+                          (acc, absence) => {
+                            const group = employeeRoleGroupById.get(
+                              absence.employeeId,
+                            );
+                            if (group === "OA") acc.OA += 1;
+                            if (group === "ASS") acc.ASS += 1;
+                            if (group === "TA") acc.TA += 1;
+                            return acc;
+                          },
+                          { OA: 0, ASS: 0, TA: 0 },
+                        );
+
+                        const breakdownPanel = (
+                          <div className="text-xs leading-relaxed">
+                            <div className="font-semibold">Fehlend:</div>
+                            <div>Oberaerzte: {breakdown.OA}</div>
+                            <div>Assistenzaerzte: {breakdown.ASS}</div>
+                            <div>Turnusaerzte: {breakdown.TA}</div>
                           </div>
-                        </td>
-                        {days.map((date) => {
-                          const dayKey = formatDateInput(date);
-                          const absence = getAbsenceForEmployeeOnDate(
-                            emp.id,
-                            dayKey,
-                          );
-                          const reasonStyle = absence
-                            ? REASON_STYLES[absence.styleKey]
-                            : null;
-                          const cellClass = getDayClass(date);
-                          const isRejected = absence?.status === "Abgelehnt";
-                          const isCellLocked =
-                            !canOverrideLock && isDateWithinLock(dayKey);
-                          const canEditCell = canEditRow && !isCellLocked;
-                          return (
-                            <td
-                              key={`${emp.id}-${dayKey}`}
-                              className={cn(
-                                "border border-border px-1 py-1 text-center",
-                                cellClass,
-                                canEditCell ? "cursor-pointer" : "",
+                        );
+
+                        return (
+                          <th
+                            key={`count-${dayKey}`}
+                            className={cn(
+                              "sticky top-[64px] z-10 border border-border p-0 text-center bg-white w-7 min-w-7",
+                              getDayClass(date),
+                            )}
+                          >
+                            <Popover>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <PopoverTrigger asChild>
+                                    <button
+                                      type="button"
+                                      className="flex h-7 w-full items-center justify-center text-[10px] font-semibold"
+                                      aria-label={`Fehlend am ${format(date, "dd.MM.yyyy")}: ${count}`}
+                                    >
+                                      {count > 0 ? count : ""}
+                                    </button>
+                                  </PopoverTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent>{breakdownPanel}</TooltipContent>
+                              </Tooltip>
+                              <PopoverContent align="center" className="w-auto p-3">
+                                {breakdownPanel}
+                              </PopoverContent>
+                            </Popover>
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {displayEmployees.map((emp) => {
+                      const entitlement = emp.vacationEntitlement;
+                      const usedDays = countVacationDaysForEmployee(emp.id);
+                      const entitlementExceeded =
+                        typeof entitlement === "number" && usedDays > entitlement;
+                      const canEditRow =
+                        emp.id === currentUser?.id || canEditOthers;
+                      const employeeName =
+                        [emp.lastName, emp.firstName].filter(Boolean).join(" ").trim() ||
+                        emp.name ||
+                        "Unbekannt";
+
+                      const employeeInfoPanel = (
+                        <div className="space-y-1 text-xs">
+                          <div className="font-semibold">{employeeName}</div>
+                          <div className="text-muted-foreground">
+                            {emp.role || "-"}
+                          </div>
+                          <div
+                            className={cn(
+                              entitlementExceeded
+                                ? "text-red-600"
+                                : "text-muted-foreground",
+                            )}
+                          >
+                            Urlaub: {usedDays} / {entitlement ?? "-"}
+                          </div>
+                        </div>
+                      );
+
+                      return (
+                        <tr
+                          key={emp.id}
+                          className={
+                            emp.id === currentUser?.id ? "bg-blue-50/40" : ""
+                          }
+                        >
+                          <td
+                            className={cn(
+                              "sticky left-0 z-10 border border-border px-2 py-1 text-left",
+                              emp.id === currentUser?.id ? "bg-blue-50/70" : "bg-white",
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-1">
+                              <Popover>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <PopoverTrigger asChild>
+                                      <button
+                                        type="button"
+                                        className="truncate text-left font-medium text-xs hover:underline focus:outline-none focus:ring-1 focus:ring-ring rounded-sm"
+                                      >
+                                        {employeeName}
+                                      </button>
+                                    </PopoverTrigger>
+                                  </TooltipTrigger>
+                                  <TooltipContent>{employeeInfoPanel}</TooltipContent>
+                                </Tooltip>
+                                <PopoverContent align="start" className="w-56 p-3">
+                                  {employeeInfoPanel}
+                                </PopoverContent>
+                              </Popover>
+                              {canEditRow && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 shrink-0"
+                                  onClick={() => openAbsenceDialog(emp.id)}
+                                  title="Abwesenheit erfassen"
+                                >
+                                  <Plus className="w-3.5 h-3.5" />
+                                </Button>
                               )}
-                              onClick={() => {
-                                if (!canEditCell) return;
-                                openAbsenceDialog(emp.id, date);
-                              }}
-                            >
-                              {absence && (
+                            </div>
+                          </td>
+                          {days.map((date) => {
+                            const dayKey = formatDateInput(date);
+                            const absence = getAbsenceForEmployeeOnDate(
+                              emp.id,
+                              dayKey,
+                            );
+                            const reasonStyle = absence
+                              ? REASON_STYLES[absence.styleKey]
+                              : null;
+                            const cellClass = getDayClass(date);
+                            const insetClass = getDayInsetClass(date);
+                            const isRejected = absence?.status === "Abgelehnt";
+                            const isCellLocked =
+                              !canOverrideLock && isDateWithinLock(dayKey);
+                            const canEditCell = canEditRow && !isCellLocked;
+                            const cellTitle = absence
+                              ? `${absence.reason} (${absence.status ?? "Geplant"})`
+                              : getDayLabel(date);
+                            return (
+                              <td
+                                key={`${emp.id}-${dayKey}`}
+                                title={cellTitle}
+                                className={cn(
+                                  "border border-border p-0 text-center",
+                                  canEditCell ? "cursor-pointer" : "",
+                                )}
+                                onClick={() => {
+                                  if (!canEditCell) return;
+                                  openAbsenceDialog(emp.id, date);
+                                }}
+                              >
                                 <div
                                   className={cn(
-                                    "mx-auto h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-semibold",
-                                    reasonStyle?.bg || "bg-slate-200",
-                                    isRejected ? "opacity-40" : "",
+                                    "relative h-6 w-7",
+                                    cellClass,
+                                    isCellLocked ? "opacity-70" : "",
                                   )}
-                                  title={`${absence.reason} (${absence.status})`}
                                 >
-                                  {reasonStyle?.label ?? ""}
+                                  {absence && (
+                                    <>
+                                      <div
+                                        className={cn(
+                                          "absolute inset-0",
+                                          reasonStyle?.bg || "bg-slate-200",
+                                          isRejected ? "opacity-40" : "",
+                                        )}
+                                      />
+                                      <div
+                                        className={cn(
+                                          "absolute right-0 top-0 min-w-[10px] rounded-bl-[3px] bg-white/85 px-0.5 text-[8px] font-semibold leading-[10px] text-slate-700",
+                                          isRejected ? "opacity-60" : "",
+                                        )}
+                                      >
+                                        {reasonStyle?.label ?? ""}
+                                      </div>
+                                    </>
+                                  )}
+                                  {insetClass && (
+                                    <div
+                                      className={cn(
+                                        "pointer-events-none absolute inset-[1px] rounded-[2px] border",
+                                        insetClass,
+                                      )}
+                                    />
+                                  )}
                                 </div>
-                              )}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </TooltipProvider>
           )}
-          <div className="flex flex-wrap gap-2 mt-4 text-xs text-muted-foreground">
+          <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
             {Object.entries(REASON_STYLES).map(([reason, style]) => (
-              <div key={reason} className="flex items-center gap-2">
+              <div key={reason} className="flex items-center gap-1.5">
                 <span
-                  className={cn("inline-flex h-3 w-3 rounded-full", style.bg)}
+                  className={cn("inline-flex h-2.5 w-2.5 rounded-sm", style.bg)}
                 />
                 <span>{reason}</span>
               </div>
             ))}
-            <div className="flex items-center gap-2">
-              <span className="inline-flex h-3 w-3 rounded-full bg-rose-50 border border-rose-200" />
+            <div className="flex items-center gap-1.5">
+              <span className="inline-flex h-2.5 w-2.5 rounded-sm bg-rose-50 border border-rose-200" />
               <span>Feiertag</span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="inline-flex h-3 w-3 rounded-full bg-amber-50 border border-amber-200" />
+            <div className="flex items-center gap-1.5">
+              <span className="inline-flex h-2.5 w-2.5 rounded-sm bg-amber-50 border border-amber-200" />
               <span>Schulferien</span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="inline-flex h-3 w-3 rounded-full bg-slate-50 border border-slate-200" />
+            <div className="flex items-center gap-1.5">
+              <span className="inline-flex h-2.5 w-2.5 rounded-sm bg-slate-50 border border-slate-200" />
               <span>Wochenende</span>
             </div>
           </div>
