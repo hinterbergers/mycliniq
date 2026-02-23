@@ -2576,6 +2576,13 @@ function WeeklyView({
                           assignmentsByRoomWeekday.get(
                             `${room.id}-${weekday}`,
                           ) ?? [];
+                        const employeeAssignments = assignments.filter(
+                          (assignment) => Boolean(assignment.employeeId),
+                        );
+                        const blockedEntries = assignments.filter(
+                          (assignment) => assignment.isBlocked,
+                        );
+                        const isBlockedCell = blockedEntries.length > 0;
                         const noteEntries = assignments
                           .filter(
                             (assignment) =>
@@ -2600,22 +2607,40 @@ function WeeklyView({
                         return (
                           <td
                             key={`${room.id}-${weekday}`}
-                            className="p-3 align-top"
+                            className={cn(
+                              "p-3 align-top",
+                              isBlockedCell && "bg-slate-100/80",
+                            )}
                           >
-                            {(setting.usageLabel || timeLabel) && (
+                            {!isBlockedCell && (setting.usageLabel || timeLabel) && (
                               <div className="text-[10px] text-muted-foreground mb-1">
                                 {[setting.usageLabel, timeLabel]
                                   .filter(Boolean)
                                   .join(" · ")}
                               </div>
                             )}
-                            {assignments.length === 0 ? (
+                            {isBlockedCell ? (
+                              <div className="space-y-2">
+                                <div className="inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold bg-slate-300 text-slate-800">
+                                  Gesperrt
+                                </div>
+                                {noteEntries
+                                  .filter((entry) => entry !== "Gesperrt")
+                                  .length > 0 && (
+                                  <div className="text-[10px] text-slate-700 bg-slate-200 border border-slate-300 rounded px-1.5 py-1">
+                                    {noteEntries
+                                      .filter((entry) => entry !== "Gesperrt")
+                                      .join(" · ")}
+                                  </div>
+                                )}
+                              </div>
+                            ) : employeeAssignments.length === 0 ? (
                               <div className="text-xs text-muted-foreground">
                                 —
                               </div>
                             ) : (
                               <div className="space-y-1">
-                                {assignments.map((assignment) => {
+                                {employeeAssignments.map((assignment) => {
                                   const name = resolveEmployeeName(
                                     assignment.employeeId,
                                     assignment.employeeName,
@@ -2654,7 +2679,7 @@ function WeeklyView({
                                 })}
                               </div>
                             )}
-                            {noteEntries.length > 0 && (
+                            {!isBlockedCell && noteEntries.length > 0 && (
                               <div className="mt-2 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-1">
                                 {noteEntries.join(" · ")}
                               </div>

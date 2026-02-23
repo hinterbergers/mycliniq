@@ -2512,15 +2512,18 @@ export default function WeeklyPlan() {
                 const isClosed = setting?.isClosed;
                 const isBlocked = noteAssignment?.isBlocked;
                 const isLocked = lockedWeekdays.includes(selectedWeekday);
-                const disableEditing = Boolean(
+                const disableAssignmentEditing = Boolean(
                   isClosed ||
                   isBlocked ||
                   isLocked ||
                   isPlanReleased ||
                   isReorderMode,
                 );
+                const disableNoteEditing = Boolean(
+                  isLocked || isPlanReleased || isReorderMode,
+                );
                 const showNoAvailableWarning =
-                  !disableEditing &&
+                  !disableAssignmentEditing &&
                   employeeAssignments.length === 0 &&
                   remainingEligible.length === 0;
 
@@ -2691,16 +2694,16 @@ export default function WeeklyPlan() {
                         <div
                           className={cn(
                             "space-y-2 border-2 border-dashed rounded-xl p-3",
-                            disableEditing
+                            disableAssignmentEditing
                               ? "bg-muted/30 border-muted-foreground/20"
                               : "border-primary/20",
                           )}
                           onDragOver={(event) => {
-                            if (disableEditing) return;
+                            if (disableAssignmentEditing) return;
                             event.preventDefault();
                           }}
                           onDrop={async (event) => {
-                            if (disableEditing) return;
+                            if (disableAssignmentEditing) return;
                             event.preventDefault();
                             const employeeId = Number(
                               event.dataTransfer.getData("employeeId"),
@@ -2788,9 +2791,12 @@ export default function WeeklyPlan() {
                                   assignment.assignmentType !== "Plan" &&
                                     "border-blue-200 bg-blue-50",
                                 )}
-                                draggable={!disableEditing}
+                                draggable={!disableAssignmentEditing}
                                 onDragStart={(event) => {
-                                  if (disableEditing || !assignment.employeeId)
+                                  if (
+                                    disableAssignmentEditing ||
+                                    !assignment.employeeId
+                                  )
                                     return;
                                   event.dataTransfer.setData(
                                     "dragType",
@@ -2849,7 +2855,7 @@ export default function WeeklyPlan() {
                                     onClick={() =>
                                       handleDeleteAssignment(assignment.id)
                                     }
-                                    disabled={disableEditing}
+                                    disabled={disableAssignmentEditing}
                                   >
                                     <X className="w-4 h-4" />
                                   </Button>
@@ -2866,7 +2872,7 @@ export default function WeeklyPlan() {
                             onClick={() =>
                               handleOpenNoteDialog(room.id, selectedWeekday)
                             }
-                            disabled={disableEditing}
+                            disabled={disableNoteEditing}
                           >
                             <StickyNote className="w-4 h-4" />
                             Kommentar / Sperre
