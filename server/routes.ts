@@ -4153,9 +4153,7 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
 
         const shifts = await storage.getRosterShiftsByMonth(year, month);
         const employeeRows = await storage.getEmployees();
-        const employeesById = new Map(
-          employeeRows.map((emp) => [emp.id, emp.name]),
-        );
+        const employeesById = new Map(employeeRows.map((emp) => [emp.id, emp]));
         const clinicId = req.user?.clinicId;
         if (!clinicId) {
           return res.status(400).json({ error: "Klinik-ID fehlt" });
@@ -4196,10 +4194,21 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
           return acc;
         }, {});
 
+        const getEmployeeExportName = (employeeId: number) => {
+          const employee = employeesById.get(employeeId);
+          if (!employee) return "-";
+          const lastName = employee.lastName?.trim();
+          if (lastName) return lastName;
+          const fullName = employee.name?.trim() ?? "";
+          if (!fullName) return "-";
+          const tokens = fullName.split(/\s+/).filter(Boolean);
+          return tokens[tokens.length - 1] ?? fullName;
+        };
+
         const toLabel = (shift?: RosterShift) => {
           if (!shift) return "-";
           if (shift.employeeId) {
-            return employeesById.get(shift.employeeId) || "-";
+            return getEmployeeExportName(shift.employeeId);
           }
           return shift.assigneeFreeText || "-";
         };
@@ -4207,9 +4216,7 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
         const startDate = new Date(year, month - 1, 1);
         const endDate = new Date(year, month, 0);
 
-        const rows = [
-          ["Datum", "KW", "Tag", ...allLines.map((line) => line.label)],
-        ];
+        const rows = [["Tag", "Datum", ...allLines.map((line) => line.label)]];
 
         for (
           let date = new Date(startDate);
@@ -4219,18 +4226,16 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
           const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
             date.getDate(),
           ).padStart(2, "0")}`;
-          const weekNumber = getWeek(date, {
-            weekStartsOn: 1,
-            firstWeekContainsDate: 4,
-          });
           const weekday = date
             .toLocaleDateString("de-DE", { weekday: "short" })
             .replace(".", "");
           const dayShifts = shiftsByDate[dateKey] || {};
           rows.push([
-            date.toLocaleDateString("de-DE"),
-            String(weekNumber),
             weekday,
+            date.toLocaleDateString("de-DE", {
+              day: "2-digit",
+              month: "2-digit",
+            }),
             ...allLines.map((line) => toLabel(dayShifts[line.key])),
           ]);
         }
