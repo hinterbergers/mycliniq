@@ -1600,7 +1600,7 @@ export default function VacationPlanEditor({
                           <SelectTrigger>
                             <SelectValue placeholder="Mitarbeiter waehlen" />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent className="max-h-72">
                             {visibleEmployees.map((emp) => (
                               <SelectItem key={emp.id} value={String(emp.id)}>
                                 {emp.lastName} {emp.firstName}
