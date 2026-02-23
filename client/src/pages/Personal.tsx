@@ -2582,8 +2582,11 @@ function WeeklyView({
           }
 
           if (setting.isClosed) {
-            const closedReason = setting.closedReason?.trim();
-            rowValues.push(closedReason ? `Gesperrt\n${closedReason}` : "Gesperrt");
+            if (room.rowColor) {
+              rowValues.push("");
+            } else {
+              rowValues.push("—");
+            }
             return;
           }
 
