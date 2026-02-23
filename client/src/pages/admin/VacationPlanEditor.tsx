@@ -292,6 +292,64 @@ const normalizeRole = (role?: string | null) => {
   return asciiRole;
 };
 
+const getAdminAbsenceDisplayName = (absence: PlannedAbsenceAdmin) => {
+  const lastName = (absence.employeeLastName ?? "").trim();
+  const employeeName = (absence.employeeName ?? "").trim();
+  if (!lastName && !employeeName) return "Unbekannt";
+  if (!lastName) return employeeName;
+  if (!employeeName) return lastName;
+
+  const nameParts = employeeName.split(/\s+/).filter(Boolean);
+  if (!nameParts.length) return lastName;
+
+  const firstPart = nameParts[0]?.toLowerCase();
+  const lastPart = nameParts[nameParts.length - 1]?.toLowerCase();
+  const targetLast = lastName.toLowerCase();
+
+  if (firstPart === targetLast) return employeeName;
+  if (lastPart === targetLast) {
+    const firstNames = nameParts.slice(0, -1).join(" ");
+    return firstNames ? `${lastName} ${firstNames}` : lastName;
+  }
+  if (employeeName.toLowerCase() === targetLast) return lastName;
+
+  return `${lastName} ${employeeName}`;
+};
+
+const getAdminAbsenceLastName = (absence: PlannedAbsenceAdmin) => {
+  const lastName = (absence.employeeLastName ?? "").trim();
+  if (lastName) return lastName;
+  const employeeName = (absence.employeeName ?? "").trim();
+  if (!employeeName) return "Unbekannt";
+  const parts = employeeName.split(/\s+/).filter(Boolean);
+  return parts[parts.length - 1] || employeeName;
+};
+
+const getAbsenceRoleOverlapBucket = (role?: string | null) => {
+  const normalized = normalizeRole(role);
+  switch (normalized) {
+    case "Primararzt":
+      return "Primarius";
+    case "1. Oberarzt":
+      return "Erster Oberarzt";
+    case "Funktionsoberarzt":
+      return "Funktionsoberarzt";
+    case "Ausbildungsoberarzt":
+      return "Ausbildungsoberarzt";
+    case "Oberarzt":
+    case "Facharzt":
+      return "OA";
+    case "Assistenzarzt":
+      return "ASS";
+    case "Turnusarzt":
+    case "Student (KPJ)":
+    case "Student (Famulant)":
+      return "TA";
+    default:
+      return null;
+  }
+};
+
 export default function VacationPlanEditor({
   embedded = false,
 }: { embedded?: boolean } = {}) {
@@ -881,6 +939,41 @@ export default function VacationPlanEditor({
     });
     return groups;
   }, [filteredAbsences]);
+
+  const overlapInfoByAbsenceId = useMemo(() => {
+    const relevant = quarterAbsences.filter((absence) => absence.status !== "Abgelehnt");
+    const roleByEmployeeId = new Map(
+      employees.map((emp) => [emp.id, emp.role ?? null]),
+    );
+    const result = new Map<
+      number,
+      { bucketLabel: string; peers: Array<{ lastName: string; reason: string }> }
+    >();
+
+    relevant.forEach((absence) => {
+      const ownRole = absence.employeeRole ?? roleByEmployeeId.get(absence.employeeId) ?? null;
+      const bucketLabel = getAbsenceRoleOverlapBucket(ownRole);
+      if (!bucketLabel) return;
+
+      const peers = relevant
+        .filter((other) => {
+          if (other.id === absence.id) return false;
+          if (other.employeeId === absence.employeeId) return false;
+          const otherRole = other.employeeRole ?? roleByEmployeeId.get(other.employeeId) ?? null;
+          if (getAbsenceRoleOverlapBucket(otherRole) !== bucketLabel) return false;
+          return other.startDate <= absence.endDate && other.endDate >= absence.startDate;
+        })
+        .map((other) => ({
+          lastName: getAdminAbsenceLastName(other),
+          reason: other.reason,
+        }))
+        .sort((a, b) => a.lastName.localeCompare(b.lastName, "de"));
+
+      result.set(absence.id, { bucketLabel, peers });
+    });
+
+    return result;
+  }, [employees, quarterAbsences]);
 
   const countVacationDaysForEmployee = (employeeId: number) => {
     const yearStart = new Date(year, 0, 1);
@@ -2265,15 +2358,15 @@ export default function VacationPlanEditor({
                             </TableHeader>
                             <TableBody>
                               {items.map((absence) => {
-                                const displayName = [
-                                  absence.employeeLastName,
-                                  absence.employeeName,
-                                ]
-                                  .filter(Boolean)
-                                  .join(" ");
+                                const displayName =
+                                  getAdminAbsenceDisplayName(absence);
                                 const rowStatusClass =
                                   STATUS_STYLES[absence.status] ??
                                   STATUS_STYLES.Geplant;
+                                const overlapInfo =
+                                  overlapInfoByAbsenceId.get(absence.id) ?? null;
+                                const overlapPeers = overlapInfo?.peers ?? [];
+                                const overlapPreview = overlapPeers.slice(0, 3);
                                 const isRowLocked =
                                   !canOverrideLock &&
                                   isRangeWithinLock(
@@ -2321,7 +2414,25 @@ export default function VacationPlanEditor({
                                       </Badge>
                                     </TableCell>
                                     <TableCell className="text-muted-foreground">
-                                      {absence.notes || "-"}
+                                      <div className="space-y-1">
+                                        <div>{absence.notes || "-"}</div>
+                                        {overlapInfo && overlapPeers.length > 0 && (
+                                          <div className="text-xs text-muted-foreground">
+                                            <span className="font-medium">
+                                              {overlapInfo.bucketLabel} parallel ({overlapPeers.length}):
+                                            </span>{" "}
+                                            {overlapPreview
+                                              .map(
+                                                (peer) =>
+                                                  `${peer.lastName} - ${peer.reason}`,
+                                              )
+                                              .join(", ")}
+                                            {overlapPeers.length >
+                                              overlapPreview.length &&
+                                              ` +${overlapPeers.length - overlapPreview.length} weitere`}
+                                          </div>
+                                        )}
+                                      </div>
                                     </TableCell>
                                     <TableCell className="text-right">
                                       <div className="flex justify-end gap-2 flex-wrap">
