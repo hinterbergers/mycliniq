@@ -2255,6 +2255,13 @@ export default function WeeklyPlan() {
                               const isAssigned = assignedEmployeeIdsForSelectedDay.has(
                                 employee.id,
                               );
+                              const isOnDutyToday = selectedDayDate
+                                ? isEmployeeOnDutyDate(
+                                    employee.id,
+                                    selectedDayDate,
+                                    rosterShifts,
+                                  )
+                                : false;
                               const roleLabel = employee.role ?? "Ohne Rolle";
                               const competenciesLabel =
                                 employee.competencies?.length
@@ -2283,7 +2290,12 @@ export default function WeeklyPlan() {
                                     >
                                       <GripVertical className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                                       <div className="flex-1 min-w-0">
-                                        <span className="text-sm font-medium truncate block">
+                                        <span
+                                          className={cn(
+                                            "text-sm font-medium truncate block",
+                                            isOnDutyToday && "font-bold text-rose-700",
+                                          )}
+                                        >
                                           {getEmployeeDisplayName(employee)}
                                         </span>
                                       </div>
@@ -2753,6 +2765,14 @@ export default function WeeklyPlan() {
                               assignment.employeeLastName ||
                               employee?.lastName ||
                               assignment.employeeName;
+                            const isOnDutyAssignment =
+                              Boolean(assignment.employeeId) &&
+                              Boolean(selectedDayDate) &&
+                              isEmployeeOnDutyDate(
+                                assignment.employeeId as number,
+                                selectedDayDate as Date,
+                                rosterShifts,
+                              );
                             const isDuplicate = assignment.employeeId
                               ? duplicateEmployeeIdsByWeekday
                                   .get(selectedWeekday)
@@ -2795,7 +2815,13 @@ export default function WeeklyPlan() {
                                 }}
                               >
                                 <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium">
+                                  <span
+                                    className={cn(
+                                      "text-sm font-medium",
+                                      isOnDutyAssignment &&
+                                        "font-bold text-rose-700",
+                                    )}
+                                  >
                                     {displayName || "Unbekannt"}
                                   </span>
                                   {assignment.assignmentType !== "Plan" && (

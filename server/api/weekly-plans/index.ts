@@ -622,6 +622,7 @@ export function registerWeeklyPlanRoutes(router: Router) {
       const roleNorm = normalizeText(employee.role);
       return !roleNorm.includes("sekret");
     });
+    const employeesById = new Map(employeeRows.map((employee) => [employee.id, employee]));
 
     const unfilledSlots: WeeklyPlanningResult["unfilledSlots"] = [];
     const generatedAssignments: WeeklyPlanningResult["generatedAssignments"] = [];
@@ -672,6 +673,60 @@ export function registerWeeklyPlanRoutes(router: Router) {
           });
           continue;
         }
+
+        const isWeekend = weekday === 6 || weekday === 7;
+        const isDutyRoom = normalizeText(room.name).includes("diensthab");
+        if (isWeekend && isDutyRoom) {
+          const existingEmployeeIds = new Set(
+            existing
+              .map((assignment) => assignment.employeeId)
+              .filter((id): id is number => Number.isInteger(id)),
+          );
+          const alreadyGeneratedEmployeeIds = new Set(
+            generatedAssignments
+              .filter((entry) => entry.date === dayDate && entry.roomId === room.id)
+              .map((entry) => entry.employeeId),
+          );
+          const dutyEmployeeIds = Array.from(
+            new Set(
+              rosterRows
+                .filter(
+                  (shift) =>
+                    shift.date === dayDate &&
+                    shift.serviceType !== "overduty" &&
+                    Boolean(shift.employeeId),
+                )
+                .map((shift) => shift.employeeId as number),
+            ),
+          );
+
+          let insertedDutyCount = 0;
+          for (const dutyEmployeeId of dutyEmployeeIds) {
+            if (existingEmployeeIds.has(dutyEmployeeId)) continue;
+            if (alreadyGeneratedEmployeeIds.has(dutyEmployeeId)) continue;
+            const dutyEmployee = employeesById.get(dutyEmployeeId);
+            if (!dutyEmployee) continue;
+            generatedAssignments.push({
+              slotId: `${dayDate}-${room.id}-${dutyEmployeeId}`,
+              date: dayDate,
+              weekday,
+              roomId: room.id,
+              roomName: room.name,
+              employeeId: dutyEmployeeId,
+              employeeName:
+                dutyEmployee.lastName ||
+                dutyEmployee.name ||
+                `Mitarbeiter ${dutyEmployeeId}`,
+              score: 1000,
+            });
+            insertedDutyCount += 1;
+          }
+
+          if (insertedDutyCount > 0 || hasEmployee) {
+            continue;
+          }
+        }
+
         if (hasEmployee) continue;
 
         const requiredCompetencies = competenciesByRoom.get(room.id) ?? [];
@@ -1056,12 +1111,27 @@ export function registerWeeklyPlanRoutes(router: Router) {
           .filter((assignment) => assignment.employeeId || assignment.isBlocked)
           .map((assignment) => `${assignment.weekday}-${assignment.roomId}`),
       );
+      const existingAssignmentEmployeeKeys = new Set(
+        existingAssignments
+          .filter((assignment) => assignment.employeeId)
+          .map(
+            (assignment) =>
+              `${assignment.weekday}-${assignment.roomId}-${assignment.employeeId}`,
+          ),
+      );
 
       const rowsToInsert = result.generatedAssignments
-        .filter(
-          (assignment) =>
-            !existingSlotKeys.has(`${assignment.weekday}-${assignment.roomId}`),
-        )
+        .filter((assignment) => {
+          const slotKey = `${assignment.weekday}-${assignment.roomId}`;
+          const employeeKey = `${assignment.weekday}-${assignment.roomId}-${assignment.employeeId}`;
+          const isWeekendDutyRoom =
+            (assignment.weekday === 6 || assignment.weekday === 7) &&
+            normalizeText(assignment.roomName).includes("diensthab");
+          if (isWeekendDutyRoom) {
+            return !existingAssignmentEmployeeKeys.has(employeeKey);
+          }
+          return !existingSlotKeys.has(slotKey);
+        })
         .map((assignment) => ({
           weeklyPlanId: plan.id,
           roomId: assignment.roomId,
