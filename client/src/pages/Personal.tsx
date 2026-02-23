@@ -451,7 +451,7 @@ export default function Personal() {
       const url = window.URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `dienstplan-${year}-${String(month).padStart(2, "0")}.csv`;
+      anchor.download = `dienstplan-${year}-${String(month).padStart(2, "0")}.xlsx`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();

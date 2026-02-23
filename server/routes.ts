@@ -4240,26 +4240,88 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
           ]);
         }
 
-        const escapeCsv = (value: string) => {
-          if (
-            value.includes(";") ||
-            value.includes('"') ||
-            value.includes("\n")
-          ) {
-            return `"${value.replace(/\"/g, '""')}"`;
-          }
-          return value;
-        };
+        const exceljs = await import("exceljs");
+        const WorkbookCtor =
+          (exceljs as any).Workbook ?? (exceljs as any).default?.Workbook;
+        if (!WorkbookCtor) {
+          throw new Error("ExcelJS Workbook nicht verfügbar");
+        }
 
-        const csv =
-          "\uFEFF" +
-          rows.map((row) => row.map(escapeCsv).join(";")).join("\r\n");
-        res.setHeader("Content-Type", "text/csv; charset=utf-8");
+        const workbook = new WorkbookCtor();
+        workbook.creator = "mycliniq";
+        workbook.created = new Date();
+        const sheet = workbook.addWorksheet(
+          `Dienstplan ${String(month).padStart(2, "0")}-${year}`,
+        );
+
+        rows.forEach((row) => sheet.addRow(row));
+
+        const headerFill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFD9EAF7" },
+        } as const;
+        const sideFill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFEAF3FB" },
+        } as const;
+
+        sheet.views = [{ state: "frozen", xSplit: 2, ySplit: 1 }];
+
+        const headerRow = sheet.getRow(1);
+        headerRow.font = { bold: true };
+        headerRow.alignment = { vertical: "middle", horizontal: "center" };
+        headerRow.height = 22;
+        headerRow.eachCell((cell) => {
+          cell.fill = headerFill;
+          cell.border = {
+            top: { style: "thin", color: { argb: "FFB7C9D8" } },
+            left: { style: "thin", color: { argb: "FFB7C9D8" } },
+            bottom: { style: "thin", color: { argb: "FFB7C9D8" } },
+            right: { style: "thin", color: { argb: "FFB7C9D8" } },
+          };
+        });
+
+        sheet.eachRow((row, rowNumber) => {
+          row.eachCell((cell, colNumber) => {
+            cell.alignment = {
+              vertical: "middle",
+              horizontal: colNumber <= 2 ? "center" : "left",
+            };
+            if (rowNumber > 1 && colNumber <= 2) {
+              cell.fill = sideFill;
+            }
+            cell.border = {
+              top: { style: "thin", color: { argb: "FFD6DEE6" } },
+              left: { style: "thin", color: { argb: "FFD6DEE6" } },
+              bottom: { style: "thin", color: { argb: "FFD6DEE6" } },
+              right: { style: "thin", color: { argb: "FFD6DEE6" } },
+            };
+          });
+        });
+
+        const columnWidths = rows[0].map((header, colIdx) => {
+          const maxLen = rows.reduce((max, row) => {
+            const value = String(row[colIdx] ?? "");
+            return Math.max(max, value.length);
+          }, String(header).length);
+          if (colIdx === 0) return Math.max(8, Math.min(12, maxLen + 2)); // Tag
+          if (colIdx === 1) return Math.max(10, Math.min(12, maxLen + 2)); // Datum
+          return Math.max(14, Math.min(24, maxLen + 3)); // Dienste
+        });
+        sheet.columns = columnWidths.map((width) => ({ width }));
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        res.setHeader(
+          "Content-Type",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        );
         res.setHeader(
           "Content-Disposition",
-          `attachment; filename="dienstplan-${year}-${String(month).padStart(2, "0")}.csv"`,
+          `attachment; filename="dienstplan-${year}-${String(month).padStart(2, "0")}.xlsx"`,
         );
-        res.send(csv);
+        res.send(Buffer.from(buffer));
       } catch (error: any) {
         console.error("Roster export error:", error);
         res.status(500).json({ error: "Export fehlgeschlagen" });
