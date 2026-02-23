@@ -1342,11 +1342,20 @@ export default function RosterPlan() {
       if (!response.ok) {
         throw new Error("Export fehlgeschlagen");
       }
+      const contentDisposition = response.headers.get("content-disposition") || "";
+      const filenameMatch = contentDisposition.match(
+        /filename\*?=(?:UTF-8''|")?([^\";]+)"?/i,
+      );
+      const headerFilename = filenameMatch?.[1]
+        ? decodeURIComponent(filenameMatch[1].trim())
+        : null;
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `dienstplan-${year}-${String(month).padStart(2, "0")}.csv`;
+      anchor.download =
+        headerFilename ||
+        `dienstplan-${year}-${String(month).padStart(2, "0")}.xlsx`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
