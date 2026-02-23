@@ -257,14 +257,6 @@ type RosterAbsenceEntry = {
   notes?: string | null;
 };
 
-const escapeXml = (value: string) =>
-  value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-
 const normalizeExcelColor = (value?: string | null): string | null => {
   if (!value) return null;
   const color = value.trim();
@@ -293,6 +285,12 @@ const normalizeExcelColor = (value?: string | null): string | null => {
   }
 
   return null;
+};
+
+const toExcelArgb = (value?: string | null): string | undefined => {
+  const hex = normalizeExcelColor(value);
+  if (!hex) return undefined;
+  return `FF${hex.replace("#", "")}`;
 };
 
 export default function Personal() {
@@ -2456,6 +2454,27 @@ function WeeklyView({
     return "Unbekannt";
   };
 
+  const resolveEmployeeLastName = (
+    employeeId: number | null,
+    fallback?: string | null,
+    fallbackLast?: string | null,
+  ) => {
+    if (employeeId) {
+      const employee = employeesById.get(employeeId);
+      if (employee?.lastName) return employee.lastName;
+      if (employee?.name) {
+        const parts = employee.name.trim().split(/\s+/);
+        return parts[parts.length - 1] || employee.name;
+      }
+    }
+    if (fallbackLast) return fallbackLast;
+    if (fallback) {
+      const parts = fallback.trim().split(/\s+/);
+      return parts[parts.length - 1] || fallback;
+    }
+    return "Unbekannt";
+  };
+
   const resolveAbsenceName = (absence: PlannedAbsenceAdmin) => {
     if (absence.employeeLastName) return absence.employeeLastName;
     if (absence.employeeId) {
@@ -2477,248 +2496,185 @@ function WeeklyView({
 
     setWeeklyExporting(true);
     try {
-      const styleXml: string[] = [];
-      const styleIds = new Map<string, string>();
-      const rowsXml: string[] = [];
-      let styleCounter = 0;
+      const ExcelJS = await import("exceljs");
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = "MyCliniQ";
+      workbook.created = new Date();
 
-      const getStyleId = (options: {
-        bgColor?: string | null;
-        bold?: boolean;
-        fontColor?: string | null;
-        hAlign?: "Left" | "Center" | "Right";
-        vAlign?: "Top" | "Center" | "Bottom";
-      }) => {
-        const normalized = {
-          bgColor: normalizeExcelColor(options.bgColor),
-          bold: Boolean(options.bold),
-          fontColor: normalizeExcelColor(options.fontColor),
-          hAlign: options.hAlign ?? "Left",
-          vAlign: options.vAlign ?? "Top",
+      const sheet = workbook.addWorksheet(`Wochenplan KW${weekNumber}`);
+      sheet.views = [{ state: "frozen", ySplit: 1, xSplit: 1 }];
+
+      sheet.columns = [
+        { width: 34 },
+        { width: 20 },
+        { width: 20 },
+        { width: 20 },
+        { width: 20 },
+        { width: 20 },
+        { width: 20 },
+        { width: 20 },
+      ];
+
+      const border = {
+        top: { style: "thin" as const, color: { argb: "FFD1D5DB" } },
+        left: { style: "thin" as const, color: { argb: "FFD1D5DB" } },
+        bottom: { style: "thin" as const, color: { argb: "FFD1D5DB" } },
+        right: { style: "thin" as const, color: { argb: "FFD1D5DB" } },
+      };
+
+      const applyCellStyle = (
+        cell: any,
+        options: {
+          bgColor?: string | null;
+          bold?: boolean;
+          fontColor?: string | null;
+          align?: "left" | "center" | "right";
+          vAlign?: "top" | "middle" | "bottom";
+        } = {},
+      ) => {
+        const bgArgb = toExcelArgb(options.bgColor);
+        const fontArgb = toExcelArgb(options.fontColor);
+        cell.border = border;
+        cell.alignment = {
+          vertical: options.vAlign ?? "top",
+          horizontal: options.align ?? "left",
+          wrapText: true,
         };
-        const key = JSON.stringify(normalized);
-        const existing = styleIds.get(key);
-        if (existing) return existing;
-
-        const id = `s${++styleCounter}`;
-        styleIds.set(key, id);
-        styleXml.push(
-          `<Style ss:ID="${id}">` +
-            `<Alignment ss:Horizontal="${normalized.hAlign}" ss:Vertical="${normalized.vAlign}" ss:WrapText="1"/>` +
-            `<Borders>` +
-            `<Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D1D5DB"/>` +
-            `<Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D1D5DB"/>` +
-            `<Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D1D5DB"/>` +
-            `<Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D1D5DB"/>` +
-            `</Borders>` +
-            (normalized.bgColor
-              ? `<Interior ss:Color="${normalized.bgColor}" ss:Pattern="Solid"/>`
-              : "") +
-            `<Font${normalized.bold ? ` ss:Bold="1"` : ""}${
-              normalized.fontColor
-                ? ` ss:Color="${normalized.fontColor}"`
-                : ""
-            }/>` +
-            `</Style>`,
-        );
-        return id;
+        cell.font = {
+          bold: Boolean(options.bold),
+          color: fontArgb ? { argb: fontArgb } : undefined,
+        };
+        if (bgArgb) {
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: bgArgb },
+          };
+        }
       };
 
-      const pushRow = (cells: Array<{ value: string; styleId: string }>) => {
-        rowsXml.push(
-          `<Row>${cells
-            .map(
-              (cell) =>
-                `<Cell ss:StyleID="${cell.styleId}"><Data ss:Type="String">${escapeXml(
-                  cell.value,
-                )}</Data></Cell>`,
-            )
-            .join("")}</Row>`,
-        );
-      };
-
-      const headerStyle = getStyleId({
-        bgColor: "#F8FAFC",
-        bold: true,
-        hAlign: "Center",
-        vAlign: "Center",
-      });
-      const absenceStyle = getStyleId({
-        bgColor: "#F1F5F9",
-      });
-      const absenceHeaderStyle = getStyleId({
-        bgColor: "#F1F5F9",
-        bold: true,
-      });
-      const blockedStyle = getStyleId({
-        bgColor: "#F1F5F9",
-        bold: true,
-        hAlign: "Center",
-        vAlign: "Center",
-      });
-      const blockedWithNoteStyle = getStyleId({
-        bgColor: "#F1F5F9",
-        bold: true,
-        vAlign: "Center",
-      });
-      const mutedStyle = getStyleId({
-        hAlign: "Center",
-        fontColor: "#64748B",
-      });
-
-      pushRow([
-        { value: "Arbeitsplatz", styleId: headerStyle },
-        ...weekDays.map((day, index) => ({
-          value: `${WEEKDAY_LABELS[index]} ${format(day, "dd.MM", {
-            locale: de,
-          })}`,
-          styleId: headerStyle,
-        })),
+      const headerRow = sheet.addRow([
+        "Arbeitsplatz",
+        ...weekDays.map(
+          (day, index) =>
+            `${WEEKDAY_LABELS[index]} ${format(day, "dd.MM", { locale: de })}`,
+        ),
       ]);
+      headerRow.eachCell((cell) => {
+        applyCellStyle(cell, {
+          bgColor: "#F8FAFC",
+          bold: true,
+          align: "center",
+          vAlign: "middle",
+        });
+      });
+      headerRow.height = 24;
 
       visibleRooms.forEach((room) => {
-        const rowBg = normalizeExcelColor(room.rowColor);
-        const roomTitleStyle = getStyleId({ bgColor: rowBg, bold: true });
-        const roomCellStyle = getStyleId({ bgColor: rowBg });
-
-        const workplaceLines = [room.name];
-        if (room.physicalRooms?.length) {
-          workplaceLines.push(room.physicalRooms.map((pr) => pr.name).join(", "));
-        }
-
-        const rowCells: Array<{ value: string; styleId: string }> = [
-          { value: workplaceLines.join("\n"), styleId: roomTitleStyle },
-        ];
+        const rowValues: string[] = [room.name];
 
         weekDays.forEach((day, index) => {
           const weekday = index + 1;
           const setting = getRoomSettingForDate(room, day);
-
           if (!setting) {
-            rowCells.push({ value: "—", styleId: mutedStyle });
+            rowValues.push("—");
             return;
           }
 
           if (setting.isClosed) {
             const closedReason = setting.closedReason?.trim();
-            if (!closedReason && rowBg) {
-              rowCells.push({ value: "", styleId: roomCellStyle });
-            } else {
-              rowCells.push({
-                value: closedReason ? `Gesperrt: ${closedReason}` : "Gesperrt",
-                styleId: blockedStyle,
-              });
-            }
+            rowValues.push(closedReason ? `Gesperrt\n${closedReason}` : "Gesperrt");
             return;
           }
 
           const assignments =
             assignmentsByRoomWeekday.get(`${room.id}-${weekday}`) ?? [];
-          const employeeAssignments = assignments.filter((a) => Boolean(a.employeeId));
           const blockedEntries = assignments.filter((a) => a.isBlocked);
           const isBlockedCell = blockedEntries.length > 0;
-          const noteEntries = assignments
-            .filter((a) => a.note || a.isBlocked)
-            .map((a) => {
-              if (a.isBlocked && a.note) return `Gesperrt: ${a.note}`;
-              if (a.isBlocked) return "Gesperrt";
-              return a.note || "";
-            })
-            .filter(Boolean);
 
           if (isBlockedCell) {
-            const blockedNotes = noteEntries.filter((entry) => entry !== "Gesperrt");
-            rowCells.push({
-              value:
-                blockedNotes.length > 0
-                  ? `Gesperrt\n${blockedNotes.join(" · ")}`
-                  : "Gesperrt",
-              styleId: blockedNotes.length ? blockedWithNoteStyle : blockedStyle,
-            });
+            const blockedNotes = assignments
+              .filter((a) => a.isBlocked && a.note)
+              .map((a) => a.note?.trim())
+              .filter(Boolean) as string[];
+            rowValues.push(
+              blockedNotes.length > 0
+                ? `Gesperrt\n${blockedNotes.join("\n")}`
+                : "Gesperrt",
+            );
             return;
           }
 
-          const lines: string[] = [];
-          const timeLabel = formatRoomTime(setting.timeFrom, setting.timeTo);
-          const topLine = [setting.usageLabel, timeLabel].filter(Boolean).join(" · ");
-          if (topLine) lines.push(topLine);
-
+          const employeeAssignments = assignments.filter((a) => Boolean(a.employeeId));
           if (employeeAssignments.length === 0) {
-            lines.push("—");
-          } else {
-            employeeAssignments.forEach((assignment) => {
-              const name = resolveEmployeeName(
-                assignment.employeeId,
-                assignment.employeeName,
-                assignment.employeeLastName,
-              );
-              lines.push(
-                assignment.assignmentType !== "Plan"
-                  ? `${name} (${assignment.assignmentType})`
-                  : name,
-              );
-            });
+            rowValues.push("—");
+            return;
           }
 
-          const nonBlockedNotes = noteEntries.filter((entry) => entry !== "Gesperrt");
-          if (nonBlockedNotes.length > 0) {
-            lines.push(`Notiz: ${nonBlockedNotes.join(" · ")}`);
-          }
-
-          rowCells.push({
-            value: lines.join("\n"),
-            styleId: roomCellStyle,
-          });
+          rowValues.push(
+            employeeAssignments
+              .map((assignment) =>
+                resolveEmployeeLastName(
+                  assignment.employeeId,
+                  assignment.employeeName,
+                  assignment.employeeLastName,
+                ),
+              )
+              .join("\n"),
+          );
         });
 
-        pushRow(rowCells);
+        const row = sheet.addRow(rowValues);
+        const rowBg = room.rowColor ?? null;
+        row.eachCell((cell, colNumber) => {
+          if (colNumber === 1) {
+            applyCellStyle(cell, { bgColor: rowBg, bold: true });
+          } else {
+            const value = String(cell.value ?? "");
+            if (value.startsWith("Gesperrt")) {
+              applyCellStyle(cell, {
+                bgColor: "#F1F5F9",
+                bold: true,
+                align: "center",
+                vAlign: "middle",
+              });
+            } else if (value === "—" && !rowBg) {
+              applyCellStyle(cell, { fontColor: "#64748B", align: "center" });
+            } else {
+              applyCellStyle(cell, { bgColor: rowBg });
+            }
+          }
+        });
+        row.height = 44;
       });
 
-      pushRow([
-        { value: "Abwesenheiten", styleId: absenceHeaderStyle },
+      const absRow = sheet.addRow([
+        "Abwesenheiten",
         ...weekDays.map((day) => {
           const key = format(day, "yyyy-MM-dd");
           const items = absencesByDate.get(key) ?? [];
-          return {
-            value:
-              items.length === 0
-                ? "—"
-                : items
-                    .map(
-                      (absence) =>
-                        `${resolveAbsenceName(absence)} (${absence.reason})`,
-                    )
-                    .join("\n"),
-            styleId: absenceStyle,
-          };
+          if (items.length === 0) return "—";
+          return items
+            .map((absence) => `${resolveAbsenceName(absence)} (${absence.reason})`)
+            .join("\n");
         }),
       ]);
+      absRow.eachCell((cell, colNumber) => {
+        applyCellStyle(cell, {
+          bgColor: "#F1F5F9",
+          bold: colNumber === 1,
+        });
+      });
+      absRow.height = 60;
 
-      const workbookXml =
-        `<?xml version="1.0" encoding="UTF-8"?>` +
-        `<?mso-application progid="Excel.Sheet"?>` +
-        `<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet" xmlns:html="http://www.w3.org/TR/REC-html40">` +
-        `<Styles>` +
-        `<Style ss:ID="Default" ss:Name="Normal"><Alignment ss:Vertical="Top" ss:WrapText="1"/><Font/></Style>` +
-        styleXml.join("") +
-        `</Styles>` +
-        `<Worksheet ss:Name="Wochenplan">` +
-        `<Table>` +
-        `<Column ss:Width="230"/>` +
-        `<Column ss:Width="150"/><Column ss:Width="150"/><Column ss:Width="150"/><Column ss:Width="150"/><Column ss:Width="150"/><Column ss:Width="150"/><Column ss:Width="150"/>` +
-        rowsXml.join("") +
-        `</Table>` +
-        `<WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel"><PageSetup><Layout x:Orientation="Landscape"/></PageSetup></WorksheetOptions>` +
-        `</Worksheet>` +
-        `</Workbook>`;
-
-      const blob = new Blob([workbookXml], {
-        type: "application/vnd.ms-excel;charset=utf-8",
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       });
       const url = window.URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `wochenplan-${weekYear}-kw${String(weekNumber).padStart(2, "0")}.xml`;
+      anchor.download = `wochenplan-${weekYear}-kw${String(weekNumber).padStart(2, "0")}.xlsx`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
