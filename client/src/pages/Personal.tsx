@@ -293,6 +293,11 @@ const toExcelArgb = (value?: string | null): string | undefined => {
   return `FF${hex.replace("#", "")}`;
 };
 
+const withExcelTopPadding = (value: string): string => {
+  if (!value || value === "—") return value;
+  return `\n${value}`;
+};
+
 export default function Personal() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [, setLocation] = useLocation();
@@ -2539,6 +2544,7 @@ function WeeklyView({
           fontColor?: string | null;
           align?: "left" | "center" | "right";
           vAlign?: "top" | "middle" | "bottom";
+          indent?: number;
         } = {},
       ) => {
         const bgArgb = toExcelArgb(options.bgColor);
@@ -2548,6 +2554,7 @@ function WeeklyView({
           vertical: options.vAlign ?? "top",
           horizontal: options.align ?? "left",
           wrapText: true,
+          indent: options.indent ?? 0,
         };
         cell.font = {
           bold: Boolean(options.bold),
@@ -2624,15 +2631,17 @@ function WeeklyView({
           }
 
           rowValues.push(
-            employeeAssignments
-              .map((assignment) =>
-                resolveEmployeeLastName(
-                  assignment.employeeId,
-                  assignment.employeeName,
-                  assignment.employeeLastName,
-                ),
-              )
-              .join("\n"),
+            withExcelTopPadding(
+              employeeAssignments
+                .map((assignment) =>
+                  resolveEmployeeLastName(
+                    assignment.employeeId,
+                    assignment.employeeName,
+                    assignment.employeeLastName,
+                  ),
+                )
+                .join("\n"),
+            ),
           );
         });
 
@@ -2640,9 +2649,23 @@ function WeeklyView({
         const rowBg = room.rowColor ?? null;
         row.eachCell((cell, colNumber) => {
           if (colNumber === 1) {
-            applyCellStyle(cell, { bgColor: rowBg, bold: true });
+            applyCellStyle(cell, { bgColor: rowBg, bold: true, indent: 1 });
           } else {
             const value = String(cell.value ?? "");
+            const day = weekDays[colNumber - 2];
+            const setting = day ? getRoomSettingForDate(room, day) : null;
+            if (setting?.isClosed) {
+              if (value === "—") {
+                applyCellStyle(cell, {
+                  bgColor: "#FFFFFF",
+                  fontColor: "#64748B",
+                  align: "center",
+                });
+              } else {
+                applyCellStyle(cell, { bgColor: "#FFFFFF", indent: 1 });
+              }
+              return;
+            }
             if (value.startsWith("Gesperrt")) {
               applyCellStyle(cell, {
                 bgColor: "#F1F5F9",
@@ -2653,11 +2676,11 @@ function WeeklyView({
             } else if (value === "—" && !rowBg) {
               applyCellStyle(cell, { fontColor: "#64748B", align: "center" });
             } else {
-              applyCellStyle(cell, { bgColor: rowBg });
+              applyCellStyle(cell, { bgColor: rowBg, indent: 1 });
             }
           }
         });
-        row.height = 44;
+        row.height = 50;
       });
 
       const absRow = sheet.addRow([
@@ -2666,18 +2689,21 @@ function WeeklyView({
           const key = format(day, "yyyy-MM-dd");
           const items = absencesByDate.get(key) ?? [];
           if (items.length === 0) return "—";
-          return items
-            .map((absence) => `${resolveAbsenceName(absence)} (${absence.reason})`)
-            .join("\n");
+          return withExcelTopPadding(
+            items
+              .map((absence) => `${resolveAbsenceName(absence)} (${absence.reason})`)
+              .join("\n"),
+          );
         }),
       ]);
       absRow.eachCell((cell, colNumber) => {
         applyCellStyle(cell, {
           bgColor: "#F1F5F9",
           bold: colNumber === 1,
+          indent: 1,
         });
       });
-      absRow.height = 60;
+      absRow.height = 68;
 
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], {
