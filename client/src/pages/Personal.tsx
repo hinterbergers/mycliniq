@@ -2605,6 +2605,12 @@ function WeeklyView({
                           setting.timeTo,
                         );
                         return (
+                          (() => {
+                            const blockedNotes = noteEntries.filter(
+                              (entry) => entry !== "Gesperrt",
+                            );
+                            const hasBlockedNotes = blockedNotes.length > 0;
+                            return (
                           <td
                             key={`${room.id}-${weekday}`}
                             className={cn(
@@ -2620,17 +2626,20 @@ function WeeklyView({
                               </div>
                             )}
                             {isBlockedCell ? (
-                              <div className="space-y-2">
-                                <div className="inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold bg-slate-300 text-slate-800">
+                              <div
+                                className={cn(
+                                  "min-h-[72px] w-full flex",
+                                  hasBlockedNotes
+                                    ? "flex-col items-center justify-center gap-2"
+                                    : "items-center justify-center",
+                                )}
+                              >
+                                <div className="inline-flex items-center justify-center rounded px-2 py-0.5 text-[10px] font-semibold bg-slate-300 text-slate-800">
                                   Gesperrt
                                 </div>
-                                {noteEntries
-                                  .filter((entry) => entry !== "Gesperrt")
-                                  .length > 0 && (
-                                  <div className="text-[10px] text-slate-700 bg-slate-200 border border-slate-300 rounded px-1.5 py-1">
-                                    {noteEntries
-                                      .filter((entry) => entry !== "Gesperrt")
-                                      .join(" · ")}
+                                {hasBlockedNotes && (
+                                  <div className="text-[10px] text-slate-700 bg-slate-200 border border-slate-300 rounded px-1.5 py-1 w-full">
+                                    {blockedNotes.join(" · ")}
                                   </div>
                                 )}
                               </div>
@@ -2685,6 +2694,8 @@ function WeeklyView({
                               </div>
                             )}
                           </td>
+                            );
+                          })()
                         );
                       })}
                     </tr>
