@@ -2689,11 +2689,23 @@ function WeeklyView({
           const key = format(day, "yyyy-MM-dd");
           const items = absencesByDate.get(key) ?? [];
           if (items.length === 0) return "—";
-          return withExcelTopPadding(
-            items
-              .map((absence) => `${resolveAbsenceName(absence)} (${absence.reason})`)
-              .join("\n"),
-          );
+          const byReason = new Map<string, string[]>();
+          items.forEach((absence) => {
+            const reason = (absence.reason || "Abwesenheit").trim();
+            const current = byReason.get(reason) ?? [];
+            current.push(resolveAbsenceName(absence));
+            byReason.set(reason, current);
+          });
+          const lines: string[] = [];
+          Array.from(byReason.entries())
+            .sort(([a], [b]) => a.localeCompare(b, "de"))
+            .forEach(([reason, names]) => {
+              lines.push(reason);
+              names
+                .sort((a, b) => a.localeCompare(b, "de"))
+                .forEach((name) => lines.push(`  ${name}`));
+            });
+          return withExcelTopPadding(lines.join("\n"));
         }),
       ]);
       absRow.eachCell((cell, colNumber) => {
@@ -2703,7 +2715,15 @@ function WeeklyView({
           indent: 1,
         });
       });
-      absRow.height = 68;
+      const absRowValues = Array.isArray(absRow.values) ? absRow.values : [];
+      const absMaxLines = absRowValues
+        .slice(1)
+        .reduce((max: number, value: unknown) => {
+          const text = String(value ?? "");
+          const lineCount = Math.max(1, text.split("\n").length);
+          return Math.max(max, lineCount);
+        }, 1);
+      absRow.height = Math.max(68, Math.min(220, absMaxLines * 16));
 
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], {
