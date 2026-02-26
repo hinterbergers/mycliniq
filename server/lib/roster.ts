@@ -11,19 +11,21 @@ const getMonthRange = (year: number, month: number) => {
   return { monthStart, monthEnd };
 };
 
+const buildShiftKey = (row: {
+  date: string;
+  serviceType: string;
+}) => `${row.date}|${row.serviceType}`;
+
+const assignmentChanged = (
+  before?: { employeeId: number | null; assigneeFreeText?: string | null } | null,
+  after?: { employeeId: number | null; assigneeFreeText?: string | null } | null,
+) =>
+  (before?.employeeId ?? null) !== (after?.employeeId ?? null) ||
+  (before?.assigneeFreeText ?? null) !== (after?.assigneeFreeText ?? null);
+
 export async function syncDraftFromFinal(year: number, month: number) {
   const { monthStart, monthEnd } = getMonthRange(year, month);
 
-  const existingDraftRows = await db
-    .select()
-    .from(rosterShifts)
-    .where(
-      and(
-        eq(rosterShifts.isDraft, true),
-        gte(rosterShifts.date, monthStart),
-        lte(rosterShifts.date, monthEnd),
-      ),
-    );
   await db
     .delete(rosterShifts)
     .where(
@@ -33,13 +35,6 @@ export async function syncDraftFromFinal(year: number, month: number) {
         lte(rosterShifts.date, monthEnd),
       ),
     );
-  await logRosterShiftAuditEvents(
-    existingDraftRows.map((row) => ({
-      action: "delete" as const,
-      before: row,
-      context: "syncDraftFromFinal.clearDraftMonth",
-    })),
-  );
 
   const finalRows = await db
     .select({
@@ -69,14 +64,7 @@ export async function syncDraftFromFinal(year: number, month: number) {
     isDraft: true,
   }));
 
-  const insertedRows = await db.insert(rosterShifts).values(inserts).returning();
-  await logRosterShiftAuditEvents(
-    insertedRows.map((row) => ({
-      action: "insert" as const,
-      after: row,
-      context: "syncDraftFromFinal.copyFinalToDraft",
-    })),
-  );
+  await db.insert(rosterShifts).values(inserts);
 }
 
 export async function syncFinalFromDraft(year: number, month: number) {
@@ -125,14 +113,6 @@ export async function syncFinalFromDraft(year: number, month: number) {
         lte(rosterShifts.date, monthEnd),
       ),
     );
-  await logRosterShiftAuditEvents(
-    existingFinalRows.map((row) => ({
-      action: "delete" as const,
-      before: row,
-      context: "syncFinalFromDraft.replaceFinalMonth.clearFinal",
-    })),
-  );
-
   const draftRows = await db
     .select({
       date: rosterShifts.date,
@@ -162,11 +142,42 @@ export async function syncFinalFromDraft(year: number, month: number) {
   }));
 
   const insertedRows = await db.insert(rosterShifts).values(inserts).returning();
-  await logRosterShiftAuditEvents(
-    insertedRows.map((row) => ({
-      action: "insert" as const,
-      after: row,
-      context: "syncFinalFromDraft.copyDraftToFinal",
-    })),
-  );
+
+  // Log only real final-plan deltas; the replace-copy mechanics should not spam the dashboard.
+  const beforeByKey = new Map(existingFinalRows.map((row) => [buildShiftKey(row), row]));
+  const afterByKey = new Map(insertedRows.map((row) => [buildShiftKey(row), row]));
+  const allKeys = new Set<string>([...beforeByKey.keys(), ...afterByKey.keys()]);
+
+  const deltaEvents = Array.from(allKeys)
+    .map((key) => {
+      const before = beforeByKey.get(key) ?? null;
+      const after = afterByKey.get(key) ?? null;
+      if (before && after) {
+        if (!assignmentChanged(before, after)) return null;
+        return {
+          action: "update" as const,
+          before,
+          after,
+          context: "syncFinalFromDraft.delta",
+        };
+      }
+      if (!before && after) {
+        return {
+          action: "insert" as const,
+          after,
+          context: "syncFinalFromDraft.delta",
+        };
+      }
+      if (before && !after) {
+        return {
+          action: "delete" as const,
+          before,
+          context: "syncFinalFromDraft.delta",
+        };
+      }
+      return null;
+    })
+    .filter((event): event is NonNullable<typeof event> => Boolean(event));
+
+  await logRosterShiftAuditEvents(deltaEvents);
 }

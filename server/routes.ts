@@ -3361,7 +3361,20 @@ const buildAttendanceMembers = (
               .limit(25),
           ]);
 
-          const dutyItems = dutyChangeRows.map((row) => {
+          const ignoredDutyAuditContexts = [
+            "syncDraftFromFinal.",
+            "syncFinalFromDraft.replaceFinalMonth.clearFinal",
+            "syncFinalFromDraft.copyDraftToFinal",
+          ];
+
+          const dutyItems = dutyChangeRows
+            .filter((row) => {
+              const context = row.context ?? "";
+              return !ignoredDutyAuditContexts.some((prefix) =>
+                context.startsWith(prefix),
+              );
+            })
+            .map((row) => {
             const serviceLabel =
               getServiceLabel(row.serviceType) ?? row.serviceType ?? "Dienst";
             const planLabel = row.isDraft ? "Dienstplan (Entwurf)" : "Dienstplan";
