@@ -55,10 +55,19 @@ const isPowerPointMime = (value?: string | null) => {
   return mime.includes("powerpoint") || mime.includes("presentationml");
 };
 
+const hasMp4PreviewAsset = (value?: string | null) =>
+  (value ?? "").toLowerCase().endsWith(".mp4");
+
 function getPresentationMeta(presentation: TrainingPresentation | null) {
   const fileUrl = presentation?.fileUrl ?? null;
-  const hasMp4 = Boolean(fileUrl && isMp4Mime(presentation?.mimeType));
-  const hasInteractive = Boolean(presentation?.interactiveStorageName);
+  const hasMp4 = Boolean(
+    (fileUrl && isMp4Mime(presentation?.mimeType)) ||
+      hasMp4PreviewAsset(presentation?.interactiveStorageName),
+  );
+  const hasInteractive = Boolean(
+    presentation?.interactiveStorageName &&
+      !hasMp4PreviewAsset(presentation?.interactiveStorageName),
+  );
   const hasPdf = Boolean(fileUrl && isPdfMime(presentation?.mimeType));
   const canInline = hasMp4 || hasInteractive || hasPdf;
   const sourceIsPpt = Boolean(
@@ -302,13 +311,23 @@ export default function TrainingPresentations() {
   };
 
   const selectedMeta = getPresentationMeta(selectedPresentation);
+  const previewUrl = selectedPresentation
+    ? `/api/training/presentations/${selectedPresentation.id}/preview`
+    : undefined;
+  const pdfUrl = selectedPresentation
+    ? `/api/training/presentations/${selectedPresentation.id}/pdf`
+    : undefined;
+  const downloadUrl = selectedPresentation?.fileUrl;
   const interactiveUrl =
-    selectedPresentation?.interactiveStorageName
+    selectedPresentation?.interactiveStorageName &&
+    !hasMp4PreviewAsset(selectedPresentation.interactiveStorageName)
       ? `/api/training/presentations/${selectedPresentation.id}/interactive`
       : undefined;
   const interactiveAvailable = selectedMeta.hasInteractive;
   const interactivePreviewUrl = withAuthToken(interactiveUrl);
-  const filePreviewUrl = withAuthToken(selectedMeta.fileUrl);
+  const mp4PreviewUrl = withAuthToken(previewUrl);
+  const pdfPreviewUrl = withAuthToken(pdfUrl);
+  const originalDownloadUrl = withAuthToken(downloadUrl);
 
   useEffect(() => {
     if (!selectedPresentation) return;
@@ -486,13 +505,13 @@ export default function TrainingPresentations() {
               <Badge variant={getStatusBadgeVariant(selectedMeta.status)}>
                 {getStatusLabel(selectedMeta.status)}
               </Badge>
-              {selectedMeta.hasMp4 && <Badge variant="outline">Anzeige: MP4</Badge>}
+              {selectedMeta.hasMp4 && <Badge variant="outline">Vorschau: MP4</Badge>}
               {!selectedMeta.hasMp4 && selectedMeta.hasInteractive && (
                 <Badge variant="outline">Anzeige: LibreOffice HTML</Badge>
               )}
               {!selectedMeta.hasMp4 &&
                 !selectedMeta.hasInteractive &&
-                selectedMeta.hasPdf && <Badge variant="outline">Anzeige: PDF</Badge>}
+                selectedMeta.hasPdf && <Badge variant="outline">Praesentation: PDF</Badge>}
               {!selectedMeta.canInline && (
                 <Badge variant="outline">Anzeige: Download</Badge>
               )}
@@ -505,7 +524,7 @@ export default function TrainingPresentations() {
                 variant={viewMode === "mp4" ? "secondary" : "outline"}
                 onClick={() => setViewMode("mp4")}
               >
-                MP4-Wiedergabe
+                Vorschau anzeigen (MP4)
               </Button>
             )}
             {canManageTraining && selectedPresentation && (
@@ -541,7 +560,7 @@ export default function TrainingPresentations() {
                 variant={viewMode === "pdf" ? "secondary" : "outline"}
                 onClick={() => setViewMode("pdf")}
               >
-                PDF-Ansicht
+                Praesentation im Browser (PDF)
               </Button>
             )}
           </div>
@@ -550,7 +569,7 @@ export default function TrainingPresentations() {
               viewMode === "mp4" && selectedMeta.hasMp4 ? (
                 <div className="aspect-video overflow-hidden rounded-lg border border-border bg-black">
                   <video
-                    src={filePreviewUrl}
+                    src={mp4PreviewUrl}
                     controls
                     playsInline
                     className="h-full w-full"
@@ -569,7 +588,7 @@ export default function TrainingPresentations() {
               ) : selectedMeta.fileUrl && selectedMeta.hasPdf ? (
                 <div className="aspect-[4/3] overflow-hidden rounded-lg border border-border">
                   <iframe
-                    src={filePreviewUrl}
+                    src={pdfPreviewUrl}
                     title={selectedPresentation.title}
                     className="h-full w-full"
                   />
@@ -589,24 +608,36 @@ export default function TrainingPresentations() {
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <Button asChild>
               <a
-                href={filePreviewUrl}
+                href={originalDownloadUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="flex items-center gap-2"
               >
                 <Download className="w-4 h-4" />
-                Download
+                Download (Original)
               </a>
             </Button>
-            {interactiveAvailable && interactivePreviewUrl && (
+            {selectedMeta.hasMp4 && mp4PreviewUrl && (
               <Button asChild variant="outline">
                 <a
-                  href={interactivePreviewUrl}
+                  href={mp4PreviewUrl}
                   target="_blank"
                   rel="noreferrer"
                   className="flex items-center gap-2"
                 >
-                  <span>LibreOffice Ansicht öffnen</span>
+                  <span>Vorschau anzeigen (MP4)</span>
+                </a>
+              </Button>
+            )}
+            {selectedMeta.hasPdf && pdfPreviewUrl && (
+              <Button asChild variant="outline">
+                <a
+                  href={pdfPreviewUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-2"
+                >
+                  <span>Praesentation im Browser (PDF)</span>
                 </a>
               </Button>
             )}
@@ -620,8 +651,8 @@ export default function TrainingPresentations() {
               )}
             {selectedMeta.hasMp4 && (
               <p className="text-xs text-muted-foreground">
-                MP4 wird bevorzugt angezeigt (Animationen bleiben dabei in der
-                Regel erhalten).
+                MP4-Vorschaufilm verfuegbar. Automatische Konvertierung erzeugt
+                eine Folienfilm-Vorschau (Animationen nicht immer 1:1).
               </p>
             )}
           </div>

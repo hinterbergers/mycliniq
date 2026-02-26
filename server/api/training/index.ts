@@ -245,6 +245,8 @@ function normalizePresentationMimeType(mimeType: string, extension: string): str
 
 const buildDownloadUrl = (id: number) =>
   `/api/training/presentations/${id}/download`;
+const buildPdfUrl = (id: number) => `/api/training/presentations/${id}/pdf`;
+const buildPreviewUrl = (id: number) => `/api/training/presentations/${id}/preview`;
 
 function normalizeKeywords(value: unknown): string[] {
   if (!value) return [];
@@ -315,6 +317,100 @@ function findConvertedFile(
   }
 
   return null;
+}
+
+async function runCommand(
+  command: string,
+  args: string[],
+  options?: { cwd?: string },
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: options?.cwd,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+
+    let stderr = "";
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on("error", (error) => {
+      reject(error);
+    });
+
+    child.on("close", (code, signal) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(
+        new Error(
+          stderr.trim() ||
+            `${command} fehlgeschlagen (code ${code}, signal ${signal})`,
+        ),
+      );
+    });
+  });
+}
+
+async function convertPdfToMp4Preview(pdfPath: string): Promise<string> {
+  const outputDir = path.dirname(pdfPath);
+  const basename = path.basename(pdfPath, path.extname(pdfPath));
+  const slidesDir = path.join(outputDir, `${basename}_mp4_slides`);
+  fs.rmSync(slidesDir, { recursive: true, force: true });
+  fs.mkdirSync(slidesDir, { recursive: true });
+
+  const slidePrefix = path.join(slidesDir, "slide");
+  await runCommand("pdftoppm", ["-png", pdfPath, slidePrefix]);
+
+  const slideImages = fs
+    .readdirSync(slidesDir)
+    .filter((name) => name.toLowerCase().endsWith(".png"))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+  if (!slideImages.length) {
+    fs.rmSync(slidesDir, { recursive: true, force: true });
+    throw new Error("Keine Folienbilder fuer MP4-Vorschau erzeugt");
+  }
+
+  const concatListPath = path.join(slidesDir, "concat.txt");
+  const lines: string[] = [];
+  for (const imageName of slideImages) {
+    lines.push(`file '${imageName.replace(/'/g, "'\\''")}'`);
+    lines.push("duration 4");
+  }
+  lines.push(`file '${slideImages[slideImages.length - 1]!.replace(/'/g, "'\\''")}'`);
+  fs.writeFileSync(concatListPath, `${lines.join("\n")}\n`, "utf8");
+
+  const mp4Path = path.join(outputDir, `${basename}.mp4`);
+  try {
+    await runCommand(
+      "ffmpeg",
+      [
+        "-y",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        "concat.txt",
+        "-vf",
+        "fps=25,format=yuv420p",
+        "-movflags",
+        "+faststart",
+        path.basename(mp4Path),
+      ],
+      { cwd: slidesDir },
+    );
+  } finally {
+    fs.rmSync(slidesDir, { recursive: true, force: true });
+  }
+
+  if (!fs.existsSync(mp4Path)) {
+    throw new Error("MP4-Vorschau nicht gefunden");
+  }
+  return mp4Path;
 }
 
 
@@ -857,7 +953,7 @@ export function registerTrainingRoutes(router: Router) {
       let finalMimeType = mime;
       let originalMimeType: string | null = null;
       let originalStoredName: string | null = null;
-      let interactiveSourcePath: string | null = null;
+      let previewStorageName: string | null = null;
 
       if ([".ppt", ".pptx"].includes(extension)) {
         originalMimeType = normalizePresentationMimeType(
@@ -866,8 +962,10 @@ export function registerTrainingRoutes(router: Router) {
         );
         originalStoredName = originalStorageName;
         let pdfConversionSucceeded = false;
+        let convertedPdfPath: string | null = null;
         try {
           const convertedPath = await convertPresentationToPdf(originalPath);
+          convertedPdfPath = convertedPath;
           finalStorageName = path.basename(convertedPath);
           finalMimeType = "application/pdf";
           pdfConversionSucceeded = true;
@@ -883,16 +981,20 @@ export function registerTrainingRoutes(router: Router) {
           );
         }
 
-        try {
-          interactiveSourcePath = await convertPresentationToHtml(originalPath);
-        } catch (error: any) {
-          console.warn(
-            `[training] convertPresentationToHtml: ${error?.message ?? error}`,
-          );
-          if (!pdfConversionSucceeded) {
-            finalStorageName = originalStorageName;
-            finalMimeType = mime;
+        if (convertedPdfPath) {
+          try {
+            const previewPath = await convertPdfToMp4Preview(convertedPdfPath);
+            previewStorageName = path.basename(previewPath);
+          } catch (error: any) {
+            console.warn(
+              `[training] convertPdfToMp4Preview failed: ${error?.message ?? error}`,
+            );
           }
+        }
+
+        if (!pdfConversionSucceeded) {
+          finalStorageName = originalStorageName;
+          finalMimeType = mime;
         }
       }
 
@@ -916,14 +1018,10 @@ export function registerTrainingRoutes(router: Router) {
         .set({ fileUrl: downloadUrl })
         .where(eq(trainingPresentations.id, inserted.id));
 
-      if (interactiveSourcePath) {
-        const interactiveStorageName = prepareInteractiveAssets(
-          inserted.id,
-          interactiveSourcePath,
-        );
+      if (previewStorageName) {
         await db
           .update(trainingPresentations)
-          .set({ interactiveStorageName })
+          .set({ interactiveStorageName: previewStorageName })
           .where(eq(trainingPresentations.id, inserted.id));
       }
 
@@ -935,6 +1033,8 @@ export function registerTrainingRoutes(router: Router) {
       return created(res, {
         ...result,
         fileUrl: downloadUrl,
+        pdfUrl: buildPdfUrl(inserted.id),
+        previewUrl: buildPreviewUrl(inserted.id),
       });
     }),
   );
@@ -951,80 +1051,113 @@ export function registerTrainingRoutes(router: Router) {
           id: trainingPresentations.id,
           title: trainingPresentations.title,
           storageName: trainingPresentations.storageName,
+          originalStorageName: trainingPresentations.originalStorageName,
           mimeType: trainingPresentations.mimeType,
+          originalMimeType: trainingPresentations.originalMimeType,
         })
         .from(trainingPresentations)
         .where(eq(trainingPresentations.id, id))
         .limit(1);
 
-      if (!presentation || !presentation.storageName) {
+      if (!presentation || (!presentation.storageName && !presentation.originalStorageName)) {
         return notFound(res, "Vortrag");
       }
 
-      const filePath = path.join(trainingUploadsDir, presentation.storageName);
+      const storageName =
+        presentation.originalStorageName ?? presentation.storageName;
+      const mimeType = presentation.originalMimeType ?? presentation.mimeType;
+      if (!storageName) {
+        return notFound(res, "Datei");
+      }
+      const filePath = path.join(trainingUploadsDir, storageName);
       if (!fs.existsSync(filePath)) {
         return notFound(res, "Datei");
       }
 
-      res.setHeader("Content-Type", presentation.mimeType);
+      res.setHeader("Content-Type", mimeType);
       const sanitizedBase = presentation.title
         .replace(/"/g, '\\"')
         .replace(/[^a-zA-Z0-9._-]/g, "_")
         .slice(0, 200);
-      const extension = path.extname(presentation.storageName) || ".pdf";
+      const extension = path.extname(storageName) || ".bin";
       res.setHeader(
         "Content-Disposition",
-        `inline; filename="${sanitizedBase}${extension}"`,
+        `attachment; filename="${sanitizedBase}${extension}"`,
       );
       res.sendFile(filePath);
     }),
   );
 
   router.get(
-    "/presentations/:id/interactive",
+    "/presentations/:id/pdf",
     requireAuth,
     requireTrainingEnabled,
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
       const { id } = req.params;
       const [presentation] = await db
-        .select(selectPresentationInteractiveFields)
+        .select({
+          id: trainingPresentations.id,
+          storageName: trainingPresentations.storageName,
+          mimeType: trainingPresentations.mimeType,
+        })
         .from(trainingPresentations)
         .where(eq(trainingPresentations.id, id))
         .limit(1);
-      if (!presentation || !presentation.interactiveStorageName) {
+      if (!presentation || !presentation.storageName || presentation.mimeType !== "application/pdf") {
         return notFound(res, "Vortrag");
       }
-      const htmlPath = path.join(
-        trainingUploadsDir,
-        presentation.interactiveStorageName,
-      );
-      const token = typeof req.query.token === "string" ? req.query.token : undefined;
-      serveInteractiveAsset(res, htmlPath, undefined, token);
+      const filePath = path.join(trainingUploadsDir, presentation.storageName);
+      if (!fs.existsSync(filePath)) {
+        return notFound(res, "Datei");
+      }
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", "inline");
+      res.sendFile(filePath);
     }),
   );
 
   router.get(
-    "/presentations/:id/interactive/*",
+    "/presentations/:id/preview",
     requireAuth,
     requireTrainingEnabled,
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
       const { id } = req.params;
-      const relativePath = req.params[0];
       const [presentation] = await db
-        .select(selectPresentationInteractiveFields)
+        .select({
+          id: trainingPresentations.id,
+          storageName: trainingPresentations.storageName,
+          mimeType: trainingPresentations.mimeType,
+          interactiveStorageName: trainingPresentations.interactiveStorageName,
+        })
         .from(trainingPresentations)
         .where(eq(trainingPresentations.id, id))
         .limit(1);
-      if (!presentation || !presentation.interactiveStorageName) {
+      if (!presentation) {
         return notFound(res, "Vortrag");
       }
-      const htmlPath = path.join(
-        trainingUploadsDir,
-        presentation.interactiveStorageName,
-      );
-      serveInteractiveAsset(res, htmlPath, relativePath);
+      if (presentation.mimeType === "video/mp4" && presentation.storageName) {
+        const mp4Path = path.join(trainingUploadsDir, presentation.storageName);
+        if (!fs.existsSync(mp4Path)) return notFound(res, "Datei");
+        res.setHeader("Content-Type", "video/mp4");
+        res.setHeader("Content-Disposition", "inline");
+        res.sendFile(mp4Path);
+        return;
+      }
+      if (!presentation.interactiveStorageName) {
+        return notFound(res, "Vorschau");
+      }
+      const previewPath = path.join(trainingUploadsDir, presentation.interactiveStorageName);
+      if (!fs.existsSync(previewPath)) {
+        return notFound(res, "Datei");
+      }
+      if (path.extname(previewPath).toLowerCase() !== ".mp4") {
+        return notFound(res, "MP4-Vorschau");
+      }
+      res.setHeader("Content-Type", "video/mp4");
+      res.setHeader("Content-Disposition", "inline");
+      res.sendFile(previewPath);
     }),
   );
 
