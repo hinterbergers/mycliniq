@@ -32,6 +32,7 @@ import {
   onlineUsersApi,
   searchApi,
   type NextPlanningMonth,
+  type GlobalSearchPersonPreview,
   type GlobalSearchResponse,
   type OnlineUser,
 } from "@/lib/api";
@@ -115,6 +116,12 @@ export function Header({
   );
   const [headerSearchResults, setHeaderSearchResults] =
     useState<GlobalSearchResponse | null>(null);
+  const [personPreviewById, setPersonPreviewById] = useState<
+    Record<number, GlobalSearchPersonPreview | undefined>
+  >({});
+  const [personPreviewLoadingIds, setPersonPreviewLoadingIds] = useState<
+    number[]
+  >([]);
 
   const canEditPlan =
     isAdmin || isTechnicalAdmin || capabilities.includes("dutyplan.edit");
@@ -167,6 +174,8 @@ export function Header({
       setHeaderSearchLoading(false);
       setHeaderSearchError(null);
       setHeaderSearchResults(null);
+      setPersonPreviewById({});
+      setPersonPreviewLoadingIds([]);
       return;
     }
 
@@ -178,6 +187,7 @@ export function Header({
         const result = await searchApi.global(query, { limit: 5 });
         if (!active) return;
         setHeaderSearchResults(result);
+        setPersonPreviewById({});
         setHeaderSearchOpen(true);
       } catch (error: any) {
         if (!active) return;
@@ -194,6 +204,47 @@ export function Header({
       window.clearTimeout(timeoutId);
     };
   }, [headerSearchQuery]);
+
+  useEffect(() => {
+    const people = headerSearchResults?.groups.people ?? [];
+    const idsToLoad = people
+      .map((person) => person.id)
+      .filter(
+        (id) =>
+          personPreviewById[id] === undefined &&
+          !personPreviewLoadingIds.includes(id),
+      );
+    if (!idsToLoad.length) return;
+
+    let active = true;
+    setPersonPreviewLoadingIds((prev) => [...prev, ...idsToLoad]);
+    Promise.all(
+      idsToLoad.map(async (id) => {
+        try {
+          const preview = await searchApi.personPreview(id, { days: 14 });
+          return [id, preview] as const;
+        } catch {
+          return [id, undefined] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (!active) return;
+      setPersonPreviewById((prev) => {
+        const next = { ...prev };
+        entries.forEach(([id, preview]) => {
+          next[id] = preview;
+        });
+        return next;
+      });
+      setPersonPreviewLoadingIds((prev) =>
+        prev.filter((id) => !idsToLoad.includes(id)),
+      );
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [headerSearchResults, personPreviewById, personPreviewLoadingIds]);
 
   useEffect(() => {
     if (!isAdminActual || viewAsUser) {
@@ -389,6 +440,14 @@ export function Header({
     setLocation(url);
   };
 
+  const formatContactHref = (kind: "tel" | "mailto", value?: string | null) => {
+    const raw = (value ?? "").trim();
+    if (!raw) return null;
+    if (kind === "mailto") return `mailto:${raw}`;
+    const normalizedPhone = raw.replace(/[^\d+]/g, "");
+    return normalizedPhone ? `tel:${normalizedPhone}` : null;
+  };
+
   return (
     <header className="h-16 kabeg-header sticky top-0 z-10 px-6 flex items-center justify-between shadow-sm">
       <div className="flex items-center gap-2 min-w-0">
@@ -475,29 +534,126 @@ export function Header({
                         Personen
                       </p>
                       {headerSearchResults.groups.people.map((person) => (
-                        <button
+                        <div
                           key={`person-${person.id}`}
-                          type="button"
-                          className="w-full rounded-lg border px-3 py-2 text-left hover:bg-muted"
-                          onClick={() => navigateFromSearch(person.url)}
+                          className="w-full rounded-lg border px-3 py-2 text-left"
                         >
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="text-sm font-medium truncate">
-                              {person.displayName}
+                          <button
+                            type="button"
+                            className="w-full text-left hover:opacity-90"
+                            onClick={() => navigateFromSearch(person.url)}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-sm font-medium truncate">
+                                {person.displayName}
+                              </p>
+                              <span className="text-xs text-muted-foreground">
+                                Profil
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {person.role || "Mitarbeiter:in"}
                             </p>
-                            <span className="text-xs text-muted-foreground">
-                              Profil
-                            </span>
+                          </button>
+
+                          <div className="mt-1 flex flex-wrap gap-2">
+                            {[
+                              {
+                                label: person.contacts.phoneWork,
+                                href: formatContactHref("tel", person.contacts.phoneWork),
+                              },
+                              {
+                                label: person.contacts.phonePrivate,
+                                href: formatContactHref(
+                                  "tel",
+                                  person.contacts.phonePrivate,
+                                ),
+                              },
+                              {
+                                label: person.contacts.email,
+                                href: formatContactHref("mailto", person.contacts.email),
+                              },
+                              {
+                                label: person.contacts.emailPrivate,
+                                href: formatContactHref(
+                                  "mailto",
+                                  person.contacts.emailPrivate,
+                                ),
+                              },
+                            ]
+                              .filter((item) => item.label && item.href)
+                              .slice(0, 4)
+                              .map((item) => (
+                                <a
+                                  key={`${person.id}-${item.href}`}
+                                  href={item.href!}
+                                  className="inline-flex max-w-full items-center rounded border px-2 py-0.5 text-xs text-primary hover:bg-muted"
+                                  onClick={(event) => event.stopPropagation()}
+                                >
+                                  <span className="truncate">{item.label}</span>
+                                </a>
+                              ))}
+                            {![
+                              person.contacts.phoneWork,
+                              person.contacts.phonePrivate,
+                              person.contacts.email,
+                              person.contacts.emailPrivate,
+                            ].some(Boolean) && (
+                              <p className="text-xs text-muted-foreground">
+                                Keine oeffentlichen Kontaktdaten
+                              </p>
+                            )}
                           </div>
-                          <p className="text-xs text-muted-foreground truncate">
-                            {person.role || "Mitarbeiter:in"}
-                          </p>
-                          <p className="text-xs text-muted-foreground truncate">
-                            {[person.contacts.email, person.contacts.phoneWork]
-                              .filter(Boolean)
-                              .join(" • ") || "Keine oeffentlichen Kontaktdaten"}
-                          </p>
-                        </button>
+
+                          <div className="mt-2 space-y-1">
+                            {personPreviewLoadingIds.includes(person.id) && (
+                              <p className="text-xs text-muted-foreground">
+                                Vorschau wird geladen…
+                              </p>
+                            )}
+                            {personPreviewById[person.id] && (
+                              <>
+                                <p className="text-xs text-muted-foreground">
+                                  Dienste (14 Tage):{" "}
+                                  {personPreviewById[person.id]?.duties
+                                    .slice(0, 3)
+                                    .map((duty) => `${duty.date} ${duty.serviceType}`)
+                                    .join(" • ") || "Keine"}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  Arbeitsplaetze:{" "}
+                                  {Array.from(
+                                    new Set(
+                                      (personPreviewById[person.id]?.workplaces ?? [])
+                                        .map((entry) => entry.workplace)
+                                        .filter(Boolean),
+                                    ),
+                                  )
+                                    .slice(0, 4)
+                                    .join(", ") || "Keine"}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  Abwesenheiten:{" "}
+                                  {personPreviewById[person.id]?.visibility.absences
+                                    ? personPreviewById[person.id]?.absences.length
+                                      ? personPreviewById[person.id]?.absences
+                                          .slice(0, 2)
+                                          .map(
+                                            (a) =>
+                                              `${a.startDate}${
+                                                a.endDate !== a.startDate
+                                                  ? ` bis ${a.endDate}`
+                                                  : ""
+                                              } (${a.reason})`,
+                                          )
+                                          .join(" • ")
+                                      : "Keine"
+                                    : "Keine Berechtigung"}
+                                </p>
+                              </>
+                            )}
+                          </div>
+                        </div>
                       ))}
                     </div>
                   )}

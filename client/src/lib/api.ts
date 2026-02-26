@@ -205,6 +205,30 @@ export type GlobalSearchPersonHit = {
   } | null;
 };
 
+export type GlobalSearchPersonPreview = {
+  days: string[];
+  duties: Array<{
+    id: number;
+    date: string;
+    serviceType: string;
+  }>;
+  workplaces: Array<{
+    date: string;
+    workplace: string;
+    roomName?: string | null;
+  }>;
+  absences: Array<{
+    id: number;
+    startDate: string;
+    endDate: string;
+    reason: string;
+    status: string;
+  }>;
+  visibility: {
+    absences: boolean;
+  };
+};
+
 export type GlobalSearchResponse = {
   query: string;
   groups: {
@@ -966,6 +990,20 @@ export const searchApi = {
     }
     const response = await apiFetch(`${API_BASE}/search/global?${params.toString()}`);
     return handleResponse<GlobalSearchResponse>(response);
+  },
+  personPreview: async (
+    employeeId: number,
+    options?: { days?: number },
+  ): Promise<GlobalSearchPersonPreview> => {
+    const params = new URLSearchParams();
+    if (typeof options?.days === "number") {
+      params.set("days", String(options.days));
+    }
+    const query = params.toString();
+    const response = await apiFetch(
+      `${API_BASE}/search/people/${employeeId}/preview${query ? `?${query}` : ""}`,
+    );
+    return handleResponse<GlobalSearchPersonPreview>(response);
   },
 };
 
