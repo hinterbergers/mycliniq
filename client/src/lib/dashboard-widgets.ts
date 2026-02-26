@@ -20,7 +20,7 @@ export const DASHBOARD_WIDGETS: DashboardWidgetDefinition[] = [
   { key: "documents", label: "Neue Dokumente", defaultEnabled: true },
   { key: "sops_new", label: "Neue SOPs", defaultEnabled: true },
   { key: "favorites", label: "Favoriten", defaultEnabled: true },
-  { key: "absences", label: "Fehlende Einträge", defaultEnabled: false },
+  { key: "absences", label: "Abwesenheiten", defaultEnabled: true },
 ];
 
 export const DEFAULT_ENABLED_WIDGETS = new Set(

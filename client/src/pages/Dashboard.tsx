@@ -517,6 +517,10 @@ export default function Dashboard() {
       const normalized = configured.filter((value): value is DashboardWidgetKey =>
         DASHBOARD_WIDGETS.some((widget) => widget.key === value),
       );
+      // Backfill the absences widget for profiles saved before this widget existed.
+      if (!normalized.includes("absences")) {
+        normalized.push("absences");
+      }
       if (normalized.length) {
         return new Set(normalized);
       }
