@@ -117,7 +117,7 @@ export function Header({
   const [headerSearchResults, setHeaderSearchResults] =
     useState<GlobalSearchResponse | null>(null);
   const [personPreviewById, setPersonPreviewById] = useState<
-    Record<number, GlobalSearchPersonPreview | undefined>
+    Record<number, GlobalSearchPersonPreview | null | undefined>
   >({});
   const [personPreviewLoadingIds, setPersonPreviewLoadingIds] = useState<
     number[]
@@ -224,7 +224,7 @@ export function Header({
           const preview = await searchApi.personPreview(id, { days: 14 });
           return [id, preview] as const;
         } catch {
-          return [id, undefined] as const;
+          return [id, null] as const;
         }
       }),
     ).then((entries) => {
@@ -611,6 +611,12 @@ export function Header({
                                 Vorschau wird geladen…
                               </p>
                             )}
+                            {personPreviewById[person.id] === null &&
+                              !personPreviewLoadingIds.includes(person.id) && (
+                                <p className="text-xs text-muted-foreground">
+                                  Vorschau konnte nicht geladen werden.
+                                </p>
+                              )}
                             {personPreviewById[person.id] && (
                               <>
                                 <p className="text-xs text-muted-foreground">
