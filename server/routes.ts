@@ -3443,7 +3443,7 @@ const buildAttendanceMembers = (
               title: `${planLabel}: ${dutyActionLabel}`,
               subtitle: subtitleParts.join(" • "),
               actorName: normalize(row.actorName) || null,
-              targetUrl: null,
+              targetUrl: `/admin/weekly?day=${encodeURIComponent(String(row.date))}`,
             };
           });
 
@@ -3473,7 +3473,7 @@ const buildAttendanceMembers = (
               title: `Abwesenheit: ${employeeName} (${row.reason})`,
               subtitle: `${dateRange}${row.status ? ` • ${row.status}` : ""}`,
               actorName: null,
-              targetUrl: null,
+              targetUrl: `/admin/weekly?day=${encodeURIComponent(String(row.startDate))}`,
             };
           });
 
