@@ -547,9 +547,9 @@ export function Header({
                               <p className="text-sm font-medium truncate">
                                 {person.displayName}
                               </p>
-                              <span className="text-xs text-muted-foreground">
-                                Profil
-                              </span>
+                            <span className="text-xs text-muted-foreground">
+                              Visitenkarte
+                            </span>
                             </div>
                             <p className="text-xs text-muted-foreground truncate">
                               {person.role || "Mitarbeiter:in"}

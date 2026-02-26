@@ -172,6 +172,23 @@ const canManageSops = (req: Request) =>
         req.user.capabilities.includes("sop.publish")),
   );
 
+const mapVisibleContacts = (person: {
+  email?: string | null;
+  phoneWork?: string | null;
+  emailPrivate?: string | null;
+  phonePrivate?: string | null;
+  showPrivateContact?: boolean | null;
+}) => {
+  const canSeePrivate = Boolean(person.showPrivateContact);
+  return {
+    email: normalize(person.email) || null,
+    phoneWork: normalize(person.phoneWork) || null,
+    emailPrivate: canSeePrivate ? normalize(person.emailPrivate) || null : null,
+    phonePrivate: canSeePrivate ? normalize(person.phonePrivate) || null : null,
+    showPrivateContact: canSeePrivate,
+  };
+};
+
 export function registerSearchRoutes(router: Router) {
   router.use(requireAuth);
 
@@ -406,25 +423,16 @@ export function registerSearchRoutes(router: Router) {
           );
           if (!includesAllTokens(searchable, tokens)) return null;
 
-          // Global search strictly follows the employee visibility toggle.
-          const canSeePrivate = Boolean(person.showPrivateContact);
-
           return {
             id: person.id,
             type: "person" as const,
             displayName,
             role: person.role ?? null,
-            url: `/einstellungen/${person.id}`,
+            url: `/kontakte/${person.id}`,
             score:
               scoreMatch(normalizeText(displayName), tokens) * 5 +
               scoreMatch(searchable, tokens),
-            contacts: {
-              email: normalize(person.email) || null,
-              phoneWork: normalize(person.phoneWork) || null,
-              emailPrivate: canSeePrivate ? normalize(person.emailPrivate) || null : null,
-              phonePrivate: canSeePrivate ? normalize(person.phonePrivate) || null : null,
-              showPrivateContact: Boolean(person.showPrivateContact),
-            },
+            contacts: mapVisibleContacts(person),
             preview: {
               status: "pending",
               message:
@@ -449,6 +457,51 @@ export function registerSearchRoutes(router: Router) {
           videos: videoHits.length,
           presentations: presentationHits.length,
           people: peopleHits.length,
+        },
+      });
+    }),
+  );
+
+  router.get(
+    "/people/:id/profile",
+    asyncHandler(async (req, res) => {
+      const employeeId = Number(req.params.id);
+      if (!Number.isFinite(employeeId)) {
+        return ok(res, { person: null });
+      }
+
+      const [person] = await db
+        .select({
+          id: employees.id,
+          firstName: employees.firstName,
+          lastName: employees.lastName,
+          name: employees.name,
+          role: employees.role,
+          title: employees.title,
+          email: employees.email,
+          emailPrivate: employees.emailPrivate,
+          phoneWork: employees.phoneWork,
+          phonePrivate: employees.phonePrivate,
+          showPrivateContact: employees.showPrivateContact,
+          isActive: employees.isActive,
+        })
+        .from(employees)
+        .where(eq(employees.id, employeeId))
+        .limit(1);
+
+      if (!person || !person.isActive) {
+        return ok(res, { person: null });
+      }
+
+      return ok(res, {
+        person: {
+          id: person.id,
+          displayName: formatDisplayName(person.firstName, person.lastName, person.name),
+          firstName: normalize(person.firstName) || null,
+          lastName: normalize(person.lastName) || null,
+          title: normalize(person.title) || null,
+          role: person.role ?? null,
+          contacts: mapVisibleContacts(person),
         },
       });
     }),

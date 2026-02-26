@@ -24,6 +24,7 @@ import Tools from "@/pages/Tools";
 import Messages from "@/pages/Messages";
 import NotFound from "@/pages/not-found";
 import Tasks from "@/pages/Tasks";
+import PersonCard from "@/pages/PersonCard";
 import TrainingVideos from "@/pages/training/TrainingVideos";
 import TrainingPresentations from "@/pages/training/TrainingPresentations";
 import { Loader2 } from "lucide-react";
@@ -77,6 +78,9 @@ function Router() {
       <Route path="/tools">{() => <ProtectedRoute component={Tools} />}</Route>
       <Route path="/nachrichten">
         {() => <ProtectedRoute component={Messages} />}
+      </Route>
+      <Route path="/kontakte/:id">
+        {() => <ProtectedRoute component={PersonCard} />}
       </Route>
       <Route path="/fortbildung/videos">
         {() => <TrainingRoute component={TrainingVideos} />}

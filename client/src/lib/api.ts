@@ -229,6 +229,18 @@ export type GlobalSearchPersonPreview = {
   };
 };
 
+export type PersonCardProfile = {
+  person: {
+    id: number;
+    displayName: string;
+    firstName: string | null;
+    lastName: string | null;
+    title: string | null;
+    role: string | null;
+    contacts: GlobalSearchPersonHit["contacts"];
+  } | null;
+};
+
 export type GlobalSearchResponse = {
   query: string;
   groups: {
@@ -1004,6 +1016,10 @@ export const searchApi = {
       `${API_BASE}/search/people/${employeeId}/preview${query ? `?${query}` : ""}`,
     );
     return handleResponse<GlobalSearchPersonPreview>(response);
+  },
+  personProfile: async (employeeId: number): Promise<PersonCardProfile> => {
+    const response = await apiFetch(`${API_BASE}/search/people/${employeeId}/profile`);
+    return handleResponse<PersonCardProfile>(response);
   },
 };
 
