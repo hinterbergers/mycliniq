@@ -399,7 +399,7 @@ async function convertPdfToMp4Preview(pdfPath: string): Promise<string> {
         "fps=25,format=yuv420p",
         "-movflags",
         "+faststart",
-        path.basename(mp4Path),
+        mp4Path,
       ],
       { cwd: slidesDir },
     );
