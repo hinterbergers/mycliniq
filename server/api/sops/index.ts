@@ -256,6 +256,110 @@ const buildDocxHtml = (title: string, bodyHtml: string) => `<!doctype html>
   </body>
 </html>`;
 
+const addInlineStyleToTag = (
+  html: string,
+  tagName: string,
+  style: string,
+): string => {
+  const regex = new RegExp(`<${tagName}(\\s[^>]*)?>`, "gi");
+  return html.replace(regex, (match, attrs = "") => {
+    const styleAttr = /style\s*=\s*"([^"]*)"/i.exec(attrs);
+    if (styleAttr) {
+      const merged = `${styleAttr[1].trim()} ${style}`.trim();
+      return `<${tagName}${attrs.replace(
+        /style\s*=\s*"([^"]*)"/i,
+        `style="${merged}"`,
+      )}>`;
+    }
+    return `<${tagName}${attrs} style="${style}">`;
+  });
+};
+
+const withDocxInlineStyles = (html: string): string => {
+  let next = html;
+  next = addInlineStyleToTag(
+    next,
+    "p",
+    "font-family: Arial, Helvetica, sans-serif; font-size: 11pt; line-height: 1.45; font-weight: 400; color: #222; margin: 0 0 8pt 0;",
+  );
+  next = addInlineStyleToTag(
+    next,
+    "li",
+    "font-family: Arial, Helvetica, sans-serif; font-size: 11pt; line-height: 1.45; font-weight: 400; color: #222;",
+  );
+  next = addInlineStyleToTag(
+    next,
+    "ul",
+    "margin: 0 0 8pt 0; padding-left: 18pt; list-style-type: disc;",
+  );
+  next = addInlineStyleToTag(
+    next,
+    "ol",
+    "margin: 0 0 8pt 0; padding-left: 18pt; list-style-type: decimal;",
+  );
+  next = addInlineStyleToTag(
+    next,
+    "h2",
+    "font-family: Arial, Helvetica, sans-serif; font-size: 14pt; line-height: 1.25; font-weight: 700; color: #0f5ba7; margin: 14pt 0 6pt 0;",
+  );
+  next = addInlineStyleToTag(
+    next,
+    "h3",
+    "font-family: Arial, Helvetica, sans-serif; font-size: 12pt; line-height: 1.25; font-weight: 700; color: #0f5ba7; margin: 12pt 0 6pt 0;",
+  );
+  next = addInlineStyleToTag(
+    next,
+    "h4",
+    "font-family: Arial, Helvetica, sans-serif; font-size: 12pt; line-height: 1.25; font-weight: 700; color: #0f5ba7; margin: 12pt 0 6pt 0;",
+  );
+  next = addInlineStyleToTag(
+    next,
+    "h5",
+    "font-family: Arial, Helvetica, sans-serif; font-size: 12pt; line-height: 1.25; font-weight: 700; color: #0f5ba7; margin: 12pt 0 6pt 0;",
+  );
+  next = addInlineStyleToTag(
+    next,
+    "h6",
+    "font-family: Arial, Helvetica, sans-serif; font-size: 12pt; line-height: 1.25; font-weight: 700; color: #0f5ba7; margin: 12pt 0 6pt 0;",
+  );
+  next = addInlineStyleToTag(
+    next,
+    "blockquote",
+    "margin: 8pt 0; padding-left: 10pt; border-left: 2px solid #d6dbe3; color: #444;",
+  );
+  next = addInlineStyleToTag(
+    next,
+    "table",
+    "border-collapse: collapse; width: 100%; margin: 8pt 0;",
+  );
+  next = addInlineStyleToTag(
+    next,
+    "th",
+    "border: 1px solid #d6dbe3; padding: 4pt 6pt; vertical-align: top; font-family: Arial, Helvetica, sans-serif; font-size: 11pt; font-weight: 700; background: #f4f7fb;",
+  );
+  next = addInlineStyleToTag(
+    next,
+    "td",
+    "border: 1px solid #d6dbe3; padding: 4pt 6pt; vertical-align: top; font-family: Arial, Helvetica, sans-serif; font-size: 11pt; font-weight: 400;",
+  );
+  next = addInlineStyleToTag(
+    next,
+    "pre",
+    'font-family: "Courier New", Courier, monospace; background: #f6f8fa; padding: 8pt; border: 1px solid #e2e8f0; white-space: pre-wrap;',
+  );
+  next = addInlineStyleToTag(
+    next,
+    "code",
+    'font-family: "Courier New", Courier, monospace;',
+  );
+  next = addInlineStyleToTag(
+    next,
+    "hr",
+    "border: none; border-top: 1px solid #d6dbe3; margin: 10pt 0;",
+  );
+  return next;
+};
+
 async function isMember(sopId: number, employeeId: number): Promise<boolean> {
   const [member] = await db
     .select({ sopId: sopMembers.sopId })
@@ -604,7 +708,7 @@ export function registerSopRoutes(router: Router) {
       }
 
       const htmlBody = await marked.parse(contentMarkdown || "");
-      const html = buildDocxHtml(exportTitle, htmlBody);
+      const html = buildDocxHtml(exportTitle, withDocxInlineStyles(htmlBody));
       const buffer = await htmlToDocx(html);
       const filename = `${toSafeFilename(exportTitle)}.docx`;
       res.setHeader(
