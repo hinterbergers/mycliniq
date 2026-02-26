@@ -383,7 +383,8 @@ export default function TrainingPresentations() {
               </Button>
             )}
             {selectedPresentation?.originalMimeType &&
-              selectedPresentation.originalMimeType !== "application/pdf" && (
+              selectedPresentation.originalMimeType !== "application/pdf" &&
+              isPdf && (
                 <p className="text-xs text-muted-foreground">
                   Originaldatei: {selectedPresentation.originalMimeType}. Die
                   Ansicht basiert auf der konvertierten PDF-Datei.

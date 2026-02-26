@@ -208,11 +208,36 @@ fs.mkdirSync(trainingUploadsDir, { recursive: true });
 const trainingInteractiveDir = path.join(trainingUploadsDir, "interactive");
 fs.mkdirSync(trainingInteractiveDir, { recursive: true });
 
+const ALLOWED_PRESENTATION_EXTENSIONS = new Set([".pdf", ".ppt", ".pptx"]);
+
 const ALLOWED_PRESENTATION_MIMES = new Set([
   "application/pdf",
   "application/vnd.ms-powerpoint",
+  "application/mspowerpoint",
+  "application/powerpoint",
+  "application/x-mspowerpoint",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 ]);
+
+function isAllowedPresentationUpload(mimeType: string, extension: string): boolean {
+  if (ALLOWED_PRESENTATION_MIMES.has(mimeType)) return true;
+  // Some browsers/OS combinations send application/octet-stream for Office files.
+  if (mimeType === "application/octet-stream") {
+    return ALLOWED_PRESENTATION_EXTENSIONS.has(extension);
+  }
+  return ALLOWED_PRESENTATION_EXTENSIONS.has(extension);
+}
+
+function normalizePresentationMimeType(mimeType: string, extension: string): string {
+  if (mimeType && mimeType !== "application/octet-stream") return mimeType;
+  if (extension === ".pdf") return "application/pdf";
+  if (extension === ".ppt")
+    return "application/vnd.ms-powerpoint";
+  if (extension === ".pptx") {
+    return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+  }
+  return mimeType || "application/octet-stream";
+}
 
 const buildDownloadUrl = (id: number) =>
   `/api/training/presentations/${id}/download`;
@@ -456,10 +481,37 @@ function prepareInteractiveAssets(
   return path.relative(trainingUploadsDir, destinationHtmlPath);
 }
 
+function appendQueryParam(url: string, key: string, value: string): string {
+  const hashIndex = url.indexOf("#");
+  const hash = hashIndex >= 0 ? url.slice(hashIndex) : "";
+  const withoutHash = hashIndex >= 0 ? url.slice(0, hashIndex) : url;
+  const separator = withoutHash.includes("?") ? "&" : "?";
+  return `${withoutHash}${separator}${encodeURIComponent(key)}=${encodeURIComponent(value)}${hash}`;
+}
+
+function injectTokenIntoInteractiveHtml(html: string, token: string): string {
+  return html.replace(
+    /\b(href|src)=(["'])([^"'<>]+)\2/gi,
+    (full, attr: string, quote: string, rawUrl: string) => {
+      const url = String(rawUrl ?? "").trim();
+      if (!url) return full;
+      if (
+        url.startsWith("#") ||
+        /^([a-z][a-z0-9+.-]*:)?\/\//i.test(url) ||
+        /^(data|blob|javascript|mailto|tel):/i.test(url)
+      ) {
+        return full;
+      }
+      return `${attr}=${quote}${appendQueryParam(url, "token", token)}${quote}`;
+    },
+  );
+}
+
 function serveInteractiveAsset(
   res: Response,
   htmlPath: string,
   relativePath?: string,
+  authToken?: string,
 ): void {
   const baseDir = path.dirname(htmlPath);
   const targetPath = relativePath
@@ -477,6 +529,11 @@ function serveInteractiveAsset(
   }
   if (fs.statSync(normalizedPath).isDirectory()) {
     notFound(res, "Datei");
+    return;
+  }
+  if (!relativePath && authToken && path.extname(normalizedPath).toLowerCase() === ".html") {
+    const html = fs.readFileSync(normalizedPath, "utf8");
+    res.type("html").send(injectTokenIntoInteractiveHtml(html, authToken));
     return;
   }
   res.sendFile(normalizedPath);
@@ -767,8 +824,12 @@ export function registerTrainingRoutes(router: Router) {
         return validationError(res, "Datei erforderlich");
       }
 
-      const mime = (file.mimetype ?? "application/octet-stream").toLowerCase();
-      if (!ALLOWED_PRESENTATION_MIMES.has(mime)) {
+      const rawMime = (file.mimetype ?? "application/octet-stream").toLowerCase();
+      const extension =
+        path.extname(file.originalname || "").toLowerCase() ||
+        (rawMime === "application/pdf" ? ".pdf" : "");
+      const mime = normalizePresentationMimeType(rawMime, extension);
+      if (!isAllowedPresentationUpload(rawMime, extension)) {
         res
           .status(415)
           .json({ success: false, error: "Nur PDF oder PowerPoint-Dateien sind erlaubt" });
@@ -781,9 +842,6 @@ export function registerTrainingRoutes(router: Router) {
       }
 
       const keywords = normalizeKeywords(req.body.keywords);
-      const extension =
-        path.extname(file.originalname || "").toLowerCase() ||
-        (mime === "application/pdf" ? ".pdf" : "");
       const originalStorageName = `${crypto.randomUUID()}${extension || ".bin"}`;
       const originalPath = path.join(trainingUploadsDir, originalStorageName);
       fs.writeFileSync(originalPath, file.buffer);
@@ -795,7 +853,10 @@ export function registerTrainingRoutes(router: Router) {
       let interactiveSourcePath: string | null = null;
 
       if ([".ppt", ".pptx"].includes(extension)) {
-        originalMimeType = file.mimetype;
+        originalMimeType = normalizePresentationMimeType(
+          (file.mimetype ?? "application/octet-stream").toLowerCase(),
+          extension,
+        );
         originalStoredName = originalStorageName;
         let pdfConversionSucceeded = false;
         try {
@@ -931,7 +992,8 @@ export function registerTrainingRoutes(router: Router) {
         trainingUploadsDir,
         presentation.interactiveStorageName,
       );
-      serveInteractiveAsset(res, htmlPath);
+      const token = typeof req.query.token === "string" ? req.query.token : undefined;
+      serveInteractiveAsset(res, htmlPath, undefined, token);
     }),
   );
 
