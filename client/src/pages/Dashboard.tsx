@@ -176,25 +176,20 @@ const getRoleRank = (role?: string | null) => {
   const r = (role ?? "").toLowerCase();
   if (!r) return 99;
 
-  // Primar / Primaria
+  // Primar / Primaria / Primarius
   if (r.includes("primar")) return 0;
 
   // 1. Oberarzt / Erster Oberarzt
   if (r.includes("1. ober") || r.includes("erster ober")) return 1;
 
-  // OA + Facharzt in denselben Block
-  if (
-    r.includes("oberarzt") ||
-    r.includes("oberärzt") ||
-    r.includes("facharzt") ||
-    r.includes("fachärzt")
-  ) {
-    return 2;
-  }
+  if (r.includes("funktionsober")) return 2;
+  if (r.includes("ausbildungsober")) return 3;
+  if (r.includes("oberarzt") || r.includes("oberärzt")) return 4;
+  if (r.includes("facharzt") || r.includes("fachärzt")) return 4;
 
-  if (r.includes("assistenz")) return 3;
-  if (r.includes("turnus")) return 4;
-  if (r.includes("kpj") || r.includes("student") || r.includes("famul")) return 5;
+  if (r.includes("assistenz")) return 5;
+  if (r.includes("turnus")) return 6;
+  if (r.includes("kpj") || r.includes("student") || r.includes("famul")) return 7;
 
   // Sekretariat (falls es je in der Liste auftaucht)
   if (r.includes("sekret")) return 98;
@@ -248,6 +243,7 @@ const MONTH_NAMES = [
   "November",
   "Dezember",
 ];
+const DASHBOARD_ATTENDANCE_VIEW_MODE_KEY = "dashboard_attendance_view_mode";
 
 export default function Dashboard() {
   const { employee, user, can, token, isAdmin, viewAsUser } = useAuth();
@@ -267,9 +263,14 @@ export default function Dashboard() {
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [isAcceptingZe, setIsAcceptingZe] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<"week" | "team">("week");
-  const [attendanceViewMode, setAttendanceViewMode] = useState<
-    "people" | "workplaces"
-  >("people");
+  const [attendanceViewMode, setAttendanceViewMode] = useState<"people" | "workplaces">(() => {
+    try {
+      const stored = localStorage.getItem(DASHBOARD_ATTENDANCE_VIEW_MODE_KEY);
+      return stored === "workplaces" ? "workplaces" : "people";
+    } catch {
+      return "people";
+    }
+  });
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const { toast } = useToast();
   const [absencesData, setAbsencesData] =
@@ -310,6 +311,14 @@ export default function Dashboard() {
       cancelled = true;
     };
   }, [token]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(DASHBOARD_ATTENDANCE_VIEW_MODE_KEY, attendanceViewMode);
+    } catch {
+      // ignore localStorage issues
+    }
+  }, [attendanceViewMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -759,6 +768,9 @@ export default function Dashboard() {
       <div className="space-y-4">
         {sortedGroups.map((group, groupIndex) => {
           const sortedPeople = [...group.members].sort((a, b) => {
+            const rankA = getRoleRank(a.role);
+            const rankB = getRoleRank(b.role);
+            if (rankA !== rankB) return rankA - rankB;
             const aLast = (a.lastName ?? "").trim();
             const bLast = (b.lastName ?? "").trim();
             const lastCmp = aLast.localeCompare(bLast, "de");
