@@ -159,6 +159,19 @@ const withHexAlpha = (color?: string | null, alphaHex = "14") => {
   return `${value}${alphaHex}`;
 };
 
+const darkenHexColor = (color?: string | null, factor = 0.45) => {
+  const value = (color ?? "").trim();
+  const match = /^#([0-9a-fA-F]{6})$/.exec(value);
+  if (!match) return null;
+  const hex = match[1];
+  const r = Math.max(0, Math.min(255, Math.round(parseInt(hex.slice(0, 2), 16) * factor)));
+  const g = Math.max(0, Math.min(255, Math.round(parseInt(hex.slice(2, 4), 16) * factor)));
+  const b = Math.max(0, Math.min(255, Math.round(parseInt(hex.slice(4, 6), 16) * factor)));
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b
+    .toString(16)
+    .padStart(2, "0")}`;
+};
+
 const getRoleRank = (role?: string | null) => {
   const r = (role ?? "").toLowerCase();
   if (!r) return 99;
@@ -758,19 +771,24 @@ export default function Dashboard() {
             <Fragment key={`${testPrefix}-group-${group.roomId ?? group.label}`}>
               {groupIndex > 0 ? <Separator /> : null}
               <div
-                className="space-y-2 rounded-md p-2"
+                className="space-y-2 rounded-md border p-2 shadow-sm"
                 style={
                   group.color
                     ? {
-                        backgroundColor: withHexAlpha(group.color, "12") ?? undefined,
-                        border: `1px solid ${withHexAlpha(group.color, "44") ?? group.color}`,
+                        backgroundColor: withHexAlpha(group.color, "38") ?? undefined,
+                        borderColor: withHexAlpha(group.color, "AA") ?? group.color,
+                        boxShadow: `inset 3px 0 0 ${darkenHexColor(group.color, 0.45) ?? group.color}`,
                       }
                     : undefined
                 }
               >
                 <p
-                  className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-                  style={group.color ? { color: group.color } : undefined}
+                  className="text-xs font-bold uppercase tracking-wide"
+                  style={
+                    group.color
+                      ? { color: darkenHexColor(group.color, 0.28) ?? darkenHexColor(group.color, 0.45) ?? group.color }
+                      : undefined
+                  }
                 >
                   {group.label}
                 </p>
