@@ -157,6 +157,105 @@ const escapeHtml = (value: string) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
+const buildDocxHtml = (title: string, bodyHtml: string) => `<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 11pt;
+        line-height: 1.45;
+        color: #222;
+      }
+      h1 {
+        font-size: 20pt;
+        line-height: 1.2;
+        font-weight: 700;
+        color: #0f5ba7;
+        margin: 0 0 12pt 0;
+      }
+      h2 {
+        font-size: 14pt;
+        line-height: 1.25;
+        font-weight: 700;
+        color: #0f5ba7;
+        margin: 14pt 0 6pt 0;
+      }
+      h3, h4, h5, h6 {
+        font-size: 12pt;
+        line-height: 1.25;
+        font-weight: 700;
+        color: #0f5ba7;
+        margin: 12pt 0 6pt 0;
+      }
+      p, li {
+        font-size: 11pt;
+        font-weight: 400;
+        color: #222;
+      }
+      p {
+        margin: 0 0 8pt 0;
+      }
+      ul, ol {
+        margin: 0 0 8pt 0;
+        padding-left: 18pt;
+      }
+      li + li {
+        margin-top: 2pt;
+      }
+      strong, b {
+        font-weight: 700;
+      }
+      em, i {
+        font-style: italic;
+      }
+      u {
+        text-decoration: underline;
+      }
+      hr {
+        border: none;
+        border-top: 1px solid #d6dbe3;
+        margin: 10pt 0;
+      }
+      blockquote {
+        margin: 8pt 0;
+        padding-left: 10pt;
+        border-left: 2px solid #d6dbe3;
+        color: #444;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 8pt 0;
+      }
+      th, td {
+        border: 1px solid #d6dbe3;
+        padding: 4pt 6pt;
+        vertical-align: top;
+        font-weight: 400;
+      }
+      th {
+        font-weight: 700;
+        background: #f4f7fb;
+      }
+      code, pre {
+        font-family: "Courier New", Courier, monospace;
+      }
+      pre {
+        background: #f6f8fa;
+        padding: 8pt;
+        border: 1px solid #e2e8f0;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>${escapeHtml(title)}</h1>
+    ${bodyHtml}
+  </body>
+</html>`;
+
 async function isMember(sopId: number, employeeId: number): Promise<boolean> {
   const [member] = await db
     .select({ sopId: sopMembers.sopId })
@@ -505,7 +604,7 @@ export function registerSopRoutes(router: Router) {
       }
 
       const htmlBody = await marked.parse(contentMarkdown || "");
-      const html = `<h1>${escapeHtml(exportTitle)}</h1>${htmlBody}`;
+      const html = buildDocxHtml(exportTitle, htmlBody);
       const buffer = await htmlToDocx(html);
       const filename = `${toSafeFilename(exportTitle)}.docx`;
       res.setHeader(
