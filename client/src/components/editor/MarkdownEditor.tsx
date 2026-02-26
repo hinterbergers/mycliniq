@@ -10,6 +10,17 @@ type MarkdownEditorProps = {
 };
 
 const EDITOR_COMMANDS = [
+  {
+    name: "underline",
+    keyCommand: "underline",
+    buttonProps: { "aria-label": "Unterstreichen" },
+    icon: <span style={{ fontWeight: 700, textDecoration: "underline" }}>U</span>,
+    execute: (state: any, api: any) => {
+      const selected = state.selectedText || "Text";
+      api.replaceSelection(`<u>${selected}</u>`);
+    },
+  },
+  commands.divider,
   commands.bold,
   commands.italic,
   commands.strikethrough,

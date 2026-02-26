@@ -249,6 +249,7 @@ export default function AdminProjects() {
   const [editingSop, setEditingSop] = useState<Sop | null>(null);
   const [sopForm, setSopForm] = useState({
     title: "",
+    version: "1.0",
     category: "SOP",
     contentMarkdown: "",
     keywords: "",
@@ -648,6 +649,7 @@ export default function AdminProjects() {
       setEditingSop(sop);
       setSopForm({
         title: sop.title,
+        version: sop.version || "1.0",
         category: normalizedCategory,
         contentMarkdown,
         keywords: (sop.keywords || []).join(", "),
@@ -666,6 +668,7 @@ export default function AdminProjects() {
       setEditingSop(null);
       setSopForm({
         title: "",
+        version: "1.0",
         category: "SOP",
         contentMarkdown: SOP_TEMPLATE_MARKDOWN,
         keywords: "",
@@ -753,6 +756,7 @@ export default function AdminProjects() {
       if (editingSop) {
         await sopApi.update(editingSop.id, {
           title: sopForm.title.trim(),
+          version: sopForm.version.trim() || "1.0",
           category: normalizedCategory as Sop["category"],
           contentMarkdown,
           keywords: sopForm.keywords
@@ -775,6 +779,7 @@ export default function AdminProjects() {
 
         const created = await sopApi.create({
           title: sopForm.title.trim(),
+          version: sopForm.version.trim() || "1.0",
           category: normalizedCategory as Sop["category"],
           contentMarkdown,
           keywords: sopForm.keywords
@@ -1817,6 +1822,16 @@ export default function AdminProjects() {
                 onChange={(event) =>
                   setSopForm({ ...sopForm, title: event.target.value })
                 }
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Version</label>
+              <Input
+                value={sopForm.version}
+                onChange={(event) =>
+                  setSopForm({ ...sopForm, version: event.target.value })
+                }
+                placeholder="z.B. 1.0"
               />
             </div>
             <div>

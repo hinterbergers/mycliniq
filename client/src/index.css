@@ -84,3 +84,26 @@
     background: linear-gradient(90deg, hsl(213 40% 72%) 0%, hsl(212 84% 36%) 100%);
   }
 }
+
+/* Restore list markers and underline rendering inside markdown previews */
+.wmde-markdown ul,
+.wmde-markdown ol {
+  list-style-position: outside;
+  padding-left: 1.5rem;
+}
+
+.wmde-markdown ul {
+  list-style-type: disc;
+}
+
+.wmde-markdown ol {
+  list-style-type: decimal;
+}
+
+.wmde-markdown li + li {
+  margin-top: 0.25rem;
+}
+
+.wmde-markdown u {
+  text-decoration: underline;
+}

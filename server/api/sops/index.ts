@@ -42,6 +42,7 @@ const SOP_PUBLISH_CAP = "perm.sop_publish";
 
 const createSopSchema = z.object({
   title: z.string().min(1, "Titel erforderlich"),
+  version: z.string().min(1).max(50).optional(),
   createdById: z.number().positive().optional(),
   category: z
     .enum([
@@ -69,6 +70,7 @@ const createSopSchema = z.object({
 
 const updateSopSchema = z.object({
   title: z.string().min(1).optional(),
+  version: z.string().min(1).max(50).optional(),
   category: z
     .enum([
       "SOP",

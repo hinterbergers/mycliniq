@@ -156,6 +156,7 @@ export default function Guidelines() {
   const [editingSopId, setEditingSopId] = useState<number | null>(null);
   const [editorForm, setEditorForm] = useState({
     title: "",
+    version: "1.0",
     category: "SOP",
     contentMarkdown: SOP_TEMPLATE_MARKDOWN,
     keywords: "",
@@ -241,6 +242,7 @@ export default function Guidelines() {
       setEditingSopId(sop.id);
       setEditorForm({
         title: sop.title,
+        version: sop.version || "1.0",
         category: normalizedCategory,
         contentMarkdown,
         keywords: (sop.keywords || []).join(", "),
@@ -262,6 +264,7 @@ export default function Guidelines() {
     setEditingSopId(null);
     setEditorForm({
       title: "",
+      version: "1.0",
       category: "SOP",
       contentMarkdown: SOP_TEMPLATE_MARKDOWN,
       keywords: "",
@@ -337,6 +340,7 @@ export default function Guidelines() {
     try {
       const payload = {
         title: editorForm.title.trim(),
+        version: editorForm.version.trim() || "1.0",
         category: normalizedCategory as Sop["category"],
         contentMarkdown,
         keywords: editorForm.keywords
@@ -693,6 +697,16 @@ export default function Guidelines() {
                 onChange={(event) =>
                   setEditorForm({ ...editorForm, title: event.target.value })
                 }
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Version</label>
+              <Input
+                value={editorForm.version}
+                onChange={(event) =>
+                  setEditorForm({ ...editorForm, version: event.target.value })
+                }
+                placeholder="z.B. 1.0"
               />
             </div>
             <div>
