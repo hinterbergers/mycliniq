@@ -131,22 +131,23 @@ export default function TrainingVideos() {
   }, [location]);
 
   useEffect(() => {
-    if (!videos.length) return;
-    const queryIndex = location.indexOf("?");
-    const search = queryIndex >= 0 ? location.slice(queryIndex) : "";
-    const params = new URLSearchParams(search);
-    const videoId = Number(params.get("videoId"));
-    if (!Number.isFinite(videoId)) return;
-    const target = videos.find((video) => video.id === videoId);
-    if (target) {
-      setSelectedVideo(target);
-    }
-  }, [location, videos]);
-
-  useEffect(() => {
     if (!videos.length) {
       setSelectedVideo(null);
       return;
+    }
+
+    const queryIndex = location.indexOf("?");
+    const search = queryIndex >= 0 ? location.slice(queryIndex) : "";
+    const params = new URLSearchParams(search);
+    const deepLinkedVideoId = Number(params.get("videoId"));
+    if (Number.isFinite(deepLinkedVideoId)) {
+      const deepLinkedVideo = videos.find((video) => video.id === deepLinkedVideoId);
+      if (deepLinkedVideo) {
+        if (selectedVideo?.id !== deepLinkedVideo.id) {
+          setSelectedVideo(deepLinkedVideo);
+        }
+        return;
+      }
     }
 
     if (!selectedVideo) {
@@ -157,7 +158,7 @@ export default function TrainingVideos() {
     if (!videos.find((video) => video.id === selectedVideo.id)) {
       setSelectedVideo(videos[0]);
     }
-  }, [videos, selectedVideo]);
+  }, [location, videos, selectedVideo]);
 
   const tags = useMemo(() => {
     const set = new Set<string>();
