@@ -32,7 +32,14 @@ import {
   MarkdownEditor,
   MarkdownViewer,
 } from "@/components/editor/MarkdownEditor";
-import { Search, ExternalLink, Download, History, Plus } from "lucide-react";
+import {
+  Search,
+  ExternalLink,
+  Download,
+  History,
+  Plus,
+  Pencil,
+} from "lucide-react";
 import type { Sop, SopReference } from "@shared/schema";
 import { sopApi, type SopDetail } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -132,7 +139,7 @@ const formatEmployeeName = (name?: string | null, lastName?: string | null) => {
 
 export default function Guidelines() {
   const { toast } = useToast();
-  const { employee } = useAuth();
+  const { employee, user, isAdmin, isTechnicalAdmin, can } = useAuth();
   const [sops, setSops] = useState<Sop[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -146,6 +153,7 @@ export default function Guidelines() {
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorSaving, setEditorSaving] = useState(false);
+  const [editingSopId, setEditingSopId] = useState<number | null>(null);
   const [editorForm, setEditorForm] = useState({
     title: "",
     category: "SOP",
@@ -155,6 +163,13 @@ export default function Guidelines() {
   });
   const [editorSections, setEditorSections] =
     useState<SopSections>(DEFAULT_SOP_SECTIONS);
+  const canEditSopsDirectly =
+    isAdmin ||
+    isTechnicalAdmin ||
+    user?.appRole === "Editor" ||
+    user?.appRole === "Admin" ||
+    can("sop.manage") ||
+    can("sop.publish");
 
   useEffect(() => {
     const load = async () => {
@@ -219,7 +234,32 @@ export default function Guidelines() {
     }
   };
 
-  const openEditor = () => {
+  const openEditor = (sop?: Sop | SopDetail | null) => {
+    if (sop) {
+      const normalizedCategory = normalizeSopCategory(sop.category);
+      const contentMarkdown = sop.contentMarkdown || "";
+      setEditingSopId(sop.id);
+      setEditorForm({
+        title: sop.title,
+        category: normalizedCategory,
+        contentMarkdown,
+        keywords: (sop.keywords || []).join(", "),
+        awmfLink: sop.awmfLink || "",
+      });
+      if (normalizedCategory === "SOP") {
+        setEditorSections(
+          contentMarkdown.trim()
+            ? parseSopSections(contentMarkdown)
+            : DEFAULT_SOP_SECTIONS,
+        );
+      } else {
+        setEditorSections(EMPTY_SOP_SECTIONS);
+      }
+      setEditorOpen(true);
+      return;
+    }
+
+    setEditingSopId(null);
     setEditorForm({
       title: "",
       category: "SOP",
@@ -265,7 +305,7 @@ export default function Guidelines() {
     }));
   };
 
-  const handleCreate = async () => {
+  const handleSave = async () => {
     if (!editorForm.title.trim()) {
       toast({
         title: "Fehler",
@@ -295,7 +335,7 @@ export default function Guidelines() {
 
     setEditorSaving(true);
     try {
-      await sopApi.create({
+      const payload = {
         title: editorForm.title.trim(),
         category: normalizedCategory as Sop["category"],
         contentMarkdown,
@@ -306,15 +346,34 @@ export default function Guidelines() {
               .filter(Boolean)
           : [],
         awmfLink: editorForm.awmfLink.trim() || null,
-        status: "proposed",
-        createdById: employee.id,
-      });
-      toast({ title: "Dokument vorgeschlagen" });
+      };
+
+      if (editingSopId) {
+        const updated = await sopApi.update(editingSopId, payload);
+        setSops((prev) =>
+          prev.map((sop) => (sop.id === updated.id ? updated : sop)),
+        );
+        if (detailSop?.id === editingSopId) {
+          const refreshed = await sopApi.getById(editingSopId);
+          setDetailSop(refreshed);
+        }
+        toast({ title: "Dokument gespeichert" });
+      } else {
+        await sopApi.create({
+          ...payload,
+          status: "proposed",
+          createdById: employee.id,
+        });
+        toast({ title: "Dokument vorgeschlagen" });
+      }
       setEditorOpen(false);
+      setEditingSopId(null);
     } catch (error) {
       toast({
         title: "Fehler",
-        description: "Dokument konnte nicht vorgeschlagen werden",
+        description: editingSopId
+          ? "Dokument konnte nicht gespeichert werden"
+          : "Dokument konnte nicht vorgeschlagen werden",
         variant: "destructive",
       });
     } finally {
@@ -378,7 +437,7 @@ export default function Guidelines() {
                 data-testid="input-search-sops"
               />
             </div>
-            <Button onClick={openEditor}>
+            <Button onClick={() => openEditor()}>
               <Plus className="w-4 h-4 mr-2" />
               Dokument vorschlagen
             </Button>
@@ -487,6 +546,19 @@ export default function Guidelines() {
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
+                {canEditSopsDirectly && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setDetailOpen(false);
+                      openEditor(detailSop);
+                    }}
+                  >
+                    <Pencil className="w-4 h-4 mr-1" />
+                    Bearbeiten
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="outline"
@@ -598,10 +670,20 @@ export default function Guidelines() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
+      <Dialog
+        open={editorOpen}
+        onOpenChange={(open) => {
+          setEditorOpen(open);
+          if (!open) setEditingSopId(null);
+        }}
+      >
         <DialogContent className="max-w-[95vw] w-[95vw] h-[90vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>Neues Dokument vorschlagen</DialogTitle>
+            <DialogTitle>
+              {editingSopId
+                ? "Dokument bearbeiten"
+                : "Neues Dokument vorschlagen"}
+            </DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto pr-2 space-y-4">
             <div>
@@ -690,8 +772,12 @@ export default function Guidelines() {
             <Button variant="outline" onClick={() => setEditorOpen(false)}>
               Abbrechen
             </Button>
-            <Button onClick={handleCreate} disabled={editorSaving}>
-              {editorSaving ? "Speichere..." : "Vorschlagen"}
+            <Button onClick={handleSave} disabled={editorSaving}>
+              {editorSaving
+                ? "Speichere..."
+                : editingSopId
+                  ? "Speichern"
+                  : "Vorschlagen"}
             </Button>
           </div>
         </DialogContent>

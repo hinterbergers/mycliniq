@@ -2167,6 +2167,20 @@ export default function AdminProjects() {
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
+                {canManageSops &&
+                  normalizeSopStatus(detailSop.status) === "in_progress" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setDetailOpen(false);
+                        openSopEditor(detailSop);
+                      }}
+                    >
+                      <Pencil className="w-4 h-4 mr-1" />
+                      Bearbeiten
+                    </Button>
+                  )}
                 <Button
                   size="sm"
                   variant="outline"
