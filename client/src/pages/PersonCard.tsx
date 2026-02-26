@@ -56,6 +56,13 @@ export default function PersonCard() {
   });
 
   const overviewDays = preview?.days ?? [];
+  const populatedOverviewDays = overviewDays
+    .map((day) => {
+      const duties = dutiesByDate.get(day) ?? [];
+      const workplaces = workplacesByDate.get(day) ?? [];
+      return { day, duties, workplaces };
+    })
+    .filter((entry) => entry.duties.length > 0 || entry.workplaces.length > 0);
 
   return (
     <Layout title="Visitenkarte">
@@ -189,27 +196,32 @@ export default function PersonCard() {
 
                 <div>
                   <p className="mb-2 text-sm font-medium">Tagesuebersicht</p>
-                  <div className="space-y-2">
-                    {overviewDays.map((day) => {
-                      const duties = dutiesByDate.get(day) ?? [];
-                      const workplaces = workplacesByDate.get(day) ?? [];
-                      return (
+                  {populatedOverviewDays.length > 0 ? (
+                    <div className="space-y-2">
+                      {populatedOverviewDays.map(({ day, duties, workplaces }) => (
                         <div
                           key={day}
                           className="rounded-md border px-3 py-2 text-sm"
                         >
                           <div className="font-medium">{day}</div>
-                          <div className="text-muted-foreground">
-                            Dienste: {duties.length ? duties.join(", ") : "Keine"}
-                          </div>
-                          <div className="text-muted-foreground">
-                            Arbeitsplaetze:{" "}
-                            {workplaces.length ? workplaces.join(", ") : "Keine"}
-                          </div>
+                          {duties.length > 0 && (
+                            <div className="text-muted-foreground">
+                              Dienste: {duties.join(", ")}
+                            </div>
+                          )}
+                          {workplaces.length > 0 && (
+                            <div className="text-muted-foreground">
+                              Arbeitsplaetze: {workplaces.join(", ")}
+                            </div>
+                          )}
                         </div>
-                      );
-                    })}
-                  </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Keine Einteilungen oder Arbeitsplaetze in den naechsten 2 Wochen.
+                    </p>
+                  )}
                 </div>
               </CardContent>
             </Card>
