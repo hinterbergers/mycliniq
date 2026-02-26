@@ -22,7 +22,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   rosterSettingsApi,
   shiftSwapApi,
@@ -30,7 +30,9 @@ import {
   getServiceLineContextFromEmployee,
   notificationsApi,
   onlineUsersApi,
+  searchApi,
   type NextPlanningMonth,
+  type GlobalSearchResponse,
   type OnlineUser,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -86,7 +88,7 @@ export function Header({
     viewAsUser,
     setViewAsUser,
   } = useAuth();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const [planningMonth, setPlanningMonth] = useState<NextPlanningMonth | null>(
     null,
   );
@@ -104,6 +106,15 @@ export function Header({
       description: string;
     }[]
   >([]);
+  const searchBoxRef = useRef<HTMLDivElement | null>(null);
+  const [headerSearchQuery, setHeaderSearchQuery] = useState("");
+  const [headerSearchOpen, setHeaderSearchOpen] = useState(false);
+  const [headerSearchLoading, setHeaderSearchLoading] = useState(false);
+  const [headerSearchError, setHeaderSearchError] = useState<string | null>(
+    null,
+  );
+  const [headerSearchResults, setHeaderSearchResults] =
+    useState<GlobalSearchResponse | null>(null);
 
   const canEditPlan =
     isAdmin || isTechnicalAdmin || capabilities.includes("dutyplan.edit");
@@ -130,6 +141,59 @@ export function Header({
       loadSystemNotifications();
     }
   }, [employee]);
+
+  useEffect(() => {
+    if (!headerSearchOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        searchBoxRef.current &&
+        event.target instanceof Node &&
+        !searchBoxRef.current.contains(event.target)
+      ) {
+        setHeaderSearchOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [headerSearchOpen]);
+
+  useEffect(() => {
+    setHeaderSearchOpen(false);
+  }, [location]);
+
+  useEffect(() => {
+    const query = headerSearchQuery.trim();
+    if (query.length < 2) {
+      setHeaderSearchLoading(false);
+      setHeaderSearchError(null);
+      setHeaderSearchResults(null);
+      return;
+    }
+
+    let active = true;
+    setHeaderSearchLoading(true);
+    setHeaderSearchError(null);
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const result = await searchApi.global(query, { limit: 5 });
+        if (!active) return;
+        setHeaderSearchResults(result);
+        setHeaderSearchOpen(true);
+      } catch (error: any) {
+        if (!active) return;
+        setHeaderSearchResults(null);
+        setHeaderSearchError(error?.message || "Suche fehlgeschlagen");
+        setHeaderSearchOpen(true);
+      } finally {
+        if (active) setHeaderSearchLoading(false);
+      }
+    }, 180);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timeoutId);
+    };
+  }, [headerSearchQuery]);
 
   useEffect(() => {
     if (!isAdminActual || viewAsUser) {
@@ -310,6 +374,21 @@ export function Header({
     setLocation("/dienstplaene");
   };
 
+  const headerSearchTotal = headerSearchResults
+    ? headerSearchResults.counts.sops +
+      headerSearchResults.counts.videos +
+      headerSearchResults.counts.presentations +
+      headerSearchResults.counts.people
+    : 0;
+
+  const navigateFromSearch = (url: string) => {
+    setHeaderSearchOpen(false);
+    setHeaderSearchQuery("");
+    setHeaderSearchError(null);
+    setHeaderSearchResults(null);
+    setLocation(url);
+  };
+
   return (
     <header className="h-16 kabeg-header sticky top-0 z-10 px-6 flex items-center justify-between shadow-sm">
       <div className="flex items-center gap-2 min-w-0">
@@ -331,13 +410,149 @@ export function Header({
       </div>
 
       <div className="flex items-center gap-4 shrink-0">
-        <div className="relative w-64 hidden md:block">
+        <div ref={searchBoxRef} className="relative w-80 hidden md:block">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-white/60" />
           <Input
             placeholder="Suchen..."
+            value={headerSearchQuery}
+            onFocus={() => {
+              if (
+                headerSearchQuery.trim().length >= 2 ||
+                headerSearchLoading ||
+                headerSearchError
+              ) {
+                setHeaderSearchOpen(true);
+              }
+            }}
+            onChange={(event) => setHeaderSearchQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                setHeaderSearchOpen(false);
+              }
+            }}
             className="pl-9 bg-white/10 border-white/20 text-white placeholder:text-white/50 focus-visible:ring-white/30"
             data-testid="input-search"
           />
+          {headerSearchOpen && (
+            <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[34rem] max-w-[80vw] rounded-xl border bg-background p-3 shadow-xl">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Suche
+                </p>
+                {headerSearchLoading ? (
+                  <span className="text-xs text-muted-foreground">Suche…</span>
+                ) : headerSearchResults ? (
+                  <span className="text-xs text-muted-foreground">
+                    {headerSearchTotal} Treffer
+                  </span>
+                ) : null}
+              </div>
+
+              {headerSearchError && (
+                <p className="text-sm text-destructive">{headerSearchError}</p>
+              )}
+
+              {!headerSearchError && !headerSearchLoading && headerSearchQuery.trim().length < 2 && (
+                <p className="text-sm text-muted-foreground">
+                  Mindestens 2 Zeichen eingeben.
+                </p>
+              )}
+
+              {!headerSearchError &&
+                !headerSearchLoading &&
+                headerSearchResults &&
+                headerSearchTotal === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    Keine Treffer gefunden.
+                  </p>
+                )}
+
+              {!headerSearchError && headerSearchResults && headerSearchTotal > 0 && (
+                <div className="max-h-[26rem] space-y-3 overflow-y-auto pr-1">
+                  {headerSearchResults.groups.people.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        Personen
+                      </p>
+                      {headerSearchResults.groups.people.map((person) => (
+                        <button
+                          key={`person-${person.id}`}
+                          type="button"
+                          className="w-full rounded-lg border px-3 py-2 text-left hover:bg-muted"
+                          onClick={() => navigateFromSearch(person.url)}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm font-medium truncate">
+                              {person.displayName}
+                            </p>
+                            <span className="text-xs text-muted-foreground">
+                              Profil
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {person.role || "Mitarbeiter:in"}
+                          </p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {[person.contacts.email, person.contacts.phoneWork]
+                              .filter(Boolean)
+                              .join(" • ") || "Keine oeffentlichen Kontaktdaten"}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {(
+                    [
+                      ["SOPs", headerSearchResults.groups.sops],
+                      ["Videos", headerSearchResults.groups.videos],
+                      ["PowerPoints", headerSearchResults.groups.presentations],
+                    ] as const
+                  ).map(([label, items]) =>
+                    items.length ? (
+                      <div key={label} className="space-y-1">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          {label}
+                        </p>
+                        {items.map((item) => (
+                          <button
+                            key={`${item.type}-${item.id}`}
+                            type="button"
+                            className="w-full rounded-lg border px-3 py-2 text-left hover:bg-muted"
+                            onClick={() => navigateFromSearch(item.url)}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-sm font-medium truncate">
+                                {item.title}
+                              </p>
+                              <span className="text-xs text-muted-foreground">
+                                {item.type === "sop"
+                                  ? "Wissen"
+                                  : item.type === "video"
+                                    ? "Video"
+                                    : "Praes."}
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {item.subtitle}
+                              {item.createdByLabel
+                                ? ` • Erstellt von ${item.createdByLabel}`
+                                : ""}
+                            </p>
+                            {item.keywords.length > 0 && (
+                              <p className="text-xs text-muted-foreground truncate">
+                                {item.keywords.slice(0, 4).join(", ")}
+                              </p>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null,
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <Popover>

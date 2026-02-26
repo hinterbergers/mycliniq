@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Loader2, Download, FileText } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
 import {
@@ -40,6 +41,7 @@ const withAuthToken = (url?: string | null) => {
 
 export default function TrainingPresentations() {
   const [searchTerm, setSearchTerm] = useState("");
+  const [location] = useLocation();
   const [activeTag, setActiveTag] = useState<FilterTag>("all");
   const [selectedPresentation, setSelectedPresentation] =
     useState<TrainingPresentation | null>(null);
@@ -65,6 +67,14 @@ export default function TrainingPresentations() {
     queryKey: ["training", "presentations"],
     queryFn: () => trainingApi.getPresentations(),
   });
+
+  useEffect(() => {
+    const queryIndex = location.indexOf("?");
+    const search = queryIndex >= 0 ? location.slice(queryIndex) : "";
+    const params = new URLSearchParams(search);
+    const nextQ = params.get("q") ?? "";
+    setSearchTerm((prev) => (prev === nextQ ? prev : nextQ));
+  }, [location]);
 
   const normalizedSearch = searchTerm.trim().toLowerCase();
   const tags = useMemo(() => {

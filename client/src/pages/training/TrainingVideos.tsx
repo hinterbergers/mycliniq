@@ -1,4 +1,5 @@
 import { KeyboardEvent, useEffect, useMemo, useState } from "react";
+import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, Play, Plus, Trash2, Edit3, X } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
@@ -59,6 +60,7 @@ export default function TrainingVideos() {
     isTechnicalAdmin: authIsTechAdmin,
   } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
+  const [location] = useLocation();
   const [activeTag, setActiveTag] = useState<FilterTag>("all");
   const [selectedVideo, setSelectedVideo] = useState<TrainingVideo | null>(
     null,
@@ -119,6 +121,14 @@ export default function TrainingVideos() {
     queryKey: ["training", "videos"],
     queryFn: () => trainingApi.getVideos(),
   });
+
+  useEffect(() => {
+    const queryIndex = location.indexOf("?");
+    const search = queryIndex >= 0 ? location.slice(queryIndex) : "";
+    const params = new URLSearchParams(search);
+    const nextQ = params.get("q") ?? "";
+    setSearchTerm((prev) => (prev === nextQ ? prev : nextQ));
+  }, [location]);
 
   useEffect(() => {
     if (!videos.length) {

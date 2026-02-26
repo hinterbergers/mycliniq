@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "wouter";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { Layout } from "@/components/layout/Layout";
@@ -140,6 +141,7 @@ const formatEmployeeName = (name?: string | null, lastName?: string | null) => {
 export default function Guidelines() {
   const { toast } = useToast();
   const { employee, user, isAdmin, isTechnicalAdmin, can } = useAuth();
+  const [location] = useLocation();
   const [sops, setSops] = useState<Sop[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -190,6 +192,14 @@ export default function Guidelines() {
     };
     load();
   }, [toast]);
+
+  useEffect(() => {
+    const queryIndex = location.indexOf("?");
+    const search = queryIndex >= 0 ? location.slice(queryIndex) : "";
+    const params = new URLSearchParams(search);
+    const nextQ = params.get("q") ?? "";
+    setSearchTerm((prev) => (prev === nextQ ? prev : nextQ));
+  }, [location]);
 
   const categories = useMemo(() => {
     const set = new Set(sops.map((sop) => normalizeSopCategory(sop.category)));

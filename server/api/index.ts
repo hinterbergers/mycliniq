@@ -25,6 +25,7 @@ import { registerMessageRoutes } from "./messages";
 import { registerTaskRoutes } from "./tasks";
 import { registerPlanningRoutes } from "./roster/planning";
 import { registerTrainingRoutes } from "./training";
+import { registerSearchRoutes } from "./search";
 
 /**
  * Register all modular API routes
@@ -93,6 +94,10 @@ export function registerModularApiRoutes(app: Express): void {
   const trainingRouter = Router();
   registerTrainingRoutes(trainingRouter);
   app.use("/api/training", trainingRouter);
+
+  const searchRouter = Router();
+  registerSearchRoutes(searchRouter);
+  app.use("/api/search", searchRouter);
 
   // Duty Plans API (Dienstplan)
   // TODO: Add requireEditor for POST, PUT slots

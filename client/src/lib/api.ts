@@ -173,6 +173,54 @@ export type DashboardRecentChange = {
   targetUrl?: string | null;
 };
 
+export type GlobalSearchDocumentHit = {
+  id: number;
+  type: "sop" | "video" | "presentation";
+  title: string;
+  subtitle: string;
+  keywords: string[];
+  url: string;
+  createdById: number | null;
+  createdByLabel: string | null;
+  createdByCurrentUser: boolean;
+  createdAt?: string | null;
+};
+
+export type GlobalSearchPersonHit = {
+  id: number;
+  type: "person";
+  displayName: string;
+  role: string | null;
+  url: string;
+  contacts: {
+    email: string | null;
+    phoneWork: string | null;
+    emailPrivate: string | null;
+    phonePrivate: string | null;
+    showPrivateContact: boolean;
+  };
+  preview?: {
+    status: "pending" | string;
+    message?: string | null;
+  } | null;
+};
+
+export type GlobalSearchResponse = {
+  query: string;
+  groups: {
+    sops: GlobalSearchDocumentHit[];
+    videos: GlobalSearchDocumentHit[];
+    presentations: GlobalSearchDocumentHit[];
+    people: GlobalSearchPersonHit[];
+  };
+  counts: {
+    sops: number;
+    videos: number;
+    presentations: number;
+    people: number;
+  };
+};
+
 export type PlanningStateResponse = {
   submittedCount: number;
   missingCount: number;
@@ -903,6 +951,21 @@ export const trainingApi = {
       },
     );
     return handleResponse<TrainingPresentation>(response);
+  },
+};
+
+export const searchApi = {
+  global: async (
+    q: string,
+    options?: { limit?: number },
+  ): Promise<GlobalSearchResponse> => {
+    const params = new URLSearchParams();
+    params.set("q", q);
+    if (typeof options?.limit === "number") {
+      params.set("limit", String(options.limit));
+    }
+    const response = await apiFetch(`${API_BASE}/search/global?${params.toString()}`);
+    return handleResponse<GlobalSearchResponse>(response);
   },
 };
 
