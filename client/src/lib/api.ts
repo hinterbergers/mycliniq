@@ -988,6 +988,28 @@ export const trainingApi = {
     );
     return handleResponse<TrainingPresentation>(response);
   },
+
+  updatePresentation: async (
+    id: number,
+    payload: Partial<{
+      title: string;
+      keywords: string[];
+      isActive: boolean;
+    }>,
+  ): Promise<TrainingPresentation> => {
+    const response = await apiFetch(`${API_BASE}/training/presentations/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<TrainingPresentation>(response);
+  },
+
+  deletePresentation: async (id: number): Promise<void> => {
+    const response = await apiFetch(`${API_BASE}/training/presentations/${id}`, {
+      method: "DELETE",
+    });
+    return handleResponse<void>(response);
+  },
 };
 
 export const searchApi = {

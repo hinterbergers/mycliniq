@@ -23,6 +23,7 @@ import {
 import {
   requireAuth,
   requireAdmin,
+  requireEditor,
   requireTrainingEnabled,
 } from "../middleware/auth";
 import crypto from "crypto";
@@ -819,7 +820,7 @@ export function registerTrainingRoutes(router: Router) {
     "/presentations/upload",
     requireAuth,
     requireTrainingEnabled,
-    requireAdmin,
+    requireEditor,
     upload.single("file"),
     asyncHandler(async (req, res) => {
       const file = req.file;
@@ -1030,7 +1031,7 @@ export function registerTrainingRoutes(router: Router) {
   router.post(
     "/presentations",
     requireAuth,
-    requireAdmin,
+    requireEditor,
     validateBody(presentationBaseSchema),
     asyncHandler(async (req, res) => {
       const payload = buildPresentationPayload(req.body);
@@ -1045,7 +1046,7 @@ export function registerTrainingRoutes(router: Router) {
   router.patch(
     "/presentations/:id",
     requireAuth,
-    requireAdmin,
+    requireEditor,
     validateParams(idParamSchema),
     validateBody(presentationUpdateSchema),
     asyncHandler(async (req, res) => {
@@ -1081,7 +1082,7 @@ export function registerTrainingRoutes(router: Router) {
   router.delete(
     "/presentations/:id",
     requireAuth,
-    requireAdmin,
+    requireEditor,
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
       const { id } = req.params;

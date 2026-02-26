@@ -116,6 +116,15 @@ export default function TrainingPresentations() {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<TrainingPresentation | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editKeywords, setEditKeywords] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<TrainingPresentation | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { employee, isAdmin, isTechnicalAdmin } = useAuth();
@@ -124,7 +133,8 @@ export default function TrainingPresentations() {
       isTechnicalAdmin ||
       employee?.isAdmin ||
       employee?.systemRole === "system_admin" ||
-      employee?.appRole === "Admin",
+      employee?.appRole === "Admin" ||
+      employee?.appRole === "Editor",
   );
 
   const { data: presentations = [], isLoading, error } = useQuery({
@@ -220,6 +230,74 @@ export default function TrainingPresentations() {
       setUploadError(error?.message || "Upload fehlgeschlagen.");
     } finally {
       setUploading(false);
+    }
+  };
+
+  const openEditDialog = (presentation: TrainingPresentation) => {
+    setEditTarget(presentation);
+    setEditTitle(presentation.title ?? "");
+    setEditKeywords((presentation.keywords ?? []).join(", "));
+    setEditError(null);
+    setEditDialogOpen(true);
+  };
+
+  const handleEditSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editTarget) return;
+    const title = editTitle.trim();
+    if (!title) {
+      setEditError("Titel ist erforderlich.");
+      return;
+    }
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      const keywords = editKeywords
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean);
+      const updated = await trainingApi.updatePresentation(editTarget.id, {
+        title,
+        keywords,
+      });
+      queryClient.invalidateQueries({ queryKey: ["training", "presentations"] });
+      setSelectedPresentation((prev) => (prev?.id === updated.id ? updated : prev));
+      setEditDialogOpen(false);
+      setEditTarget(null);
+      toast({
+        title: "Aktualisiert",
+        description: "Die Präsentation wurde gespeichert.",
+      });
+    } catch (error: any) {
+      setEditError(error?.message || "Bearbeiten fehlgeschlagen.");
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const requestDeletePresentation = (presentation: TrainingPresentation) => {
+    setDeleteTarget(presentation);
+    setDeleteError(null);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const deletedId = deleteTarget.id;
+      await trainingApi.deletePresentation(deletedId);
+      queryClient.invalidateQueries({ queryKey: ["training", "presentations"] });
+      setSelectedPresentation((prev) => (prev?.id === deletedId ? null : prev));
+      setDeleteTarget(null);
+      toast({
+        title: "Gelöscht",
+        description: "Die Präsentation wurde gelöscht.",
+      });
+    } catch (error: any) {
+      setDeleteError(error?.message || "Löschen fehlgeschlagen.");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -347,9 +425,29 @@ export default function TrainingPresentations() {
                   </div>
                 </CardHeader>
                 <CardContent className="flex justify-between">
-                  <Button onClick={() => setSelectedPresentation(presentation)}>
-                    Ansicht öffnen
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={() => setSelectedPresentation(presentation)}>
+                      Ansicht öffnen
+                    </Button>
+                    {canManageTraining && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => openEditDialog(presentation)}
+                      >
+                        Bearbeiten
+                      </Button>
+                    )}
+                    {canManageTraining && (
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        onClick={() => requestDeletePresentation(presentation)}
+                      >
+                        Löschen
+                      </Button>
+                    )}
+                  </div>
                   <Button asChild variant="ghost">
                     <a
                       href={withAuthToken(presentation.fileUrl)}
@@ -408,6 +506,24 @@ export default function TrainingPresentations() {
                 onClick={() => setViewMode("mp4")}
               >
                 MP4-Wiedergabe
+              </Button>
+            )}
+            {canManageTraining && selectedPresentation && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => openEditDialog(selectedPresentation)}
+              >
+                Bearbeiten
+              </Button>
+            )}
+            {canManageTraining && selectedPresentation && (
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => requestDeletePresentation(selectedPresentation)}
+              >
+                Löschen
               </Button>
             )}
             {interactiveAvailable && (
@@ -508,6 +624,96 @@ export default function TrainingPresentations() {
                 Regel erhalten).
               </p>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={editDialogOpen}
+        onOpenChange={(open) => {
+          setEditDialogOpen(open);
+          if (!open) {
+            setEditTarget(null);
+            setEditError(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Präsentation bearbeiten</DialogTitle>
+            <DialogDescription>
+              Titel und Schlagworte der Präsentation aktualisieren.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleEditSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Titel</Label>
+              <Input
+                value={editTitle}
+                onChange={(event) => setEditTitle(event.target.value)}
+                placeholder="Titel eingeben"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Schlagworte (Komma getrennt)</Label>
+              <Input
+                value={editKeywords}
+                onChange={(event) => setEditKeywords(event.target.value)}
+                placeholder="z.B. Schulung, SOP"
+              />
+            </div>
+            {editError && <p className="text-sm text-destructive">{editError}</p>}
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="ghost"
+                type="button"
+                onClick={() => setEditDialogOpen(false)}
+              >
+                Abbrechen
+              </Button>
+              <Button type="submit" disabled={editSaving}>
+                {editSaving ? "Speichern…" : "Speichern"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTarget(null);
+            setDeleteError(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Präsentation löschen?</DialogTitle>
+            <DialogDescription>
+              Soll die Präsentation "{deleteTarget?.title ?? ""}" gelöscht werden?
+            </DialogDescription>
+          </DialogHeader>
+          {deleteError && <p className="text-sm text-destructive">{deleteError}</p>}
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setDeleteTarget(null)}
+              disabled={deleting}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDeleteConfirm}
+              disabled={deleting}
+            >
+              {deleting ? "Löschen…" : "Ja, löschen"}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
