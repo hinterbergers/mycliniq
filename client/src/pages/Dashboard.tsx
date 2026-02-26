@@ -790,6 +790,23 @@ export default function Dashboard() {
     </div>
   );
 
+  const renderAttendanceCard = () => {
+    if (!attendanceEnabled) return null;
+    return (
+      <Card className="border-none kabeg-shadow">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Users className="w-5 h-5" />
+            Heute anwesend
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0 px-4 pb-4 md:px-6 md:pb-6">
+          {renderAttendanceCardContent()}
+        </CardContent>
+      </Card>
+    );
+  };
+
   const renderAbsencesCardContent = () => {
     if (absencesLoading) {
       return (
@@ -1202,41 +1219,33 @@ export default function Dashboard() {
   return (
     <Layout title="Dashboard">
       <div className="hidden md:grid grid-cols-1 md:grid-cols-12 gap-6">
-        <div className="md:col-span-8 space-y-6">
+        <div className="md:col-span-12">
           {renderHeroCard()}
-          {attendanceEnabled && (
-            <Card className="border-none kabeg-shadow">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Users className="w-5 h-5" />
-                  Heute anwesend
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-0 px-4 pb-4 md:px-6 md:pb-6">
-                {renderAttendanceCardContent()}
-              </CardContent>
-            </Card>
-          )}
-          {renderMiscWidgets()}
         </div>
-        <div className="md:col-span-4 space-y-6">
-          {renderRecentChangesCard()}
-          {renderBirthdayCard()}
-          {weekPreviewEnabled && (
-            <Card className="border-none kabeg-shadow flex flex-col">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <CalendarDays className="w-5 h-5" />
-                  Wochenvorschau
-                </CardTitle>
-                <CardDescription>Deine nächsten Einsätze</CardDescription>
-              </CardHeader>
-              <CardContent className="flex-1">
-                {renderWeekPreviewCardContent()}
-              </CardContent>
-            </Card>
-          )}
-          {absencesEnabled && renderAbsencesCard()}
+        <div className="md:col-span-12 grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="lg:col-span-4">{renderAttendanceCard()}</div>
+          <div className="lg:col-span-4">{renderRecentChangesCard()}</div>
+          <div className="lg:col-span-4">{absencesEnabled && renderAbsencesCard()}</div>
+        </div>
+        <div className="md:col-span-12 grid grid-cols-1 xl:grid-cols-12 gap-6">
+          <div className="xl:col-span-8">{renderMiscWidgets()}</div>
+          <div className="xl:col-span-4 space-y-6">
+            {renderBirthdayCard()}
+            {weekPreviewEnabled && (
+              <Card className="border-none kabeg-shadow flex flex-col">
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <CalendarDays className="w-5 h-5" />
+                    Wochenvorschau
+                  </CardTitle>
+                  <CardDescription>Deine nächsten Einsätze</CardDescription>
+                </CardHeader>
+                <CardContent className="flex-1">
+                  {renderWeekPreviewCardContent()}
+                </CardContent>
+              </Card>
+            )}
+          </div>
         </div>
       </div>
 
