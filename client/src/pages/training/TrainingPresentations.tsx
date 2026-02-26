@@ -30,6 +30,8 @@ import { Label } from "@/components/ui/label";
 import { readAuthToken } from "@/lib/authToken";
 
 type FilterTag = string | "all";
+type PresentationViewMode = "mp4" | "interactive" | "pdf" | "download";
+type PresentationStatus = "konvertiert" | "nicht_konvertierbar" | "nur_download";
 
 const withAuthToken = (url?: string | null) => {
   if (!url) return undefined;
@@ -39,6 +41,68 @@ const withAuthToken = (url?: string | null) => {
   return `${url}${separator}token=${encodeURIComponent(token)}`;
 };
 
+const getNormalizedMime = (value?: string | null) => (value ?? "").toLowerCase();
+
+const isPdfMime = (value?: string | null) => getNormalizedMime(value).includes("pdf");
+
+const isMp4Mime = (value?: string | null) => {
+  const mime = getNormalizedMime(value);
+  return mime.includes("video/mp4") || mime.includes("application/mp4");
+};
+
+const isPowerPointMime = (value?: string | null) => {
+  const mime = getNormalizedMime(value);
+  return mime.includes("powerpoint") || mime.includes("presentationml");
+};
+
+function getPresentationMeta(presentation: TrainingPresentation | null) {
+  const fileUrl = presentation?.fileUrl ?? null;
+  const hasMp4 = Boolean(fileUrl && isMp4Mime(presentation?.mimeType));
+  const hasInteractive = Boolean(presentation?.interactiveStorageName);
+  const hasPdf = Boolean(fileUrl && isPdfMime(presentation?.mimeType));
+  const canInline = hasMp4 || hasInteractive || hasPdf;
+  const sourceIsPpt = Boolean(
+    isPowerPointMime(presentation?.originalMimeType) ||
+      (!presentation?.originalMimeType && isPowerPointMime(presentation?.mimeType)),
+  );
+
+  let status: PresentationStatus = "nur_download";
+  if (sourceIsPpt && canInline) status = "konvertiert";
+  else if (sourceIsPpt && !canInline) status = "nicht_konvertierbar";
+  else if (canInline) status = "konvertiert";
+
+  const preferredView: PresentationViewMode = hasMp4
+    ? "mp4"
+    : hasInteractive
+      ? "interactive"
+      : hasPdf
+        ? "pdf"
+        : "download";
+
+  return {
+    fileUrl,
+    hasMp4,
+    hasInteractive,
+    hasPdf,
+    canInline,
+    sourceIsPpt,
+    status,
+    preferredView,
+  };
+}
+
+function getStatusBadgeVariant(status: PresentationStatus): "secondary" | "destructive" | "outline" {
+  if (status === "nicht_konvertierbar") return "destructive";
+  if (status === "nur_download") return "outline";
+  return "secondary";
+}
+
+function getStatusLabel(status: PresentationStatus): string {
+  if (status === "konvertiert") return "Konvertiert";
+  if (status === "nicht_konvertierbar") return "Nicht konvertierbar";
+  return "Nur Download";
+}
+
 export default function TrainingPresentations() {
   const [searchTerm, setSearchTerm] = useState("");
   const [location] = useLocation();
@@ -46,7 +110,7 @@ export default function TrainingPresentations() {
   const [selectedPresentation, setSelectedPresentation] =
     useState<TrainingPresentation | null>(null);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<"interactive" | "pdf">("pdf");
+  const [viewMode, setViewMode] = useState<PresentationViewMode>("download");
   const [uploadTitle, setUploadTitle] = useState("");
   const [uploadKeywords, setUploadKeywords] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -159,23 +223,19 @@ export default function TrainingPresentations() {
     }
   };
 
-  const isPdf = Boolean(
-    selectedPresentation?.mimeType
-      ?.toLowerCase()
-      .includes("pdf"),
-  );
+  const selectedMeta = getPresentationMeta(selectedPresentation);
   const interactiveUrl =
     selectedPresentation?.interactiveStorageName
       ? `/api/training/presentations/${selectedPresentation.id}/interactive`
       : undefined;
-  const interactiveAvailable = Boolean(interactiveUrl);
+  const interactiveAvailable = selectedMeta.hasInteractive;
   const interactivePreviewUrl = withAuthToken(interactiveUrl);
-  const pdfPreviewUrl = withAuthToken(selectedPresentation?.fileUrl);
+  const filePreviewUrl = withAuthToken(selectedMeta.fileUrl);
 
   useEffect(() => {
     if (!selectedPresentation) return;
-    setViewMode(interactiveAvailable ? "interactive" : "pdf");
-  }, [interactiveAvailable, selectedPresentation?.id]);
+    setViewMode(getPresentationMeta(selectedPresentation).preferredView);
+  }, [selectedPresentation]);
 
   return (
     <Layout title="Fortbildung – PowerPoint / Vorträge">
@@ -253,7 +313,9 @@ export default function TrainingPresentations() {
 
         <ScrollArea className="w-full">
           <div className="grid gap-4 lg:grid-cols-2">
-            {filteredPresentations.map((presentation) => (
+            {filteredPresentations.map((presentation) => {
+              const meta = getPresentationMeta(presentation);
+              return (
               <Card key={presentation.id}>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -264,6 +326,18 @@ export default function TrainingPresentations() {
                     {presentation.isActive ? "Aktiv" : "Inaktiv"} ·{" "}
                     {presentation.mimeType}
                   </CardDescription>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    <Badge variant={getStatusBadgeVariant(meta.status)}>
+                      {getStatusLabel(meta.status)}
+                    </Badge>
+                    {meta.hasMp4 && <Badge variant="outline">MP4</Badge>}
+                    {!meta.hasMp4 && meta.hasInteractive && (
+                      <Badge variant="outline">LibreOffice HTML</Badge>
+                    )}
+                    {!meta.hasMp4 && !meta.hasInteractive && meta.hasPdf && (
+                      <Badge variant="outline">PDF</Badge>
+                    )}
+                  </div>
                   <div className="mt-2 flex flex-wrap gap-1">
                     {(presentation.keywords ?? []).map((keyword) => (
                       <Badge key={keyword} variant="secondary">
@@ -288,7 +362,8 @@ export default function TrainingPresentations() {
                   </Button>
                 </CardContent>
               </Card>
-            ))}
+              );
+            })}
           </div>
         </ScrollArea>
       </div>
@@ -308,7 +383,33 @@ export default function TrainingPresentations() {
               {selectedPresentation?.mimeType}
             </DialogDescription>
           </DialogHeader>
+          {selectedPresentation && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Badge variant={getStatusBadgeVariant(selectedMeta.status)}>
+                {getStatusLabel(selectedMeta.status)}
+              </Badge>
+              {selectedMeta.hasMp4 && <Badge variant="outline">Anzeige: MP4</Badge>}
+              {!selectedMeta.hasMp4 && selectedMeta.hasInteractive && (
+                <Badge variant="outline">Anzeige: LibreOffice HTML</Badge>
+              )}
+              {!selectedMeta.hasMp4 &&
+                !selectedMeta.hasInteractive &&
+                selectedMeta.hasPdf && <Badge variant="outline">Anzeige: PDF</Badge>}
+              {!selectedMeta.canInline && (
+                <Badge variant="outline">Anzeige: Download</Badge>
+              )}
+            </div>
+          )}
           <div className="mt-4 flex flex-wrap gap-2">
+            {selectedMeta.hasMp4 && (
+              <Button
+                size="sm"
+                variant={viewMode === "mp4" ? "secondary" : "outline"}
+                onClick={() => setViewMode("mp4")}
+              >
+                MP4-Wiedergabe
+              </Button>
+            )}
             {interactiveAvailable && (
               <Button
                 size="sm"
@@ -318,7 +419,7 @@ export default function TrainingPresentations() {
                 LibreOffice Ansicht
               </Button>
             )}
-            {isPdf && (
+            {selectedMeta.hasPdf && (
               <Button
                 size="sm"
                 variant={viewMode === "pdf" ? "secondary" : "outline"}
@@ -330,7 +431,18 @@ export default function TrainingPresentations() {
           </div>
           <div className="mt-4">
             {selectedPresentation ? (
-              viewMode === "interactive" && interactiveAvailable ? (
+              viewMode === "mp4" && selectedMeta.hasMp4 ? (
+                <div className="aspect-video overflow-hidden rounded-lg border border-border bg-black">
+                  <video
+                    src={filePreviewUrl}
+                    controls
+                    playsInline
+                    className="h-full w-full"
+                  >
+                    Ihr Browser unterstützt keine MP4-Wiedergabe.
+                  </video>
+                </div>
+              ) : viewMode === "interactive" && interactiveAvailable ? (
                 <div className="aspect-[16/9] overflow-hidden rounded-lg border border-border">
                   <iframe
                     src={interactivePreviewUrl}
@@ -338,18 +450,18 @@ export default function TrainingPresentations() {
                     className="h-full w-full"
                   />
                 </div>
-              ) : selectedPresentation.fileUrl && isPdf ? (
+              ) : selectedMeta.fileUrl && selectedMeta.hasPdf ? (
                 <div className="aspect-[4/3] overflow-hidden rounded-lg border border-border">
                   <iframe
-                    src={pdfPreviewUrl}
+                    src={filePreviewUrl}
                     title={selectedPresentation.title}
                     className="h-full w-full"
                   />
                 </div>
               ) : (
                 <p className="mt-4 text-sm text-muted-foreground">
-                  Diese Datei kann inline nicht angezeigt werden. Bitte laden Sie
-                  dafür eine PDF-Version hoch.
+                  Diese Datei kann inline nicht angezeigt werden. Verfuegbar ist
+                  nur der Download.
                 </p>
               )
             ) : (
@@ -361,7 +473,7 @@ export default function TrainingPresentations() {
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <Button asChild>
               <a
-                href={pdfPreviewUrl}
+                href={filePreviewUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="flex items-center gap-2"
@@ -384,12 +496,18 @@ export default function TrainingPresentations() {
             )}
             {selectedPresentation?.originalMimeType &&
               selectedPresentation.originalMimeType !== "application/pdf" &&
-              isPdf && (
+              selectedMeta.hasPdf && (
                 <p className="text-xs text-muted-foreground">
                   Originaldatei: {selectedPresentation.originalMimeType}. Die
                   Ansicht basiert auf der konvertierten PDF-Datei.
                 </p>
               )}
+            {selectedMeta.hasMp4 && (
+              <p className="text-xs text-muted-foreground">
+                MP4 wird bevorzugt angezeigt (Animationen bleiben dabei in der
+                Regel erhalten).
+              </p>
+            )}
           </div>
         </DialogContent>
       </Dialog>
@@ -403,13 +521,13 @@ export default function TrainingPresentations() {
         }}
       >
         <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Präsentation hochladen</DialogTitle>
-            <DialogDescription>
-              Akzeptierte Formate: PDF, PPT, PPTX. PPTX werden zu PDF
-              konvertiert.
-            </DialogDescription>
-          </DialogHeader>
+            <DialogHeader>
+              <DialogTitle>Präsentation hochladen</DialogTitle>
+              <DialogDescription>
+                Akzeptierte Formate: PDF, PPT, PPTX, MP4. Anzeige-Prioritaet:
+                MP4 &gt; LibreOffice HTML &gt; PDF &gt; Download.
+              </DialogDescription>
+            </DialogHeader>
           <form onSubmit={handleUploadSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label>Title</Label>
@@ -429,10 +547,10 @@ export default function TrainingPresentations() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Datei (PDF, PPT, PPTX)</Label>
+              <Label>Datei (PDF, PPT, PPTX, MP4)</Label>
               <Input
                 type="file"
-                accept=".pdf,.ppt,.pptx"
+                accept=".pdf,.ppt,.pptx,.mp4,video/mp4"
                 onChange={(event) =>
                   setUploadFile(event.target.files?.[0] ?? null)
                 }

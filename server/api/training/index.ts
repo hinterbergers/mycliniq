@@ -208,7 +208,7 @@ fs.mkdirSync(trainingUploadsDir, { recursive: true });
 const trainingInteractiveDir = path.join(trainingUploadsDir, "interactive");
 fs.mkdirSync(trainingInteractiveDir, { recursive: true });
 
-const ALLOWED_PRESENTATION_EXTENSIONS = new Set([".pdf", ".ppt", ".pptx"]);
+const ALLOWED_PRESENTATION_EXTENSIONS = new Set([".pdf", ".ppt", ".pptx", ".mp4"]);
 
 const ALLOWED_PRESENTATION_MIMES = new Set([
   "application/pdf",
@@ -217,6 +217,8 @@ const ALLOWED_PRESENTATION_MIMES = new Set([
   "application/powerpoint",
   "application/x-mspowerpoint",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "video/mp4",
+  "application/mp4",
 ]);
 
 function isAllowedPresentationUpload(mimeType: string, extension: string): boolean {
@@ -236,6 +238,7 @@ function normalizePresentationMimeType(mimeType: string, extension: string): str
   if (extension === ".pptx") {
     return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
   }
+  if (extension === ".mp4") return "video/mp4";
   return mimeType || "application/octet-stream";
 }
 
@@ -832,7 +835,10 @@ export function registerTrainingRoutes(router: Router) {
       if (!isAllowedPresentationUpload(rawMime, extension)) {
         res
           .status(415)
-          .json({ success: false, error: "Nur PDF oder PowerPoint-Dateien sind erlaubt" });
+          .json({
+            success: false,
+            error: "Nur PDF-, PowerPoint- oder MP4-Dateien sind erlaubt",
+          });
         return;
       }
 
