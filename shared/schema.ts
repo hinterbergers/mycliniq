@@ -785,6 +785,43 @@ export const insertRosterShiftSchema = createInsertSchema(rosterShifts)
 export type InsertRosterShift = z.infer<typeof insertRosterShiftSchema>;
 export type RosterShift = typeof rosterShifts.$inferSelect;
 
+export const rosterShiftChangeLogs = pgTable(
+  "roster_shift_change_logs",
+  {
+    id: serial("id").primaryKey(),
+    rosterShiftId: integer("roster_shift_id"),
+    action: text("action").notNull(), // insert | update | delete
+    context: text("context"),
+    date: date("date").notNull(),
+    serviceType: text("service_type").notNull(),
+    isDraft: boolean("is_draft").notNull().default(false),
+    beforeEmployeeId: integer("before_employee_id"),
+    afterEmployeeId: integer("after_employee_id"),
+    beforeAssigneeFreeText: text("before_assignee_free_text"),
+    afterAssigneeFreeText: text("after_assignee_free_text"),
+    actorEmployeeId: integer("actor_employee_id").references(() => employees.id),
+    actorName: text("actor_name"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("roster_shift_change_logs_created_at_idx").on(table.createdAt),
+    index("roster_shift_change_logs_date_idx").on(table.date),
+    index("roster_shift_change_logs_shift_id_idx").on(table.rosterShiftId),
+  ],
+);
+
+export const insertRosterShiftChangeLogSchema = createInsertSchema(
+  rosterShiftChangeLogs,
+).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertRosterShiftChangeLog = z.infer<
+  typeof insertRosterShiftChangeLogSchema
+>;
+export type RosterShiftChangeLog = typeof rosterShiftChangeLogs.$inferSelect;
+
 // Absences table
 export const absences = pgTable("absences", {
   id: serial("id").primaryKey(),

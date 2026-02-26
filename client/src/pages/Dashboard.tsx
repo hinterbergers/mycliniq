@@ -857,7 +857,7 @@ export default function Dashboard() {
             <Clock className="w-5 h-5" />
             Letzte Änderungen
           </CardTitle>
-          <CardDescription>Abwesenheiten (Dienstplan/Wochenplan), max. 10</CardDescription>
+          <CardDescription>Dienstplan, Abwesenheiten und Wochenplan, max. 10</CardDescription>
         </CardHeader>
         <CardContent className="pt-0">
           {isLoadingDashboard ? (
@@ -874,7 +874,11 @@ export default function Dashboard() {
                   ? ""
                   : format(changedAtDate, "dd.MM. HH:mm", { locale: de });
                 const sourceLabel =
-                  item.source === "dutyplan_absence" ? "Dienstplan" : "Wochenplan";
+                  item.source === "dutyplan_shift"
+                    ? "Dienstplan"
+                    : item.source === "dutyplan_absence"
+                      ? "Abwesenheit"
+                      : "Wochenplan";
                 const actionLabel = item.action === "updated" ? "Geändert" : "Neu";
                 return (
                   <div key={item.id} className="rounded-lg border p-3 space-y-1">
@@ -892,6 +896,11 @@ export default function Dashboard() {
                     {item.subtitle ? (
                       <p className="text-xs text-muted-foreground leading-snug">
                         {item.subtitle}
+                      </p>
+                    ) : null}
+                    {item.actorName ? (
+                      <p className="text-[11px] text-muted-foreground">
+                        von {item.actorName}
                       </p>
                     ) : null}
                   </div>

@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { logRosterShiftAuditEvent, logRosterShiftAuditEvents } from "./lib/rosterShiftAudit";
 import {
   type User,
   type InsertUser,
@@ -99,6 +100,12 @@ const normalizeFixedPreferredEmployees = (value: unknown): number[] => {
     .filter((entry): entry is number => Number.isFinite(entry));
 };
 
+type RosterShiftAuditOptions = {
+  actorEmployeeId?: number | null;
+  actorName?: string | null;
+  context?: string | null;
+};
+
 const normalizeWeeklyRuleProfile = (
   value: unknown,
 ): Record<string, unknown> | null | undefined => {
@@ -127,8 +134,11 @@ export interface IStorage {
   // Roster methods
   getRosterShiftsByMonth(year: number, month: number): Promise<RosterShift[]>;
   getRosterShiftsByDate(date: string): Promise<RosterShift[]>;
-  createRosterShift(shift: InsertRosterShift): Promise<RosterShift>;
-  deleteRosterShift(id: number): Promise<boolean>;
+  createRosterShift(
+    shift: InsertRosterShift,
+    audit?: RosterShiftAuditOptions,
+  ): Promise<RosterShift>;
+  deleteRosterShift(id: number, audit?: RosterShiftAuditOptions): Promise<boolean>;
   getLatestDutyPlanByStatus(
     status: DutyPlan["status"],
   ): Promise<DutyPlan | undefined>;
@@ -252,9 +262,17 @@ export interface IStorage {
   updateRosterShift(
     id: number,
     shift: Partial<InsertRosterShift>,
+    audit?: RosterShiftAuditOptions,
   ): Promise<RosterShift | undefined>;
-  bulkCreateRosterShifts(shifts: InsertRosterShift[]): Promise<RosterShift[]>;
-  deleteRosterShiftsByMonth(year: number, month: number): Promise<boolean>;
+  bulkCreateRosterShifts(
+    shifts: InsertRosterShift[],
+    audit?: RosterShiftAuditOptions,
+  ): Promise<RosterShift[]>;
+  deleteRosterShiftsByMonth(
+    year: number,
+    month: number,
+    audit?: RosterShiftAuditOptions,
+  ): Promise<boolean>;
 
   // Roster settings methods
   getRosterSettings(): Promise<RosterSettings | undefined>;
@@ -423,13 +441,39 @@ export class DatabaseStorage implements IStorage {
       .where(eq(rosterShifts.date, date));
   }
 
-  async createRosterShift(shift: InsertRosterShift): Promise<RosterShift> {
+  async createRosterShift(
+    shift: InsertRosterShift,
+    audit?: RosterShiftAuditOptions,
+  ): Promise<RosterShift> {
     const result = await db.insert(rosterShifts).values(shift).returning();
-    return result[0];
+    const created = result[0];
+    if (created) {
+      await logRosterShiftAuditEvent({
+        action: "insert",
+        after: created,
+        actorEmployeeId: audit?.actorEmployeeId ?? null,
+        actorName: audit?.actorName ?? null,
+        context: audit?.context ?? "storage.createRosterShift",
+      });
+    }
+    return created;
   }
 
-  async deleteRosterShift(id: number): Promise<boolean> {
+  async deleteRosterShift(
+    id: number,
+    audit?: RosterShiftAuditOptions,
+  ): Promise<boolean> {
+    const [before] = await db.select().from(rosterShifts).where(eq(rosterShifts.id, id));
     await db.delete(rosterShifts).where(eq(rosterShifts.id, id));
+    if (before) {
+      await logRosterShiftAuditEvent({
+        action: "delete",
+        before,
+        actorEmployeeId: audit?.actorEmployeeId ?? null,
+        actorName: audit?.actorName ?? null,
+        context: audit?.context ?? "storage.deleteRosterShift",
+      });
+    }
     return true;
   }
 
@@ -960,36 +1004,76 @@ export class DatabaseStorage implements IStorage {
   async updateRosterShift(
     id: number,
     shift: Partial<InsertRosterShift>,
+    audit?: RosterShiftAuditOptions,
   ): Promise<RosterShift | undefined> {
+    const [before] = await db.select().from(rosterShifts).where(eq(rosterShifts.id, id));
     const result = await db
       .update(rosterShifts)
       .set(shift)
       .where(eq(rosterShifts.id, id))
       .returning();
-    return result[0];
+    const updated = result[0];
+    if (updated) {
+      await logRosterShiftAuditEvent({
+        action: "update",
+        before: before ?? null,
+        after: updated,
+        actorEmployeeId: audit?.actorEmployeeId ?? null,
+        actorName: audit?.actorName ?? null,
+        context: audit?.context ?? "storage.updateRosterShift",
+      });
+    }
+    return updated;
   }
 
   async bulkCreateRosterShifts(
     shifts: InsertRosterShift[],
+    audit?: RosterShiftAuditOptions,
   ): Promise<RosterShift[]> {
     if (shifts.length === 0) return [];
     const result = await db.insert(rosterShifts).values(shifts).returning();
+    await logRosterShiftAuditEvents(
+      result.map((row) => ({
+        action: "insert" as const,
+        after: row,
+        actorEmployeeId: audit?.actorEmployeeId ?? null,
+        actorName: audit?.actorName ?? null,
+        context: audit?.context ?? "storage.bulkCreateRosterShifts",
+      })),
+    );
     return result;
   }
 
   async deleteRosterShiftsByMonth(
     year: number,
     month: number,
+    audit?: RosterShiftAuditOptions,
   ): Promise<boolean> {
     const lastDayOfMonth = new Date(year, month, 0).getDate();
     const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
     const endDate = `${year}-${String(month).padStart(2, "0")}-${String(lastDayOfMonth).padStart(2, "0")}`;
+
+    const rows = await db
+      .select()
+      .from(rosterShifts)
+      .where(
+        and(gte(rosterShifts.date, startDate), lte(rosterShifts.date, endDate)),
+      );
 
     await db
       .delete(rosterShifts)
       .where(
         and(gte(rosterShifts.date, startDate), lte(rosterShifts.date, endDate)),
       );
+    await logRosterShiftAuditEvents(
+      rows.map((row) => ({
+        action: "delete" as const,
+        before: row,
+        actorEmployeeId: audit?.actorEmployeeId ?? null,
+        actorName: audit?.actorName ?? null,
+        context: audit?.context ?? "storage.deleteRosterShiftsByMonth",
+      })),
+    );
     return true;
   }
 

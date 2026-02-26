@@ -157,11 +157,12 @@ export type DashboardAbsencesResponse = {
 
 export type DashboardRecentChange = {
   id: string;
-  source: "dutyplan_absence" | "weeklyplan_override";
+  source: "dutyplan_shift" | "dutyplan_absence" | "weeklyplan_override";
   changedAt: string;
   action: "created" | "updated";
   title: string;
   subtitle: string | null;
+  actorName?: string | null;
 };
 
 export type PlanningStateResponse = {

@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { logRosterShiftAuditEvent, logRosterShiftAuditEvents } from "./lib/rosterShiftAudit";
 import {
   db,
   asc,
@@ -43,6 +44,7 @@ import {
   weeklyPlanAssignments,
   weeklyAssignments,
   dailyOverrides,
+  rosterShiftChangeLogs,
   type RosterShift,
   type DutyPlan,
   type ServiceLine,
@@ -436,7 +438,14 @@ async function ensureRequiredDailyShifts({
 
   if (!toInsert.length) return 0;
 
-  await db.insert(rosterShifts).values(toInsert);
+  const insertedRows = await db.insert(rosterShifts).values(toInsert).returning();
+  await logRosterShiftAuditEvents(
+    insertedRows.map((row) => ({
+      action: "insert" as const,
+      after: row,
+      context: "ensureRequiredDailyShifts",
+    })),
+  );
   return toInsert.length;
 }
 
@@ -861,6 +870,12 @@ const formatDisplayName = (firstName?: string | null, lastName?: string | null) 
     .filter((value): value is string => Boolean(value));
   return parts.join(" ").trim();
 };
+
+const getAuditActorFromRequest = (req: Request) => ({
+  actorEmployeeId: req.user?.employeeId ?? null,
+  actorName:
+    formatDisplayName(req.user?.name ?? null, req.user?.lastName ?? null) || null,
+});
 
 const addDaysToIso = (iso: string, delta: number) => {
   const base = parseIsoDateUtc(iso);
@@ -1743,7 +1758,10 @@ export async function registerRoutes(
         assigneeFreeText: rawEmployeeId ? null : rawFreeText || null,
         isDraft: isDraftFlag,
       };
-      const shift = await storage.createRosterShift(payload);
+      const shift = await storage.createRosterShift(payload, {
+        ...getAuditActorFromRequest(req),
+        context: "api.roster.create",
+      });
       res.status(201).json(shift);
     } catch (error: any) {
       if (error.name === "ZodError") {
@@ -1757,7 +1775,10 @@ export async function registerRoutes(
   app.delete("/api/roster/:id", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
-      await storage.deleteRosterShift(id);
+      await storage.deleteRosterShift(id, {
+        ...getAuditActorFromRequest(req),
+        context: "api.roster.delete",
+      });
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete roster shift" });
@@ -1821,7 +1842,10 @@ export async function registerRoutes(
           .status(400)
           .json({ error: "Mitarbeiter oder Freitext ist erforderlich" });
       }
-      const shift = await storage.updateRosterShift(id, updateData);
+      const shift = await storage.updateRosterShift(id, updateData, {
+        ...getAuditActorFromRequest(req),
+        context: "api.roster.update",
+      });
       if (!shift) {
         return res.status(404).json({ error: "Shift not found" });
       }
@@ -1938,6 +1962,11 @@ export async function registerRoutes(
           }
         }
 
+        const [beforeClaimShift] = await db
+          .select()
+          .from(rosterShifts)
+          .where(eq(rosterShifts.id, shiftId))
+          .limit(1);
         const [updated] = await db
           .update(rosterShifts)
           .set({
@@ -1954,6 +1983,13 @@ export async function registerRoutes(
         if (!updated) {
           return res.status(409).json({ error: "Shift konnte nicht übernommen werden" });
         }
+        await logRosterShiftAuditEvent({
+          action: "update",
+          before: beforeClaimShift ?? null,
+          after: updated,
+          ...getAuditActorFromRequest(req),
+          context: "api.roster.claim",
+        });
         res.json(updated);
       } catch (error) {
         console.error("Claim shift error:", error);
@@ -2197,15 +2233,26 @@ export async function registerRoutes(
             },
           );
         }
-        const created = await storage.createRosterShift({
+        const created = await storage.createRosterShift(
+          {
           date: effectiveDate,
           serviceType: finalServiceTypeKey,
           employeeId: null,
           isDraft: targetIsDraft,
-        });
+          },
+          {
+            ...getAuditActorFromRequest(req),
+            context: "api.roster.open-shifts.claim.create-open-row",
+          },
+        );
         targetShiftId = created.id;
       }
 
+      const [beforeOpenClaimShift] = await db
+        .select()
+        .from(rosterShifts)
+        .where(eq(rosterShifts.id, targetShiftId))
+        .limit(1);
       const [updated] = await db
         .update(rosterShifts)
         .set({
@@ -2224,6 +2271,13 @@ export async function registerRoutes(
           .status(409)
           .json({ error: "Shift konnte nicht übernommen werden" });
       }
+      await logRosterShiftAuditEvent({
+        action: "update",
+        before: beforeOpenClaimShift ?? null,
+        after: updated,
+        ...getAuditActorFromRequest(req),
+        context: "api.roster.open-shifts.claim.assign",
+      });
 
       res.status(201).json(updated);
     } catch (error) {
@@ -2264,7 +2318,10 @@ export async function registerRoutes(
         const isDraftFlag = overrideIsDraftQuery || bodyIsDraft === true;
         return { ...shift, isDraft: isDraftFlag };
       });
-      const results = await storage.bulkCreateRosterShifts(normalizedShifts);
+      const results = await storage.bulkCreateRosterShifts(normalizedShifts, {
+        ...getAuditActorFromRequest(req),
+        context: "api.roster.bulk",
+      });
       res.status(201).json(results);
     } catch (error) {
       res.status(500).json({ error: "Failed to create roster shifts" });
@@ -2294,7 +2351,19 @@ export async function registerRoutes(
           conditions.push(eq(rosterShifts.isDraft, draftOnly));
         }
 
+        const rowsToDelete = await db
+          .select()
+          .from(rosterShifts)
+          .where(and(...conditions));
         await db.delete(rosterShifts).where(and(...conditions));
+        await logRosterShiftAuditEvents(
+          rowsToDelete.map((row) => ({
+            action: "delete" as const,
+            before: row,
+            ...getAuditActorFromRequest(req),
+            context: "api.roster.delete-month",
+          })),
+        );
         res.status(204).send();
       } catch (error) {
         res.status(500).json({ error: "Failed to delete roster shifts" });
@@ -2494,6 +2563,16 @@ export async function registerRoutes(
         new Date(year, month, 0).getDate(),
       ).padStart(2, "0")}`;
       // remove existing draft shifts for this month before inserting new preview rows
+      const existingDraftRows = await db
+        .select()
+        .from(rosterShifts)
+        .where(
+          and(
+            eq(rosterShifts.isDraft, true),
+            gte(rosterShifts.date, draftMonthStart),
+            lte(rosterShifts.date, draftMonthEnd),
+          ),
+        );
       await db
         .delete(rosterShifts)
         .where(
@@ -2503,14 +2582,28 @@ export async function registerRoutes(
             lte(rosterShifts.date, draftMonthEnd),
           ),
         );
+      await logRosterShiftAuditEvents(
+        existingDraftRows.map((row) => ({
+          action: "delete" as const,
+          before: row,
+          ...getAuditActorFromRequest(req),
+          context: "api.roster.generate.preview.clear-draft-month",
+        })),
+      );
       let createdCount = 0;
       for (const shift of result.shifts) {
-        await storage.createRosterShift({
-          date: shift.date,
-          serviceType: shift.serviceType,
-          employeeId: shift.employeeId,
-          isDraft: true,
-        });
+        await storage.createRosterShift(
+          {
+            date: shift.date,
+            serviceType: shift.serviceType,
+            employeeId: shift.employeeId,
+            isDraft: true,
+          },
+          {
+            ...getAuditActorFromRequest(req),
+            context: "api.roster.generate.preview.insert-draft",
+          },
+        );
         createdCount += 1;
       }
 
@@ -2588,6 +2681,16 @@ export async function registerRoutes(
         const monthEnd = `${year}-${String(month).padStart(2, "0")}-${String(monthEndDate.getDate()).padStart(2, "0")}`;
 
         if (replaceExisting) {
+          const existingRows = await db
+            .select()
+            .from(rosterShifts)
+            .where(
+              and(
+                gte(rosterShifts.date, monthStart),
+                lte(rosterShifts.date, monthEnd),
+                eq(rosterShifts.isDraft, isDraftFlag),
+              ),
+            );
           await db
             .delete(rosterShifts)
             .where(
@@ -2597,6 +2700,14 @@ export async function registerRoutes(
                 eq(rosterShifts.isDraft, isDraftFlag),
               ),
             );
+          await logRosterShiftAuditEvents(
+            existingRows.map((row) => ({
+              action: "delete" as const,
+              before: row,
+              ...getAuditActorFromRequest(req),
+              context: "api.roster.apply-generated.replace-existing",
+            })),
+          );
         }
 
         const shiftData = shifts.map((s: any) => ({
@@ -2606,7 +2717,10 @@ export async function registerRoutes(
           isDraft: isDraftFlag,
         }));
 
-        const results = await storage.bulkCreateRosterShifts(shiftData);
+        const results = await storage.bulkCreateRosterShifts(shiftData, {
+          ...getAuditActorFromRequest(req),
+          context: "api.roster.apply-generated",
+        });
         const clinicId = (req as any).user?.clinicId ?? null;
         const requiredInserted = await ensureRequiredDailyShifts({
           clinicId,
@@ -3188,15 +3302,35 @@ const buildAttendanceMembers = (
 
         let recentChanges: Array<{
           id: string;
-          source: "dutyplan_absence" | "weeklyplan_override";
+          source: "dutyplan_shift" | "dutyplan_absence" | "weeklyplan_override";
           changedAt: Date | string;
           action: "created" | "updated";
           title: string;
           subtitle: string | null;
+          actorName: string | null;
         }> = [];
 
         if (canSeeDashboardRecentChanges(req)) {
-          const [plannedChangeRows, weeklyOverrideRows] = await Promise.all([
+          const [dutyChangeRows, plannedChangeRows, weeklyOverrideRows] = await Promise.all([
+            db
+              .select({
+                id: rosterShiftChangeLogs.id,
+                rosterShiftId: rosterShiftChangeLogs.rosterShiftId,
+                action: rosterShiftChangeLogs.action,
+                date: rosterShiftChangeLogs.date,
+                serviceType: rosterShiftChangeLogs.serviceType,
+                isDraft: rosterShiftChangeLogs.isDraft,
+                beforeEmployeeId: rosterShiftChangeLogs.beforeEmployeeId,
+                afterEmployeeId: rosterShiftChangeLogs.afterEmployeeId,
+                beforeAssigneeFreeText: rosterShiftChangeLogs.beforeAssigneeFreeText,
+                afterAssigneeFreeText: rosterShiftChangeLogs.afterAssigneeFreeText,
+                actorName: rosterShiftChangeLogs.actorName,
+                context: rosterShiftChangeLogs.context,
+                createdAt: rosterShiftChangeLogs.createdAt,
+              })
+              .from(rosterShiftChangeLogs)
+              .orderBy(desc(rosterShiftChangeLogs.createdAt))
+              .limit(40),
             db
               .select({
                 id: plannedAbsences.id,
@@ -3227,6 +3361,45 @@ const buildAttendanceMembers = (
               .limit(25),
           ]);
 
+          const dutyItems = dutyChangeRows.map((row) => {
+            const serviceLabel =
+              getServiceLabel(row.serviceType) ?? row.serviceType ?? "Dienst";
+            const planLabel = row.isDraft ? "Dienstplan (Entwurf)" : "Dienstplan";
+            const beforeAssigned = Boolean(row.beforeEmployeeId || row.beforeAssigneeFreeText);
+            const afterAssigned = Boolean(row.afterEmployeeId || row.afterAssigneeFreeText);
+            let dutyActionLabel = "Dienst geändert";
+            if (row.action === "insert") {
+              dutyActionLabel = afterAssigned ? "Dienst eingetragen" : "Dienst-Slot angelegt";
+            } else if (row.action === "delete") {
+              dutyActionLabel = beforeAssigned ? "Dienst gelöscht" : "Dienst-Slot gelöscht";
+            } else if (!beforeAssigned && afterAssigned) {
+              dutyActionLabel = "Dienst übernommen";
+            } else if (beforeAssigned && !afterAssigned) {
+              dutyActionLabel = "Dienst entfernt";
+            } else if (
+              row.beforeEmployeeId !== row.afterEmployeeId ||
+              (row.beforeAssigneeFreeText ?? null) !== (row.afterAssigneeFreeText ?? null)
+            ) {
+              dutyActionLabel = "Dienst neu eingeteilt";
+            }
+
+            const subtitleParts = [
+              String(row.date),
+              serviceLabel,
+              row.context ? row.context : null,
+            ].filter((part): part is string => Boolean(part));
+
+            return {
+              id: `duty-${row.id}`,
+              source: "dutyplan_shift" as const,
+              changedAt: row.createdAt,
+              action: "updated" as const,
+              title: `${planLabel}: ${dutyActionLabel}`,
+              subtitle: subtitleParts.join(" • "),
+              actorName: normalize(row.actorName) || null,
+            };
+          });
+
           const plannedItems = plannedChangeRows.map((row) => {
             const changedAt = row.updatedAt ?? row.createdAt;
             const createdMs =
@@ -3250,8 +3423,9 @@ const buildAttendanceMembers = (
               source: "dutyplan_absence" as const,
               changedAt,
               action,
-              title: `Dienstplan: ${employeeName} (${row.reason})`,
+              title: `Abwesenheit: ${employeeName} (${row.reason})`,
               subtitle: `${dateRange}${row.status ? ` • ${row.status}` : ""}`,
+              actorName: null,
             };
           });
 
@@ -3264,10 +3438,11 @@ const buildAttendanceMembers = (
               action: "created" as const,
               title: `Wochenplan: ${String(row.date)} • ${roomName}`,
               subtitle: normalize(row.reason) || "Tages-Override angelegt",
+              actorName: null,
             };
           });
 
-          recentChanges = [...plannedItems, ...weeklyItems]
+          recentChanges = [...dutyItems, ...plannedItems, ...weeklyItems]
             .sort((a, b) => {
               const aTime = new Date(a.changedAt).getTime();
               const bTime = new Date(b.changedAt).getTime();
@@ -4671,12 +4846,26 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
           );
 
           if (requesterShift && targetShift) {
-            await storage.updateRosterShift(request.requesterShiftId, {
-              employeeId: request.targetEmployeeId,
-            });
-            await storage.updateRosterShift(request.targetShiftId, {
-              employeeId: request.requesterId,
-            });
+            await storage.updateRosterShift(
+              request.requesterShiftId,
+              {
+                employeeId: request.targetEmployeeId,
+              },
+              {
+                ...getAuditActorFromRequest(req),
+                context: "api.shift-swap.accept.requester-shift",
+              },
+            );
+            await storage.updateRosterShift(
+              request.targetShiftId,
+              {
+                employeeId: request.requesterId,
+              },
+              {
+                ...getAuditActorFromRequest(req),
+                context: "api.shift-swap.accept.target-shift",
+              },
+            );
           }
         }
 

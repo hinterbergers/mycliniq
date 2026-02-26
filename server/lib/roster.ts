@@ -1,5 +1,6 @@
 import { db, and, eq, gte, lte, inArray, or } from "./db";
 import { rosterShifts, shiftSwapRequests } from "@shared/schema";
+import { logRosterShiftAuditEvents } from "./rosterShiftAudit";
 
 const padTwo = (value: number) => String(value).padStart(2, "0");
 
@@ -13,6 +14,16 @@ const getMonthRange = (year: number, month: number) => {
 export async function syncDraftFromFinal(year: number, month: number) {
   const { monthStart, monthEnd } = getMonthRange(year, month);
 
+  const existingDraftRows = await db
+    .select()
+    .from(rosterShifts)
+    .where(
+      and(
+        eq(rosterShifts.isDraft, true),
+        gte(rosterShifts.date, monthStart),
+        lte(rosterShifts.date, monthEnd),
+      ),
+    );
   await db
     .delete(rosterShifts)
     .where(
@@ -22,6 +33,13 @@ export async function syncDraftFromFinal(year: number, month: number) {
         lte(rosterShifts.date, monthEnd),
       ),
     );
+  await logRosterShiftAuditEvents(
+    existingDraftRows.map((row) => ({
+      action: "delete" as const,
+      before: row,
+      context: "syncDraftFromFinal.clearDraftMonth",
+    })),
+  );
 
   const finalRows = await db
     .select({
@@ -51,7 +69,14 @@ export async function syncDraftFromFinal(year: number, month: number) {
     isDraft: true,
   }));
 
-  await db.insert(rosterShifts).values(inserts);
+  const insertedRows = await db.insert(rosterShifts).values(inserts).returning();
+  await logRosterShiftAuditEvents(
+    insertedRows.map((row) => ({
+      action: "insert" as const,
+      after: row,
+      context: "syncDraftFromFinal.copyFinalToDraft",
+    })),
+  );
 }
 
 export async function syncFinalFromDraft(year: number, month: number) {
@@ -81,6 +106,16 @@ export async function syncFinalFromDraft(year: number, month: number) {
       );
   }
 
+  const existingFinalRows = await db
+    .select()
+    .from(rosterShifts)
+    .where(
+      and(
+        eq(rosterShifts.isDraft, false),
+        gte(rosterShifts.date, monthStart),
+        lte(rosterShifts.date, monthEnd),
+      ),
+    );
   await db
     .delete(rosterShifts)
     .where(
@@ -90,6 +125,13 @@ export async function syncFinalFromDraft(year: number, month: number) {
         lte(rosterShifts.date, monthEnd),
       ),
     );
+  await logRosterShiftAuditEvents(
+    existingFinalRows.map((row) => ({
+      action: "delete" as const,
+      before: row,
+      context: "syncFinalFromDraft.replaceFinalMonth.clearFinal",
+    })),
+  );
 
   const draftRows = await db
     .select({
@@ -119,5 +161,12 @@ export async function syncFinalFromDraft(year: number, month: number) {
     isDraft: false,
   }));
 
-  await db.insert(rosterShifts).values(inserts);
+  const insertedRows = await db.insert(rosterShifts).values(inserts).returning();
+  await logRosterShiftAuditEvents(
+    insertedRows.map((row) => ({
+      action: "insert" as const,
+      after: row,
+      context: "syncFinalFromDraft.copyDraftToFinal",
+    })),
+  );
 }
