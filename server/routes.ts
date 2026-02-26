@@ -3302,16 +3302,21 @@ const buildAttendanceMembers = (
 
         let recentChanges: Array<{
           id: string;
-          source: "dutyplan_shift" | "dutyplan_absence" | "weeklyplan_override";
+          source:
+            | "dutyplan_shift"
+            | "dutyplan_absence"
+            | "weeklyplan_override"
+            | "weeklyplan_assignment";
           changedAt: Date | string;
           action: "created" | "updated";
           title: string;
           subtitle: string | null;
           actorName: string | null;
+          targetUrl?: string | null;
         }> = [];
 
         if (canSeeDashboardRecentChanges(req)) {
-          const [dutyChangeRows, plannedChangeRows, weeklyOverrideRows] = await Promise.all([
+          const [dutyChangeRows, plannedChangeRows, weeklyOverrideRows, weeklyAssignmentRows] = await Promise.all([
             db
               .select({
                 id: rosterShiftChangeLogs.id,
@@ -3359,7 +3364,36 @@ const buildAttendanceMembers = (
               .leftJoin(rooms, eq(dailyOverrides.roomId, rooms.id))
               .orderBy(desc(dailyOverrides.createdAt))
               .limit(25),
+            db
+              .select({
+                id: weeklyPlanAssignments.id,
+                weekday: weeklyPlanAssignments.weekday,
+                roleLabel: weeklyPlanAssignments.roleLabel,
+                createdAt: weeklyPlanAssignments.createdAt,
+                updatedAt: weeklyPlanAssignments.updatedAt,
+                roomName: rooms.name,
+                weekYear: weeklyPlans.year,
+                weekNumber: weeklyPlans.weekNumber,
+                firstName: employees.firstName,
+                lastName: employees.lastName,
+              })
+              .from(weeklyPlanAssignments)
+              .leftJoin(rooms, eq(weeklyPlanAssignments.roomId, rooms.id))
+              .leftJoin(employees, eq(weeklyPlanAssignments.employeeId, employees.id))
+              .leftJoin(weeklyPlans, eq(weeklyPlanAssignments.weeklyPlanId, weeklyPlans.id))
+              .orderBy(desc(weeklyPlanAssignments.updatedAt))
+              .limit(25),
           ]);
+
+          const weekdayShortByIso: Record<number, string> = {
+            1: "Mo",
+            2: "Di",
+            3: "Mi",
+            4: "Do",
+            5: "Fr",
+            6: "Sa",
+            7: "So",
+          };
 
           const ignoredDutyAuditContexts = [
             "syncDraftFromFinal.",
@@ -3399,7 +3433,6 @@ const buildAttendanceMembers = (
             const subtitleParts = [
               String(row.date),
               serviceLabel,
-              row.context ? row.context : null,
             ].filter((part): part is string => Boolean(part));
 
             return {
@@ -3410,6 +3443,7 @@ const buildAttendanceMembers = (
               title: `${planLabel}: ${dutyActionLabel}`,
               subtitle: subtitleParts.join(" • "),
               actorName: normalize(row.actorName) || null,
+              targetUrl: null,
             };
           });
 
@@ -3439,23 +3473,70 @@ const buildAttendanceMembers = (
               title: `Abwesenheit: ${employeeName} (${row.reason})`,
               subtitle: `${dateRange}${row.status ? ` • ${row.status}` : ""}`,
               actorName: null,
+              targetUrl: null,
             };
           });
 
           const weeklyItems = weeklyOverrideRows.map((row) => {
             const roomName = normalize(row.roomName) || "Raum";
+            const weeklyTargetUrl = `/admin/weekly?day=${encodeURIComponent(String(row.date))}`;
             return {
               id: `override-${row.id}`,
-              source: "weeklyplan_override" as const,
+              source: "weeklyplan_assignment" as const,
               changedAt: row.createdAt,
               action: "created" as const,
               title: `Wochenplan: ${String(row.date)} • ${roomName}`,
               subtitle: normalize(row.reason) || "Tages-Override angelegt",
               actorName: null,
+              targetUrl: weeklyTargetUrl,
             };
           });
 
-          recentChanges = [...dutyItems, ...plannedItems, ...weeklyItems]
+          const weeklyAssignmentItems = weeklyAssignmentRows.map((row) => {
+            const changedAt = row.updatedAt ?? row.createdAt;
+            const createdMs =
+              row.createdAt instanceof Date
+                ? row.createdAt.getTime()
+                : new Date(String(row.createdAt)).getTime();
+            const updatedMs =
+              changedAt instanceof Date
+                ? changedAt.getTime()
+                : new Date(String(changedAt)).getTime();
+            const action: "created" | "updated" =
+              Math.abs(updatedMs - createdMs) < 1000 ? "created" : "updated";
+            const employeeName = formatDisplayName(row.firstName, row.lastName);
+            const roomName = normalize(row.roomName) || "Raum";
+            const weekdayLabel = weekdayShortByIso[row.weekday] ?? `Tag ${row.weekday}`;
+            const weekLabel =
+              row.weekYear && row.weekNumber
+                ? `KW ${String(row.weekNumber).padStart(2, "0")}/${row.weekYear}`
+                : "KW ?";
+
+            return {
+              id: `weekly-assignment-${row.id}`,
+              source: "weeklyplan_override" as const,
+              changedAt,
+              action,
+              title: employeeName
+                ? `Wochenplan: ${employeeName}`
+                : "Wochenplan: Zuteilung geändert",
+              subtitle: [weekLabel, weekdayLabel, roomName, normalize(row.roleLabel) || null]
+                .filter((part): part is string => Boolean(part))
+                .join(" • "),
+              actorName: null,
+              targetUrl:
+                row.weekYear && row.weekNumber
+                  ? `/admin/weekly?year=${row.weekYear}&week=${row.weekNumber}&weekday=${row.weekday}`
+                  : null,
+            };
+          });
+
+          recentChanges = [
+            ...dutyItems,
+            ...plannedItems,
+            ...weeklyItems,
+            ...weeklyAssignmentItems,
+          ]
             .sort((a, b) => {
               const aTime = new Date(a.changedAt).getTime();
               const bTime = new Date(b.changedAt).getTime();

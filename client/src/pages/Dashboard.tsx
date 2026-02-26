@@ -869,6 +869,7 @@ export default function Dashboard() {
           ) : (
             <div className="space-y-3">
               {recentChanges.map((item: DashboardRecentChange) => {
+                const isDutyPlanChange = item.source === "dutyplan_shift";
                 const changedAtDate = new Date(item.changedAt);
                 const changedAtLabel = Number.isNaN(changedAtDate.getTime())
                   ? ""
@@ -878,19 +879,53 @@ export default function Dashboard() {
                     ? "Dienstplan"
                     : item.source === "dutyplan_absence"
                       ? "Abwesenheit"
+                      : item.source === "weeklyplan_assignment"
+                        ? "Wochenplan"
                       : "Wochenplan";
+                const isClickable = Boolean(item.targetUrl);
                 const actionLabel = item.action === "updated" ? "Geändert" : "Neu";
                 return (
-                  <div key={item.id} className="rounded-lg border p-3 space-y-1">
+                  <div
+                    key={item.id}
+                    className={`rounded-lg border p-3 space-y-1 ${
+                      isDutyPlanChange ? "border-rose-200 bg-rose-50/40" : ""
+                    } ${isClickable ? "cursor-pointer hover:bg-muted/40" : ""}`}
+                    onClick={
+                      item.targetUrl ? () => setLocation(item.targetUrl as string) : undefined
+                    }
+                    role={isClickable ? "button" : undefined}
+                    tabIndex={isClickable ? 0 : undefined}
+                    onKeyDown={
+                      item.targetUrl
+                        ? (event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              setLocation(item.targetUrl as string);
+                            }
+                          }
+                        : undefined
+                    }
+                  >
                     <div className="flex items-center justify-between gap-2">
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                      <Badge
+                        variant="outline"
+                        className={`text-[10px] px-1.5 py-0 ${
+                          isDutyPlanChange
+                            ? "border-rose-300 text-rose-700"
+                            : ""
+                        }`}
+                      >
                         {sourceLabel}
                       </Badge>
                       <span className="text-[10px] text-muted-foreground">
                         {actionLabel}{changedAtLabel ? ` • ${changedAtLabel}` : ""}
                       </span>
                     </div>
-                    <p className="text-xs font-medium text-foreground leading-snug">
+                    <p
+                      className={`text-xs font-medium leading-snug ${
+                        isDutyPlanChange ? "text-rose-700" : "text-foreground"
+                      }`}
+                    >
                       {item.title}
                     </p>
                     {item.subtitle ? (

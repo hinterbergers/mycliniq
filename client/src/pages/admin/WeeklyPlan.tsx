@@ -273,6 +273,16 @@ const toIsoDateOnly = (value: unknown): string | null => {
   return null;
 };
 
+const parseIsoDateLocal = (value: string): Date | null => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
 type NoteDialogState = {
   roomId: number;
   weekday: number;
@@ -492,6 +502,44 @@ export default function WeeklyPlan() {
   const [rightPaneOffset, setRightPaneOffset] = useState(96);
   const draggedRoomIdRef = useRef<number | null>(null);
   const toolbarRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const search = new URLSearchParams(window.location.search);
+
+    const dayParam = search.get("day");
+    if (dayParam) {
+      const date = parseIsoDateLocal(dayParam);
+      if (date) {
+        setCurrentDate(date);
+        const weekday = ((date.getDay() + 6) % 7) + 1;
+        setSelectedWeekday(weekday);
+        return;
+      }
+    }
+
+    const yearParam = Number(search.get("year"));
+    const weekParam = Number(search.get("week"));
+    const weekdayParam = Number(search.get("weekday"));
+    if (
+      Number.isInteger(yearParam) &&
+      Number.isInteger(weekParam) &&
+      weekParam >= 1 &&
+      weekParam <= 53
+    ) {
+      const weekStartDate = weekValueToDate(`${weekParam}-${yearParam}`);
+      if (weekStartDate) {
+        setCurrentDate(weekStartDate);
+        if (
+          Number.isInteger(weekdayParam) &&
+          weekdayParam >= 1 &&
+          weekdayParam <= 7
+        ) {
+          setSelectedWeekday(weekdayParam);
+        }
+      }
+    }
+  }, []);
 
   useLayoutEffect(() => {
     const toolbar = toolbarRef.current;
