@@ -250,7 +250,7 @@ const MONTH_NAMES = [
 ];
 
 export default function Dashboard() {
-  const { employee, user, can, token } = useAuth();
+  const { employee, user, can, token, isAdmin, viewAsUser } = useAuth();
   const [, setLocation] = useLocation();
 
   const firstName =
@@ -528,12 +528,13 @@ export default function Dashboard() {
   const sopsEnabled = isWidgetEnabled("sops_new");
   const favoritesEnabled = isWidgetEnabled("favorites");
   const canSeeRecentChanges =
-    Boolean(user?.isAdmin) ||
-    user?.appRole === "Editor" ||
-    user?.appRole === "Admin" ||
-    can("dutyplan.edit") ||
-    can("dutyplan.publish") ||
-    can("weeklyplan.edit");
+    !viewAsUser &&
+    (isAdmin ||
+      user?.appRole === "Editor" ||
+      user?.appRole === "Admin" ||
+      can("dutyplan.edit") ||
+      can("dutyplan.publish") ||
+      can("weeklyplan.edit"));
   const recentChanges = canSeeRecentChanges
     ? (dashboardData?.recentChanges ?? [])
     : [];
