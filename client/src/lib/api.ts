@@ -125,6 +125,9 @@ export type DashboardAttendanceMember = {
   firstName: string | null;
   lastName: string | null;
   workplace: string | null;
+  workplaceRoomId?: number | null;
+  workplaceSortOrder?: number | null;
+  workplaceColor?: string | null;
   role: string | null;
   isDuty: boolean;
 };

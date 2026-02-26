@@ -2854,6 +2854,8 @@ export async function registerRoutes(
           Array<{
             roomId: number;
             roomName: string | null;
+            roomColor: string | null;
+            roomSortOrder: number | null;
             roleLabel: string | null;
             employeeId: number | null;
             firstName: string | null;
@@ -2870,6 +2872,8 @@ export async function registerRoutes(
               .select({
                 roomId: weeklyPlanAssignments.roomId,
                 roomName: rooms.name,
+                roomColor: rooms.rowColor,
+                roomSortOrder: rooms.weeklyPlanSortOrder,
                 roleLabel: weeklyPlanAssignments.roleLabel,
                 employeeId: weeklyPlanAssignments.employeeId,
                 weekday: weeklyPlanAssignments.weekday,
@@ -3017,6 +3021,9 @@ export async function registerRoutes(
           firstName: string | null;
           lastName: string | null;
           workplace: string | null;
+          workplaceRoomId?: number | null;
+          workplaceSortOrder?: number | null;
+          workplaceColor?: string | null;
           role: string | null;
           isDuty: boolean;
         };
@@ -3115,7 +3122,17 @@ const buildAttendanceMembers = (
               roleLabel: assignment.roleLabel,
             });
 
-            members.push({ employeeId, firstName, lastName, workplace, role, isDuty });
+            members.push({
+              employeeId,
+              firstName,
+              lastName,
+              workplace,
+              workplaceRoomId: assignment.roomId ?? null,
+              workplaceSortOrder: assignment.roomSortOrder ?? null,
+              workplaceColor: normalizeName(assignment.roomColor),
+              role,
+              isDuty,
+            });
           }
 
           // Sortierung: zuerst Hierarchie, dann alphabetisch (wenn Rang gleich)

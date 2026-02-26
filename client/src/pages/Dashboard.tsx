@@ -153,6 +153,12 @@ const normalizeWorkplace = (value?: string | null) => {
   return trimmed;
 };
 
+const withHexAlpha = (color?: string | null, alphaHex = "14") => {
+  const value = (color ?? "").trim();
+  if (!/^#([0-9a-fA-F]{6})$/.test(value)) return null;
+  return `${value}${alphaHex}`;
+};
+
 const getRoleRank = (role?: string | null) => {
   const r = (role ?? "").toLowerCase();
   if (!r) return 99;
@@ -689,22 +695,56 @@ export default function Dashboard() {
       return <p className="text-sm text-muted-foreground">Keine Daten verfuegbar.</p>;
     }
 
-    const groups = new Map<string, DashboardAttendanceMember[]>();
+    const groups = new Map<
+      string,
+      {
+        label: string;
+        roomId: number | null;
+        sortOrder: number | null;
+        color: string | null;
+        members: DashboardAttendanceMember[];
+      }
+    >();
     for (const member of members) {
       const workplace = normalizeWorkplace(member.workplace) ?? "Ohne Arbeitsplatz";
-      const list = groups.get(workplace) ?? [];
-      list.push(member);
-      groups.set(workplace, list);
+      const key =
+        member.workplaceRoomId != null
+          ? `room-${member.workplaceRoomId}`
+          : `label-${workplace}`;
+      const group = groups.get(key) ?? {
+        label: workplace,
+        roomId: member.workplaceRoomId ?? null,
+        sortOrder:
+          typeof member.workplaceSortOrder === "number"
+            ? member.workplaceSortOrder
+            : null,
+        color: member.workplaceColor ?? null,
+        members: [],
+      };
+      group.members.push(member);
+      if (group.color == null && member.workplaceColor) {
+        group.color = member.workplaceColor;
+      }
+      if (
+        group.sortOrder == null &&
+        typeof member.workplaceSortOrder === "number"
+      ) {
+        group.sortOrder = member.workplaceSortOrder;
+      }
+      groups.set(key, group);
     }
 
-    const sortedGroups = Array.from(groups.entries()).sort((a, b) =>
-      a[0].localeCompare(b[0], "de"),
-    );
+    const sortedGroups = Array.from(groups.values()).sort((a, b) => {
+      const orderA = typeof a.sortOrder === "number" ? a.sortOrder : 9999;
+      const orderB = typeof b.sortOrder === "number" ? b.sortOrder : 9999;
+      if (orderA !== orderB) return orderA - orderB;
+      return a.label.localeCompare(b.label, "de");
+    });
 
     return (
       <div className="space-y-4">
-        {sortedGroups.map(([workplace, people], groupIndex) => {
-          const sortedPeople = [...people].sort((a, b) => {
+        {sortedGroups.map((group, groupIndex) => {
+          const sortedPeople = [...group.members].sort((a, b) => {
             const aLast = (a.lastName ?? "").trim();
             const bLast = (b.lastName ?? "").trim();
             const lastCmp = aLast.localeCompare(bLast, "de");
@@ -715,18 +755,31 @@ export default function Dashboard() {
           });
 
           return (
-            <Fragment key={`${testPrefix}-group-${workplace}`}>
+            <Fragment key={`${testPrefix}-group-${group.roomId ?? group.label}`}>
               {groupIndex > 0 ? <Separator /> : null}
-              <div className="space-y-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {workplace}
+              <div
+                className="space-y-2 rounded-md p-2"
+                style={
+                  group.color
+                    ? {
+                        backgroundColor: withHexAlpha(group.color, "12") ?? undefined,
+                        border: `1px solid ${withHexAlpha(group.color, "44") ?? group.color}`,
+                      }
+                    : undefined
+                }
+              >
+                <p
+                  className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                  style={group.color ? { color: group.color } : undefined}
+                >
+                  {group.label}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {sortedPeople.map((person, personIndex) => {
                     const name = buildFullName(person.firstName, person.lastName) || "Kolleg:in";
                     return (
                       <Badge
-                        key={`${testPrefix}-${workplace}-${person.employeeId}-${personIndex}`}
+                        key={`${testPrefix}-${group.label}-${person.employeeId}-${personIndex}`}
                         variant="secondary"
                         className={`px-3 py-1.5 text-sm font-medium ${
                           person.isDuty ? STAFF_BADGE_DUTY : STAFF_BADGE_NORMAL
@@ -1223,14 +1276,9 @@ export default function Dashboard() {
           {renderHeroCard()}
         </div>
         <div className="md:col-span-12 grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-4">{renderAttendanceCard()}</div>
-          <div className="lg:col-span-4">{renderRecentChangesCard()}</div>
-          <div className="lg:col-span-4">{absencesEnabled && renderAbsencesCard()}</div>
-        </div>
-        <div className="md:col-span-12 grid grid-cols-1 xl:grid-cols-12 gap-6">
-          <div className="xl:col-span-8">{renderMiscWidgets()}</div>
-          <div className="xl:col-span-4 space-y-6">
-            {renderBirthdayCard()}
+          <div className="lg:col-span-6">{renderAttendanceCard()}</div>
+          <div className="lg:col-span-3 space-y-6">
+            {renderRecentChangesCard()}
             {weekPreviewEnabled && (
               <Card className="border-none kabeg-shadow flex flex-col">
                 <CardHeader>
@@ -1246,6 +1294,13 @@ export default function Dashboard() {
               </Card>
             )}
           </div>
+          <div className="lg:col-span-3 space-y-6">
+            {absencesEnabled && renderAbsencesCard()}
+            {renderBirthdayCard()}
+          </div>
+        </div>
+        <div className="md:col-span-12">
+          {renderMiscWidgets()}
         </div>
       </div>
 
