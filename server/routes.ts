@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import {
   db,
   asc,
+  desc,
   or,
   gte,
   lte,
@@ -1076,6 +1077,18 @@ export async function registerRoutes(
     )
       return true;
     return req.user.capabilities?.includes("dutyplan.edit") ?? false;
+  };
+
+  const canSeeDashboardRecentChanges = (req: Request): boolean => {
+    if (!req.user) return false;
+    if (req.user.isAdmin) return true;
+    if (req.user.appRole === "Editor" || req.user.appRole === "Admin") return true;
+    const caps = req.user.capabilities ?? [];
+    return (
+      caps.includes("dutyplan.edit") ||
+      caps.includes("dutyplan.publish") ||
+      caps.includes("weeklyplan.edit")
+    );
   };
 
   const overlapsMonth = (
@@ -3172,6 +3185,96 @@ const buildAttendanceMembers = (
           duty: todayDuty,
           ze: null,
         };
+
+        let recentChanges: Array<{
+          id: string;
+          source: "dutyplan_absence" | "weeklyplan_override";
+          changedAt: Date | string;
+          action: "created" | "updated";
+          title: string;
+          subtitle: string | null;
+        }> = [];
+
+        if (canSeeDashboardRecentChanges(req)) {
+          const [plannedChangeRows, weeklyOverrideRows] = await Promise.all([
+            db
+              .select({
+                id: plannedAbsences.id,
+                startDate: plannedAbsences.startDate,
+                endDate: plannedAbsences.endDate,
+                reason: plannedAbsences.reason,
+                status: plannedAbsences.status,
+                createdAt: plannedAbsences.createdAt,
+                updatedAt: plannedAbsences.updatedAt,
+                firstName: employees.firstName,
+                lastName: employees.lastName,
+              })
+              .from(plannedAbsences)
+              .leftJoin(employees, eq(plannedAbsences.employeeId, employees.id))
+              .orderBy(desc(plannedAbsences.updatedAt))
+              .limit(25),
+            db
+              .select({
+                id: dailyOverrides.id,
+                date: dailyOverrides.date,
+                createdAt: dailyOverrides.createdAt,
+                roomName: rooms.name,
+                reason: dailyOverrides.reason,
+              })
+              .from(dailyOverrides)
+              .leftJoin(rooms, eq(dailyOverrides.roomId, rooms.id))
+              .orderBy(desc(dailyOverrides.createdAt))
+              .limit(25),
+          ]);
+
+          const plannedItems = plannedChangeRows.map((row) => {
+            const changedAt = row.updatedAt ?? row.createdAt;
+            const createdMs =
+              row.createdAt instanceof Date
+                ? row.createdAt.getTime()
+                : new Date(String(row.createdAt)).getTime();
+            const updatedMs =
+              changedAt instanceof Date
+                ? changedAt.getTime()
+                : new Date(String(changedAt)).getTime();
+            const action: "created" | "updated" =
+              Math.abs(updatedMs - createdMs) < 1000 ? "created" : "updated";
+            const employeeName =
+              formatDisplayName(row.firstName, row.lastName) || "Unbekannt";
+            const dateRange =
+              row.startDate === row.endDate
+                ? String(row.startDate)
+                : `${row.startDate} bis ${row.endDate}`;
+            return {
+              id: `planned-${row.id}`,
+              source: "dutyplan_absence" as const,
+              changedAt,
+              action,
+              title: `Dienstplan: ${employeeName} (${row.reason})`,
+              subtitle: `${dateRange}${row.status ? ` • ${row.status}` : ""}`,
+            };
+          });
+
+          const weeklyItems = weeklyOverrideRows.map((row) => {
+            const roomName = normalize(row.roomName) || "Raum";
+            return {
+              id: `override-${row.id}`,
+              source: "weeklyplan_override" as const,
+              changedAt: row.createdAt,
+              action: "created" as const,
+              title: `Wochenplan: ${String(row.date)} • ${roomName}`,
+              subtitle: normalize(row.reason) || "Tages-Override angelegt",
+            };
+          });
+
+          recentChanges = [...plannedItems, ...weeklyItems]
+            .sort((a, b) => {
+              const aTime = new Date(a.changedAt).getTime();
+              const bTime = new Date(b.changedAt).getTime();
+              return bTime - aTime;
+            })
+            .slice(0, 10);
+        }
         // --- Attendance widget (Heute / Morgen) -----------------------------------
         const todayMeta = previewMeta[0];
         const tomorrowMeta = previewMeta[1];
@@ -3276,6 +3379,7 @@ const buildAttendanceMembers = (
           birthday,
           weekPreview,
           attendanceWidget,
+          recentChanges,
         });
         } catch (error) {
           console.error("[Dashboard] Error:", error);

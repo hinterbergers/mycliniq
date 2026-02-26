@@ -35,6 +35,7 @@ import {
   rosterSettingsApi,
   type DashboardAbsencesResponse,
   type DashboardAttendanceMember,
+  type DashboardRecentChange,
   type DashboardResponse,
   type NextPlanningMonth,
 } from "@/lib/api";
@@ -503,6 +504,16 @@ export default function Dashboard() {
   const documentsEnabled = isWidgetEnabled("documents");
   const sopsEnabled = isWidgetEnabled("sops_new");
   const favoritesEnabled = isWidgetEnabled("favorites");
+  const canSeeRecentChanges =
+    Boolean(user?.isAdmin) ||
+    user?.appRole === "Editor" ||
+    user?.appRole === "Admin" ||
+    can("dutyplan.edit") ||
+    can("dutyplan.publish") ||
+    can("weeklyplan.edit");
+  const recentChanges = canSeeRecentChanges
+    ? (dashboardData?.recentChanges ?? [])
+    : [];
 
   const mobilePanelEnabled = weekPreviewEnabled || attendanceEnabled;
 
@@ -836,6 +847,63 @@ export default function Dashboard() {
     </Card>
   );
 
+  const renderRecentChangesCard = () => {
+    if (!canSeeRecentChanges) return null;
+
+    return (
+      <Card className="border-none kabeg-shadow flex flex-col">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Clock className="w-5 h-5" />
+            Letzte Änderungen
+          </CardTitle>
+          <CardDescription>Abwesenheiten (Dienstplan/Wochenplan), max. 10</CardDescription>
+        </CardHeader>
+        <CardContent className="pt-0">
+          {isLoadingDashboard ? (
+            <p className="text-sm text-muted-foreground">Änderungen werden geladen…</p>
+          ) : dashboardError ? (
+            <p className="text-sm text-destructive">Fehler: {dashboardError}</p>
+          ) : recentChanges.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Keine Änderungen vorhanden.</p>
+          ) : (
+            <div className="space-y-3">
+              {recentChanges.map((item: DashboardRecentChange) => {
+                const changedAtDate = new Date(item.changedAt);
+                const changedAtLabel = Number.isNaN(changedAtDate.getTime())
+                  ? ""
+                  : format(changedAtDate, "dd.MM. HH:mm", { locale: de });
+                const sourceLabel =
+                  item.source === "dutyplan_absence" ? "Dienstplan" : "Wochenplan";
+                const actionLabel = item.action === "updated" ? "Geändert" : "Neu";
+                return (
+                  <div key={item.id} className="rounded-lg border p-3 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                        {sourceLabel}
+                      </Badge>
+                      <span className="text-[10px] text-muted-foreground">
+                        {actionLabel}{changedAtLabel ? ` • ${changedAtLabel}` : ""}
+                      </span>
+                    </div>
+                    <p className="text-xs font-medium text-foreground leading-snug">
+                      {item.title}
+                    </p>
+                    {item.subtitle ? (
+                      <p className="text-xs text-muted-foreground leading-snug">
+                        {item.subtitle}
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  };
+
   const renderMiscWidgets = () => {
     if (!documentsEnabled && !sopsEnabled && !favoritesEnabled) return null;
 
@@ -1020,6 +1088,7 @@ export default function Dashboard() {
           {renderMiscWidgets()}
         </div>
         <div className="md:col-span-4 space-y-6">
+          {renderRecentChangesCard()}
           {renderBirthdayCard()}
           {weekPreviewEnabled && (
             <Card className="border-none kabeg-shadow flex flex-col">
@@ -1080,6 +1149,7 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         )}
+        {renderRecentChangesCard()}
         {renderBirthdayCard()}
         {absencesEnabled && renderAbsencesCard()}
         {renderMiscWidgets()}

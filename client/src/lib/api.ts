@@ -116,6 +116,7 @@ export type DashboardResponse = {
   birthday: null | { firstName: string | null; lastName: string | null };
   weekPreview: DashboardDay[];
   attendanceWidget: DashboardAttendanceWidget | null;
+  recentChanges?: DashboardRecentChange[];
   enabledWidgets?: DashboardWidgetKey[];
 };
 
@@ -152,6 +153,15 @@ export type DashboardAbsencesResponse = {
   from: string;
   to: string;
   days: DashboardAbsenceDay[];
+};
+
+export type DashboardRecentChange = {
+  id: string;
+  source: "dutyplan_absence" | "weeklyplan_override";
+  changedAt: string;
+  action: "created" | "updated";
+  title: string;
+  subtitle: string | null;
 };
 
 export type PlanningStateResponse = {
