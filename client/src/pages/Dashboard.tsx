@@ -1021,9 +1021,9 @@ export default function Dashboard() {
         </div>
         {canCreateAbsence && (
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
-            className="text-sm"
+            className="text-sm font-medium"
             onClick={() => setLocation("/admin/urlaubsplan")}
           >
             Abwesenheit eintragen
