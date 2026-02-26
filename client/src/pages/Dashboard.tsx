@@ -18,6 +18,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   CalendarDays,
   CalendarClock,
@@ -247,6 +248,9 @@ export default function Dashboard() {
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [isAcceptingZe, setIsAcceptingZe] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<"week" | "team">("week");
+  const [attendanceViewMode, setAttendanceViewMode] = useState<
+    "people" | "workplaces"
+  >("people");
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const { toast } = useToast();
   const [absencesData, setAbsencesData] =
@@ -677,9 +681,88 @@ export default function Dashboard() {
     </div>
   );
 
+  const renderAttendanceByWorkplaces = (
+    members: DashboardAttendanceMember[],
+    testPrefix: string,
+  ) => {
+    if (members.length === 0) {
+      return <p className="text-sm text-muted-foreground">Keine Daten verfuegbar.</p>;
+    }
+
+    const groups = new Map<string, DashboardAttendanceMember[]>();
+    for (const member of members) {
+      const workplace = normalizeWorkplace(member.workplace) ?? "Ohne Arbeitsplatz";
+      const list = groups.get(workplace) ?? [];
+      list.push(member);
+      groups.set(workplace, list);
+    }
+
+    const sortedGroups = Array.from(groups.entries()).sort((a, b) =>
+      a[0].localeCompare(b[0], "de"),
+    );
+
+    return (
+      <div className="space-y-4">
+        {sortedGroups.map(([workplace, people], groupIndex) => {
+          const sortedPeople = [...people].sort((a, b) => {
+            const aLast = (a.lastName ?? "").trim();
+            const bLast = (b.lastName ?? "").trim();
+            const lastCmp = aLast.localeCompare(bLast, "de");
+            if (lastCmp !== 0) return lastCmp;
+            const aFirst = (a.firstName ?? "").trim();
+            const bFirst = (b.firstName ?? "").trim();
+            return aFirst.localeCompare(bFirst, "de");
+          });
+
+          return (
+            <Fragment key={`${testPrefix}-group-${workplace}`}>
+              {groupIndex > 0 ? <Separator /> : null}
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {workplace}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {sortedPeople.map((person, personIndex) => {
+                    const name = buildFullName(person.firstName, person.lastName) || "Kolleg:in";
+                    return (
+                      <Badge
+                        key={`${testPrefix}-${workplace}-${person.employeeId}-${personIndex}`}
+                        variant="secondary"
+                        className={`px-3 py-1.5 text-sm font-medium ${
+                          person.isDuty ? STAFF_BADGE_DUTY : STAFF_BADGE_NORMAL
+                        }`}
+                        data-testid={`${testPrefix}-${groupIndex}-${personIndex}`}
+                      >
+                        {name}
+                      </Badge>
+                    );
+                  })}
+                </div>
+              </div>
+            </Fragment>
+          );
+        })}
+      </div>
+    );
+  };
+
   const renderAttendanceCardContent = () => (
     <div className="space-y-4 md:px-6 md:pb-6">
-      {renderAttendanceBadges(presentToday, "staff-present")}
+      <Tabs
+        value={attendanceViewMode}
+        onValueChange={(value) =>
+          setAttendanceViewMode(value === "workplaces" ? "workplaces" : "people")
+        }
+      >
+        <TabsList className="grid w-full max-w-xs grid-cols-2">
+          <TabsTrigger value="people">Personen</TabsTrigger>
+          <TabsTrigger value="workplaces">Arbeitsplätze</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {attendanceViewMode === "workplaces"
+        ? renderAttendanceByWorkplaces(presentToday, "staff-workplace-present")
+        : renderAttendanceBadges(presentToday, "staff-present")}
 
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Clock className="w-4 h-4" />
@@ -697,7 +780,12 @@ export default function Dashboard() {
           <CalendarDays className="w-4 h-4 text-muted-foreground" />
           <p className="text-sm font-medium">Team morgen</p>
         </div>
-        {renderAttendanceBadges(presentTomorrow, "staff-tomorrow")}
+        {attendanceViewMode === "workplaces"
+          ? renderAttendanceByWorkplaces(
+              presentTomorrow,
+              "staff-workplace-tomorrow",
+            )
+          : renderAttendanceBadges(presentTomorrow, "staff-tomorrow")}
       </div>
     </div>
   );
