@@ -20,6 +20,12 @@ const toTel = (value?: string | null) => {
   return normalized ? `tel:${normalized}` : null;
 };
 
+const formatServiceTypeLabel = (value: string) => {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "overduty") return "Überdienst";
+  return value;
+};
+
 export default function PersonCard() {
   const params = useParams<{ id: string }>();
   const employeeId = Number(params.id);
@@ -205,13 +211,17 @@ export default function PersonCard() {
                         >
                           <div className="font-medium">{day}</div>
                           {duties.length > 0 && (
-                            <div className="text-muted-foreground">
-                              Dienste: {duties.join(", ")}
+                            <div className="mt-1 rounded-md bg-blue-50 px-2 py-1 text-blue-900">
+                              <span className="font-medium">Dienst:</span>{" "}
+                              {duties.map(formatServiceTypeLabel).join(", ")}
                             </div>
                           )}
                           {workplaces.length > 0 && (
-                            <div className="text-muted-foreground">
-                              Arbeitsplaetze: {workplaces.join(", ")}
+                            <div className="mt-1 text-muted-foreground">
+                              <span className="font-medium text-foreground">
+                                Arbeitsplatz:
+                              </span>{" "}
+                              {workplaces.join(", ")}
                             </div>
                           )}
                         </div>
