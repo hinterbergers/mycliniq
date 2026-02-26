@@ -406,10 +406,8 @@ export function registerSearchRoutes(router: Router) {
           );
           if (!includesAllTokens(searchable, tokens)) return null;
 
-          // Global search must respect the employee's visibility toggle.
-          // Own profile may still see private entries.
-          const canSeePrivate =
-            person.id === user.employeeId || Boolean(person.showPrivateContact);
+          // Global search strictly follows the employee visibility toggle.
+          const canSeePrivate = Boolean(person.showPrivateContact);
 
           return {
             id: person.id,
