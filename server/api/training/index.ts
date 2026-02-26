@@ -370,7 +370,13 @@ async function convertPdfToMp4Preview(pdfPath: string): Promise<string> {
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
   if (!slideImages.length) {
-    fs.rmSync(slidesDir, { recursive: true, force: true });
+    try {
+      fs.rmSync(slidesDir, { recursive: true, force: true });
+    } catch (error: any) {
+      console.warn(
+        `[training] cleanup slides dir failed: ${error?.message ?? error}`,
+      );
+    }
     throw new Error("Keine Folienbilder fuer MP4-Vorschau erzeugt");
   }
 
@@ -404,7 +410,13 @@ async function convertPdfToMp4Preview(pdfPath: string): Promise<string> {
       { cwd: slidesDir },
     );
   } finally {
-    fs.rmSync(slidesDir, { recursive: true, force: true });
+    try {
+      fs.rmSync(slidesDir, { recursive: true, force: true });
+    } catch (error: any) {
+      console.warn(
+        `[training] cleanup slides dir failed: ${error?.message ?? error}`,
+      );
+    }
   }
 
   if (!fs.existsSync(mp4Path)) {
