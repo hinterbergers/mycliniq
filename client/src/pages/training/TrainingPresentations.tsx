@@ -76,6 +76,21 @@ export default function TrainingPresentations() {
     setSearchTerm((prev) => (prev === nextQ ? prev : nextQ));
   }, [location]);
 
+  useEffect(() => {
+    if (!presentations.length) return;
+    const queryIndex = location.indexOf("?");
+    const search = queryIndex >= 0 ? location.slice(queryIndex) : "";
+    const params = new URLSearchParams(search);
+    const presentationId = Number(params.get("presentationId"));
+    if (!Number.isFinite(presentationId)) return;
+    const target = presentations.find(
+      (presentation) => presentation.id === presentationId,
+    );
+    if (target) {
+      setSelectedPresentation(target);
+    }
+  }, [location, presentations]);
+
   const normalizedSearch = searchTerm.trim().toLowerCase();
   const tags = useMemo(() => {
     const set = new Set<string>();

@@ -131,6 +131,19 @@ export default function TrainingVideos() {
   }, [location]);
 
   useEffect(() => {
+    if (!videos.length) return;
+    const queryIndex = location.indexOf("?");
+    const search = queryIndex >= 0 ? location.slice(queryIndex) : "";
+    const params = new URLSearchParams(search);
+    const videoId = Number(params.get("videoId"));
+    if (!Number.isFinite(videoId)) return;
+    const target = videos.find((video) => video.id === videoId);
+    if (target) {
+      setSelectedVideo(target);
+    }
+  }, [location, videos]);
+
+  useEffect(() => {
     if (!videos.length) {
       setSelectedVideo(null);
       return;

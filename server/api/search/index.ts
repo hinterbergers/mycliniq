@@ -325,7 +325,7 @@ export function registerSearchRoutes(router: Router) {
               .filter(Boolean)
               .join(" • "),
             keywords: sop.keywords ?? [],
-            url: `/wissen?q=${encodeURIComponent(normalize(q))}`,
+            url: `/wissen?q=${encodeURIComponent(normalize(q))}&sopId=${sop.id}`,
             score:
               scoreMatch(normalizeText(title), tokens) * 4 +
               scoreMatch(normalizeText(keywordText), tokens) * 2 +
@@ -354,7 +354,7 @@ export function registerSearchRoutes(router: Router) {
             title: video.title,
             subtitle: video.platform || "Video",
             keywords: video.keywords ?? [],
-            url: `/fortbildung/videos?q=${encodeURIComponent(normalize(q))}`,
+            url: `/fortbildung/videos?q=${encodeURIComponent(normalize(q))}&videoId=${video.id}`,
             score:
               scoreMatch(normalizeText(title), tokens) * 4 +
               scoreMatch(normalizeText(keywordText), tokens) * 2,
@@ -380,7 +380,7 @@ export function registerSearchRoutes(router: Router) {
             title: presentation.title,
             subtitle: presentation.mimeType || "Praesentation",
             keywords: presentation.keywords ?? [],
-            url: `/fortbildung/presentations?q=${encodeURIComponent(normalize(q))}`,
+            url: `/fortbildung/presentations?q=${encodeURIComponent(normalize(q))}&presentationId=${presentation.id}`,
             score:
               scoreMatch(normalizeText(title), tokens) * 4 +
               scoreMatch(normalizeText(keywordText), tokens) * 2,

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
@@ -152,6 +152,7 @@ export default function Guidelines() {
   const [detailSop, setDetailSop] = useState<SopDetail | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [docxDownloading, setDocxDownloading] = useState(false);
+  const lastDeepLinkedSopIdRef = useRef<number | null>(null);
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorSaving, setEditorSaving] = useState(false);
@@ -200,6 +201,23 @@ export default function Guidelines() {
     const nextQ = params.get("q") ?? "";
     setSearchTerm((prev) => (prev === nextQ ? prev : nextQ));
   }, [location]);
+
+  useEffect(() => {
+    if (!sops.length) return;
+    const queryIndex = location.indexOf("?");
+    const search = queryIndex >= 0 ? location.slice(queryIndex) : "";
+    const params = new URLSearchParams(search);
+    const sopIdParam = Number(params.get("sopId"));
+    if (!Number.isFinite(sopIdParam)) {
+      lastDeepLinkedSopIdRef.current = null;
+      return;
+    }
+    if (lastDeepLinkedSopIdRef.current === sopIdParam) return;
+    const target = sops.find((sop) => sop.id === sopIdParam);
+    if (!target) return;
+    lastDeepLinkedSopIdRef.current = sopIdParam;
+    void openDetail(target);
+  }, [location, sops]);
 
   const categories = useMemo(() => {
     const set = new Set(sops.map((sop) => normalizeSopCategory(sop.category)));
