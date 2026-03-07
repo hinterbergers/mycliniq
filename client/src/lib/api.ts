@@ -55,7 +55,11 @@ import {
   type DashboardWidgetKey,
 } from "@/lib/dashboard-widgets";
 
-const API_BASE = "/api";
+const EXTERNAL_API_BASE = import.meta.env.VITE_API_BASE_URL?.trim() ?? "";
+const NORMALIZED_EXTERNAL_API_BASE = EXTERNAL_API_BASE.replace(/\/+$/, "");
+const API_BASE = NORMALIZED_EXTERNAL_API_BASE
+  ? `${NORMALIZED_EXTERNAL_API_BASE}/api`
+  : "/api";
 
 type ApiEnvelope<T> = {
   success: boolean;
