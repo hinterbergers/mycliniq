@@ -89,8 +89,13 @@ async function clearSecureToken(): Promise<boolean> {
 export async function hydrateAuthToken(): Promise<string | null> {
   if (isNative()) {
     const secureValue = await readSecureToken();
-    tokenCache = secureValue;
-    return secureValue;
+    if (secureValue) {
+      tokenCache = secureValue;
+      return secureValue;
+    }
+    const localFallback = readLocalToken();
+    tokenCache = localFallback;
+    return localFallback;
   }
 
   const local = readLocalToken();
