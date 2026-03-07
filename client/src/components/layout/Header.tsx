@@ -8,6 +8,7 @@ import {
   Trash2,
   Users,
   Menu,
+  X,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -122,6 +123,7 @@ export function Header({
   const [personPreviewLoadingIds, setPersonPreviewLoadingIds] = useState<
     number[]
   >([]);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
 
   const canEditPlan =
     isAdmin || isTechnicalAdmin || capabilities.includes("dutyplan.edit");
@@ -166,6 +168,7 @@ export function Header({
 
   useEffect(() => {
     setHeaderSearchOpen(false);
+    setMobileSearchOpen(false);
   }, [location]);
 
   useEffect(() => {
@@ -434,6 +437,7 @@ export function Header({
 
   const navigateFromSearch = (url: string) => {
     setHeaderSearchOpen(false);
+    setMobileSearchOpen(false);
     setHeaderSearchQuery("");
     setHeaderSearchError(null);
     setHeaderSearchResults(null);
@@ -448,10 +452,231 @@ export function Header({
     return normalizedPhone ? `tel:${normalizedPhone}` : null;
   };
 
+  const renderSearchResults = (scrollClassName: string) => (
+    <>
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+          Suche
+        </p>
+        {headerSearchLoading ? (
+          <span className="text-xs text-muted-foreground">Suche…</span>
+        ) : headerSearchResults ? (
+          <span className="text-xs text-muted-foreground">
+            {headerSearchTotal} Treffer
+          </span>
+        ) : null}
+      </div>
+
+      {headerSearchError && (
+        <p className="text-sm text-destructive">{headerSearchError}</p>
+      )}
+
+      {!headerSearchError &&
+        !headerSearchLoading &&
+        headerSearchQuery.trim().length < 2 && (
+          <p className="text-sm text-muted-foreground">
+            Mindestens 2 Zeichen eingeben.
+          </p>
+        )}
+
+      {!headerSearchError &&
+        !headerSearchLoading &&
+        headerSearchResults &&
+        headerSearchTotal === 0 && (
+          <p className="text-sm text-muted-foreground">
+            Keine Treffer gefunden.
+          </p>
+        )}
+
+      {!headerSearchError && headerSearchResults && headerSearchTotal > 0 && (
+        <div className={`${scrollClassName} space-y-3 overflow-y-auto pr-1`}>
+          {headerSearchResults.groups.people.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">
+                Personen
+              </p>
+              {headerSearchResults.groups.people.map((person) => (
+                <div
+                  key={`person-${person.id}`}
+                  className="w-full rounded-lg border px-3 py-2 text-left"
+                >
+                  <button
+                    type="button"
+                    className="w-full text-left hover:opacity-90"
+                    onClick={() => navigateFromSearch(person.url)}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-medium truncate">
+                        {person.displayName}
+                      </p>
+                      <span className="text-xs text-muted-foreground">
+                        Visitenkarte
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {person.role || "Mitarbeiter:in"}
+                    </p>
+                  </button>
+
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {[
+                      {
+                        label: person.contacts.phoneWork,
+                        href: formatContactHref("tel", person.contacts.phoneWork),
+                      },
+                      {
+                        label: person.contacts.phonePrivate,
+                        href: formatContactHref("tel", person.contacts.phonePrivate),
+                      },
+                      {
+                        label: person.contacts.email,
+                        href: formatContactHref("mailto", person.contacts.email),
+                      },
+                      {
+                        label: person.contacts.emailPrivate,
+                        href: formatContactHref("mailto", person.contacts.emailPrivate),
+                      },
+                    ]
+                      .filter((item) => item.label && item.href)
+                      .slice(0, 4)
+                      .map((item) => (
+                        <a
+                          key={`${person.id}-${item.href}`}
+                          href={item.href!}
+                          className="inline-flex max-w-full items-center rounded border px-2 py-0.5 text-xs text-primary hover:bg-muted"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <span className="truncate">{item.label}</span>
+                        </a>
+                      ))}
+                    {![
+                      person.contacts.phoneWork,
+                      person.contacts.phonePrivate,
+                      person.contacts.email,
+                      person.contacts.emailPrivate,
+                    ].some(Boolean) && (
+                      <p className="text-xs text-muted-foreground">
+                        Keine oeffentlichen Kontaktdaten
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="mt-2 space-y-1">
+                    {personPreviewLoadingIds.includes(person.id) && (
+                      <p className="text-xs text-muted-foreground">
+                        Vorschau wird geladen…
+                      </p>
+                    )}
+                    {personPreviewById[person.id] === null &&
+                      !personPreviewLoadingIds.includes(person.id) && (
+                        <p className="text-xs text-muted-foreground">
+                          Vorschau konnte nicht geladen werden.
+                        </p>
+                      )}
+                    {personPreviewById[person.id] && (
+                      <>
+                        <p className="text-xs text-muted-foreground">
+                          Dienste (14 Tage):{" "}
+                          {personPreviewById[person.id]?.duties
+                            .slice(0, 3)
+                            .map((duty) => `${duty.date} ${duty.serviceType}`)
+                            .join(" • ") || "Keine"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Arbeitsplaetze:{" "}
+                          {Array.from(
+                            new Set(
+                              (personPreviewById[person.id]?.workplaces ?? [])
+                                .map((entry) => entry.workplace)
+                                .filter(Boolean),
+                            ),
+                          )
+                            .slice(0, 4)
+                            .join(", ") || "Keine"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Abwesenheiten:{" "}
+                          {personPreviewById[person.id]?.visibility.absences
+                            ? personPreviewById[person.id]?.absences.length
+                              ? personPreviewById[person.id]?.absences
+                                  .slice(0, 2)
+                                  .map(
+                                    (a) =>
+                                      `${a.startDate}${
+                                        a.endDate !== a.startDate
+                                          ? ` bis ${a.endDate}`
+                                          : ""
+                                      } (${a.reason})`,
+                                  )
+                                  .join(" • ")
+                              : "Keine"
+                            : "Keine Berechtigung"}
+                        </p>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {(
+            [
+              ["SOPs", headerSearchResults.groups.sops],
+              ["Videos", headerSearchResults.groups.videos],
+              ["PowerPoints", headerSearchResults.groups.presentations],
+            ] as const
+          ).map(([label, items]) =>
+            items.length ? (
+              <div key={label} className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">
+                  {label}
+                </p>
+                {items.map((item) => (
+                  <button
+                    key={`${item.type}-${item.id}`}
+                    type="button"
+                    className="w-full rounded-lg border px-3 py-2 text-left hover:bg-muted"
+                    onClick={() => navigateFromSearch(item.url)}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-medium truncate">
+                        {item.title}
+                      </p>
+                      <span className="text-xs text-muted-foreground">
+                        {item.type === "sop"
+                          ? "Wissen"
+                          : item.type === "video"
+                            ? "Video"
+                            : "Praes."}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {item.subtitle}
+                      {item.createdByLabel
+                        ? ` • Erstellt von ${item.createdByLabel}`
+                        : ""}
+                    </p>
+                    {item.keywords.length > 0 && (
+                      <p className="text-xs text-muted-foreground truncate">
+                        {item.keywords.slice(0, 4).join(", ")}
+                      </p>
+                    )}
+                  </button>
+                ))}
+              </div>
+            ) : null,
+          )}
+        </div>
+      )}
+    </>
+  );
+
   return (
-    <header
-      className="min-h-16 kabeg-header sticky top-0 z-30 px-4 md:px-6 pt-[env(safe-area-inset-top)] flex items-center justify-between shadow-sm"
-    >
+    <>
+      <header
+        className="min-h-16 kabeg-header sticky top-0 z-30 px-4 md:px-6 pt-[env(safe-area-inset-top)] flex items-center justify-between shadow-sm"
+      >
       <div className="flex items-center gap-2 min-w-0">
         <Button
           type="button"
@@ -470,7 +695,19 @@ export function Header({
         </h2>
       </div>
 
-      <div className="flex items-center gap-4 shrink-0">
+      <div className="flex items-center gap-2 md:gap-4 shrink-0">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="md:hidden rounded-full text-white/80 hover:text-white hover:bg-white/10"
+          aria-label="Suche öffnen"
+          onClick={() => setMobileSearchOpen((prev) => !prev)}
+          data-testid="button-mobile-search"
+        >
+          {mobileSearchOpen ? <X className="w-4 h-4" /> : <Search className="w-4 h-4" />}
+        </Button>
+
         <div ref={searchBoxRef} className="relative w-80 hidden md:block">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-white/60" />
           <Input
@@ -496,225 +733,7 @@ export function Header({
           />
           {headerSearchOpen && (
             <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[34rem] max-w-[80vw] rounded-xl border bg-background p-3 shadow-xl">
-              <div className="mb-2 flex items-center justify-between">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                  Suche
-                </p>
-                {headerSearchLoading ? (
-                  <span className="text-xs text-muted-foreground">Suche…</span>
-                ) : headerSearchResults ? (
-                  <span className="text-xs text-muted-foreground">
-                    {headerSearchTotal} Treffer
-                  </span>
-                ) : null}
-              </div>
-
-              {headerSearchError && (
-                <p className="text-sm text-destructive">{headerSearchError}</p>
-              )}
-
-              {!headerSearchError && !headerSearchLoading && headerSearchQuery.trim().length < 2 && (
-                <p className="text-sm text-muted-foreground">
-                  Mindestens 2 Zeichen eingeben.
-                </p>
-              )}
-
-              {!headerSearchError &&
-                !headerSearchLoading &&
-                headerSearchResults &&
-                headerSearchTotal === 0 && (
-                  <p className="text-sm text-muted-foreground">
-                    Keine Treffer gefunden.
-                  </p>
-                )}
-
-              {!headerSearchError && headerSearchResults && headerSearchTotal > 0 && (
-                <div className="max-h-[26rem] space-y-3 overflow-y-auto pr-1">
-                  {headerSearchResults.groups.people.length > 0 && (
-                    <div className="space-y-1">
-                      <p className="text-xs font-medium text-muted-foreground">
-                        Personen
-                      </p>
-                      {headerSearchResults.groups.people.map((person) => (
-                        <div
-                          key={`person-${person.id}`}
-                          className="w-full rounded-lg border px-3 py-2 text-left"
-                        >
-                          <button
-                            type="button"
-                            className="w-full text-left hover:opacity-90"
-                            onClick={() => navigateFromSearch(person.url)}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <p className="text-sm font-medium truncate">
-                                {person.displayName}
-                              </p>
-                            <span className="text-xs text-muted-foreground">
-                              Visitenkarte
-                            </span>
-                            </div>
-                            <p className="text-xs text-muted-foreground truncate">
-                              {person.role || "Mitarbeiter:in"}
-                            </p>
-                          </button>
-
-                          <div className="mt-1 flex flex-wrap gap-2">
-                            {[
-                              {
-                                label: person.contacts.phoneWork,
-                                href: formatContactHref("tel", person.contacts.phoneWork),
-                              },
-                              {
-                                label: person.contacts.phonePrivate,
-                                href: formatContactHref(
-                                  "tel",
-                                  person.contacts.phonePrivate,
-                                ),
-                              },
-                              {
-                                label: person.contacts.email,
-                                href: formatContactHref("mailto", person.contacts.email),
-                              },
-                              {
-                                label: person.contacts.emailPrivate,
-                                href: formatContactHref(
-                                  "mailto",
-                                  person.contacts.emailPrivate,
-                                ),
-                              },
-                            ]
-                              .filter((item) => item.label && item.href)
-                              .slice(0, 4)
-                              .map((item) => (
-                                <a
-                                  key={`${person.id}-${item.href}`}
-                                  href={item.href!}
-                                  className="inline-flex max-w-full items-center rounded border px-2 py-0.5 text-xs text-primary hover:bg-muted"
-                                  onClick={(event) => event.stopPropagation()}
-                                >
-                                  <span className="truncate">{item.label}</span>
-                                </a>
-                              ))}
-                            {![
-                              person.contacts.phoneWork,
-                              person.contacts.phonePrivate,
-                              person.contacts.email,
-                              person.contacts.emailPrivate,
-                            ].some(Boolean) && (
-                              <p className="text-xs text-muted-foreground">
-                                Keine oeffentlichen Kontaktdaten
-                              </p>
-                            )}
-                          </div>
-
-                          <div className="mt-2 space-y-1">
-                            {personPreviewLoadingIds.includes(person.id) && (
-                              <p className="text-xs text-muted-foreground">
-                                Vorschau wird geladen…
-                              </p>
-                            )}
-                            {personPreviewById[person.id] === null &&
-                              !personPreviewLoadingIds.includes(person.id) && (
-                                <p className="text-xs text-muted-foreground">
-                                  Vorschau konnte nicht geladen werden.
-                                </p>
-                              )}
-                            {personPreviewById[person.id] && (
-                              <>
-                                <p className="text-xs text-muted-foreground">
-                                  Dienste (14 Tage):{" "}
-                                  {personPreviewById[person.id]?.duties
-                                    .slice(0, 3)
-                                    .map((duty) => `${duty.date} ${duty.serviceType}`)
-                                    .join(" • ") || "Keine"}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  Arbeitsplaetze:{" "}
-                                  {Array.from(
-                                    new Set(
-                                      (personPreviewById[person.id]?.workplaces ?? [])
-                                        .map((entry) => entry.workplace)
-                                        .filter(Boolean),
-                                    ),
-                                  )
-                                    .slice(0, 4)
-                                    .join(", ") || "Keine"}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  Abwesenheiten:{" "}
-                                  {personPreviewById[person.id]?.visibility.absences
-                                    ? personPreviewById[person.id]?.absences.length
-                                      ? personPreviewById[person.id]?.absences
-                                          .slice(0, 2)
-                                          .map(
-                                            (a) =>
-                                              `${a.startDate}${
-                                                a.endDate !== a.startDate
-                                                  ? ` bis ${a.endDate}`
-                                                  : ""
-                                              } (${a.reason})`,
-                                          )
-                                          .join(" • ")
-                                      : "Keine"
-                                    : "Keine Berechtigung"}
-                                </p>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {(
-                    [
-                      ["SOPs", headerSearchResults.groups.sops],
-                      ["Videos", headerSearchResults.groups.videos],
-                      ["PowerPoints", headerSearchResults.groups.presentations],
-                    ] as const
-                  ).map(([label, items]) =>
-                    items.length ? (
-                      <div key={label} className="space-y-1">
-                        <p className="text-xs font-medium text-muted-foreground">
-                          {label}
-                        </p>
-                        {items.map((item) => (
-                          <button
-                            key={`${item.type}-${item.id}`}
-                            type="button"
-                            className="w-full rounded-lg border px-3 py-2 text-left hover:bg-muted"
-                            onClick={() => navigateFromSearch(item.url)}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <p className="text-sm font-medium truncate">
-                                {item.title}
-                              </p>
-                              <span className="text-xs text-muted-foreground">
-                                {item.type === "sop"
-                                  ? "Wissen"
-                                  : item.type === "video"
-                                    ? "Video"
-                                    : "Praes."}
-                              </span>
-                            </div>
-                            <p className="text-xs text-muted-foreground truncate">
-                              {item.subtitle}
-                              {item.createdByLabel
-                                ? ` • Erstellt von ${item.createdByLabel}`
-                                : ""}
-                            </p>
-                            {item.keywords.length > 0 && (
-                              <p className="text-xs text-muted-foreground truncate">
-                                {item.keywords.slice(0, 4).join(", ")}
-                              </p>
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null,
-                  )}
-                </div>
-              )}
+              {renderSearchResults("max-h-[26rem]")}
             </div>
           )}
         </div>
@@ -929,6 +948,31 @@ export function Header({
           <span>{today}</span>
         </Button>
       </div>
-    </header>
+      </header>
+
+      {mobileSearchOpen && (
+        <div className="fixed inset-x-0 top-[calc(env(safe-area-inset-top)+4rem)] z-40 px-3 md:hidden">
+          <div className="rounded-xl border bg-background p-3 shadow-xl">
+            <div className="relative mb-3">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                autoFocus
+                placeholder="Suchen..."
+                value={headerSearchQuery}
+                onChange={(event) => setHeaderSearchQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    setMobileSearchOpen(false);
+                  }
+                }}
+                className="pl-9"
+                data-testid="input-search-mobile"
+              />
+            </div>
+            {renderSearchResults("max-h-[55vh]")}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
