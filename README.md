@@ -38,3 +38,4 @@ VITE_API_BASE_URL=https://app.example.com
 Notes:
 - Capacitor uses `dist/public` as web assets (`capacitor.config.ts`).
 - Set `VITE_API_BASE_URL` before `mobile:sync:ios` so the iOS app calls your deployed backend.
+- Auth token storage uses secure native storage on iOS when the secure storage plugin is available, with automatic fallback.

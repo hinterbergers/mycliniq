@@ -9,7 +9,12 @@ import {
   type ReactNode,
 } from "react";
 import type { Employee } from "@shared/schema";
-import { clearAuthToken, readAuthToken, writeAuthToken } from "./authToken";
+import {
+  clearAuthToken,
+  hydrateAuthToken,
+  readAuthToken,
+  writeAuthToken,
+} from "./authToken";
 
 type SystemRole = 
   | "employee"
@@ -208,7 +213,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const resetAuthState = () => {
-    clearAuthToken();
+    void clearAuthToken();
     setToken(null);
     setEmployee(null);
     setUser(null);
@@ -359,13 +364,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Initial: Token laden + verifizieren
   useEffect(() => {
-    const saved = readAuthToken();
-    if (saved) {
-      setToken(saved);
-      void verifyToken(saved);
-    } else {
-      setIsLoading(false);
-    }
+    let cancelled = false;
+    const bootstrap = async () => {
+      const saved = await hydrateAuthToken();
+      if (cancelled) return;
+      if (saved) {
+        setToken(saved);
+        await verifyToken(saved);
+      } else {
+        setIsLoading(false);
+      }
+    };
+    void bootstrap();
+    return () => {
+      cancelled = true;
+    };
   }, [verifyToken]);
 
   useEffect(() => {
@@ -426,7 +439,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         setToken(authToken);
-        writeAuthToken(authToken);
+        await writeAuthToken(authToken);
 
         // schneller UI-Boost falls employee in login-response
         if (data?.employee) {
@@ -474,7 +487,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [token]);
 
   const refreshAuth = useCallback(async () => {
-    const saved = readAuthToken();
+    const saved = (await hydrateAuthToken()) ?? readAuthToken();
     if (!saved) {
       resetAuthState();
       setIsLoading(false);

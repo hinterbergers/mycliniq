@@ -73,6 +73,7 @@ import type {
 } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
+import { readAuthToken } from "@/lib/authToken";
 import { OVERDUTY_KEY, getServiceTypesForEmployee } from "@shared/shiftTypes";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -809,7 +810,7 @@ export default function EmployeeManagement() {
 
   const savePermissions = async (employee: Employee) => {
     if (!isTechnicalAdmin) return;
-    const token = localStorage.getItem("cliniq_auth_token");
+    const token = readAuthToken();
     const departmentId = employee.departmentId || currentUser?.departmentId;
     if (!departmentId) {
       throw new Error("Keine Abteilung zugeordnet");
@@ -2012,7 +2013,7 @@ export default function EmployeeManagement() {
   const loadPermissions = async (userId: number, departmentId?: number) => {
     setLoadingPermissions(true);
     try {
-      const token = localStorage.getItem("cliniq_auth_token");
+      const token = readAuthToken();
       const query = departmentId ? `?departmentId=${departmentId}` : "";
       const response = await fetch(
         `/api/admin/users/${userId}/permissions${query}`,
