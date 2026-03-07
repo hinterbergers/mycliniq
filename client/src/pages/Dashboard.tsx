@@ -51,6 +51,10 @@ import {
   DASHBOARD_WIDGETS,
   type DashboardWidgetKey,
 } from "@/lib/dashboard-widgets";
+import {
+  buildWidgetTodaySnapshot,
+  syncWidgetTodaySnapshot,
+} from "@/lib/mobileWidget";
 
 const DUTY_ABBREVIATIONS: Record<string, string> = {
   "gynaekologie (oa)": "Gyn",
@@ -428,6 +432,21 @@ export default function Dashboard() {
     if (hasWorkplace) return todayEntry.workplace;
     return `Mit: ${todayTeamNames.join(", ")}`;
   }, [todayEntry?.workplace, todayTeamNames]);
+
+  useEffect(() => {
+    const snapshot = buildWidgetTodaySnapshot({
+      today: todayEntry,
+      personName: buildFullName(employee?.firstName, employee?.lastName) || null,
+      teammateNames: todayTeamNames,
+    });
+    void syncWidgetTodaySnapshot(snapshot);
+  }, [
+    employee?.firstName,
+    employee?.lastName,
+    todayEntry,
+    todayTeamNames,
+  ]);
+
   const todayDutyLine = useMemo(() => {
     const duty = todayEntry?.duty;
     if (!duty) return null;
