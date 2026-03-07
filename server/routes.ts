@@ -581,6 +581,12 @@ const isMissingWeeklyRuleProfileColumnError = (error: unknown): boolean => {
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const isValidEmail = (value: string) =>
   EMAIL_REGEX.test(value) && !/[^\x00-\x7F]/.test(value);
+const USERNAME_REGEX = /^[a-zA-Z0-9._-]{3,50}$/;
+const normalizeUsername = (value: unknown): string | null => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length ? trimmed : null;
+};
 const DEFAULT_LAST_APPROVED = { year: 2026, month: 1 };
 const DEFAULT_SERVICE_LINES = [
   {
@@ -1221,15 +1227,21 @@ export async function registerRoutes(
   // Auth routes
   app.post("/api/auth/login", async (req: Request, res: Response) => {
     try {
-      const { email, password, rememberMe } = req.body;
+      const { password, rememberMe } = req.body;
+      const identifierRaw =
+        typeof req.body?.identifier === "string"
+          ? req.body.identifier
+          : req.body?.email;
+      const identifier =
+        typeof identifierRaw === "string" ? identifierRaw.trim() : "";
 
-      if (!email || !password) {
+      if (!identifier || !password) {
         return res
           .status(400)
-          .json({ error: "E-Mail und Passwort sind erforderlich" });
+          .json({ error: "E-Mail/Benutzername und Passwort sind erforderlich" });
       }
 
-      const employee = await storage.getEmployeeByEmail(email);
+      const employee = await storage.getEmployeeByLoginIdentifier(identifier);
       if (!employee) {
         return res.status(401).json({ error: "Ungültige Anmeldedaten" });
       }
@@ -1509,6 +1521,37 @@ export async function registerRoutes(
   app.patch("/api/employees/:id", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
+      const usernameValue = normalizeUsername(req.body?.username);
+      if (typeof req.body?.username !== "undefined") {
+        if (usernameValue && !USERNAME_REGEX.test(usernameValue)) {
+          return res.status(400).json({
+            error:
+              "Benutzername muss 3-50 Zeichen haben und darf nur Buchstaben, Zahlen, Punkt, Unterstrich oder Bindestrich enthalten.",
+          });
+        }
+
+        if (usernameValue) {
+          const duplicateRows = await db
+            .select({ id: employees.id })
+            .from(employees)
+            .where(
+              and(
+                ne(employees.id, id),
+                sql`lower(${employees.username}) = lower(${usernameValue})`,
+              ),
+            )
+            .limit(1);
+
+          if (duplicateRows.length > 0) {
+            return res.status(409).json({
+              error: "Dieser Benutzername ist bereits vergeben.",
+            });
+          }
+        }
+
+        req.body.username = usernameValue;
+      }
+
       if (typeof req.body?.email === "string") {
         const emailValue = req.body.email.trim();
         if (!emailValue || !isValidEmail(emailValue)) {
@@ -1533,7 +1576,12 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Employee not found" });
       }
       res.json(employee);
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.code === "23505") {
+        return res.status(409).json({
+          error: "Dieser Benutzername ist bereits vergeben.",
+        });
+      }
       res.status(500).json({ error: "Failed to update employee" });
     }
   });

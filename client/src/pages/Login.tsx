@@ -20,7 +20,7 @@ export default function Login() {
   const { login, isAuthenticated } = useAuth();
   const { toast } = useToast();
 
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -36,7 +36,7 @@ export default function Login() {
     setIsLoading(true);
 
     try {
-      await login(email, password, rememberMe);
+      await login(identifier, password, rememberMe);
       toast({
         title: "Willkommen!",
         description: "Sie wurden erfolgreich angemeldet.",
@@ -70,16 +70,16 @@ export default function Login() {
         <CardContent className="pt-4">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">E-Mail-Adresse</Label>
+              <Label htmlFor="identifier">E-Mail oder Benutzername</Label>
               <Input
-                id="email"
-                type="email"
-                placeholder="vorname.nachname@kabeg.at"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                id="identifier"
+                type="text"
+                placeholder="vorname.nachname@kabeg.at oder benutzername"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
                 required
-                autoComplete="email"
-                data-testid="input-email"
+                autoComplete="username"
+                data-testid="input-identifier"
               />
             </div>
 

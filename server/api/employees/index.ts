@@ -1,7 +1,7 @@
 import type { Router } from "express";
 import { z } from "zod";
 import { storage } from "../../storage";
-import { db, eq, and } from "../../lib/db";
+import { db, eq, and, ne, sql } from "../../lib/db";
 import {
   ok,
   created,
@@ -48,6 +48,7 @@ const createEmployeeSchema = insertEmployeeSchema.extend({
       "Geburtsdatum im Format YYYY-MM-DD erforderlich",
     ),
 });
+const USERNAME_REGEX = /^[a-zA-Z0-9._-]{3,50}$/;
 
 /**
  * Schema for updating preferences
@@ -239,6 +240,32 @@ export function registerEmployeeRoutes(router: Router) {
 
       // If firstName/lastName provided, update name
       let updateData = { ...data };
+      if (typeof data.username !== "undefined") {
+        const username =
+          typeof data.username === "string" ? data.username.trim() : "";
+        if (username.length > 0 && !USERNAME_REGEX.test(username)) {
+          return validationError(
+            res,
+            "Benutzername muss 3-50 Zeichen haben und darf nur Buchstaben, Zahlen, Punkt, Unterstrich oder Bindestrich enthalten.",
+          );
+        }
+        if (username.length > 0) {
+          const duplicateRows = await db
+            .select({ id: employees.id })
+            .from(employees)
+            .where(
+              and(
+                ne(employees.id, employeeId),
+                sql`lower(${employees.username}) = lower(${username})`,
+              ),
+            )
+            .limit(1);
+          if (duplicateRows.length > 0) {
+            return validationError(res, "Dieser Benutzername ist bereits vergeben.");
+          }
+        }
+        updateData.username = username.length > 0 ? username : null;
+      }
       if (data.firstName || data.lastName) {
         const firstName = data.firstName || existing.firstName || "";
         const lastName = data.lastName || existing.lastName || "";

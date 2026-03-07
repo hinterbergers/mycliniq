@@ -376,6 +376,7 @@ export const employees = pgTable(
       .notNull()
       .default(sql`ARRAY[]::text[]`),
     email: text("email"),
+    username: text("username"),
     emailPrivate: text("email_private"),
     phoneWork: text("phone_work"),
     phonePrivate: text("phone_private"),
@@ -408,6 +409,9 @@ export const employees = pgTable(
     index("employees_user_id_idx").on(table.userId),
     index("employees_department_id_idx").on(table.departmentId),
     index("employees_is_active_idx").on(table.isActive),
+    uniqueIndex("employees_username_ci_idx")
+      .on(sql`lower(${table.username})`)
+      .where(sql`${table.username} is not null`),
   ],
 );
 

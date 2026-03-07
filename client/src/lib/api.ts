@@ -128,8 +128,9 @@ export type DashboardAttendanceMember = {
   workplaceRoomId?: number | null;
   workplaceSortOrder?: number | null;
   workplaceColor?: string | null;
-  role: string | null;
-  isDuty: boolean;
+  role?: string | null;
+  roleRank?: number;
+  isDuty?: boolean;
 };
 
 export type DashboardAttendanceDay = {

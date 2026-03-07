@@ -61,7 +61,7 @@ import {
   plannedAbsences,
   calendarTokens,
 } from "@shared/schema";
-import { eq, and, gte, lte, desc, gt } from "drizzle-orm";
+import { eq, and, gte, lte, desc, gt, sql } from "drizzle-orm";
 
 const normalizeLongTermWishRules = (
   rules: unknown,
@@ -216,6 +216,7 @@ export interface IStorage {
 
   // Auth methods
   getEmployeeByEmail(email: string): Promise<Employee | undefined>;
+  getEmployeeByLoginIdentifier(identifier: string): Promise<Employee | undefined>;
   setEmployeePassword(
     employeeId: number,
     passwordHash: string,
@@ -797,6 +798,29 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(employees)
       .where(and(eq(employees.email, email), eq(employees.isActive, true)));
+    return result[0];
+  }
+
+  async getEmployeeByLoginIdentifier(
+    identifier: string,
+  ): Promise<Employee | undefined> {
+    const normalized = identifier.trim();
+    if (!normalized) return undefined;
+
+    const result = await db
+      .select()
+      .from(employees)
+      .where(
+        and(
+          eq(employees.isActive, true),
+          sql`(
+            lower(coalesce(${employees.email}, '')) = lower(${normalized})
+            or
+            lower(coalesce(${employees.username}, '')) = lower(${normalized})
+          )`,
+        ),
+      )
+      .limit(1);
     return result[0];
   }
 

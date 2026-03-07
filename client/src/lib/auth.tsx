@@ -77,7 +77,7 @@ export interface AuthContextType {
   isSuperuser: boolean;
 
   login: (
-    email: string,
+    identifier: string,
     password: string,
     rememberMe?: boolean,
   ) => Promise<void>;
@@ -396,7 +396,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [viewAsUser]);
 
   const login = useCallback(
-    async (email: string, password: string, rememberMe?: boolean) => {
+    async (identifier: string, password: string, rememberMe?: boolean) => {
       setIsLoading(true);
 
       try {
@@ -406,7 +406,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             "Content-Type": "application/json",
             Accept: "application/json",
           },
-          body: JSON.stringify({ email, password, rememberMe: !!rememberMe }),
+          body: JSON.stringify({
+            identifier,
+            email: identifier,
+            password,
+            rememberMe: !!rememberMe,
+          }),
         });
 
         const data = await safeJson(res);

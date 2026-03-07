@@ -146,6 +146,7 @@ function parseVacationEntitlementInput(value: string): number | null {
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const isValidEmail = (value: string) =>
   EMAIL_REGEX.test(value) && !/[^\x00-\x7F]/.test(value);
+const USERNAME_REGEX = /^[a-zA-Z0-9._-]{3,50}$/;
 
 const ROLE_LABELS: Record<string, string> = {
   Primararzt: "Primararzt:in",
@@ -414,6 +415,7 @@ export default function Settings() {
     lastName: "",
     birthday: "",
     email: "",
+    username: "",
     emailPrivate: "",
     phoneWork: "",
     phonePrivate: "",
@@ -629,6 +631,7 @@ export default function Settings() {
         "",
       birthday: birthdayIso,
       email: emp.email || "",
+      username: emp.username || "",
       emailPrivate: emp.emailPrivate || "",
       phoneWork: emp.phoneWork || "",
       phonePrivate: emp.phonePrivate || "",
@@ -884,6 +887,18 @@ export default function Settings() {
         return;
       }
 
+      const usernameValue = formData.username.trim();
+      if (usernameValue && !USERNAME_REGEX.test(usernameValue)) {
+        toast({
+          title: "Fehler",
+          description:
+            "Benutzername muss 3-50 Zeichen haben und darf nur Buchstaben, Zahlen, Punkt, Unterstrich oder Bindestrich enthalten.",
+          variant: "destructive",
+        });
+        setSaving(false);
+        return;
+      }
+
       const emailPrivateValue = formData.emailPrivate.trim();
       if (emailPrivateValue && !isValidEmail(emailPrivateValue)) {
         toast({
@@ -921,6 +936,7 @@ export default function Settings() {
           lastName: formData.lastName,
           birthday: parsedBirthday || null,
           email: emailValue,
+          username: usernameValue || null,
           emailPrivate: emailPrivateValue || null,
           phoneWork: formData.phoneWork,
           phonePrivate: formData.phonePrivate,
@@ -990,10 +1006,11 @@ export default function Settings() {
         );
       }
       loadData();
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Fehler",
-        description: "Änderungen konnten nicht gespeichert werden",
+        description:
+          error?.message || "Änderungen konnten nicht gespeichert werden",
         variant: "destructive",
       });
     } finally {
@@ -1668,6 +1685,24 @@ export default function Settings() {
                 <Separator />
 
                 <div className="grid md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Benutzername</Label>
+                    <div className="relative">
+                      <User className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
+                      <Input
+                        className="pl-10"
+                        value={formData.username}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            username: e.target.value,
+                          }))
+                        }
+                        disabled={!canEditBasicInfo}
+                        placeholder="z.B. m.mustermann"
+                      />
+                    </div>
+                  </div>
                   <div className="space-y-2">
                     <Label>E-Mail (Dienst)</Label>
                     <div className="relative">
