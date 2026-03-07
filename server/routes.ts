@@ -4711,7 +4711,7 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
         headerRow.font = { bold: true };
         headerRow.alignment = { vertical: "middle", horizontal: "center" };
         headerRow.height = 22;
-        headerRow.eachCell((cell) => {
+        headerRow.eachCell((cell: any) => {
           cell.fill = headerFill;
           cell.border = {
             top: { style: "thin", color: { argb: "FFB7C9D8" } },
@@ -4721,8 +4721,8 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
           };
         });
 
-        sheet.eachRow((row, rowNumber) => {
-          row.eachCell((cell, colNumber) => {
+        sheet.eachRow((row: any, rowNumber: number) => {
+          row.eachCell((cell: any, colNumber: number) => {
             cell.alignment = {
               vertical: "middle",
               horizontal: colNumber <= 2 ? "center" : "left",
