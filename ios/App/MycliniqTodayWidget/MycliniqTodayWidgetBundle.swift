@@ -12,7 +12,6 @@ import SwiftUI
 struct MycliniqTodayWidgetBundle: WidgetBundle {
     var body: some Widget {
         MycliniqTodayWidget()
-        MycliniqTodayWidgetControl()
-        MycliniqTodayWidgetLiveActivity()
+        MycliniqNextDaysWidget()
     }
 }

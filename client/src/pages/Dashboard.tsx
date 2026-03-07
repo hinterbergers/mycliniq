@@ -434,13 +434,18 @@ export default function Dashboard() {
   }, [todayEntry?.workplace, todayTeamNames]);
 
   useEffect(() => {
+    const nextDays = (dashboardData?.weekPreview ?? []).filter(
+      (entry) => entry.date !== (todayEntry?.date ?? ""),
+    );
     const snapshot = buildWidgetTodaySnapshot({
       today: todayEntry,
       personName: buildFullName(employee?.firstName, employee?.lastName) || null,
       teammateNames: todayTeamNames,
+      nextDays,
     });
     void syncWidgetTodaySnapshot(snapshot);
   }, [
+    dashboardData?.weekPreview,
     employee?.firstName,
     employee?.lastName,
     todayEntry,
