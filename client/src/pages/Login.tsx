@@ -79,6 +79,9 @@ export default function Login() {
                 onChange={(e) => setIdentifier(e.target.value)}
                 required
                 autoComplete="username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 data-testid="input-identifier"
               />
             </div>
