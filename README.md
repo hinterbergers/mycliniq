@@ -40,3 +40,7 @@ Notes:
 - Set `VITE_API_BASE_URL` before `mobile:sync:ios` so the iOS app calls your deployed backend.
 - Auth token storage uses secure native storage on iOS when the secure storage plugin is available, with automatic fallback.
 - Widget snapshot contract (step 3): dashboard writes `mycliniq_widget_today_v1` in local storage and optionally forwards the same payload to `MycliniqWidgetBridge.setTodaySnapshot` or `webkit.messageHandlers.mycliniqWidget`.
+- Step 4 WidgetKit templates and setup live in:
+  - `ios/WIDGETKIT_SETUP.md`
+  - `ios/widget-template/MycliniqWidgetBridge.swift`
+  - `ios/widget-template/MycliniqTodayWidget.swift`
