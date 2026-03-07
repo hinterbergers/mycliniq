@@ -16,6 +16,12 @@ import {
   writeAuthToken,
 } from "./authToken";
 
+const EXTERNAL_API_BASE = import.meta.env.VITE_API_BASE_URL?.trim() ?? "";
+const NORMALIZED_EXTERNAL_API_BASE = EXTERNAL_API_BASE.replace(/\/+$/, "");
+const AUTH_API_BASE = NORMALIZED_EXTERNAL_API_BASE
+  ? `${NORMALIZED_EXTERNAL_API_BASE}/api`
+  : "/api";
+
 type SystemRole = 
   | "employee"
   | "department_admin"
@@ -242,7 +248,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // -------- API Calls --------
 
   const fetchMe = async (authToken: string) => {
-    const res = await fetch("/api/me", {
+    const res = await fetch(`${AUTH_API_BASE}/me`, {
       headers: {
         Authorization: `Bearer ${authToken}`,
         Accept: "application/json",
@@ -253,7 +259,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const fetchAuthMe = async (authToken: string) => {
-    const res = await fetch("/api/auth/me", {
+    const res = await fetch(`${AUTH_API_BASE}/auth/me`, {
       headers: {
         Authorization: `Bearer ${authToken}`,
         Accept: "application/json",
@@ -413,7 +419,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(true);
 
       try {
-        const res = await fetch("/api/auth/login", {
+        const res = await fetch(`${AUTH_API_BASE}/auth/login`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -470,7 +476,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     try {
       if (token) {
-        await fetch("/api/auth/logout", {
+        await fetch(`${AUTH_API_BASE}/auth/logout`, {
           method: "POST",
           headers: {
             Authorization: `Bearer ${token}`,
