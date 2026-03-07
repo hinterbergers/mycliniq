@@ -449,13 +449,15 @@ export function Header({
   };
 
   return (
-    <header className="h-16 kabeg-header sticky top-0 z-10 px-6 flex items-center justify-between shadow-sm">
+    <header
+      className="min-h-16 kabeg-header sticky top-0 z-30 px-4 md:px-6 pt-[env(safe-area-inset-top)] flex items-center justify-between shadow-sm"
+    >
       <div className="flex items-center gap-2 min-w-0">
         <Button
           type="button"
           variant="ghost"
           size="icon"
-          className="md:hidden rounded-full text-white/80 hover:text-white hover:bg-white/10"
+          className="md:hidden rounded-full text-white/80 hover:text-white hover:bg-white/10 relative z-40"
           onClick={onToggleMobileNav}
           disabled={!onToggleMobileNav}
           aria-label="Menü öffnen"
