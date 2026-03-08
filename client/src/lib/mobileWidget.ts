@@ -48,6 +48,7 @@ export type WidgetTodaySnapshotV2 = {
     assignments: Array<{
       workplace: string;
       names: string[];
+      dutyNames: string[];
       dutyCount: number;
     }>;
   } | null;
@@ -155,6 +156,7 @@ export function buildWidgetTodaySnapshot(input: {
                 {
                   workplace: string;
                   names: string[];
+                  dutyNames: string[];
                   dutyCount: number;
                 }
               >
@@ -162,14 +164,22 @@ export function buildWidgetTodaySnapshot(input: {
               const workplace =
                 (member.workplace ?? "").trim() || "Ohne Bereich";
               if (!acc[workplace]) {
-                acc[workplace] = { workplace, names: [], dutyCount: 0 };
+                acc[workplace] = {
+                  workplace,
+                  names: [],
+                  dutyNames: [],
+                  dutyCount: 0,
+                };
               }
               const name = [member.firstName, member.lastName]
                 .filter(Boolean)
                 .join(" ")
                 .trim();
               if (name) acc[workplace].names.push(name);
-              if (member.isDuty) acc[workplace].dutyCount += 1;
+              if (member.isDuty) {
+                acc[workplace].dutyCount += 1;
+                if (name) acc[workplace].dutyNames.push(name);
+              }
               return acc;
             }, {}),
           )

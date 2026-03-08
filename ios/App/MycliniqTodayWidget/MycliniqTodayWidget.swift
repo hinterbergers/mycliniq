@@ -9,6 +9,7 @@ private let brandBlueLight = Color(red: 0.16, green: 0.47, blue: 0.84)
 private let mutedWhite = Color.white.opacity(0.82)
 private let cardBlue = Color.white.opacity(0.12)
 private let cardBlueBorder = Color.white.opacity(0.20)
+private let weeklyPlanURL = URL(string: "https://mycliniq.info/dienstplaene")
 
 extension View {
     @ViewBuilder
@@ -43,6 +44,7 @@ struct MycliniqAdminSummary: Decodable {
 struct MycliniqAdminAssignment: Decodable {
     let workplace: String
     let names: [String]
+    let dutyNames: [String]
     let dutyCount: Int
 }
 
@@ -406,6 +408,13 @@ struct MycliniqAdminOverviewWidgetEntryView: View {
                                 .font(.caption2)
                                 .foregroundColor(mutedWhite)
                                 .lineLimit(1)
+
+                            if !assignment.dutyNames.isEmpty {
+                                Text("Dienst: \(namesLine(assignment.dutyNames, maxNames: family == .systemLarge ? 2 : 1))")
+                                    .font(.caption2)
+                                    .foregroundColor(.red)
+                                    .lineLimit(1)
+                            }
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 6)
@@ -415,6 +424,23 @@ struct MycliniqAdminOverviewWidgetEntryView: View {
                                 .stroke(cardBlueBorder, lineWidth: 1)
                         )
                         .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+
+                    if let weeklyPlanURL {
+                        Link(destination: weeklyPlanURL) {
+                            Text("Zum Wochenplan")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(cardBlue)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(cardBlueBorder, lineWidth: 1)
+                                )
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
                     }
                 }
                 .padding(14)
@@ -475,5 +501,6 @@ struct MycliniqAdminOverviewWidget: Widget {
         .configurationDisplayName("mycliniq Admin Übersicht")
         .description("Zeigt Team-Anwesenheit und Dienstzahlen für Admins.")
         .supportedFamilies([.systemMedium, .systemLarge])
+        .widgetURL(weeklyPlanURL)
     }
 }
