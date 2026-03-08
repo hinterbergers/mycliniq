@@ -10,6 +10,17 @@ private let mutedWhite = Color.white.opacity(0.82)
 private let cardBlue = Color.white.opacity(0.12)
 private let cardBlueBorder = Color.white.opacity(0.20)
 
+extension View {
+    @ViewBuilder
+    func widgetBackgroundCompat() -> some View {
+        if #available(iOS 17.0, *) {
+            self.containerBackground(for: .widget) { Color.clear }
+        } else {
+            self
+        }
+    }
+}
+
 struct MycliniqNextDay: Decodable {
     let date: String
     let statusLabel: String?
@@ -307,6 +318,7 @@ struct MycliniqTodayWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: MycliniqProvider()) { entry in
             MycliniqTodayWidgetEntryView(entry: entry)
+                .widgetBackgroundCompat()
         }
         .configurationDisplayName("mycliniq Heute")
         .description("Zeigt den aktuellen Tagesstatus aus dem Dashboard.")
@@ -320,6 +332,7 @@ struct MycliniqNextDaysWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: MycliniqProvider()) { entry in
             MycliniqNextDaysWidgetEntryView(entry: entry)
+                .widgetBackgroundCompat()
         }
         .configurationDisplayName("mycliniq Nächste Tage")
         .description("Zeigt die nächsten geplanten Tage aus dem Dashboard.")
