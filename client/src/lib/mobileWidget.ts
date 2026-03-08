@@ -1,5 +1,6 @@
 import type { DashboardDay } from "@/lib/api";
 import { getApiBase } from "@/lib/apiBase";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 
 export const WIDGET_TODAY_SNAPSHOT_KEY = "mycliniq_widget_today_v1";
 
@@ -31,9 +32,13 @@ function getIosBridge() {
   return (globalThis as any)?.webkit?.messageHandlers?.mycliniqWidget;
 }
 
-function getCapacitorBridge() {
-  return (globalThis as any)?.Capacitor?.Plugins?.MycliniqWidgetBridge;
-}
+type MycliniqWidgetBridgePlugin = {
+  setTodaySnapshot(options: { snapshotJson: string }): Promise<void>;
+};
+
+const MycliniqWidgetBridge = registerPlugin<MycliniqWidgetBridgePlugin>(
+  "MycliniqWidgetBridge",
+);
 
 export function buildWidgetTodaySnapshot(input: {
   today: DashboardDay | null;
@@ -102,9 +107,8 @@ export async function syncWidgetTodaySnapshot(
   }
 
   try {
-    const capacitorBridge = getCapacitorBridge();
-    if (capacitorBridge?.setTodaySnapshot) {
-      await capacitorBridge.setTodaySnapshot({
+    if (Capacitor.isNativePlatform()) {
+      await MycliniqWidgetBridge.setTodaySnapshot({
         snapshotJson: JSON.stringify(snapshot),
       });
       return;
