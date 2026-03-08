@@ -212,6 +212,9 @@ export default function ShiftWishes() {
     number | undefined
   >();
   const [notes, setNotes] = useState("");
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(
+    null,
+  );
   const [selectedMonth, setSelectedMonth] = useState<Date>(
     () => startOfMonth(new Date()),
   );
@@ -232,6 +235,17 @@ export default function ShiftWishes() {
 
   const canViewAll =
     isAdmin || isTechnicalAdmin || capabilities.includes("dutyplan.edit");
+  const activeEmployee = useMemo(() => {
+    if (!currentUser) return null;
+    const fallbackEmployee = currentUser as Employee;
+    if (!canViewAll) return fallbackEmployee;
+    if (!selectedEmployeeId) return fallbackEmployee;
+    return (
+      employees.find((employee) => employee.id === selectedEmployeeId) ??
+      fallbackEmployee
+    );
+  }, [canViewAll, currentUser, employees, selectedEmployeeId]);
+  const activeEmployeeId = activeEmployee?.id ?? null;
   const serviceLineMeta = useMemo(
     () =>
       serviceLines.map((line) => ({
@@ -241,8 +255,8 @@ export default function ShiftWishes() {
       })),
     [serviceLines],
   );
-  const doesShifts = currentUser
-    ? employeeDoesShifts(currentUser, serviceLineMeta)
+  const doesShifts = activeEmployee
+    ? employeeDoesShifts(activeEmployee, serviceLineMeta)
     : false;
   const isExternalDuty = (currentUser as any)?.accessScope === "external_duty";
   const isSubmitted = wish?.status === "Eingereicht";
@@ -260,6 +274,13 @@ export default function ShiftWishes() {
           eligibleEmployeeIds.includes(employee.id)),
     );
   }, [employees, serviceLineMeta, employeesWithExistingWishes, eligibleEmployeeIds]);
+
+  const deputyOptions = useMemo(() => {
+    const source = canViewAll ? employees : [];
+    return [...source].sort((a, b) =>
+      (a.name ?? "").localeCompare(b.name ?? "", "de"),
+    );
+  }, [canViewAll, employees]);
 
 
   const normalizeDayKeys = (
@@ -452,7 +473,7 @@ export default function ShiftWishes() {
   };
 
   const interruptAbsencesForWishDays = async (wishDayKeys: string[]) => {
-    if (!currentUser || !monthAnchor || !selectedMonth) return;
+    if (!activeEmployeeId || !monthAnchor || !selectedMonth) return;
     if (!wishDayKeys.length) return;
 
     const overrideSet = new Set(wishDayKeys);
@@ -482,7 +503,7 @@ export default function ShiftWishes() {
       const segments = splitIntoRanges(remainingDays);
       for (const seg of segments) {
           await plannedAbsencesApi.create({
-            employeeId: currentUser.id,
+            employeeId: activeEmployeeId,
             year: selectedMonth.getFullYear(),
             month: selectedMonth.getMonth() + 1,
             startDate: format(seg.start, "yyyy-MM-dd"),
@@ -494,7 +515,7 @@ export default function ShiftWishes() {
       }
 
     const absenceData = await plannedAbsencesApi.getByEmployeeAndMonth(
-      currentUser.id,
+      activeEmployeeId,
       selectedMonth.getFullYear(),
       selectedMonth.getMonth() + 1,
     );
@@ -534,16 +555,16 @@ export default function ShiftWishes() {
     loadData();
   }, [currentUser?.id, canViewAll]);
 
-  const loadMonthSpecificData = async (monthDate: Date) => {
+  const loadMonthSpecificData = async (monthDate: Date, employeeId: number) => {
     if (!currentUser) return;
     const year = monthDate.getFullYear();
     const month = monthDate.getMonth() + 1;
 
     const [wishData, absenceData] = await Promise.all([
-      shiftWishesApi.getByEmployeeAndMonth(currentUser.id, year, month),
+      shiftWishesApi.getByEmployeeAndMonth(employeeId, year, month),
       isExternalDuty
         ? Promise.resolve([] as PlannedAbsence[])
-        : plannedAbsencesApi.getByEmployeeAndMonth(currentUser.id, year, month),
+        : plannedAbsencesApi.getByEmployeeAndMonth(employeeId, year, month),
     ]);
 
     setWish(wishData);
@@ -637,7 +658,10 @@ export default function ShiftWishes() {
       setPlanningMonth(fallbackPlanningMonth);
       setEligibleEmployeeIds(monthData?.eligibleEmployeeIds ?? []);
       
-      await loadMonthSpecificData(initialMonth);
+      const initialEmployeeId =
+        canViewAll && selectedEmployeeId ? selectedEmployeeId : currentUser.id;
+      setSelectedEmployeeId(initialEmployeeId);
+      await loadMonthSpecificData(initialMonth, initialEmployeeId);
     } catch (error) {
       toast({
         title: "Fehler",
@@ -649,8 +673,19 @@ export default function ShiftWishes() {
     }
   };
 
+  useEffect(() => {
+    if (!currentUser || !selectedEmployeeId) return;
+    loadMonthSpecificData(selectedMonth, selectedEmployeeId).catch(() => {
+      toast({
+        title: "Fehler",
+        description: "Mitarbeiterdaten konnten nicht geladen werden",
+        variant: "destructive",
+      });
+    });
+  }, [selectedEmployeeId, selectedMonth, currentUser?.id]);
+
   const upsertSubmittedWish = async () => {
-    if (!currentUser || !selectedMonth) return;
+    if (!activeEmployeeId || !selectedMonth) return;
 
     try {
       setSaving(true);
@@ -665,7 +700,7 @@ export default function ShiftWishes() {
       setPreferredShiftDays(normalizedPreferredShiftDays);
 
       const wishData = {
-        employeeId: currentUser.id,
+        employeeId: activeEmployeeId,
         year: selectedMonth.getFullYear(),
         month: selectedMonth.getMonth() + 1,
         preferredShiftDays: normalizedPreferredShiftDays,
@@ -734,20 +769,20 @@ export default function ShiftWishes() {
 
   const handleSubmit = async () => {
     const persisted = await upsertSubmittedWish();
-    if (persisted) {
-      await loadData();
+    if (persisted && activeEmployeeId) {
+      await loadMonthSpecificData(selectedMonth, activeEmployeeId);
     }
   };
 
   const handleAddAbsence = async () => {
-    if (!currentUser || !selectedMonth || !newAbsenceStart || !newAbsenceEnd)
+    if (!activeEmployeeId || !selectedMonth || !newAbsenceStart || !newAbsenceEnd)
       return;
 
     try {
       setSaving(true);
 
       await plannedAbsencesApi.create({
-        employeeId: currentUser.id,
+        employeeId: activeEmployeeId,
         year: selectedMonth.getFullYear(),
         month: selectedMonth.getMonth() + 1,
         startDate: format(newAbsenceStart, "yyyy-MM-dd"),
@@ -763,7 +798,7 @@ export default function ShiftWishes() {
       setNewAbsenceNotes("");
 
       const absenceData = await plannedAbsencesApi.getByEmployeeAndMonth(
-        currentUser.id,
+        activeEmployeeId,
         selectedMonth.getFullYear(),
         selectedMonth.getMonth() + 1,
       );
@@ -865,10 +900,40 @@ export default function ShiftWishes() {
             </h1>
             <p className="text-muted-foreground mt-1">
               Wünsche für {monthName} {selectedMonth.getFullYear()}
+              {activeEmployee ? ` - ${activeEmployee.name}` : ""}
             </p>
           </div>
 
           <div className="flex items-center gap-4">
+            {canViewAll && deputyOptions.length > 0 && (
+              <div className="min-w-[280px]">
+                <Label className="mb-1 block text-xs text-muted-foreground">
+                  Stellvertretung
+                </Label>
+                <Select
+                  value={String(selectedEmployeeId ?? currentUser?.id ?? "")}
+                  onValueChange={(value) => {
+                    const nextId = parseInt(value, 10);
+                    if (!Number.isFinite(nextId)) return;
+                    setSelectedEmployeeId(nextId);
+                  }}
+                >
+                  <SelectTrigger data-testid="select-deputy-employee">
+                    <SelectValue placeholder="Mitarbeiter wählen" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {deputyOptions.map((employee) => (
+                      <SelectItem
+                        key={employee.id}
+                        value={String(employee.id)}
+                      >
+                        {employee.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             {isSubmitted ? (
               <Badge variant="default" className="gap-1 bg-green-600">
                 <CheckCircle className="w-3 h-3" />

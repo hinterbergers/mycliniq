@@ -1100,6 +1100,21 @@ export async function registerRoutes(
     return req.user.capabilities?.includes("dutyplan.edit") ?? false;
   };
 
+  const canManageShiftWishesForEmployee = async (
+    req: Request,
+    targetEmployeeId: number,
+  ): Promise<boolean> => {
+    if (!req.user) return false;
+    if (req.user.employeeId === targetEmployeeId) return true;
+    if (!canViewPlanningData(req)) return false;
+
+    const targetEmployee = await storage.getEmployee(targetEmployeeId);
+    if (!targetEmployee) return false;
+
+    if (!req.user.departmentId) return true;
+    return targetEmployee.departmentId === req.user.departmentId;
+  };
+
   const canSeeDashboardRecentChanges = (req: Request): boolean => {
     if (!req.user) return false;
     if (req.user.isAdmin) return true;
@@ -5920,7 +5935,11 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
 
       if (employeeId && year && month) {
         const targetId = parseInt(employeeId as string);
-        if (!req.user?.isAdmin && req.user?.appRole !== "Admin" && req.user?.employeeId !== targetId) {
+        const canManageTarget = await canManageShiftWishesForEmployee(
+          req,
+          targetId,
+        );
+        if (!canManageTarget) {
           return res.status(403).json({ error: "Zugriff nur auf eigene Daten erlaubt" });
         }
         const wish = await storage.getShiftWishByEmployeeAndMonth(
@@ -5966,15 +5985,16 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
 
       const payload = req.body as any;
       const currentEmployeeId = req.user?.employeeId;
-      const isAdmin = Boolean(req.user?.isAdmin || req.user?.appRole === "Admin");
-
-      if (!isAdmin && currentEmployeeId && payload?.employeeId !== currentEmployeeId) {
-        return res.status(403).json({ error: "Zugriff nur auf eigene Daten erlaubt" });
-      }
-
       const targetEmployeeId = Number(payload?.employeeId ?? currentEmployeeId);
       if (!targetEmployeeId) {
         return res.status(400).json({ error: "EmployeeId fehlt" });
+      }
+      const canManageTarget = await canManageShiftWishesForEmployee(
+        req,
+        targetEmployeeId,
+      );
+      if (!canManageTarget) {
+        return res.status(403).json({ error: "Zugriff nur auf eigene Daten erlaubt" });
       }
       const employee = await storage.getEmployee(targetEmployeeId);
       if (!employee) {
@@ -6027,9 +6047,11 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
         return res.status(404).json({ error: "Shift wish not found" });
       }
 
-      const currentEmployeeId = req.user?.employeeId;
-      const isAdmin = Boolean(req.user?.isAdmin || req.user?.appRole === "Admin");
-      if (!isAdmin && existing.employeeId !== currentEmployeeId) {
+      const canManageTarget = await canManageShiftWishesForEmployee(
+        req,
+        existing.employeeId,
+      );
+      if (!canManageTarget) {
         return res.status(403).json({ error: "Keine Berechtigung" });
       }
 
@@ -6078,9 +6100,11 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
           return res.status(404).json({ error: "Shift wish not found" });
         }
 
-        const currentEmployeeId = req.user?.employeeId;
-        const isAdmin = Boolean(req.user?.isAdmin || req.user?.appRole === "Admin");
-        if (!isAdmin && existing.employeeId !== currentEmployeeId) {
+        const canManageTarget = await canManageShiftWishesForEmployee(
+          req,
+          existing.employeeId,
+        );
+        if (!canManageTarget) {
           return res.status(403).json({ error: "Keine Berechtigung" });
         }
 
