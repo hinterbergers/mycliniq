@@ -53,12 +53,9 @@ import {
 } from "@/lib/dashboard-widgets";
 import {
   buildWidgetTodaySnapshot,
-  readWidgetSyncDebugStatus,
   syncWidgetTodaySnapshot,
-  type WidgetSyncDebugStatus,
 } from "@/lib/mobileWidget";
 import { resolveApiUrl } from "@/lib/apiBase";
-import { Capacitor } from "@capacitor/core";
 
 const DUTY_ABBREVIATIONS: Record<string, string> = {
   "gynaekologie (oa)": "Gyn",
@@ -289,10 +286,6 @@ export default function Dashboard() {
   const [wishMonthInfo, setWishMonthInfo] = useState<NextPlanningMonth | null>(
     null,
   );
-  const [widgetSyncDebug, setWidgetSyncDebug] =
-    useState<WidgetSyncDebugStatus | null>(null);
-
-  const isNativeApp = Capacitor.isNativePlatform();
   useEffect(() => {
     let cancelled = false;
 
@@ -331,18 +324,6 @@ export default function Dashboard() {
       // ignore localStorage issues
     }
   }, [attendanceViewMode]);
-
-  useEffect(() => {
-    if (!isNativeApp) return;
-
-    const refresh = () => {
-      setWidgetSyncDebug(readWidgetSyncDebugStatus());
-    };
-
-    refresh();
-    const interval = setInterval(refresh, 1500);
-    return () => clearInterval(interval);
-  }, [isNativeApp]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1353,43 +1334,12 @@ export default function Dashboard() {
     ) : null;
   };
 
-  const renderWidgetDebugCard = () => {
-    if (!isNativeApp || !widgetSyncDebug) return null;
-
-    const timestamp = new Date(widgetSyncDebug.at);
-    const timeLabel = Number.isNaN(timestamp.getTime())
-      ? widgetSyncDebug.at
-      : timestamp.toLocaleTimeString("de-AT", {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        });
-
-    return (
-      <Card className="border-dashed border-2 border-amber-300 bg-amber-50">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Widget Debug</CardTitle>
-          <CardDescription>
-            Letzter Sync: {timeLabel} · Stage: {widgetSyncDebug.stage}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p
-            className={`text-sm font-medium ${widgetSyncDebug.ok ? "text-green-700" : "text-red-700"}`}
-          >
-            {widgetSyncDebug.ok ? "OK" : "Fehler"}: {widgetSyncDebug.detail}
-          </p>
-        </CardContent>
-      </Card>
-    );
-  };
   return (
     <Layout title="Dashboard">
       <div className="hidden md:grid grid-cols-1 md:grid-cols-12 gap-6">
         <div className="md:col-span-12">
           {renderHeroCard()}
         </div>
-        <div className="md:col-span-12">{renderWidgetDebugCard()}</div>
         <div className="md:col-span-12 grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-6">{renderAttendanceCard()}</div>
           <div className="lg:col-span-3 space-y-6">
@@ -1421,7 +1371,6 @@ export default function Dashboard() {
 
       <div className="md:hidden space-y-6 px-4">
         {renderHeroCard()}
-        {renderWidgetDebugCard()}
         {mobilePanelEnabled && (
           <Card
             className="border-none kabeg-shadow"
