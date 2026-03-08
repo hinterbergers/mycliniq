@@ -200,11 +200,27 @@ struct MycliniqNextDaysWidgetEntryView: View {
     }
 
     private func formatDay(_ isoDate: String) -> String {
-        let parts = isoDate.split(separator: "-")
-        if parts.count == 3 {
-            return "\(parts[2]).\(parts[1])."
+        let inputFormatter = DateFormatter()
+        inputFormatter.calendar = Calendar(identifier: .gregorian)
+        inputFormatter.locale = Locale(identifier: "en_US_POSIX")
+        inputFormatter.timeZone = TimeZone(secondsFromGMT: 0)
+        inputFormatter.dateFormat = "yyyy-MM-dd"
+
+        guard let date = inputFormatter.date(from: isoDate) else {
+            return isoDate
         }
-        return isoDate
+
+        let weekdayFormatter = DateFormatter()
+        weekdayFormatter.locale = Locale(identifier: "de_AT")
+        weekdayFormatter.dateFormat = "EE"
+        let weekday = weekdayFormatter.string(from: date)
+
+        let dayFormatter = DateFormatter()
+        dayFormatter.locale = Locale(identifier: "de_AT")
+        dayFormatter.dateFormat = "dd.MM."
+        let dayLabel = dayFormatter.string(from: date)
+
+        return "\(weekday) \(dayLabel)"
     }
 
     var body: some View {
