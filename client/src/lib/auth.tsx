@@ -15,12 +15,9 @@ import {
   readAuthToken,
   writeAuthToken,
 } from "./authToken";
+import { getApiBase } from "./apiBase";
 
-const EXTERNAL_API_BASE = import.meta.env.VITE_API_BASE_URL?.trim() ?? "";
-const NORMALIZED_EXTERNAL_API_BASE = EXTERNAL_API_BASE.replace(/\/+$/, "");
-const AUTH_API_BASE = NORMALIZED_EXTERNAL_API_BASE
-  ? `${NORMALIZED_EXTERNAL_API_BASE}/api`
-  : "/api";
+const AUTH_API_BASE = getApiBase();
 
 type SystemRole = 
   | "employee"
@@ -439,7 +436,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           throw new Error(data?.error || "Anmeldung fehlgeschlagen");
         }
 
-        const authToken = data?.token as string | undefined;
+        const payload = (data?.data ?? data) as
+          | {
+              token?: string;
+              employee?: Omit<Employee, "passwordHash">;
+              user?: UserData;
+            }
+          | null
+          | undefined;
+
+        const authToken = payload?.token as string | undefined;
         if (!authToken) {
           throw new Error("Login: Token fehlt in Response");
         }
@@ -448,12 +454,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await writeAuthToken(authToken);
 
         // schneller UI-Boost falls employee in login-response
-        if (data?.employee) {
-          const emp = data.employee as Omit<Employee, "passwordHash">;
+        if (payload?.employee) {
+          const emp = payload.employee as Omit<Employee, "passwordHash">;
           applyAuthState({
             employee: emp,
-            user: data.user
-              ? (data.user as UserData)
+            user: payload.user
+              ? (payload.user as UserData)
               : buildUserFromEmployee(emp),
             capabilities: [],
           });

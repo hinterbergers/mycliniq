@@ -51,15 +51,12 @@ import type {
   TrainingPresentation,
 } from "@shared/schema";
 import { readAuthToken } from "./authToken";
+import { getApiBase } from "./apiBase";
 import {
   type DashboardWidgetKey,
 } from "@/lib/dashboard-widgets";
 
-const EXTERNAL_API_BASE = import.meta.env.VITE_API_BASE_URL?.trim() ?? "";
-const NORMALIZED_EXTERNAL_API_BASE = EXTERNAL_API_BASE.replace(/\/+$/, "");
-const API_BASE = NORMALIZED_EXTERNAL_API_BASE
-  ? `${NORMALIZED_EXTERNAL_API_BASE}/api`
-  : "/api";
+const API_BASE = getApiBase();
 
 type ApiEnvelope<T> = {
   success: boolean;
