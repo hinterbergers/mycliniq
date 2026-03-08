@@ -4,6 +4,12 @@ import SwiftUI
 private let appGroupId = "group.at.mycliniq.shared"
 private let snapshotKey = "mycliniq_widget_today_v1"
 
+private let brandBlue = Color(red: 0.10, green: 0.39, blue: 0.74)
+private let brandBlueLight = Color(red: 0.16, green: 0.47, blue: 0.84)
+private let mutedWhite = Color.white.opacity(0.82)
+private let cardBlue = Color.white.opacity(0.12)
+private let cardBlueBorder = Color.white.opacity(0.20)
+
 struct MycliniqNextDay: Decodable {
     let date: String
     let statusLabel: String?
@@ -83,57 +89,89 @@ struct MycliniqTodayWidgetEntryView: View {
     var body: some View {
         ZStack {
             LinearGradient(
-                colors: [Color(red: 0.97, green: 0.98, blue: 1.0), Color.white],
+                colors: [brandBlue, brandBlueLight],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
 
             if let snapshot = entry.snapshot {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Heute")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-
-                    Text(snapshot.statusLabel ?? "Kein Eintrag")
-                        .font(.headline)
-                        .foregroundColor(isCalmStatus(status: snapshot.statusLabel, absenceReason: snapshot.absenceReason) ? .green : .primary)
-                        .lineLimit(2)
-
-                    if let workplace = snapshot.workplace, !workplace.isEmpty {
-                        Text(workplace)
+                if family == .systemSmall {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Heute")
                             .font(.caption)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
+                            .foregroundColor(mutedWhite)
 
-                    if snapshot.isDuty, let duty = snapshot.dutyLabel, !duty.isEmpty {
-                        Text("Dienst: \(duty)")
-                            .font(.caption2)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.red)
-                            .lineLimit(1)
-                    }
+                        Text(snapshot.statusLabel ?? "Kein Eintrag")
+                            .font(.title3)
+                            .fontWeight(.bold)
+                            .foregroundColor(isCalmStatus(status: snapshot.statusLabel, absenceReason: snapshot.absenceReason) ? .green : .white)
+                            .lineLimit(3)
 
-                    if family != .systemSmall, let teamLine = teammateLine(snapshot.teammates) {
-                        Text(teamLine)
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
+                        if snapshot.isDuty, let duty = snapshot.dutyLabel, !duty.isEmpty {
+                            Text("Dienst: \(duty)")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.red)
+                                .lineLimit(1)
+                        }
                     }
+                    .padding(14)
+                } else {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text("Heute")
+                                .font(.caption)
+                                .foregroundColor(mutedWhite)
+
+                            Spacer()
+
+                            if snapshot.isDuty, let duty = snapshot.dutyLabel, !duty.isEmpty {
+                                Text(duty)
+                                    .font(.caption)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Color.red.opacity(0.85))
+                                    .clipShape(Capsule())
+                            }
+                        }
+
+                        Text(snapshot.statusLabel ?? "Kein Eintrag")
+                            .font(.title3)
+                            .fontWeight(.bold)
+                            .foregroundColor(isCalmStatus(status: snapshot.statusLabel, absenceReason: snapshot.absenceReason) ? .green : .white)
+                            .lineLimit(2)
+
+                        if let workplace = snapshot.workplace, !workplace.isEmpty {
+                            Text(workplace)
+                                .font(.caption)
+                                .foregroundColor(mutedWhite)
+                                .lineLimit(1)
+                        }
+
+                        if let teamLine = teammateLine(snapshot.teammates) {
+                            Text(teamLine)
+                                .font(.caption)
+                                .foregroundColor(mutedWhite)
+                                .lineLimit(1)
+                        }
+                    }
+                    .padding(14)
                 }
-                .padding()
             } else {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("mycliniq")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(mutedWhite)
                     Text("Keine Daten")
                         .font(.headline)
+                        .foregroundColor(.white)
                     Text("App oeffnen, um zu synchronisieren")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(mutedWhite)
                 }
-                .padding()
+                .padding(14)
             }
         }
     }
@@ -164,9 +202,7 @@ struct MycliniqNextDaysWidgetEntryView: View {
     private func formatDay(_ isoDate: String) -> String {
         let parts = isoDate.split(separator: "-")
         if parts.count == 3 {
-            let day = parts[2]
-            let month = parts[1]
-            return "\(day).\(month)."
+            return "\(parts[2]).\(parts[1])."
         }
         return isoDate
     }
@@ -174,32 +210,40 @@ struct MycliniqNextDaysWidgetEntryView: View {
     var body: some View {
         ZStack {
             LinearGradient(
-                colors: [Color(red: 0.97, green: 0.98, blue: 1.0), Color.white],
+                colors: [brandBlue, brandBlueLight],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
 
             if let snapshot = entry.snapshot, let nextDays = snapshot.nextDays, !nextDays.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 7) {
                     Text("Nächste Tage")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .font(.caption)
+                        .foregroundColor(mutedWhite)
 
                     let rowLimit = family == .systemLarge ? 7 : 4
                     let showDetailedTeam = family == .systemLarge
 
                     ForEach(Array(nextDays.prefix(rowLimit).enumerated()), id: \.offset) { _, day in
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: 3) {
                             HStack(alignment: .firstTextBaseline, spacing: 6) {
                                 Text(formatDay(day.date))
                                     .font(.caption2)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(mutedWhite)
                                     .frame(width: 42, alignment: .leading)
 
                                 Text(day.statusLabel ?? day.workplace ?? "Kein Eintrag")
                                     .font(.caption)
-                                    .foregroundColor(isCalmStatus(status: day.statusLabel, absenceReason: day.absenceReason) ? .green : .primary)
+                                    .foregroundColor(isCalmStatus(status: day.statusLabel, absenceReason: day.absenceReason) ? .green : .white)
                                     .lineLimit(1)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(cardBlue)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .stroke(cardBlueBorder, lineWidth: 1)
+                                    )
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
 
                                 Spacer(minLength: 0)
 
@@ -215,26 +259,27 @@ struct MycliniqNextDaysWidgetEntryView: View {
                             if let teamLine = teammateLine(day.teammates ?? [], maxNames: showDetailedTeam ? 3 : 2) {
                                 Text(teamLine)
                                     .font(.caption2)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(mutedWhite)
                                     .lineLimit(1)
                                     .padding(.leading, 48)
                             }
                         }
                     }
                 }
-                .padding()
+                .padding(14)
             } else {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("mycliniq")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(mutedWhite)
                     Text("Keine Vorschau")
                         .font(.headline)
+                        .foregroundColor(.white)
                     Text("App oeffnen, um zu synchronisieren")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(mutedWhite)
                 }
-                .padding()
+                .padding(14)
             }
         }
     }
