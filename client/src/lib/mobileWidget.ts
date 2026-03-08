@@ -42,6 +42,15 @@ export type WidgetTodaySnapshotV2 = {
     presentTomorrow: number;
     dutyTomorrow: number;
   } | null;
+  adminDailyPlan?: {
+    enabled: boolean;
+    date: string | null;
+    assignments: Array<{
+      workplace: string;
+      names: string[];
+      dutyCount: number;
+    }>;
+  } | null;
 };
 
 function getIosBridge() {
@@ -134,9 +143,48 @@ export function buildWidgetTodaySnapshot(input: {
           dutyTomorrow: tomorrowMembers.filter((m) => Boolean(m.isDuty)).length,
         }
       : null;
+  const adminDailyPlan =
+    input.isAdmin && input.attendanceWidget
+      ? {
+          enabled: true,
+          date: input.today?.date ?? null,
+          assignments: Object.values(
+            todayMembers.reduce<
+              Record<
+                string,
+                {
+                  workplace: string;
+                  names: string[];
+                  dutyCount: number;
+                }
+              >
+            >((acc, member) => {
+              const workplace =
+                (member.workplace ?? "").trim() || "Ohne Bereich";
+              if (!acc[workplace]) {
+                acc[workplace] = { workplace, names: [], dutyCount: 0 };
+              }
+              const name = [member.firstName, member.lastName]
+                .filter(Boolean)
+                .join(" ")
+                .trim();
+              if (name) acc[workplace].names.push(name);
+              if (member.isDuty) acc[workplace].dutyCount += 1;
+              return acc;
+            }, {}),
+          )
+            .sort((a, b) => {
+              if (a.dutyCount !== b.dutyCount) return b.dutyCount - a.dutyCount;
+              if (a.names.length !== b.names.length)
+                return b.names.length - a.names.length;
+              return a.workplace.localeCompare(b.workplace, "de");
+            })
+            .slice(0, 8),
+        }
+      : null;
 
   return {
-    version: 3,
+    version: 4,
     generatedAt: new Date().toISOString(),
     date: input.today?.date ?? null,
     personName: input.personName,
@@ -148,6 +196,7 @@ export function buildWidgetTodaySnapshot(input: {
     teammates: input.teammateNames,
     nextDays,
     adminSummary,
+    adminDailyPlan,
   };
 }
 

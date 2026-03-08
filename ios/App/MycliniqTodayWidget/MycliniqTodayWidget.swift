@@ -40,6 +40,18 @@ struct MycliniqAdminSummary: Decodable {
     let dutyTomorrow: Int
 }
 
+struct MycliniqAdminAssignment: Decodable {
+    let workplace: String
+    let names: [String]
+    let dutyCount: Int
+}
+
+struct MycliniqAdminDailyPlan: Decodable {
+    let enabled: Bool
+    let date: String?
+    let assignments: [MycliniqAdminAssignment]
+}
+
 struct MycliniqSnapshot: Decodable {
     let version: Int
     let generatedAt: String
@@ -53,6 +65,7 @@ struct MycliniqSnapshot: Decodable {
     let teammates: [String]
     let nextDays: [MycliniqNextDay]?
     let adminSummary: MycliniqAdminSummary?
+    let adminDailyPlan: MycliniqAdminDailyPlan?
 }
 
 struct MycliniqEntry: TimelineEntry {
@@ -326,6 +339,15 @@ struct MycliniqAdminOverviewWidgetEntryView: View {
     var entry: MycliniqProvider.Entry
     @Environment(\.widgetFamily) private var family
 
+    private func namesLine(_ names: [String], maxNames: Int) -> String {
+        if names.isEmpty { return "Keine Zuteilung" }
+        if names.count <= maxNames {
+            return names.joined(separator: ", ")
+        }
+        let visible = names.prefix(maxNames).joined(separator: ", ")
+        return "\(visible) +\(names.count - maxNames)"
+    }
+
     var body: some View {
         ZStack {
             LinearGradient(
@@ -334,67 +356,71 @@ struct MycliniqAdminOverviewWidgetEntryView: View {
                 endPoint: .bottomTrailing
             )
 
-            if let admin = entry.snapshot?.adminSummary, admin.enabled {
+            if let admin = entry.snapshot?.adminSummary,
+               admin.enabled,
+               let dailyPlan = entry.snapshot?.adminDailyPlan,
+               dailyPlan.enabled {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Admin Übersicht")
+                    Text("Tageseinsatz")
                         .font(.caption)
                         .foregroundColor(mutedWhite)
 
-                    HStack(spacing: 8) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Heute")
-                                .font(.caption2)
-                                .foregroundColor(mutedWhite)
-                            Text("\(admin.presentToday) anwesend")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                            Text("\(admin.absentToday) abwesend")
-                                .font(.caption)
-                                .foregroundColor(.green)
-                            Text("\(admin.dutyToday) im Dienst")
-                                .font(.caption)
-                                .foregroundColor(.red)
-                        }
-                        .padding(8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(cardBlue)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(cardBlueBorder, lineWidth: 1)
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Morgen")
-                                .font(.caption2)
-                                .foregroundColor(mutedWhite)
-                            Text("\(admin.presentTomorrow) geplant")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                            Text("\(admin.dutyTomorrow) im Dienst")
-                                .font(.caption)
-                                .foregroundColor(.red)
-                        }
-                        .padding(8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(cardBlue)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(cardBlueBorder, lineWidth: 1)
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-
-                    if family == .systemLarge {
-                        Text("Quelle: Team-Anwesenheit aus Dashboard")
+                    HStack(spacing: 12) {
+                        Text("\(admin.presentToday) anwesend")
                             .font(.caption2)
-                            .foregroundColor(mutedWhite)
+                            .foregroundColor(.white)
+                        Text("\(admin.absentToday) abwesend")
+                            .font(.caption2)
+                            .foregroundColor(.green)
+                        Text("\(admin.dutyToday) Dienst")
+                            .font(.caption2)
+                            .foregroundColor(.red)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(cardBlue)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(cardBlueBorder, lineWidth: 1)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                    let rowLimit = family == .systemLarge ? 6 : 3
+                    ForEach(Array(dailyPlan.assignments.prefix(rowLimit).enumerated()), id: \.offset) { _, assignment in
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text(assignment.workplace)
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.white)
+                                    .lineLimit(1)
+                                Spacer()
+                                if assignment.dutyCount > 0 {
+                                    Text("\(assignment.dutyCount) D")
+                                        .font(.caption2)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(.red)
+                                }
+                            }
+                            Text(namesLine(assignment.names, maxNames: family == .systemLarge ? 3 : 2))
+                                .font(.caption2)
+                                .foregroundColor(mutedWhite)
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .background(cardBlue)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(cardBlueBorder, lineWidth: 1)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                 }
                 .padding(14)
             } else {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Admin Übersicht")
+                    Text("Tageseinsatz")
                         .font(.caption)
                         .foregroundColor(mutedWhite)
                     Text("Keine Admin-Daten")
