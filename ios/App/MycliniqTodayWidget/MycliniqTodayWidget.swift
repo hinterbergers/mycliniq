@@ -184,9 +184,6 @@ struct MycliniqTodayWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: MycliniqProvider()) { entry in
             MycliniqTodayWidgetEntryView(entry: entry)
-                .containerBackground(for: .widget) {
-                    Color.clear
-                }
         }
         .configurationDisplayName("mycliniq Heute")
         .description("Zeigt den aktuellen Tagesstatus aus dem Dashboard.")
@@ -200,9 +197,6 @@ struct MycliniqNextDaysWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: MycliniqProvider()) { entry in
             MycliniqNextDaysWidgetEntryView(entry: entry)
-                .containerBackground(for: .widget) {
-                    Color.clear
-                }
         }
         .configurationDisplayName("mycliniq Nächste Tage")
         .description("Zeigt die nächsten geplanten Tage aus dem Dashboard.")
