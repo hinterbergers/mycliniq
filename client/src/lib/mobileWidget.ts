@@ -1,4 +1,5 @@
 import type { DashboardDay } from "@/lib/api";
+import { getApiBase } from "@/lib/apiBase";
 
 export const WIDGET_TODAY_SNAPSHOT_KEY = "mycliniq_widget_today_v1";
 
@@ -117,5 +118,59 @@ export async function syncWidgetTodaySnapshot(
     iosBridge?.postMessage(snapshot);
   } catch {
     // ignore
+  }
+}
+
+export async function syncWidgetTodaySnapshotFromApi(
+  authToken: string,
+  personName: string | null,
+): Promise<void> {
+  try {
+    const res = await fetch(`${getApiBase()}/dashboard`, {
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+        Accept: "application/json",
+      },
+    });
+    if (!res.ok) return;
+
+    const raw = (await res.json()) as
+      | {
+          success?: boolean;
+          data?: {
+            today?: DashboardDay;
+            weekPreview?: DashboardDay[];
+          };
+          today?: DashboardDay;
+          weekPreview?: DashboardDay[];
+        }
+      | null;
+
+    const payload = (raw?.data ?? raw) as
+      | {
+          today?: DashboardDay;
+          weekPreview?: DashboardDay[];
+        }
+      | null
+      | undefined;
+    if (!payload?.today) return;
+
+    const today = payload.today;
+    const teammateNames = (today.teammates ?? [])
+      .map((t) => [t.firstName, t.lastName].filter(Boolean).join(" ").trim())
+      .filter(Boolean);
+    const nextDays = (payload.weekPreview ?? []).filter(
+      (entry) => entry.date !== today.date,
+    );
+
+    const snapshot = buildWidgetTodaySnapshot({
+      today,
+      personName,
+      teammateNames,
+      nextDays,
+    });
+    await syncWidgetTodaySnapshot(snapshot);
+  } catch {
+    // ignore widget snapshot sync failures
   }
 }

@@ -16,6 +16,7 @@ import {
   writeAuthToken,
 } from "./authToken";
 import { getApiBase } from "./apiBase";
+import { syncWidgetTodaySnapshotFromApi } from "./mobileWidget";
 
 const AUTH_API_BASE = getApiBase();
 
@@ -123,6 +124,22 @@ function buildUserFromEmployee(emp: any): UserData {
     isAdmin: !!emp.isAdmin,
     trainingEnabled: Boolean(emp.trainingEnabled),
   };
+}
+
+function buildDisplayName(
+  user: UserData | null | undefined,
+  employee: Omit<Employee, "passwordHash"> | null | undefined,
+): string | null {
+  const employeeFirstName = (employee as any)?.firstName as string | undefined;
+  const employeeLastName = (employee as any)?.lastName as string | undefined;
+  const employeeName = [employeeFirstName, employeeLastName]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  if (employeeName) return employeeName;
+
+  const userName = [user?.name, user?.lastName].filter(Boolean).join(" ").trim();
+  return userName || null;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -306,6 +323,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               }
             }
           }
+          void syncWidgetTodaySnapshotFromApi(
+            authToken,
+            buildDisplayName(meData.user, meData.employee ?? null),
+          );
           return { success: true };
         }
 
@@ -330,6 +351,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               capabilities: fbCapabilities,
               employee: fbEmployee ?? null,
             });
+            void syncWidgetTodaySnapshotFromApi(
+              authToken,
+              buildDisplayName(fbUser, fbEmployee ?? null),
+            );
             return { success: true };
           }
 
@@ -339,6 +364,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               user: buildUserFromEmployee(fbEmployee),
               capabilities: fbCapabilities,
             });
+            void syncWidgetTodaySnapshotFromApi(
+              authToken,
+              buildDisplayName(null, fbEmployee),
+            );
             return { success: true };
           }
         } else if (fallback.data?.success === false || !fallback.ok) {
