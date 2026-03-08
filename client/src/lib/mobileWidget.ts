@@ -164,7 +164,7 @@ export async function syncWidgetTodaySnapshot(
       ok: false,
       detail: message,
     });
-    // fall through to iOS message handler
+    return;
   }
 
   try {

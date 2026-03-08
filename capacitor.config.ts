@@ -5,6 +5,7 @@ const config: CapacitorConfig = {
   appName: "mycliniq",
   webDir: "dist/public",
   bundledWebRuntime: false,
+  packageClassList: ["MycliniqWidgetBridge"],
   server: {
     cleartext: false,
   },
