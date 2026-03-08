@@ -3,6 +3,14 @@ import { getApiBase } from "@/lib/apiBase";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 
 export const WIDGET_TODAY_SNAPSHOT_KEY = "mycliniq_widget_today_v1";
+export const WIDGET_SYNC_DEBUG_KEY = "mycliniq_widget_sync_debug_v1";
+
+export type WidgetSyncDebugStatus = {
+  at: string;
+  stage: string;
+  ok: boolean;
+  detail: string;
+};
 
 export type WidgetNextDaySnapshot = {
   date: string;
@@ -39,6 +47,24 @@ type MycliniqWidgetBridgePlugin = {
 const MycliniqWidgetBridge = registerPlugin<MycliniqWidgetBridgePlugin>(
   "MycliniqWidgetBridge",
 );
+
+function setWidgetSyncDebugStatus(status: WidgetSyncDebugStatus): void {
+  try {
+    localStorage.setItem(WIDGET_SYNC_DEBUG_KEY, JSON.stringify(status));
+  } catch {
+    // ignore local storage issues
+  }
+}
+
+export function readWidgetSyncDebugStatus(): WidgetSyncDebugStatus | null {
+  try {
+    const raw = localStorage.getItem(WIDGET_SYNC_DEBUG_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as WidgetSyncDebugStatus;
+  } catch {
+    return null;
+  }
+}
 
 export function buildWidgetTodaySnapshot(input: {
   today: DashboardDay | null;
@@ -102,8 +128,19 @@ export async function syncWidgetTodaySnapshot(
 ): Promise<void> {
   try {
     localStorage.setItem(WIDGET_TODAY_SNAPSHOT_KEY, JSON.stringify(snapshot));
+    setWidgetSyncDebugStatus({
+      at: new Date().toISOString(),
+      stage: "local-cache",
+      ok: true,
+      detail: "Snapshot in localStorage gespeichert",
+    });
   } catch {
-    // ignore local storage issues
+    setWidgetSyncDebugStatus({
+      at: new Date().toISOString(),
+      stage: "local-cache",
+      ok: false,
+      detail: "localStorage schreiben fehlgeschlagen",
+    });
   }
 
   try {
@@ -111,17 +148,50 @@ export async function syncWidgetTodaySnapshot(
       await MycliniqWidgetBridge.setTodaySnapshot({
         snapshotJson: JSON.stringify(snapshot),
       });
+      setWidgetSyncDebugStatus({
+        at: new Date().toISOString(),
+        stage: "native-bridge",
+        ok: true,
+        detail: "setTodaySnapshot erfolgreich",
+      });
       return;
     }
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unbekannter Bridge-Fehler";
+    setWidgetSyncDebugStatus({
+      at: new Date().toISOString(),
+      stage: "native-bridge",
+      ok: false,
+      detail: message,
+    });
     // fall through to iOS message handler
   }
 
   try {
     const iosBridge = getIosBridge();
-    iosBridge?.postMessage(snapshot);
+    if (iosBridge?.postMessage) {
+      iosBridge.postMessage(snapshot);
+      setWidgetSyncDebugStatus({
+        at: new Date().toISOString(),
+        stage: "webkit-fallback",
+        ok: true,
+        detail: "Message an iOS WebKit Handler gesendet",
+      });
+    } else {
+      setWidgetSyncDebugStatus({
+        at: new Date().toISOString(),
+        stage: "webkit-fallback",
+        ok: false,
+        detail: "Kein iOS WebKit Handler vorhanden",
+      });
+    }
   } catch {
-    // ignore
+    setWidgetSyncDebugStatus({
+      at: new Date().toISOString(),
+      stage: "webkit-fallback",
+      ok: false,
+      detail: "iOS WebKit Handler Aufruf fehlgeschlagen",
+    });
   }
 }
 
@@ -136,7 +206,15 @@ export async function syncWidgetTodaySnapshotFromApi(
         Accept: "application/json",
       },
     });
-    if (!res.ok) return;
+    if (!res.ok) {
+      setWidgetSyncDebugStatus({
+        at: new Date().toISOString(),
+        stage: "api-dashboard",
+        ok: false,
+        detail: `Dashboard API Fehler: HTTP ${res.status}`,
+      });
+      return;
+    }
 
     const raw = (await res.json()) as
       | {
@@ -157,7 +235,15 @@ export async function syncWidgetTodaySnapshotFromApi(
         }
       | null
       | undefined;
-    if (!payload?.today) return;
+    if (!payload?.today) {
+      setWidgetSyncDebugStatus({
+        at: new Date().toISOString(),
+        stage: "api-dashboard",
+        ok: false,
+        detail: "Dashboard API ohne today-Daten",
+      });
+      return;
+    }
 
     const today = payload.today;
     const teammateNames = (today.teammates ?? [])
@@ -175,6 +261,11 @@ export async function syncWidgetTodaySnapshotFromApi(
     });
     await syncWidgetTodaySnapshot(snapshot);
   } catch {
-    // ignore widget snapshot sync failures
+    setWidgetSyncDebugStatus({
+      at: new Date().toISOString(),
+      stage: "api-dashboard",
+      ok: false,
+      detail: "Dashboard API / Snapshot Sync fehlgeschlagen",
+    });
   }
 }
