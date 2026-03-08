@@ -92,21 +92,17 @@ struct MycliniqTodayWidgetEntryView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Heute")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundColor(.secondary)
 
                     Text(snapshot.statusLabel ?? "Kein Eintrag")
                         .font(.headline)
-                        .foregroundStyle(
-                            isCalmStatus(status: snapshot.statusLabel, absenceReason: snapshot.absenceReason)
-                                ? .green
-                                : .primary
-                        )
+                        .foregroundColor(isCalmStatus(status: snapshot.statusLabel, absenceReason: snapshot.absenceReason) ? .green : .primary)
                         .lineLimit(2)
 
                     if let workplace = snapshot.workplace, !workplace.isEmpty {
                         Text(workplace)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundColor(.secondary)
                             .lineLimit(1)
                     }
 
@@ -114,14 +110,14 @@ struct MycliniqTodayWidgetEntryView: View {
                         Text("Dienst: \(duty)")
                             .font(.caption2)
                             .fontWeight(.semibold)
-                            .foregroundStyle(.red)
+                            .foregroundColor(.red)
                             .lineLimit(1)
                     }
 
                     if family != .systemSmall, let teamLine = teammateLine(snapshot.teammates) {
                         Text(teamLine)
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundColor(.secondary)
                             .lineLimit(1)
                     }
                 }
@@ -130,12 +126,12 @@ struct MycliniqTodayWidgetEntryView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("mycliniq")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundColor(.secondary)
                     Text("Keine Daten")
                         .font(.headline)
                     Text("App oeffnen, um zu synchronisieren")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundColor(.secondary)
                 }
                 .padding()
             }
@@ -187,7 +183,7 @@ struct MycliniqNextDaysWidgetEntryView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Nächste Tage")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundColor(.secondary)
 
                     let rowLimit = family == .systemLarge ? 7 : 4
                     let showDetailedTeam = family == .systemLarge
@@ -197,16 +193,12 @@ struct MycliniqNextDaysWidgetEntryView: View {
                             HStack(alignment: .firstTextBaseline, spacing: 6) {
                                 Text(formatDay(day.date))
                                     .font(.caption2)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundColor(.secondary)
                                     .frame(width: 42, alignment: .leading)
 
                                 Text(day.statusLabel ?? day.workplace ?? "Kein Eintrag")
                                     .font(.caption)
-                                    .foregroundStyle(
-                                        isCalmStatus(status: day.statusLabel, absenceReason: day.absenceReason)
-                                            ? .green
-                                            : .primary
-                                    )
+                                    .foregroundColor(isCalmStatus(status: day.statusLabel, absenceReason: day.absenceReason) ? .green : .primary)
                                     .lineLimit(1)
 
                                 Spacer(minLength: 0)
@@ -215,7 +207,7 @@ struct MycliniqNextDaysWidgetEntryView: View {
                                     Text(day.dutyLabel ?? "Dienst")
                                         .font(.caption2)
                                         .fontWeight(.semibold)
-                                        .foregroundStyle(.red)
+                                        .foregroundColor(.red)
                                         .lineLimit(1)
                                 }
                             }
@@ -223,7 +215,7 @@ struct MycliniqNextDaysWidgetEntryView: View {
                             if let teamLine = teammateLine(day.teammates ?? [], maxNames: showDetailedTeam ? 3 : 2) {
                                 Text(teamLine)
                                     .font(.caption2)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundColor(.secondary)
                                     .lineLimit(1)
                                     .padding(.leading, 48)
                             }
@@ -235,12 +227,12 @@ struct MycliniqNextDaysWidgetEntryView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("mycliniq")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundColor(.secondary)
                     Text("Keine Vorschau")
                         .font(.headline)
                     Text("App oeffnen, um zu synchronisieren")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundColor(.secondary)
                 }
                 .padding()
             }
