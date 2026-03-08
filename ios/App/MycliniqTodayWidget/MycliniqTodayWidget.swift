@@ -10,6 +10,7 @@ struct MycliniqNextDay: Decodable {
     let workplace: String?
     let dutyLabel: String?
     let isDuty: Bool
+    let teammates: [String]?
 }
 
 struct MycliniqSnapshot: Decodable {
@@ -58,6 +59,17 @@ struct MycliniqProvider: TimelineProvider {
 
 struct MycliniqTodayWidgetEntryView: View {
     var entry: MycliniqProvider.Entry
+    @Environment(\.widgetFamily) private var family
+
+    private func teammateLine(_ names: [String], maxNames: Int = 2) -> String? {
+        let cleaned = names.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        guard !cleaned.isEmpty else { return nil }
+        if cleaned.count <= maxNames {
+            return "Mit: " + cleaned.joined(separator: ", ")
+        }
+        let visible = cleaned.prefix(maxNames).joined(separator: ", ")
+        return "Mit: \(visible) +\(cleaned.count - maxNames)"
+    }
 
     var body: some View {
         ZStack {
@@ -91,6 +103,13 @@ struct MycliniqTodayWidgetEntryView: View {
                             .foregroundStyle(.red)
                             .lineLimit(1)
                     }
+
+                    if family != .systemSmall, let teamLine = teammateLine(snapshot.teammates) {
+                        Text(teamLine)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
                 .padding()
             } else {
@@ -112,6 +131,17 @@ struct MycliniqTodayWidgetEntryView: View {
 
 struct MycliniqNextDaysWidgetEntryView: View {
     var entry: MycliniqProvider.Entry
+    @Environment(\.widgetFamily) private var family
+
+    private func teammateLine(_ names: [String], maxNames: Int) -> String? {
+        let cleaned = names.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        guard !cleaned.isEmpty else { return nil }
+        if cleaned.count <= maxNames {
+            return "Mit: " + cleaned.joined(separator: ", ")
+        }
+        let visible = cleaned.prefix(maxNames).joined(separator: ", ")
+        return "Mit: \(visible) +\(cleaned.count - maxNames)"
+    }
 
     private func formatDay(_ isoDate: String) -> String {
         let parts = isoDate.split(separator: "-")
@@ -137,25 +167,38 @@ struct MycliniqNextDaysWidgetEntryView: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
 
-                    ForEach(Array(nextDays.prefix(4).enumerated()), id: \.offset) { _, day in
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Text(formatDay(day.date))
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .frame(width: 42, alignment: .leading)
+                    let rowLimit = family == .systemLarge ? 7 : 4
+                    let showDetailedTeam = family == .systemLarge
 
-                            Text(day.statusLabel ?? day.workplace ?? "Kein Eintrag")
-                                .font(.caption)
-                                .lineLimit(1)
-
-                            Spacer(minLength: 0)
-
-                            if day.isDuty {
-                                Text(day.dutyLabel ?? "Dienst")
+                    ForEach(Array(nextDays.prefix(rowLimit).enumerated()), id: \.offset) { _, day in
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                Text(formatDay(day.date))
                                     .font(.caption2)
-                                    .fontWeight(.semibold)
-                                    .foregroundStyle(.red)
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 42, alignment: .leading)
+
+                                Text(day.statusLabel ?? day.workplace ?? "Kein Eintrag")
+                                    .font(.caption)
                                     .lineLimit(1)
+
+                                Spacer(minLength: 0)
+
+                                if day.isDuty {
+                                    Text(day.dutyLabel ?? "Dienst")
+                                        .font(.caption2)
+                                        .fontWeight(.semibold)
+                                        .foregroundStyle(.red)
+                                        .lineLimit(1)
+                                }
+                            }
+
+                            if let teamLine = teammateLine(day.teammates ?? [], maxNames: showDetailedTeam ? 3 : 2) {
+                                Text(teamLine)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .padding(.leading, 48)
                             }
                         }
                     }

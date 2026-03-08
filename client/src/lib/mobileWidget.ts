@@ -8,6 +8,7 @@ export type WidgetNextDaySnapshot = {
   workplace: string | null;
   dutyLabel: string | null;
   isDuty: boolean;
+  teammates: string[];
 };
 
 export type WidgetTodaySnapshotV2 = {
@@ -54,6 +55,9 @@ export function buildWidgetTodaySnapshot(input: {
     .slice(0, 7)
     .map((day) => {
       const nextDutyLabel = day.duty?.labelShort ?? day.duty?.serviceType ?? null;
+      const teammateNames = (day.teammates ?? [])
+        .map((t) => [t.firstName, t.lastName].filter(Boolean).join(" ").trim())
+        .filter(Boolean);
       const normalizedStatusLabel =
         day.statusLabel ??
         day.absenceReason ??
@@ -67,6 +71,7 @@ export function buildWidgetTodaySnapshot(input: {
         workplace: day.workplace ?? null,
         dutyLabel: nextDutyLabel,
         isDuty: Boolean(day.duty || nextDutyLabel),
+        teammates: teammateNames,
       };
     });
   return {
