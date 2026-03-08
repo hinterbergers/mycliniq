@@ -31,6 +31,15 @@ struct MycliniqNextDay: Decodable {
     let teammates: [String]?
 }
 
+struct MycliniqAdminSummary: Decodable {
+    let enabled: Bool
+    let presentToday: Int
+    let absentToday: Int
+    let dutyToday: Int
+    let presentTomorrow: Int
+    let dutyTomorrow: Int
+}
+
 struct MycliniqSnapshot: Decodable {
     let version: Int
     let generatedAt: String
@@ -43,6 +52,7 @@ struct MycliniqSnapshot: Decodable {
     let isDuty: Bool
     let teammates: [String]
     let nextDays: [MycliniqNextDay]?
+    let adminSummary: MycliniqAdminSummary?
 }
 
 struct MycliniqEntry: TimelineEntry {
@@ -257,7 +267,7 @@ struct MycliniqNextDaysWidgetEntryView: View {
                                 Text(formatDay(day.date))
                                     .font(.caption2)
                                     .foregroundColor(mutedWhite)
-                                    .frame(width: 42, alignment: .leading)
+                                    .frame(width: 74, alignment: .leading)
 
                                 Text(day.statusLabel ?? day.workplace ?? "Kein Eintrag")
                                     .font(.caption)
@@ -288,7 +298,7 @@ struct MycliniqNextDaysWidgetEntryView: View {
                                     .font(.caption2)
                                     .foregroundColor(mutedWhite)
                                     .lineLimit(1)
-                                    .padding(.leading, 48)
+                                    .padding(.leading, 80)
                             }
                         }
                     }
@@ -303,6 +313,94 @@ struct MycliniqNextDaysWidgetEntryView: View {
                         .font(.headline)
                         .foregroundColor(.white)
                     Text("App oeffnen, um zu synchronisieren")
+                        .font(.caption2)
+                        .foregroundColor(mutedWhite)
+                }
+                .padding(14)
+            }
+        }
+    }
+}
+
+struct MycliniqAdminOverviewWidgetEntryView: View {
+    var entry: MycliniqProvider.Entry
+    @Environment(\.widgetFamily) private var family
+
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [brandBlue, brandBlueLight],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            if let admin = entry.snapshot?.adminSummary, admin.enabled {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Admin Übersicht")
+                        .font(.caption)
+                        .foregroundColor(mutedWhite)
+
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Heute")
+                                .font(.caption2)
+                                .foregroundColor(mutedWhite)
+                            Text("\(admin.presentToday) anwesend")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                            Text("\(admin.absentToday) abwesend")
+                                .font(.caption)
+                                .foregroundColor(.green)
+                            Text("\(admin.dutyToday) im Dienst")
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(cardBlue)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(cardBlueBorder, lineWidth: 1)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Morgen")
+                                .font(.caption2)
+                                .foregroundColor(mutedWhite)
+                            Text("\(admin.presentTomorrow) geplant")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                            Text("\(admin.dutyTomorrow) im Dienst")
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(cardBlue)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(cardBlueBorder, lineWidth: 1)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+
+                    if family == .systemLarge {
+                        Text("Quelle: Team-Anwesenheit aus Dashboard")
+                            .font(.caption2)
+                            .foregroundColor(mutedWhite)
+                    }
+                }
+                .padding(14)
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Admin Übersicht")
+                        .font(.caption)
+                        .foregroundColor(mutedWhite)
+                    Text("Keine Admin-Daten")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                    Text("Nur für Admin/Editor mit Teamrechten")
                         .font(.caption2)
                         .foregroundColor(mutedWhite)
                 }
@@ -336,6 +434,20 @@ struct MycliniqNextDaysWidget: Widget {
         }
         .configurationDisplayName("mycliniq Nächste Tage")
         .description("Zeigt die nächsten geplanten Tage aus dem Dashboard.")
+        .supportedFamilies([.systemMedium, .systemLarge])
+    }
+}
+
+struct MycliniqAdminOverviewWidget: Widget {
+    let kind: String = "MycliniqAdminOverviewWidget"
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: MycliniqProvider()) { entry in
+            MycliniqAdminOverviewWidgetEntryView(entry: entry)
+                .widgetBackgroundCompat()
+        }
+        .configurationDisplayName("mycliniq Admin Übersicht")
+        .description("Zeigt Team-Anwesenheit und Dienstzahlen für Admins.")
         .supportedFamilies([.systemMedium, .systemLarge])
     }
 }

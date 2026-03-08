@@ -13,5 +13,6 @@ struct MycliniqTodayWidgetBundle: WidgetBundle {
     var body: some Widget {
         MycliniqTodayWidget()
         MycliniqNextDaysWidget()
+        MycliniqAdminOverviewWidget()
     }
 }

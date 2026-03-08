@@ -1,4 +1,4 @@
-import type { DashboardDay } from "@/lib/api";
+import type { DashboardAttendanceWidget, DashboardDay } from "@/lib/api";
 import { getApiBase } from "@/lib/apiBase";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 
@@ -23,7 +23,7 @@ export type WidgetNextDaySnapshot = {
 };
 
 export type WidgetTodaySnapshotV2 = {
-  version: 2;
+  version: number;
   generatedAt: string;
   date: string | null;
   personName: string | null;
@@ -34,6 +34,14 @@ export type WidgetTodaySnapshotV2 = {
   isDuty: boolean;
   teammates: string[];
   nextDays: WidgetNextDaySnapshot[];
+  adminSummary?: {
+    enabled: boolean;
+    presentToday: number;
+    absentToday: number;
+    dutyToday: number;
+    presentTomorrow: number;
+    dutyTomorrow: number;
+  } | null;
 };
 
 function getIosBridge() {
@@ -71,6 +79,8 @@ export function buildWidgetTodaySnapshot(input: {
   personName: string | null;
   teammateNames: string[];
   nextDays: DashboardDay[];
+  attendanceWidget?: DashboardAttendanceWidget | null;
+  isAdmin?: boolean;
 }): WidgetTodaySnapshotV2 {
   const dutyLabel = input.today?.duty?.labelShort ?? input.today?.duty?.serviceType ?? null;
   const todayStatusLabel =
@@ -108,8 +118,25 @@ export function buildWidgetTodaySnapshot(input: {
         teammates: teammateNames,
       };
     });
+  const todayMembers = input.attendanceWidget?.today?.members ?? [];
+  const tomorrowMembers = input.attendanceWidget?.tomorrow?.members ?? [];
+  const adminSummary =
+    input.isAdmin && input.attendanceWidget
+      ? {
+          enabled: true,
+          presentToday: todayMembers.length,
+          absentToday:
+            typeof input.attendanceWidget.today?.absentCount === "number"
+              ? input.attendanceWidget.today.absentCount
+              : 0,
+          dutyToday: todayMembers.filter((m) => Boolean(m.isDuty)).length,
+          presentTomorrow: tomorrowMembers.length,
+          dutyTomorrow: tomorrowMembers.filter((m) => Boolean(m.isDuty)).length,
+        }
+      : null;
+
   return {
-    version: 2,
+    version: 3,
     generatedAt: new Date().toISOString(),
     date: input.today?.date ?? null,
     personName: input.personName,
@@ -120,6 +147,7 @@ export function buildWidgetTodaySnapshot(input: {
     isDuty: Boolean(input.today?.duty || dutyLabel),
     teammates: input.teammateNames,
     nextDays,
+    adminSummary,
   };
 }
 

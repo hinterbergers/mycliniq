@@ -462,12 +462,16 @@ export default function Dashboard() {
       personName: buildFullName(employee?.firstName, employee?.lastName) || null,
       teammateNames: todayTeamNames,
       nextDays,
+      attendanceWidget: dashboardData?.attendanceWidget ?? null,
+      isAdmin,
     });
     void syncWidgetTodaySnapshot(snapshot);
   }, [
+    dashboardData?.attendanceWidget,
     dashboardData?.weekPreview,
     employee?.firstName,
     employee?.lastName,
+    isAdmin,
     todayEntry,
     todayTeamNames,
   ]);
