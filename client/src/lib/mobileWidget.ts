@@ -39,22 +39,42 @@ export function buildWidgetTodaySnapshot(input: {
   nextDays: DashboardDay[];
 }): WidgetTodaySnapshotV2 {
   const dutyLabel = input.today?.duty?.labelShort ?? input.today?.duty?.serviceType ?? null;
-  const nextDays = input.nextDays.map((day) => {
-    const nextDutyLabel = day.duty?.labelShort ?? day.duty?.serviceType ?? null;
-    return {
-      date: day.date,
-      statusLabel: day.statusLabel ?? null,
-      workplace: day.workplace ?? null,
-      dutyLabel: nextDutyLabel,
-      isDuty: Boolean(day.duty || nextDutyLabel),
-    };
-  });
+  const todayStatusLabel =
+    input.today?.statusLabel ??
+    input.today?.absenceReason ??
+    (dutyLabel ? `Dienst${dutyLabel ? ` (${dutyLabel})` : ""}` : null) ??
+    input.today?.workplace ??
+    null;
+  const todayDate = input.today?.date ?? null;
+  const nextDays = input.nextDays
+    .filter((day) => {
+      if (!todayDate) return true;
+      return day.date > todayDate;
+    })
+    .slice(0, 7)
+    .map((day) => {
+      const nextDutyLabel = day.duty?.labelShort ?? day.duty?.serviceType ?? null;
+      const normalizedStatusLabel =
+        day.statusLabel ??
+        day.absenceReason ??
+        (nextDutyLabel ? `Dienst${nextDutyLabel ? ` (${nextDutyLabel})` : ""}` : null) ??
+        day.workplace ??
+        "Kein Eintrag";
+
+      return {
+        date: day.date,
+        statusLabel: normalizedStatusLabel,
+        workplace: day.workplace ?? null,
+        dutyLabel: nextDutyLabel,
+        isDuty: Boolean(day.duty || nextDutyLabel),
+      };
+    });
   return {
     version: 2,
     generatedAt: new Date().toISOString(),
     date: input.today?.date ?? null,
     personName: input.personName,
-    statusLabel: input.today?.statusLabel ?? null,
+    statusLabel: todayStatusLabel,
     workplace: input.today?.workplace ?? null,
     absenceReason: input.today?.absenceReason ?? null,
     dutyLabel,
