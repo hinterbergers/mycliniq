@@ -4124,13 +4124,14 @@ const buildAttendanceMembers = (
         new Date().getMonth() - pastMonths,
         1,
       );
-        const startDate =
-          startParam && !Number.isNaN(startParam.getTime())
-            ? new Date(startParam.getFullYear(), startParam.getMonth(), 1)
-            : defaultStart;
+      const startDate =
+        startParam && !Number.isNaN(startParam.getTime())
+          ? new Date(startParam.getFullYear(), startParam.getMonth(), 1)
+          : defaultStart;
+      const totalMonths = Math.min(pastMonths + months, 72);
 
         const monthStarts: Array<{ year: number; month: number }> = [];
-        for (let i = 0; i < months; i += 1) {
+        for (let i = 0; i < totalMonths; i += 1) {
           const date = new Date(
             startDate.getFullYear(),
             startDate.getMonth() + i,
@@ -4407,6 +4408,7 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
         startWeekDateParam && !Number.isNaN(startWeekDateParam.getTime())
           ? startOfWeek(startWeekDateParam, { weekStartsOn: 1 })
           : addWeeks(currentWeekStart, -pastWeeks);
+      const totalWeeks = Math.min(pastWeeks + weeks, 130);
       const weekOptions = {
         weekStartsOn: 1 as const,
         firstWeekContainsDate: 4 as const,
@@ -4416,7 +4418,7 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
         weekNumber: number;
         startDate: Date;
       }> = [];
-      for (let i = 0; i < weeks; i += 1) {
+      for (let i = 0; i < totalWeeks; i += 1) {
         const weekStart = addWeeks(exportWeekStart, i);
         weeksInfo.push({
           weekYear: getWeekYear(weekStart),
