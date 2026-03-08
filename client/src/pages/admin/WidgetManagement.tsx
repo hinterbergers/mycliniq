@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { useEffect, useMemo, useState } from "react";
 import { DASHBOARD_WIDGETS } from "@/lib/dashboard-widgets";
+import { resolveApiUrl } from "@/lib/apiBase";
 
 type AdminUser = {
   id: number;
@@ -37,7 +38,7 @@ export default function WidgetManagement() {
   useEffect(() => {
     const loadUsers = async () => {
       try {
-        const res = await fetch("/api/admin/users", {
+        const res = await fetch(resolveApiUrl("/api/admin/users"), {
           headers: {
             ...authHeaders,
           },
@@ -76,7 +77,7 @@ export default function WidgetManagement() {
     () => async (userId: number) => {
       setLoadingWidgets(true);
       try {
-        const res = await fetch(`/api/admin/users/${userId}/widgets`, {
+        const res = await fetch(resolveApiUrl(`/api/admin/users/${userId}/widgets`), {
           headers: {
             ...authHeaders,
           },
@@ -127,7 +128,7 @@ export default function WidgetManagement() {
     if (!selectedUserId) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/admin/users/${selectedUserId}/widgets`, {
+      const res = await fetch(resolveApiUrl(`/api/admin/users/${selectedUserId}/widgets`), {
         method: "PUT",
         headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({ enabledWidgets }),
