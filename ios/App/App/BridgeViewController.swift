@@ -5,7 +5,6 @@ import Capacitor
 public class BridgeViewController: CAPBridgeViewController {
     public override func capacitorDidLoad() {
         super.capacitorDidLoad()
-        bridge?.registerPluginType(MycliniqWidgetBridge.self)
+        bridge?.registerPluginInstance(MycliniqWidgetBridge())
     }
 }
-
