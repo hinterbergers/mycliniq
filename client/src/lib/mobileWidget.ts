@@ -6,6 +6,7 @@ export type WidgetNextDaySnapshot = {
   date: string;
   statusLabel: string | null;
   workplace: string | null;
+  absenceReason: string | null;
   dutyLabel: string | null;
   isDuty: boolean;
   teammates: string[];
@@ -69,6 +70,7 @@ export function buildWidgetTodaySnapshot(input: {
         date: day.date,
         statusLabel: normalizedStatusLabel,
         workplace: day.workplace ?? null,
+        absenceReason: day.absenceReason ?? null,
         dutyLabel: nextDutyLabel,
         isDuty: Boolean(day.duty || nextDutyLabel),
         teammates: teammateNames,

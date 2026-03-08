@@ -8,6 +8,7 @@ struct MycliniqNextDay: Decodable {
     let date: String
     let statusLabel: String?
     let workplace: String?
+    let absenceReason: String?
     let dutyLabel: String?
     let isDuty: Bool
     let teammates: [String]?
@@ -61,6 +62,14 @@ struct MycliniqTodayWidgetEntryView: View {
     var entry: MycliniqProvider.Entry
     @Environment(\.widgetFamily) private var family
 
+    private func isCalmStatus(status: String?, absenceReason: String?) -> Bool {
+        if let reason = absenceReason, !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return true
+        }
+        let raw = (status ?? "").lowercased()
+        return raw.contains("urlaub") || raw.contains("abwesen")
+    }
+
     private func teammateLine(_ names: [String], maxNames: Int = 2) -> String? {
         let cleaned = names.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         guard !cleaned.isEmpty else { return nil }
@@ -87,6 +96,11 @@ struct MycliniqTodayWidgetEntryView: View {
 
                     Text(snapshot.statusLabel ?? "Kein Eintrag")
                         .font(.headline)
+                        .foregroundStyle(
+                            isCalmStatus(status: snapshot.statusLabel, absenceReason: snapshot.absenceReason)
+                                ? .green
+                                : .primary
+                        )
                         .lineLimit(2)
 
                     if let workplace = snapshot.workplace, !workplace.isEmpty {
@@ -132,6 +146,14 @@ struct MycliniqTodayWidgetEntryView: View {
 struct MycliniqNextDaysWidgetEntryView: View {
     var entry: MycliniqProvider.Entry
     @Environment(\.widgetFamily) private var family
+
+    private func isCalmStatus(status: String?, absenceReason: String?) -> Bool {
+        if let reason = absenceReason, !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return true
+        }
+        let raw = (status ?? "").lowercased()
+        return raw.contains("urlaub") || raw.contains("abwesen")
+    }
 
     private func teammateLine(_ names: [String], maxNames: Int) -> String? {
         let cleaned = names.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
@@ -180,6 +202,11 @@ struct MycliniqNextDaysWidgetEntryView: View {
 
                                 Text(day.statusLabel ?? day.workplace ?? "Kein Eintrag")
                                     .font(.caption)
+                                    .foregroundStyle(
+                                        isCalmStatus(status: day.statusLabel, absenceReason: day.absenceReason)
+                                            ? .green
+                                            : .primary
+                                    )
                                     .lineLimit(1)
 
                                 Spacer(minLength: 0)
