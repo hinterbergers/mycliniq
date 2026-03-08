@@ -497,10 +497,10 @@ struct MycliniqAdminOverviewWidget: Widget {
         StaticConfiguration(kind: kind, provider: MycliniqProvider()) { entry in
             MycliniqAdminOverviewWidgetEntryView(entry: entry)
                 .widgetBackgroundCompat()
+                .widgetURL(weeklyPlanURL)
         }
         .configurationDisplayName("mycliniq Admin Übersicht")
         .description("Zeigt Team-Anwesenheit und Dienstzahlen für Admins.")
         .supportedFamilies([.systemMedium, .systemLarge])
-        .widgetURL(weeklyPlanURL)
     }
 }
