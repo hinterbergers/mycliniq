@@ -4104,17 +4104,30 @@ const buildAttendanceMembers = (
       const monthsParam = Number(
         typeof req.query.months === "string" ? req.query.months : undefined,
       );
-        const months = Number.isFinite(monthsParam)
-          ? Math.min(Math.max(monthsParam, 1), 12)
-          : 6;
+      const pastMonthsParam = Number(
+        typeof req.query.pastMonths === "string"
+          ? req.query.pastMonths
+          : undefined,
+      );
+      const months = Number.isFinite(monthsParam)
+        ? Math.min(Math.max(Math.floor(monthsParam), 1), 24)
+        : 6;
+      const pastMonths = Number.isFinite(pastMonthsParam)
+        ? Math.min(Math.max(Math.floor(pastMonthsParam), 0), 60)
+        : 24;
         const startParam =
           typeof req.query.start === "string"
             ? new Date(req.query.start)
             : null;
+      const defaultStart = new Date(
+        new Date().getFullYear(),
+        new Date().getMonth() - pastMonths,
+        1,
+      );
         const startDate =
           startParam && !Number.isNaN(startParam.getTime())
             ? new Date(startParam.getFullYear(), startParam.getMonth(), 1)
-            : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+            : defaultStart;
 
         const monthStarts: Array<{ year: number; month: number }> = [];
         for (let i = 0; i < months; i += 1) {
@@ -4373,9 +4386,27 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
       const weeks = Number.isFinite(weeksParam)
         ? Math.min(Math.max(Math.floor(weeksParam), 1), 26)
         : 8;
+      const pastWeeksParamValue =
+        typeof req.query.pastWeeks === "string"
+          ? req.query.pastWeeks
+          : Array.isArray(req.query.pastWeeks)
+          ? req.query.pastWeeks[0]
+          : undefined;
+      const pastWeeksParam = Number(pastWeeksParamValue);
+      const pastWeeks = Number.isFinite(pastWeeksParam)
+        ? Math.min(Math.max(Math.floor(pastWeeksParam), 0), 104)
+        : 52;
 
       const today = new Date();
       const currentWeekStart = startOfWeek(today, { weekStartsOn: 1 });
+      const startWeekDateParam =
+        typeof req.query.startWeek === "string"
+          ? new Date(req.query.startWeek)
+          : null;
+      const exportWeekStart =
+        startWeekDateParam && !Number.isNaN(startWeekDateParam.getTime())
+          ? startOfWeek(startWeekDateParam, { weekStartsOn: 1 })
+          : addWeeks(currentWeekStart, -pastWeeks);
       const weekOptions = {
         weekStartsOn: 1 as const,
         firstWeekContainsDate: 4 as const,
@@ -4386,7 +4417,7 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
         startDate: Date;
       }> = [];
       for (let i = 0; i < weeks; i += 1) {
-        const weekStart = addWeeks(currentWeekStart, i);
+        const weekStart = addWeeks(exportWeekStart, i);
         weeksInfo.push({
           weekYear: getWeekYear(weekStart),
           weekNumber: getWeek(weekStart, weekOptions),
