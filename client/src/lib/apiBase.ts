@@ -25,3 +25,20 @@ export function getApiBase(): string {
   return "/api";
 }
 
+export function resolveApiUrl(url: string): string {
+  if (!url) return url;
+  if (/^https?:\/\//i.test(url)) return url;
+
+  const base = getApiBase();
+
+  if (url.startsWith("/api/")) {
+    const suffix = url.slice(4);
+    return `${base}${suffix}`;
+  }
+
+  if (url === "/api") {
+    return base;
+  }
+
+  return url;
+}

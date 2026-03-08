@@ -55,6 +55,7 @@ import {
   buildWidgetTodaySnapshot,
   syncWidgetTodaySnapshot,
 } from "@/lib/mobileWidget";
+import { resolveApiUrl } from "@/lib/apiBase";
 
 const DUTY_ABBREVIATIONS: Record<string, string> = {
   "gynaekologie (oa)": "Gyn",
@@ -292,7 +293,7 @@ export default function Dashboard() {
     const authToken = token ?? getAuthToken();
     if (authToken) headers.Authorization = `Bearer ${authToken}`;
 
-    fetch("/api/me", {
+    fetch(resolveApiUrl("/api/me"), {
       headers,
       credentials: "include",
     })
