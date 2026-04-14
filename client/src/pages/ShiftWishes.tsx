@@ -921,7 +921,10 @@ export default function ShiftWishes() {
                   <SelectTrigger data-testid="select-deputy-employee">
                     <SelectValue placeholder="Mitarbeiter wählen" />
                   </SelectTrigger>
-                  <SelectContent className="max-h-72 overflow-y-auto">
+                  <SelectContent
+                    className="max-h-72 overflow-hidden"
+                    viewportClassName="h-auto max-h-72 overflow-y-auto"
+                  >
                     {deputyOptions.map((employee) => (
                       <SelectItem
                         key={employee.id}
