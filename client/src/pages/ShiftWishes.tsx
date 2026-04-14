@@ -40,9 +40,16 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   Calendar as CalendarIcon,
   Send,
   CheckCircle,
+  Check,
+  ChevronDown,
   Clock,
   AlertCircle,
   Plus,
@@ -215,6 +222,7 @@ export default function ShiftWishes() {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(
     null,
   );
+  const [deputyPopoverOpen, setDeputyPopoverOpen] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState<Date>(
     () => startOfMonth(new Date()),
   );
@@ -910,31 +918,59 @@ export default function ShiftWishes() {
                 <Label className="mb-1 block text-xs text-muted-foreground">
                   Stellvertretung
                 </Label>
-                <Select
-                  value={String(selectedEmployeeId ?? currentUser?.id ?? "")}
-                  onValueChange={(value) => {
-                    const nextId = parseInt(value, 10);
-                    if (!Number.isFinite(nextId)) return;
-                    setSelectedEmployeeId(nextId);
-                  }}
+                <Popover
+                  open={deputyPopoverOpen}
+                  onOpenChange={setDeputyPopoverOpen}
                 >
-                  <SelectTrigger data-testid="select-deputy-employee">
-                    <SelectValue placeholder="Mitarbeiter wählen" />
-                  </SelectTrigger>
-                  <SelectContent
-                    className="max-h-72 overflow-hidden"
-                    viewportClassName="h-auto max-h-72 overflow-y-auto"
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-9 w-full justify-between px-3 text-left font-normal"
+                      data-testid="select-deputy-employee"
+                    >
+                      <span className="truncate">
+                        {activeEmployee?.name ?? "Mitarbeiter wählen"}
+                      </span>
+                      <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    align="start"
+                    className="w-[var(--radix-popover-trigger-width)] p-0"
                   >
-                    {deputyOptions.map((employee) => (
-                      <SelectItem
-                        key={employee.id}
-                        value={String(employee.id)}
-                      >
-                        {employee.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                    <div
+                      className="max-h-72 overflow-y-scroll overscroll-contain py-1 pr-2 [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent"
+                      role="listbox"
+                    >
+                      {deputyOptions.map((employee) => {
+                        const selected = employee.id === activeEmployeeId;
+                        return (
+                          <button
+                            key={employee.id}
+                            type="button"
+                            role="option"
+                            aria-selected={selected}
+                            className={`flex w-full items-center justify-between rounded-sm px-3 py-2 text-left text-sm outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground ${
+                              selected
+                                ? "bg-accent text-accent-foreground"
+                                : "text-popover-foreground"
+                            }`}
+                            onClick={() => {
+                              setSelectedEmployeeId(employee.id);
+                              setDeputyPopoverOpen(false);
+                            }}
+                          >
+                            <span className="truncate">{employee.name}</span>
+                            {selected ? (
+                              <Check className="ml-2 h-4 w-4 shrink-0" />
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
             )}
             {isSubmitted ? (
