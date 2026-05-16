@@ -2322,11 +2322,11 @@ export default function WeeklyPlan() {
               className="lg:sticky lg:self-start lg:z-20"
               style={{
                 top: rightPaneOffset,
-                height: `min(54vh, calc(100vh - ${rightPaneOffset}px - 56px))`,
+                height: `min(46vh, calc(100vh - ${rightPaneOffset}px - 120px))`,
               }}
             >
               <div className="flex h-full min-h-0 flex-col gap-4 pr-2">
-                <Card className="border-none kabeg-shadow flex h-[31vh] min-h-0 flex-col overflow-hidden">
+                <Card className="border-none kabeg-shadow flex h-[26vh] min-h-0 flex-col overflow-hidden">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium">
                       Abwesenheiten des Tages
@@ -2365,7 +2365,7 @@ export default function WeeklyPlan() {
                   </CardContent>
                 </Card>
 
-                <Card className="border-none kabeg-shadow flex h-[19vh] min-h-0 flex-col overflow-hidden">
+                <Card className="border-none kabeg-shadow flex h-[16vh] min-h-0 flex-col overflow-hidden">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium">
                       Zeitausgleich möglich
@@ -2458,13 +2458,13 @@ export default function WeeklyPlan() {
                             }}
                           >
                             <div className="flex items-center gap-2">
-                              <span className="text-[11px] font-medium leading-tight">
+                              <span className="text-[10px] font-medium leading-tight">
                                 {displayName}
                               </span>
                               <Badge
                                 variant="outline"
                                 className={cn(
-                                  "h-4 px-1 text-[8px]",
+                                  "h-4 px-1 text-[7px]",
                                   ZEITAUSGLEICH_STATUS_STYLES[statusLabel] ||
                                     "bg-slate-50 text-slate-700 border-slate-200",
                                 )}
@@ -2499,7 +2499,7 @@ export default function WeeklyPlan() {
               className="lg:sticky lg:self-start lg:z-20"
               style={{
                 top: rightPaneOffset,
-                height: `min(52vh, calc(100vh - ${rightPaneOffset}px - 96px))`,
+                height: `min(46vh, calc(100vh - ${rightPaneOffset}px - 120px))`,
               }}
             >
               <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
