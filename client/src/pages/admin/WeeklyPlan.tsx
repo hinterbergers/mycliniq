@@ -2325,8 +2325,8 @@ export default function WeeklyPlan() {
                 height: `min(54vh, calc(100vh - ${rightPaneOffset}px - 56px))`,
               }}
             >
-              <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-scroll overscroll-contain pr-2">
-                <Card className="border-none kabeg-shadow shrink-0">
+              <div className="flex h-full min-h-0 flex-col gap-4 pr-2">
+                <Card className="border-none kabeg-shadow flex h-[31vh] min-h-0 flex-col overflow-hidden">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium">
                       Abwesenheiten des Tages
@@ -2337,7 +2337,7 @@ export default function WeeklyPlan() {
                         : ""}
                     </p>
                   </CardHeader>
-                  <CardContent className="space-y-2">
+                  <CardContent className="flex-1 min-h-0 overflow-y-scroll overscroll-contain space-y-2">
                     {selectedAbsencesByReason.length === 0 ? (
                       <div className="text-sm text-muted-foreground">
                         Keine Abwesenheiten
@@ -2365,13 +2365,13 @@ export default function WeeklyPlan() {
                   </CardContent>
                 </Card>
 
-                <Card className="border-none kabeg-shadow shrink-0">
+                <Card className="border-none kabeg-shadow flex h-[19vh] min-h-0 flex-col overflow-hidden">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium">
                       Zeitausgleich möglich
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-2">
+                  <CardContent className="flex-1 min-h-0 overflow-y-scroll overscroll-contain space-y-2">
                     <div
                       className={cn(
                         "space-y-2 border-2 border-dashed rounded-xl p-3 min-h-[96px]",
