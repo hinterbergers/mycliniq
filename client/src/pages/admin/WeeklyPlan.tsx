@@ -2458,11 +2458,13 @@ export default function WeeklyPlan() {
                             }}
                           >
                             <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium">{displayName}</span>
+                              <span className="text-xs font-medium leading-tight">
+                                {displayName}
+                              </span>
                               <Badge
                                 variant="outline"
                                 className={cn(
-                                  "text-[10px]",
+                                  "h-5 px-1.5 text-[9px]",
                                   ZEITAUSGLEICH_STATUS_STYLES[statusLabel] ||
                                     "bg-slate-50 text-slate-700 border-slate-200",
                                 )}
@@ -2502,7 +2504,7 @@ export default function WeeklyPlan() {
             >
               <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
                 <Card className="border-none kabeg-shadow flex h-full min-h-0 overflow-hidden flex-col">
-                  <CardHeader className="pb-2">
+                  <CardHeader className="shrink-0 bg-white pb-2">
                     <CardTitle className="text-sm font-medium flex items-center gap-2">
                       <User className="w-4 h-4" />
                       Verfügbares Personal
