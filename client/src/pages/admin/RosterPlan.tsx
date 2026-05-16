@@ -240,7 +240,8 @@ const MONTH_NAMES = [
 
 const RULES_STORAGE_KEY = "mycliniq.roster.aiRules.v1";
 const SPECIAL_RULES_STORAGE_KEY = "mycliniq.roster.specialRules.v1";
-const WISH_COLUMN_VISIBLE_KEY = "mycliniq.roster.editor.wishColumnVisible.v1";
+const WISH_COLUMN_VISIBLE_KEY =
+  "mycliniq.roster.editor.wishColumnVisibleByService.v1";
 const LONGTERM_ABSENCE_TOGGLE_KEY = "mycliniq.roster.editor.showLongTermAbsences.v1";
 const ABSENCE_COLUMN_VISIBLE_KEY = "mycliniq.roster.editor.absenceColumnVisible.v1";
 
@@ -416,7 +417,9 @@ export default function RosterPlan() {
   );
   const [showLongTermAbsences, setShowLongTermAbsences] = useState(false);
   const [showAbsenceColumn, setShowAbsenceColumn] = useState(false);
-  const [showWishColumn, setShowWishColumn] = useState(false);
+  const [showWishColumns, setShowWishColumns] = useState<
+    Partial<Record<ServiceType, boolean>>
+  >({});
   const [savingCellKey, setSavingCellKey] = useState<string | null>(null);
   const [manualDrafts, setManualDrafts] = useState<Record<string, string>>({});
   const [activeCellKey, setActiveCellKey] = useState<string | null>(null);
@@ -618,10 +621,14 @@ export default function RosterPlan() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const stored = window.localStorage.getItem(WISH_COLUMN_VISIBLE_KEY);
-    if (stored === "1") {
-      setShowWishColumn(true);
-    } else if (stored === "0") {
-      setShowWishColumn(false);
+    if (!stored) return;
+    try {
+      const parsed = JSON.parse(stored);
+      if (parsed && typeof parsed === "object") {
+        setShowWishColumns(parsed);
+      }
+    } catch {
+      // ignore
     }
   }, []);
 
@@ -629,9 +636,9 @@ export default function RosterPlan() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(
       WISH_COLUMN_VISIBLE_KEY,
-      showWishColumn ? "1" : "0",
+      JSON.stringify(showWishColumns),
     );
-  }, [showWishColumn]);
+  }, [showWishColumns]);
 
   const serviceLineDisplay = useMemo(() => {
     const lines: ServiceLineConfig[] = (
@@ -709,8 +716,11 @@ export default function RosterPlan() {
     setShowAbsenceColumn((prev) => !prev);
   }, []);
 
-  const toggleWishColumn = useCallback(() => {
-    setShowWishColumn((prev) => !prev);
+  const toggleWishColumn = useCallback((serviceType: ServiceType) => {
+    setShowWishColumns((prev) => ({
+      ...prev,
+      [serviceType]: !prev[serviceType],
+    }));
   }, []);
 
   const absenceEmployeeOptions = useMemo(() => {
@@ -1046,12 +1056,21 @@ export default function RosterPlan() {
     );
   };
 
-  const getWishes = (date: Date): RosterWishEntry[] => {
+  const getWishesForServiceLine = (
+    date: Date,
+    serviceType: ServiceType,
+  ): RosterWishEntry[] => {
     const dateStr = format(date, "yyyy-MM-dd");
     const isoWeekday = Number(format(date, "i"));
     const entries = new Map<string, RosterWishEntry>();
 
     shiftWishes.forEach((wish) => {
+      const employee = employees.find((emp) => emp.id === wish.employeeId);
+      if (!employee) return;
+      if (employee.isActive === false || employee.takesShifts === false) return;
+      const supportedTypes = getServiceTypesForEmployee(employee, serviceLineMeta);
+      if (!supportedTypes.includes(serviceType)) return;
+
       const preferredDays = Array.isArray(wish.preferredShiftDays)
         ? wish.preferredShiftDays
         : [];
@@ -1068,7 +1087,7 @@ export default function RosterPlan() {
 
       if (!hasPrefer && !hasAvoid) return;
 
-      const name = resolveEmployeeLastName(wish.employeeId);
+      const name = resolveEmployeeLastName(wish.employeeId, employee.name);
 
       if (hasPrefer) {
         entries.set(`prefer-${wish.employeeId}`, {
@@ -2368,24 +2387,6 @@ export default function RosterPlan() {
                   <TableHead className="w-24 border-r border-border font-bold">
                     Datum
                   </TableHead>
-                  <TableHead className="min-w-[220px] border-r border-border bg-slate-50/50 font-bold text-center">
-                    <button
-                      type="button"
-                      onClick={toggleWishColumn}
-                      aria-pressed={showWishColumn}
-                      title={
-                        showWishColumn
-                          ? "Dienstwunschspalte ausblenden"
-                          : "Dienstwunschspalte einblenden"
-                      }
-                      className="flex w-full flex-col items-center gap-1 px-1 py-2 text-xs font-semibold leading-tight text-slate-700 transition hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
-                    >
-                      <span>Dienstwünsche</span>
-                      <span className="text-[11px] font-normal text-slate-500">
-                        {showWishColumn ? "verstecken" : "anzeigen"}
-                      </span>
-                    </button>
-                  </TableHead>
 
                   {/* Service Columns */}
                   {serviceLineDisplay.map((line) => (
@@ -2393,7 +2394,24 @@ export default function RosterPlan() {
                       key={line.key}
                       className={`w-48 border-r border-border font-bold text-center ${line.style.header}`}
                     >
-                      {line.label}
+                      <div className="flex flex-col items-center gap-1 py-1">
+                        <span>{line.label}</span>
+                        <button
+                          type="button"
+                          onClick={() => toggleWishColumn(line.key)}
+                          aria-pressed={Boolean(showWishColumns[line.key])}
+                          className="text-[11px] font-normal text-slate-500 transition hover:text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
+                          title={
+                            showWishColumns[line.key]
+                              ? "Präferenzen ausblenden"
+                              : "Präferenzen einblenden"
+                          }
+                        >
+                          {showWishColumns[line.key]
+                            ? "Präferenzen ausblenden"
+                            : "Präferenzen einblenden"}
+                        </button>
+                      </div>
                     </TableHead>
                   ))}
 
@@ -2425,7 +2443,6 @@ export default function RosterPlan() {
                   const isHoliday = Boolean(holiday);
 
                   const dayAbsences = getAbsences(day);
-                  const dayWishes = getWishes(day);
 
                   return (
                     <TableRow
@@ -2449,41 +2466,36 @@ export default function RosterPlan() {
             {format(day, "dd.MM.")}
           </TableCell>
 
-                      <TableCell
-                        className={
-                          showWishColumn
-                            ? "border-r border-border p-2 align-top text-xs"
-                            : "hidden"
-                        }
-                      >
-                        {showWishColumn && (
-                          <div className="space-y-0.5">
-                            {dayWishes.length ? (
-                              dayWishes.map((wish) => (
-                                <div
-                                  key={`${wish.type}-${wish.employeeId}`}
-                                  className={
-                                    wish.type === "prefer"
-                                      ? "text-blue-600"
-                                      : "text-red-600"
-                                  }
-                                >
-                                  {wish.name}
-                                </div>
-                              ))
-                            ) : (
-                              <div className="text-slate-400">-</div>
-                            )}
-                          </div>
-                        )}
-                      </TableCell>
-
           {serviceLineDisplay.map((line) => (
             <TableCell
               key={line.key}
-              className="border-r border-border p-1"
+              className="border-r border-border p-1 align-top"
             >
-              {renderAssignmentCell(day, line)}
+              <div className="space-y-2">
+                {showWishColumns[line.key] && (
+                  <div className="min-h-6 text-xs leading-5">
+                    {(() => {
+                      const wishes = getWishesForServiceLine(day, line.key);
+                      if (!wishes.length) {
+                        return <div className="text-slate-300">-</div>;
+                      }
+                      return wishes.map((wish) => (
+                        <div
+                          key={`${line.key}-${wish.type}-${wish.employeeId}`}
+                          className={
+                            wish.type === "prefer"
+                              ? "text-blue-600"
+                              : "text-red-600"
+                          }
+                        >
+                          {wish.name}
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                )}
+                {renderAssignmentCell(day, line)}
+              </div>
             </TableCell>
           ))}
 
