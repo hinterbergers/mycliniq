@@ -2438,7 +2438,7 @@ export default function WeeklyPlan() {
                         return (
                           <div
                             key={absence.id ?? `${absence.employeeId}-${absence.startDate}`}
-                            className="flex items-center justify-between rounded-lg border px-2 py-1"
+                            className="flex items-center justify-between rounded-lg border px-1.5 py-0.5"
                             draggable={
                               !isPlanReleased &&
                               !lockedWeekdays.includes(selectedWeekday) &&
@@ -2458,13 +2458,13 @@ export default function WeeklyPlan() {
                             }}
                           >
                             <div className="flex items-center gap-2">
-                              <span className="text-xs font-medium leading-tight">
+                              <span className="text-[11px] font-medium leading-tight">
                                 {displayName}
                               </span>
                               <Badge
                                 variant="outline"
                                 className={cn(
-                                  "h-5 px-1.5 text-[9px]",
+                                  "h-4 px-1 text-[8px]",
                                   ZEITAUSGLEICH_STATUS_STYLES[statusLabel] ||
                                     "bg-slate-50 text-slate-700 border-slate-200",
                                 )}
@@ -2499,7 +2499,7 @@ export default function WeeklyPlan() {
               className="lg:sticky lg:self-start lg:z-20"
               style={{
                 top: rightPaneOffset,
-                height: `min(62vh, calc(100vh - ${rightPaneOffset}px - 56px))`,
+                height: `min(52vh, calc(100vh - ${rightPaneOffset}px - 96px))`,
               }}
             >
               <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
