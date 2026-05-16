@@ -2688,12 +2688,7 @@ export default function WeeklyPlan() {
             </div>
           </div>
 
-          <div
-            className="space-y-4 lg:col-span-7 lg:min-h-0 lg:overflow-y-scroll lg:overscroll-contain lg:pr-1"
-            style={{
-              height: `calc(100vh - ${rightPaneOffset}px - 32px)`,
-            }}
-          >
+          <div className="lg:col-span-7 space-y-4">
             {displayRooms.length === 0 && !isLoading ? (
               <Card className="border-none kabeg-shadow">
                 <CardContent className="p-6 text-sm text-muted-foreground">
