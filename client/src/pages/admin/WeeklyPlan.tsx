@@ -2497,11 +2497,11 @@ export default function WeeklyPlan() {
               className="lg:sticky lg:self-start lg:z-20"
               style={{
                 top: rightPaneOffset,
-                height: `calc(100vh - ${rightPaneOffset}px - 16px)`,
+                maxHeight: `min(68vh, calc(100vh - ${rightPaneOffset}px - 40px))`,
               }}
             >
-              <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden">
-                <Card className="border-none kabeg-shadow flex flex-col min-h-0 flex-1">
+              <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
+                <Card className="border-none kabeg-shadow flex min-h-0 max-h-full flex-col">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium flex items-center gap-2">
                       <User className="w-4 h-4" />
