@@ -9,6 +9,8 @@ import {
   Users,
   Menu,
   X,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -76,9 +78,13 @@ function formatOnlineUserDisplayName(user: { name?: string | null; lastName?: st
 export function Header({
   title,
   onToggleMobileNav,
+  desktopSidebarCollapsed = false,
+  onToggleDesktopSidebar,
 }: {
   title?: string;
   onToggleMobileNav?: () => void;
+  desktopSidebarCollapsed?: boolean;
+  onToggleDesktopSidebar?: () => void;
 }) {
   const {
     employee,
@@ -678,6 +684,21 @@ export function Header({
         className="min-h-16 kabeg-header sticky top-0 z-30 px-4 md:px-6 pt-[env(safe-area-inset-top)] flex items-center justify-between shadow-sm"
       >
       <div className="flex items-center gap-2 min-w-0">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="hidden md:inline-flex rounded-full text-white/80 hover:text-white hover:bg-white/10"
+          onClick={onToggleDesktopSidebar}
+          aria-label={desktopSidebarCollapsed ? "Menü einblenden" : "Menü ausblenden"}
+          data-testid="button-desktop-sidebar-toggle"
+        >
+          {desktopSidebarCollapsed ? (
+            <PanelLeftOpen className="w-5 h-5" />
+          ) : (
+            <PanelLeftClose className="w-5 h-5" />
+          )}
+        </Button>
         <Button
           type="button"
           variant="ghost"

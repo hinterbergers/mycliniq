@@ -25,12 +25,14 @@ type SidebarProps = {
   variant?: SidebarVariant;
   onNavigate?: () => void;
   className?: string;
+  collapsed?: boolean;
 };
 
 export function Sidebar({
   variant = "desktop",
   onNavigate,
   className,
+  collapsed = false,
 }: SidebarProps) {
   const [location, setLocation] = useLocation();
   const [openGroup, setOpenGroup] = useState<string | null>(null);
@@ -123,7 +125,9 @@ export function Sidebar({
 
   const containerClass =
     variant === "desktop"
-      ? "w-64 h-screen sticky top-0 hidden md:flex"
+      ? `w-64 h-screen sticky top-0 hidden md:flex transition-transform duration-300 ease-out ${
+          collapsed ? "-translate-x-full" : "translate-x-0"
+        }`
       : "w-full h-full";
 
   return (
