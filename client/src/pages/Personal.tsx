@@ -108,6 +108,7 @@ import {
   WEEKDAY_FULL,
   type WeeklyPlanRoom,
   isEmployeeOnDutyDate,
+  isEmployeeAbsentOnDate,
   formatRoomTime,
   getRoomSettingForDate,
 } from "@/lib/weeklyPlanUtils";
@@ -2231,6 +2232,9 @@ function WeeklyView({
   const [plannedAbsences, setPlannedAbsences] = useState<PlannedAbsenceAdmin[]>(
     [],
   );
+  const [longTermAbsences, setLongTermAbsences] = useState<LongTermAbsence[]>(
+    [],
+  );
   const [rosterShifts, setRosterShifts] = useState<RosterShift[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [weeklyExporting, setWeeklyExporting] = useState(false);
@@ -2396,11 +2400,12 @@ function WeeklyView({
                 rosterApi.getByMonth(endYear, endMonth),
               ];
 
-        const [roomData, employeeData, absenceData, rosterData] =
+        const [roomData, employeeData, absenceData, longTermData, rosterData] =
           await Promise.all([
             roomApi.getWeeklyPlan(),
             employeeApi.getAll(),
             plannedAbsencesAdminApi.getRange({ from, to }),
+            longTermAbsencesApi.getByStatus("Genehmigt", from, to),
             Promise.all(rosterPromises).then((results) => results.flat()),
           ]);
 
@@ -2418,6 +2423,7 @@ function WeeklyView({
         setRooms(roomData);
         setEmployees(employeeData);
         setPlannedAbsences(absenceData);
+        setLongTermAbsences(longTermData);
         const rosterMap = new Map<number, RosterShift>();
         rosterData.forEach((shift) => rosterMap.set(shift.id, shift));
         setRosterShifts([...rosterMap.values()]);
@@ -2497,6 +2503,21 @@ function WeeklyView({
     }
     return absence.employeeName || "Unbekannt";
   };
+
+  const isAssignedEmployeeAbsent = useCallback(
+    (employeeId: number | null | undefined, date: Date) => {
+      if (!employeeId) return false;
+      const employee = employeesById.get(employeeId);
+      if (!employee) return false;
+      return isEmployeeAbsentOnDate(
+        employee,
+        date,
+        plannedAbsences,
+        longTermAbsences,
+      );
+    },
+    [employeesById, longTermAbsences, plannedAbsences],
+  );
 
   const handleWeeklyExport = async () => {
     if (visibleRooms.length === 0) {
@@ -3006,11 +3027,16 @@ function WeeklyView({
                                         rosterShifts,
                                       )
                                     : false;
+                                  const isAbsentToday = isAssignedEmployeeAbsent(
+                                    assignment.employeeId,
+                                    day,
+                                  );
                                   return (
                                     <div
                                       key={assignment.id}
                                       className={cn(
                                         "text-xs",
+                                        isAbsentToday && "line-through opacity-70",
                                         isOnDutyToday &&
                                           "text-red-600 font-semibold",
                                         !isOnDutyToday &&

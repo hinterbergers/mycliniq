@@ -1785,6 +1785,20 @@ export default function WeeklyPlan() {
       a.localeCompare(b, "de"),
     );
   }, [selectedAbsences]);
+  const isAssignedEmployeeAbsentForSelectedDay = useCallback(
+    (employeeId: number | null | undefined) => {
+      if (!employeeId || !selectedDayDate) return false;
+      const employee = employeesById.get(employeeId);
+      if (!employee) return false;
+      return isEmployeeAbsentOnDate(
+        employee,
+        selectedDayDate,
+        plannedAbsences,
+        longTermAbsences,
+      );
+    },
+    [employeesById, longTermAbsences, plannedAbsences, selectedDayDate],
+  );
 
   const configuredRuleEmployeeCount = useMemo(
     () =>
@@ -2882,6 +2896,10 @@ export default function WeeklyPlan() {
                                 selectedDayDate as Date,
                                 rosterShifts,
                               );
+                            const isAbsentAssignment =
+                              isAssignedEmployeeAbsentForSelectedDay(
+                                assignment.employeeId,
+                              );
                             const isDuplicate = assignment.employeeId
                               ? duplicateEmployeeIdsByWeekday
                                   .get(selectedWeekday)
@@ -2930,6 +2948,8 @@ export default function WeeklyPlan() {
                                   <span
                                     className={cn(
                                       "truncate text-xs font-medium leading-tight",
+                                      isAbsentAssignment &&
+                                        "line-through opacity-70",
                                       isOnDutyAssignment &&
                                         "font-bold text-rose-700",
                                     )}
