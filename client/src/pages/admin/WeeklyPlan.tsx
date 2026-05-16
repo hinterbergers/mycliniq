@@ -2322,11 +2322,11 @@ export default function WeeklyPlan() {
               className="lg:sticky lg:self-start lg:z-20"
               style={{
                 top: rightPaneOffset,
-                height: `calc(100vh - ${rightPaneOffset}px - 32px)`,
+                height: `min(54vh, calc(100vh - ${rightPaneOffset}px - 56px))`,
               }}
             >
-              <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
-                <Card className="border-none kabeg-shadow flex min-h-0 flex-[1.4] overflow-hidden flex-col">
+              <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-scroll overscroll-contain pr-2">
+                <Card className="border-none kabeg-shadow shrink-0">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium">
                       Abwesenheiten des Tages
@@ -2337,7 +2337,7 @@ export default function WeeklyPlan() {
                         : ""}
                     </p>
                   </CardHeader>
-                  <CardContent className="flex-1 min-h-0 overflow-y-scroll overscroll-contain space-y-2 pr-2">
+                  <CardContent className="space-y-2">
                     {selectedAbsencesByReason.length === 0 ? (
                       <div className="text-sm text-muted-foreground">
                         Keine Abwesenheiten
@@ -2365,13 +2365,13 @@ export default function WeeklyPlan() {
                   </CardContent>
                 </Card>
 
-                <Card className="border-none kabeg-shadow flex min-h-0 flex-1 overflow-hidden flex-col">
+                <Card className="border-none kabeg-shadow shrink-0">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium">
                       Zeitausgleich möglich
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="flex-1 min-h-0 overflow-y-scroll overscroll-contain space-y-2 pr-2">
+                  <CardContent className="space-y-2">
                     <div
                       className={cn(
                         "space-y-2 border-2 border-dashed rounded-xl p-3 min-h-[96px]",
@@ -2497,7 +2497,7 @@ export default function WeeklyPlan() {
               className="lg:sticky lg:self-start lg:z-20"
               style={{
                 top: rightPaneOffset,
-                height: `calc(100vh - ${rightPaneOffset}px - 32px)`,
+                height: `min(62vh, calc(100vh - ${rightPaneOffset}px - 56px))`,
               }}
             >
               <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
