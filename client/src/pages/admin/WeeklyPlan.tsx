@@ -2316,17 +2316,17 @@ export default function WeeklyPlan() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-start">
           <div className="lg:col-span-2 overflow-visible">
             <div
               className="lg:sticky lg:self-start lg:z-20"
               style={{
                 top: rightPaneOffset,
-                maxHeight: `min(56vh, calc(100vh - ${rightPaneOffset}px - 56px))`,
+                height: `calc(100vh - ${rightPaneOffset}px - 32px)`,
               }}
             >
               <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
-                <Card className="border-none kabeg-shadow flex h-[34vh] min-h-0 overflow-hidden flex-col">
+                <Card className="border-none kabeg-shadow flex min-h-0 flex-[1.4] overflow-hidden flex-col">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium">
                       Abwesenheiten des Tages
@@ -2365,7 +2365,7 @@ export default function WeeklyPlan() {
                   </CardContent>
                 </Card>
 
-                <Card className="border-none kabeg-shadow flex h-[20vh] min-h-0 overflow-hidden flex-col">
+                <Card className="border-none kabeg-shadow flex min-h-0 flex-1 overflow-hidden flex-col">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium">
                       Zeitausgleich möglich
@@ -2497,11 +2497,11 @@ export default function WeeklyPlan() {
               className="lg:sticky lg:self-start lg:z-20"
               style={{
                 top: rightPaneOffset,
-                maxHeight: `min(68vh, calc(100vh - ${rightPaneOffset}px - 40px))`,
+                height: `calc(100vh - ${rightPaneOffset}px - 32px)`,
               }}
             >
               <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
-                <Card className="border-none kabeg-shadow flex min-h-0 max-h-full flex-col">
+                <Card className="border-none kabeg-shadow flex h-full min-h-0 overflow-hidden flex-col">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium flex items-center gap-2">
                       <User className="w-4 h-4" />
@@ -2514,7 +2514,7 @@ export default function WeeklyPlan() {
                         : ""}
                     </p>
                   </CardHeader>
-                  <CardContent className="flex-1 min-h-0 overflow-y-auto">
+                  <CardContent className="flex-1 min-h-0 overflow-y-scroll overscroll-contain pr-2">
                     <div
                       className={cn(
                         "space-y-2 rounded-xl p-1",
@@ -2688,7 +2688,12 @@ export default function WeeklyPlan() {
             </div>
           </div>
 
-          <div className="lg:col-span-7 space-y-4">
+          <div
+            className="space-y-4 lg:col-span-7 lg:min-h-0 lg:overflow-y-scroll lg:overscroll-contain lg:pr-1"
+            style={{
+              height: `calc(100vh - ${rightPaneOffset}px - 32px)`,
+            }}
+          >
             {displayRooms.length === 0 && !isLoading ? (
               <Card className="border-none kabeg-shadow">
                 <CardContent className="p-6 text-sm text-muted-foreground">
