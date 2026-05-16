@@ -2217,44 +2217,170 @@ export default function WeeklyPlan() {
                 height: `calc(100vh - ${rightPaneOffset}px - 16px)`,
               }}
             >
-              <Card className="border-none kabeg-shadow flex flex-col h-full min-h-0">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    Abwesenheiten des Tages
-                  </CardTitle>
-                  <p className="text-xs text-muted-foreground">
-                    {selectedDayDate
-                      ? format(selectedDayDate, "dd.MM.yyyy", { locale: de })
-                      : ""}
-                  </p>
-                </CardHeader>
-                <CardContent className="flex-1 min-h-0 overflow-y-auto space-y-2">
-                  {selectedAbsencesByReason.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">
-                      Keine Abwesenheiten
-                    </div>
-                  ) : (
-                    selectedAbsencesByReason.map(([reason, entries]) => (
-                      <div key={reason} className="space-y-1">
-                        <div className="text-xs font-semibold text-foreground">
-                          {reason} ({entries.length})
-                        </div>
-                        {entries.map((absence, index) => {
-                          const employee = employeesById.get(absence.employeeId);
-                          return (
-                            <div
-                              key={`${reason}-${absence.employeeId}-${index}`}
-                              className="text-xs text-muted-foreground"
-                            >
-                              {employee?.lastName || employee?.name || "Unbekannt"}
-                            </div>
-                          );
-                        })}
+              <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden">
+                <Card className="border-none kabeg-shadow flex flex-col min-h-0 flex-[1.4]">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">
+                      Abwesenheiten des Tages
+                    </CardTitle>
+                    <p className="text-xs text-muted-foreground">
+                      {selectedDayDate
+                        ? format(selectedDayDate, "dd.MM.yyyy", { locale: de })
+                        : ""}
+                    </p>
+                  </CardHeader>
+                  <CardContent className="flex-1 min-h-0 overflow-y-auto space-y-2">
+                    {selectedAbsencesByReason.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">
+                        Keine Abwesenheiten
                       </div>
-                    ))
-                  )}
-                </CardContent>
-              </Card>
+                    ) : (
+                      selectedAbsencesByReason.map(([reason, entries]) => (
+                        <div key={reason} className="space-y-1">
+                          <div className="text-xs font-semibold text-foreground">
+                            {reason} ({entries.length})
+                          </div>
+                          {entries.map((absence, index) => {
+                            const employee = employeesById.get(absence.employeeId);
+                            return (
+                              <div
+                                key={`${reason}-${absence.employeeId}-${index}`}
+                                className="text-xs text-muted-foreground"
+                              >
+                                {employee?.lastName || employee?.name || "Unbekannt"}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ))
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card className="border-none kabeg-shadow flex flex-col min-h-0 flex-1">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">
+                      Zeitausgleich möglich
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="flex-1 min-h-0 overflow-y-auto space-y-2">
+                    <div
+                      className={cn(
+                        "space-y-2 border-2 border-dashed rounded-xl p-3 min-h-[96px]",
+                        isPlanReleased ||
+                          lockedWeekdays.includes(selectedWeekday)
+                          ? "bg-muted/30 border-muted-foreground/20"
+                          : "border-primary/20",
+                      )}
+                      onDragOver={(event) => {
+                        if (
+                          isPlanReleased ||
+                          lockedWeekdays.includes(selectedWeekday) ||
+                          isReorderMode
+                        )
+                          return;
+                        event.preventDefault();
+                      }}
+                      onDrop={async (event) => {
+                        if (
+                          isPlanReleased ||
+                          lockedWeekdays.includes(selectedWeekday) ||
+                          isReorderMode
+                        )
+                          return;
+                        event.preventDefault();
+                        const dragType = event.dataTransfer.getData("dragType");
+                        const employeeId = Number(
+                          event.dataTransfer.getData("employeeId"),
+                        );
+                        const assignmentId = Number(
+                          event.dataTransfer.getData("assignmentId"),
+                        );
+                        const absenceId = Number(
+                          event.dataTransfer.getData("absenceId"),
+                        );
+                        if (
+                          dragType === "assignment" &&
+                          assignmentId &&
+                          employeeId
+                        ) {
+                          await handleMoveAssignmentToZeitausgleich(
+                            assignmentId,
+                            employeeId,
+                          );
+                          return;
+                        }
+                        if (!employeeId || dragType === "zeitausgleich") return;
+                        await handleAddZeitausgleich(employeeId);
+                      }}
+                    >
+                      {zeitausgleichAbsencesForSelectedDay.length === 0 && (
+                        <div className="text-xs text-muted-foreground">
+                          + Person hinzufuegen
+                        </div>
+                      )}
+                      {zeitausgleichAbsencesForSelectedDay.map((absence) => {
+                        const employee = employeesById.get(absence.employeeId);
+                        const displayName =
+                          absence.employeeLastName ||
+                          employee?.lastName ||
+                          employee?.name ||
+                          "Unbekannt";
+                        const statusLabel = absence.status || "Geplant";
+                        return (
+                          <div
+                            key={absence.id ?? `${absence.employeeId}-${absence.startDate}`}
+                            className="flex items-center justify-between rounded-lg border px-2 py-1"
+                            draggable={
+                              !isPlanReleased &&
+                              !lockedWeekdays.includes(selectedWeekday) &&
+                              !isReorderMode
+                            }
+                            onDragStart={(event) => {
+                              if (!absence.id) return;
+                              event.dataTransfer.setData("dragType", "zeitausgleich");
+                              event.dataTransfer.setData(
+                                "employeeId",
+                                absence.employeeId.toString(),
+                              );
+                              event.dataTransfer.setData(
+                                "absenceId",
+                                absence.id.toString(),
+                              );
+                            }}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium">{displayName}</span>
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  "text-[10px]",
+                                  ZEITAUSGLEICH_STATUS_STYLES[statusLabel] ||
+                                    "bg-slate-50 text-slate-700 border-slate-200",
+                                )}
+                              >
+                                {statusLabel}
+                              </Badge>
+                            </div>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 text-red-600"
+                              onClick={() => handleDeleteAbsence(absence.id)}
+                              disabled={
+                                isPlanReleased ||
+                                lockedWeekdays.includes(selectedWeekday)
+                              }
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
             </div>
           </div>
 
@@ -2267,7 +2393,7 @@ export default function WeeklyPlan() {
               }}
             >
               <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden">
-                <Card className="border-none kabeg-shadow flex flex-col min-h-0 flex-[2.4]">
+                <Card className="border-none kabeg-shadow flex flex-col min-h-0 flex-1">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium flex items-center gap-2">
                       <User className="w-4 h-4" />
@@ -2447,130 +2573,6 @@ export default function WeeklyPlan() {
                           </div>
                         </TooltipProvider>
                       )}
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="border-none kabeg-shadow flex flex-col min-h-0 flex-1">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium">
-                      Zeitausgleich möglich
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="flex-1 min-h-0 overflow-y-auto space-y-2">
-                    <div
-                      className={cn(
-                        "space-y-2 border-2 border-dashed rounded-xl p-3 min-h-[96px]",
-                        isPlanReleased ||
-                          lockedWeekdays.includes(selectedWeekday)
-                          ? "bg-muted/30 border-muted-foreground/20"
-                          : "border-primary/20",
-                      )}
-                      onDragOver={(event) => {
-                        if (
-                          isPlanReleased ||
-                          lockedWeekdays.includes(selectedWeekday) ||
-                          isReorderMode
-                        )
-                          return;
-                        event.preventDefault();
-                      }}
-                      onDrop={async (event) => {
-                        if (
-                          isPlanReleased ||
-                          lockedWeekdays.includes(selectedWeekday) ||
-                          isReorderMode
-                        )
-                          return;
-                        event.preventDefault();
-                        const dragType = event.dataTransfer.getData("dragType");
-                        const employeeId = Number(
-                          event.dataTransfer.getData("employeeId"),
-                        );
-                        const assignmentId = Number(
-                          event.dataTransfer.getData("assignmentId"),
-                        );
-                        const absenceId = Number(
-                          event.dataTransfer.getData("absenceId"),
-                        );
-                        if (
-                          dragType === "assignment" &&
-                          assignmentId &&
-                          employeeId
-                        ) {
-                          await handleMoveAssignmentToZeitausgleich(
-                            assignmentId,
-                            employeeId,
-                          );
-                          return;
-                        }
-                        if (!employeeId || dragType === "zeitausgleich") return;
-                        await handleAddZeitausgleich(employeeId);
-                      }}
-                    >
-                      {zeitausgleichAbsencesForSelectedDay.length === 0 && (
-                        <div className="text-xs text-muted-foreground">
-                          + Person hinzufuegen
-                        </div>
-                      )}
-                      {zeitausgleichAbsencesForSelectedDay.map((absence) => {
-                        const employee = employeesById.get(absence.employeeId);
-                        const displayName =
-                          absence.employeeLastName ||
-                          employee?.lastName ||
-                          employee?.name ||
-                          "Unbekannt";
-                        const statusLabel = absence.status || "Geplant";
-                        return (
-                          <div
-                            key={absence.id ?? `${absence.employeeId}-${absence.startDate}`}
-                            className="flex items-center justify-between rounded-lg border px-2 py-1"
-                            draggable={
-                              !isPlanReleased &&
-                              !lockedWeekdays.includes(selectedWeekday) &&
-                              !isReorderMode
-                            }
-                            onDragStart={(event) => {
-                              if (!absence.id) return;
-                              event.dataTransfer.setData("dragType", "zeitausgleich");
-                              event.dataTransfer.setData(
-                                "employeeId",
-                                absence.employeeId.toString(),
-                              );
-                              event.dataTransfer.setData(
-                                "absenceId",
-                                absence.id.toString(),
-                              );
-                            }}
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium">{displayName}</span>
-                              <Badge
-                                variant="outline"
-                                className={cn(
-                                  "text-[10px]",
-                                  ZEITAUSGLEICH_STATUS_STYLES[statusLabel] ||
-                                    "bg-slate-50 text-slate-700 border-slate-200",
-                                )}
-                              >
-                                {statusLabel}
-                              </Badge>
-                            </div>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-7 w-7 text-red-600"
-                              onClick={() => handleDeleteAbsence(absence.id)}
-                              disabled={
-                                isPlanReleased ||
-                                lockedWeekdays.includes(selectedWeekday)
-                              }
-                            >
-                              <X className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        );
-                      })}
                     </div>
                   </CardContent>
                 </Card>
