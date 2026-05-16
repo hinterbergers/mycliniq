@@ -220,6 +220,14 @@ const compareAvailabilityEmployees = (a: Employee, b: Employee) => {
   );
 };
 
+const getAvailabilitySectionKey = (employee: Employee) => {
+  const groupOrder =
+    ROLE_GROUP_ORDER[getRoleGroupKey(employee.role)] ?? ROLE_GROUP_ORDER.sonstige;
+  if (groupOrder <= ROLE_GROUP_ORDER.facharzt) return "senior";
+  if (groupOrder === ROLE_GROUP_ORDER.assistenzarzt) return "assistant";
+  return "turnus";
+};
+
 const statusBadgeStyles: Record<WeeklyPlanResponse["status"], string> = {
   Entwurf: "bg-amber-50 text-amber-700 border-amber-200",
   Vorläufig: "bg-sky-50 text-sky-700 border-sky-200",
@@ -1751,6 +1759,19 @@ export default function WeeklyPlan() {
       }),
     [availableEmployees, assignedEmployeeIdsForSelectedDay],
   );
+  const availableEmployeeSections = useMemo(() => {
+    const sections = [
+      { key: "senior", title: "Oberaerzte", employees: [] as Employee[] },
+      { key: "assistant", title: "Assistenzaerzte", employees: [] as Employee[] },
+      { key: "turnus", title: "Turnusaerzte", employees: [] as Employee[] },
+    ];
+    const sectionMap = new Map(sections.map((section) => [section.key, section]));
+    availableEmployeesOrdered.forEach((employee) => {
+      const key = getAvailabilitySectionKey(employee);
+      sectionMap.get(key)?.employees.push(employee);
+    });
+    return sections;
+  }, [availableEmployeesOrdered]);
   const selectedAbsences = absencesByDate.get(selectedDateKey) ?? [];
   const selectedAbsencesByReason = useMemo(() => {
     const grouped = new Map<string, typeof selectedAbsences>();
@@ -2298,81 +2319,118 @@ export default function WeeklyPlan() {
                         </div>
                       ) : (
                         <TooltipProvider delayDuration={150}>
-                          {availableEmployeesOrdered.map((employee) =>
-                            (() => {
-                              const isAssigned = assignedEmployeeIdsForSelectedDay.has(
-                                employee.id,
-                              );
-                              const isOnDutyToday = selectedDayDate
-                                ? isEmployeeOnDutyDate(
-                                    employee.id,
-                                    selectedDayDate,
-                                    rosterShifts,
-                                  )
-                                : false;
-                              const roleLabel = employee.role ?? "Ohne Rolle";
-                              const competenciesLabel =
-                                employee.competencies?.length
-                                  ? employee.competencies.join(", ")
-                                  : "Keine Kompetenzen";
-                              return (
-                                <Tooltip key={employee.id}>
-                                  <TooltipTrigger asChild>
-                                    <div
-                                      className="flex items-center gap-2 p-2 rounded-lg border bg-card hover:bg-muted/50 cursor-grab active:cursor-grabbing transition-all hover:shadow-sm group"
-                                      draggable={
-                                        !isPlanReleased &&
-                                        !lockedWeekdays.includes(selectedWeekday) &&
-                                        !isReorderMode
-                                      }
-                                      onDragStart={(event) => {
-                                        event.dataTransfer.setData(
-                                          "dragType",
-                                          "available",
+                          <div className="space-y-2">
+                            {availableEmployeeSections.map((section) => (
+                              <div
+                                key={section.key}
+                                className="rounded-xl border bg-muted/20 p-2"
+                              >
+                                <div className="mb-2 flex items-center justify-between">
+                                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                    {section.title}
+                                  </div>
+                                  <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                                    {section.employees.length}
+                                  </Badge>
+                                </div>
+                                {section.employees.length === 0 ? (
+                                  <div className="text-[11px] text-muted-foreground py-1">
+                                    Keine Verfügbarkeit
+                                  </div>
+                                ) : (
+                                  <div className="space-y-1.5">
+                                    {section.employees.map((employee) =>
+                                      (() => {
+                                        const isAssigned =
+                                          assignedEmployeeIdsForSelectedDay.has(
+                                            employee.id,
+                                          );
+                                        const isOnDutyToday = selectedDayDate
+                                          ? isEmployeeOnDutyDate(
+                                              employee.id,
+                                              selectedDayDate,
+                                              rosterShifts,
+                                            )
+                                          : false;
+                                        const roleLabel =
+                                          employee.role ?? "Ohne Rolle";
+                                        const competenciesLabel =
+                                          employee.competencies?.length
+                                            ? employee.competencies.join(", ")
+                                            : "Keine Kompetenzen";
+                                        return (
+                                          <Tooltip key={employee.id}>
+                                            <TooltipTrigger asChild>
+                                              <div
+                                                className="flex items-center gap-1.5 rounded-md border bg-card px-1.5 py-1 hover:bg-muted/50 cursor-grab active:cursor-grabbing transition-all hover:shadow-sm group"
+                                                draggable={
+                                                  !isPlanReleased &&
+                                                  !lockedWeekdays.includes(
+                                                    selectedWeekday,
+                                                  ) &&
+                                                  !isReorderMode
+                                                }
+                                                onDragStart={(event) => {
+                                                  event.dataTransfer.setData(
+                                                    "dragType",
+                                                    "available",
+                                                  );
+                                                  event.dataTransfer.setData(
+                                                    "employeeId",
+                                                    employee.id.toString(),
+                                                  );
+                                                }}
+                                              >
+                                                <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                                                <div className="min-w-0 flex-1">
+                                                  <span
+                                                    className={cn(
+                                                      "block truncate text-xs font-medium leading-tight",
+                                                      isOnDutyToday &&
+                                                        "font-bold text-rose-700",
+                                                    )}
+                                                  >
+                                                    {getEmployeeDisplayName(employee)}
+                                                  </span>
+                                                </div>
+                                                {isAssigned && (
+                                                  <Badge
+                                                    variant="outline"
+                                                    className="shrink-0 px-1 py-0 text-[9px] bg-amber-50 text-amber-700 border-amber-200"
+                                                  >
+                                                    eingeteilt
+                                                  </Badge>
+                                                )}
+                                              </div>
+                                            </TooltipTrigger>
+                                            <TooltipContent
+                                              side="left"
+                                              className="max-w-[280px]"
+                                            >
+                                              <div className="space-y-1">
+                                                <div className="font-medium">
+                                                  {getEmployeeDisplayName(employee)}
+                                                </div>
+                                                <div>Position: {roleLabel}</div>
+                                                <div>
+                                                  Kompetenzen: {competenciesLabel}
+                                                </div>
+                                                {declinedZeitausgleichIds.has(
+                                                  employee.id,
+                                                ) && (
+                                                  <div>Zeitausgleich: abgelehnt</div>
+                                                )}
+                                              </div>
+                                            </TooltipContent>
+                                          </Tooltip>
                                         );
-                                        event.dataTransfer.setData(
-                                          "employeeId",
-                                          employee.id.toString(),
-                                        );
-                                      }}
-                                    >
-                                      <GripVertical className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                                      <div className="flex-1 min-w-0">
-                                        <span
-                                          className={cn(
-                                            "text-sm font-medium truncate block",
-                                            isOnDutyToday && "font-bold text-rose-700",
-                                          )}
-                                        >
-                                          {getEmployeeDisplayName(employee)}
-                                        </span>
-                                      </div>
-                                      {isAssigned && (
-                                        <Badge
-                                          variant="outline"
-                                          className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 shrink-0"
-                                        >
-                                          eingeteilt
-                                        </Badge>
-                                      )}
-                                    </div>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="left" className="max-w-[280px]">
-                                    <div className="space-y-1">
-                                      <div className="font-medium">
-                                        {getEmployeeDisplayName(employee)}
-                                      </div>
-                                      <div>Position: {roleLabel}</div>
-                                      <div>Kompetenzen: {competenciesLabel}</div>
-                                      {declinedZeitausgleichIds.has(employee.id) && (
-                                        <div>Zeitausgleich: abgelehnt</div>
-                                      )}
-                                    </div>
-                                  </TooltipContent>
-                                </Tooltip>
-                              );
-                            })(),
-                          )}
+                                      })(),
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
                         </TooltipProvider>
                       )}
                     </div>
@@ -2741,7 +2799,7 @@ export default function WeeklyPlan() {
                       <CardContent className="space-y-2">
                         <div
                           className={cn(
-                            "space-y-2 border-2 border-dashed rounded-xl p-3",
+                            "space-y-1.5 border-2 border-dashed rounded-xl p-2",
                             disableAssignmentEditing
                               ? "bg-muted/30 border-muted-foreground/20"
                               : "border-primary/20",
@@ -2834,7 +2892,7 @@ export default function WeeklyPlan() {
                               <div
                                 key={assignment.id}
                                 className={cn(
-                                  "flex items-center justify-between rounded-lg border px-2 py-1",
+                                  "flex items-center justify-between rounded-md border px-1.5 py-1",
                                   isDuplicate && "border-rose-300 bg-rose-50",
                                   assignment.assignmentType !== "Plan" &&
                                     "border-blue-200 bg-blue-50",
@@ -2868,10 +2926,10 @@ export default function WeeklyPlan() {
                                   );
                                 }}
                               >
-                                <div className="flex items-center gap-2">
+                                <div className="flex min-w-0 items-center gap-1.5">
                                   <span
                                     className={cn(
-                                      "text-sm font-medium",
+                                      "truncate text-xs font-medium leading-tight",
                                       isOnDutyAssignment &&
                                         "font-bold text-rose-700",
                                     )}
@@ -2881,7 +2939,7 @@ export default function WeeklyPlan() {
                                   {assignment.assignmentType !== "Plan" && (
                                     <Badge
                                       variant="outline"
-                                      className="text-[10px]"
+                                      className="px-1 py-0 text-[9px]"
                                     >
                                       {assignment.assignmentType}
                                     </Badge>
@@ -2889,7 +2947,7 @@ export default function WeeklyPlan() {
                                   {isDuplicate && (
                                     <Badge
                                       variant="outline"
-                                      className="text-[10px] bg-rose-100 text-rose-700 border-rose-200"
+                                      className="px-1 py-0 text-[9px] bg-rose-100 text-rose-700 border-rose-200"
                                     >
                                       Doppelt
                                     </Badge>
@@ -2899,7 +2957,7 @@ export default function WeeklyPlan() {
                                   <Button
                                     size="icon"
                                     variant="ghost"
-                                    className="h-7 w-7 text-red-600"
+                                    className="h-6 w-6 text-red-600"
                                     onClick={() =>
                                       handleDeleteAssignment(assignment.id)
                                     }
