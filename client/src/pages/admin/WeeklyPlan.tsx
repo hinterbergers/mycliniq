@@ -2322,11 +2322,11 @@ export default function WeeklyPlan() {
               className="lg:sticky lg:self-start lg:z-20"
               style={{
                 top: rightPaneOffset,
-                height: `calc(100vh - ${rightPaneOffset}px - 16px)`,
+                maxHeight: `min(56vh, calc(100vh - ${rightPaneOffset}px - 56px))`,
               }}
             >
-              <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden">
-                <Card className="border-none kabeg-shadow flex flex-col min-h-0 flex-[1.4]">
+              <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
+                <Card className="border-none kabeg-shadow flex min-h-0 max-h-[34vh] flex-col">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium">
                       Abwesenheiten des Tages
@@ -2365,7 +2365,7 @@ export default function WeeklyPlan() {
                   </CardContent>
                 </Card>
 
-                <Card className="border-none kabeg-shadow flex flex-col min-h-0 flex-1">
+                <Card className="border-none kabeg-shadow flex min-h-0 max-h-[20vh] flex-col">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium">
                       Zeitausgleich möglich
