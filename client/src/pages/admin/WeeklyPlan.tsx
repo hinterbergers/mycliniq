@@ -31,6 +31,7 @@ import {
   Lock,
   Unlock,
   StickyNote,
+  Plus,
 } from "lucide-react";
 
 import { Layout } from "@/components/layout/Layout";
@@ -44,6 +45,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -239,6 +242,26 @@ const ZEITAUSGLEICH_STATUS_STYLES: Record<string, string> = {
   Genehmigt: "bg-green-50 text-green-700 border-green-200",
   Abgelehnt: "bg-rose-50 text-rose-700 border-rose-200",
 };
+
+const ABSENCE_REASONS = [
+  "Urlaub",
+  "Fortbildung",
+  "Krankheit",
+  "Pflegeurlaub",
+  "Zeitausgleich",
+  "Karenz",
+  "Sonstiges",
+] as const;
+
+type AbsenceDraft = {
+  employeeId: number | null;
+  reason: (typeof ABSENCE_REASONS)[number];
+  startDate: string;
+  endDate: string;
+  notes: string;
+};
+
+const formatDateInput = (date: Date) => format(date, "yyyy-MM-dd");
 
 const getWeekKey = (date: Date) => ({
   year: getYear(startOfWeek(date, { weekStartsOn: 1 })),
@@ -445,7 +468,7 @@ const normalizeRuleProfile = (value: unknown): WeeklyRuleProfile => {
 };
 
 export default function WeeklyPlan() {
-  const { employee: currentUser } = useAuth();
+  const { employee: currentUser, isAdmin, capabilities } = useAuth();
   const { toast } = useToast();
 
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -463,6 +486,15 @@ export default function WeeklyPlan() {
     useState<LongTermAbsence[]>([]);
   const [rosterShifts, setRosterShifts] = useState<RosterShift[]>([]);
   const [noteDialog, setNoteDialog] = useState<NoteDialogState | null>(null);
+  const [absenceDialogOpen, setAbsenceDialogOpen] = useState(false);
+  const [savingAbsence, setSavingAbsence] = useState(false);
+  const [absenceDraft, setAbsenceDraft] = useState<AbsenceDraft>({
+    employeeId: currentUser?.id ?? null,
+    reason: "Urlaub",
+    startDate: formatDateInput(new Date()),
+    endDate: formatDateInput(new Date()),
+    notes: "",
+  });
   const [generationPreviewDialogOpen, setGenerationPreviewDialogOpen] =
     useState(false);
   const [planningDialogTab, setPlanningDialogTab] = useState<
@@ -693,10 +725,18 @@ export default function WeeklyPlan() {
   const employeesById = useMemo(() => {
     return new Map(employees.map((employee) => [employee.id, employee]));
   }, [employees]);
+  const employeesForAbsenceDialog = useMemo(
+    () =>
+      [...employees]
+        .filter((employee) => employee.isActive)
+        .sort(compareAvailabilityEmployees),
+    [employees],
+  );
   const roomsById = useMemo(
     () => new Map(rooms.map((room) => [room.id, room])),
     [rooms],
   );
+  const canEditOthers = isAdmin || capabilities.includes("absence.create");
 
   const employeesForRules = useMemo(() => {
     const overlapsRange = (start?: string | null, end?: string | null) => {
@@ -1024,6 +1064,16 @@ export default function WeeklyPlan() {
   }, [loadWeekData]);
 
   useEffect(() => {
+    setAbsenceDraft((prev) => {
+      if (prev.employeeId) return prev;
+      return {
+        ...prev,
+        employeeId: currentUser?.id ?? employeesForAbsenceDialog[0]?.id ?? null,
+      };
+    });
+  }, [currentUser?.id, employeesForAbsenceDialog]);
+
+  useEffect(() => {
     if (selectedWeekday < 1 || selectedWeekday > 7) {
       setSelectedWeekday(1);
     }
@@ -1337,6 +1387,54 @@ export default function WeeklyPlan() {
       });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const openAbsenceDialog = (employeeId?: number, date?: Date) => {
+    const targetDate = date ?? selectedDayDate ?? new Date();
+    const dateStr = formatDateInput(targetDate);
+    setAbsenceDraft({
+      employeeId:
+        employeeId ??
+        currentUser?.id ??
+        employeesForAbsenceDialog[0]?.id ??
+        null,
+      reason: "Urlaub",
+      startDate: dateStr,
+      endDate: dateStr,
+      notes: "",
+    });
+    setAbsenceDialogOpen(true);
+  };
+
+  const handleAbsenceSave = async () => {
+    if (!absenceDraft.employeeId) return;
+    if (!absenceDraft.startDate || !absenceDraft.endDate) return;
+
+    setSavingAbsence(true);
+    try {
+      await plannedAbsencesAdminApi.create({
+        employeeId: absenceDraft.employeeId,
+        startDate: absenceDraft.startDate,
+        endDate: absenceDraft.endDate,
+        reason: absenceDraft.reason,
+        notes: absenceDraft.notes || null,
+      });
+      toast({
+        title: "Abwesenheit gespeichert",
+        description: "Eintrag wurde uebernommen.",
+      });
+      setAbsenceDialogOpen(false);
+      await loadWeekData();
+    } catch (error: any) {
+      console.error("Failed to save absence", error);
+      toast({
+        title: "Abwesenheit konnte nicht gespeichert werden",
+        description: error.message || "Bitte spaeter erneut versuchen.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingAbsence(false);
     }
   };
 
@@ -2106,6 +2204,16 @@ export default function WeeklyPlan() {
                   </div>
 
                   <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-2"
+                      onClick={() => openAbsenceDialog()}
+                      disabled={!currentUser || isSaving}
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Abwesenheit erfassen
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
@@ -3804,6 +3912,133 @@ export default function WeeklyPlan() {
                 </Button>
               </>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={absenceDialogOpen}
+        onOpenChange={setAbsenceDialogOpen}
+      >
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>Abwesenheit eintragen</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Mitarbeiter</Label>
+              {canEditOthers ? (
+                <Select
+                  value={absenceDraft.employeeId ? String(absenceDraft.employeeId) : ""}
+                  onValueChange={(value) =>
+                    setAbsenceDraft((prev) => ({
+                      ...prev,
+                      employeeId: Number(value),
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Mitarbeiter waehlen" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    {employeesForAbsenceDialog.map((employee) => (
+                      <SelectItem key={employee.id} value={String(employee.id)}>
+                        {employee.lastName} {employee.firstName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  value={`${currentUser?.lastName ?? ""} ${currentUser?.firstName ?? ""}`.trim()}
+                  disabled
+                />
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label>Grund</Label>
+              <Select
+                value={absenceDraft.reason}
+                onValueChange={(value) =>
+                  setAbsenceDraft((prev) => ({
+                    ...prev,
+                    reason: value as (typeof ABSENCE_REASONS)[number],
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ABSENCE_REASONS.map((reason) => (
+                    <SelectItem key={reason} value={reason}>
+                      {reason}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {absenceDraft.reason === "Urlaub" && (
+                <p className="text-xs text-muted-foreground">
+                  Urlaub wird gegen den Anspruch gerechnet. Fortbildung ist
+                  ausgenommen.
+                </p>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Von</Label>
+                <Input
+                  type="date"
+                  value={absenceDraft.startDate}
+                  onChange={(event) =>
+                    setAbsenceDraft((prev) => ({
+                      ...prev,
+                      startDate: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Bis</Label>
+                <Input
+                  type="date"
+                  value={absenceDraft.endDate}
+                  onChange={(event) =>
+                    setAbsenceDraft((prev) => ({
+                      ...prev,
+                      endDate: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Hinweise</Label>
+              <Textarea
+                value={absenceDraft.notes}
+                onChange={(event) =>
+                  setAbsenceDraft((prev) => ({
+                    ...prev,
+                    notes: event.target.value,
+                  }))
+                }
+                placeholder="Optional"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setAbsenceDialogOpen(false)}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              onClick={handleAbsenceSave}
+              disabled={savingAbsence || !absenceDraft.employeeId}
+            >
+              {savingAbsence ? "Speichert..." : "Speichern"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
