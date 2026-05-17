@@ -2385,7 +2385,7 @@ export default function WeeklyPlan() {
                   <CardContent className="flex-1 min-h-0 overflow-y-scroll overscroll-contain space-y-2">
                     <div
                       className={cn(
-                        "space-y-2 border-2 border-dashed rounded-xl p-3 min-h-[120px]",
+                        "space-y-2 border-2 border-dashed rounded-xl p-3 min-h-[240px]",
                         isPlanReleased ||
                           lockedWeekdays.includes(selectedWeekday)
                           ? "bg-muted/30 border-muted-foreground/20"
