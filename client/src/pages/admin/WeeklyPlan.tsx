@@ -2896,12 +2896,6 @@ export default function WeeklyPlan() {
                       {!isReorderMode && (
                         <>
                           <div className="flex flex-wrap gap-2 mt-2">
-                            {room.requiredRoleCompetencies?.length ? (
-                              <Badge variant="outline" className="text-[10px]">
-                                Rollen:{" "}
-                                {room.requiredRoleCompetencies.join(", ")}
-                              </Badge>
-                            ) : null}
                           </div>
                           {isClosed &&
                             (setting?.closedReason || !room.rowColor) && (
