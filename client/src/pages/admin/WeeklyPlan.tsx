@@ -2502,7 +2502,7 @@ export default function WeeklyPlan() {
                 height: `min(46vh, calc(100vh - ${rightPaneOffset}px - 120px))`,
               }}
             >
-              <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
+              <div className="flex h-full min-h-0 flex-col overflow-hidden">
                 <Card className="border-none kabeg-shadow flex h-full min-h-0 overflow-hidden flex-col">
                   <CardHeader className="shrink-0 bg-white pb-2">
                     <CardTitle className="text-sm font-medium flex items-center gap-2">
