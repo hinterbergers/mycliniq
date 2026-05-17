@@ -2379,7 +2379,7 @@ export default function WeeklyPlan() {
 
                 <Card className="border-none kabeg-shadow flex h-[16vh] min-h-0 flex-col overflow-hidden">
                   <CardHeader className="sticky top-0 z-10 bg-white pb-2">
-                    <CardTitle className="text-sm font-medium">
+                    <CardTitle className="text-xs font-medium">
                       Zeitausgleich möglich
                     </CardTitle>
                   </CardHeader>
