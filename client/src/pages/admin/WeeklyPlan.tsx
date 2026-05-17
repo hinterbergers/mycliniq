@@ -2588,7 +2588,7 @@ export default function WeeklyPlan() {
                                     Keine Verfügbarkeit
                                   </div>
                                 ) : (
-                                  <div className="space-y-1.5">
+                                  <div className="max-h-[19vh] overflow-y-auto overscroll-contain pr-1 space-y-1.5">
                                     {section.employees.map((employee) =>
                                       (() => {
                                         const isAssigned =
