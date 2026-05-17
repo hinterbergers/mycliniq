@@ -2377,7 +2377,7 @@ export default function WeeklyPlan() {
                   </CardContent>
                 </Card>
 
-                <Card className="border-none kabeg-shadow flex h-[16vh] min-h-0 flex-col overflow-hidden">
+                <Card className="border-none kabeg-shadow flex h-[19vh] min-h-0 flex-col overflow-hidden">
                   <CardHeader className="sticky top-0 z-10 bg-white pb-2">
                     <CardTitle className="text-xs font-medium">
                       Zeitausgleich möglich
@@ -2386,7 +2386,7 @@ export default function WeeklyPlan() {
                   <CardContent className="flex-1 min-h-0 overflow-y-scroll overscroll-contain space-y-2">
                     <div
                       className={cn(
-                        "space-y-2 border-2 border-dashed rounded-xl p-3 min-h-[96px]",
+                        "space-y-2 border-2 border-dashed rounded-xl p-3 min-h-[120px]",
                         isPlanReleased ||
                           lockedWeekdays.includes(selectedWeekday)
                           ? "bg-muted/30 border-muted-foreground/20"
