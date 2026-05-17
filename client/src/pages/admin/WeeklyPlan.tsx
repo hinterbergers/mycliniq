@@ -2896,15 +2896,6 @@ export default function WeeklyPlan() {
                       {!isReorderMode && (
                         <>
                           <div className="flex flex-wrap gap-2 mt-2">
-                            {room.requiredCompetencies?.map((comp) => (
-                              <Badge
-                                key={comp.id}
-                                variant="outline"
-                                className="text-[10px]"
-                              >
-                                {comp.competencyCode || comp.competencyName}
-                              </Badge>
-                            ))}
                             {room.requiredRoleCompetencies?.length ? (
                               <Badge variant="outline" className="text-[10px]">
                                 Rollen:{" "}
