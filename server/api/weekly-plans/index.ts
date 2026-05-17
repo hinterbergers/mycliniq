@@ -648,6 +648,11 @@ export function registerWeeklyPlanRoutes(router: Router) {
           return { room, setting };
         })
         .filter((entry) => Boolean(entry.setting));
+      const dayRoomSettingsById = new Map(
+        dayRooms
+          .filter((entry): entry is { room: (typeof roomsList)[number]; setting: NonNullable<typeof entry.setting> } => Boolean(entry.setting))
+          .map((entry) => [entry.room.id, entry.setting]),
+      );
 
       for (const { room, setting } of dayRooms) {
         if (!setting) continue;
@@ -738,6 +743,34 @@ export function registerWeeklyPlanRoutes(router: Router) {
             const rule = employeeRulesById.get(employee.id);
             if (rule?.forbiddenAreaIds.includes(room.id)) {
               reasons.add("FORBIDDEN_AREA");
+            }
+
+            const topPriorityRoomId = rule?.priorityAreaIds[0] ?? null;
+            if (topPriorityRoomId && topPriorityRoomId !== room.id) {
+              const topPrioritySetting = dayRoomSettingsById.get(topPriorityRoomId);
+              const topPrioritySlotKey = `${weekday}-${topPriorityRoomId}`;
+              const topPriorityExisting = existingBySlot.get(topPrioritySlotKey) ?? [];
+              const topPriorityHasBlocked = topPriorityExisting.some(
+                (assignment) => assignment.isBlocked && !assignment.employeeId,
+              );
+              const topPriorityHasEmployee = topPriorityExisting.some((assignment) =>
+                Boolean(assignment.employeeId),
+              );
+              const topPriorityAlreadyGenerated = generatedAssignments.some(
+                (entry) =>
+                  entry.employeeId === employee.id ||
+                  (entry.date === dayDate && entry.roomId === topPriorityRoomId),
+              );
+
+              if (
+                topPrioritySetting &&
+                !topPrioritySetting.isClosed &&
+                !topPriorityHasBlocked &&
+                !topPriorityHasEmployee &&
+                !topPriorityAlreadyGenerated
+              ) {
+                reasons.add("RESERVED_FOR_TOP_PRIORITY");
+              }
             }
 
             if (
@@ -839,7 +872,13 @@ export function registerWeeklyPlanRoutes(router: Router) {
             const priorityIds = rule?.priorityAreaIds ?? [];
             const priorityIndex = priorityIds.indexOf(room.id);
             const priorityScore =
-              priorityIndex === 0 ? 300 : priorityIndex === 1 ? 200 : priorityIndex === 2 ? 100 : 10;
+              priorityIndex === 0
+                ? 1000
+                : priorityIndex === 1
+                  ? 200
+                  : priorityIndex === 2
+                    ? 100
+                    : 10;
             const continuityLevel = rule?.continuityLevel ?? "balanced";
             const continuityMatches =
               existingAssignments.some(
