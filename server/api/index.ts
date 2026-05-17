@@ -10,6 +10,7 @@ import { registerEmployeeRoutes } from "./employees";
 import { registerCompetencyRoutes } from "./competencies";
 import { registerDiplomaRoutes } from "./diplomas";
 import { registerPhysicalRoomRoutes } from "./physical-rooms";
+import { registerRoomGroupRoutes } from "./room-groups";
 import { registerRoomRoutes } from "./rooms";
 import { registerServiceLineRoutes } from "./service-lines";
 import { registerDutyPlanRoutes } from "./duty-plans";
@@ -74,6 +75,10 @@ export function registerModularApiRoutes(app: Express): void {
   const roomsRouter = Router();
   registerRoomRoutes(roomsRouter);
   app.use("/api/rooms", roomsRouter);
+
+  const roomGroupsRouter = Router();
+  registerRoomGroupRoutes(roomGroupsRouter);
+  app.use("/api/room-groups", roomGroupsRouter);
 
   // Physical Rooms API
   // TODO: Add requireAdmin for POST, PUT, DELETE

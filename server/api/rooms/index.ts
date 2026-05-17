@@ -46,6 +46,7 @@ const updateRoomSchema = z.object({
   weeklyPlanSortOrder: z.number().int().optional(),
   isAvailable: z.boolean().optional(),
   blockReason: z.string().nullable().optional(),
+  roomGroupId: z.number().int().positive().nullable().optional(),
   requiredRoleCompetencies: z.array(z.string()).optional(),
   alternativeRoleCompetencies: z.array(z.string()).optional(),
   rowColor: z
@@ -352,6 +353,7 @@ export function registerRoomRoutes(router: Router) {
         weeklyPlanSortOrder,
         isAvailable,
         blockReason,
+        roomGroupId,
         requiredRoleCompetencies,
         alternativeRoleCompetencies,
         rowColor,
@@ -367,6 +369,7 @@ export function registerRoomRoutes(router: Router) {
         updateData.weeklyPlanSortOrder = weeklyPlanSortOrder;
       if (isAvailable !== undefined) updateData.isAvailable = isAvailable;
       if (blockReason !== undefined) updateData.blockReason = blockReason;
+      if (roomGroupId !== undefined) updateData.roomGroupId = roomGroupId;
       if (requiredRoleCompetencies !== undefined)
         updateData.requiredRoleCompetencies = requiredRoleCompetencies;
       if (alternativeRoleCompetencies !== undefined)

@@ -2062,6 +2062,39 @@ export default function WeeklyPlan() {
       .filter(Boolean) as typeof selectedRooms;
   }, [isReorderMode, roomOrderIds, selectedRooms]);
 
+  const displayRoomRows = useMemo(() => {
+    const rows: Array<typeof displayRooms> = [];
+    const grouped = new Map<number, typeof displayRooms>();
+    const handledGroupIds = new Set<number>();
+
+    displayRooms.forEach((item) => {
+      const groupId = item.room.roomGroupId;
+      if (!groupId) return;
+      const existing = grouped.get(groupId);
+      if (existing) {
+        existing.push(item);
+      } else {
+        grouped.set(groupId, [item]);
+      }
+    });
+
+    displayRooms.forEach((item) => {
+      const groupId = item.room.roomGroupId;
+      if (!groupId) {
+        rows.push([item]);
+        return;
+      }
+      if (handledGroupIds.has(groupId)) return;
+      handledGroupIds.add(groupId);
+      const items = grouped.get(groupId) ?? [];
+      for (let index = 0; index < items.length; index += 3) {
+        rows.push(items.slice(index, index + 3));
+      }
+    });
+
+    return rows;
+  }, [displayRooms]);
+
   const handleToggleReorderMode = async () => {
     if (isReorderMode) {
       const sortedRooms = [...rooms].sort((a, b) => {
@@ -2722,7 +2755,12 @@ export default function WeeklyPlan() {
                 </CardContent>
               </Card>
             ) : (
-              displayRooms.map(({ room, setting }) => {
+              displayRoomRows.map((row, rowIndex) => (
+                <div
+                  key={`room-row-${selectedWeekday}-${rowIndex}`}
+                  className={cn("flex flex-col gap-4", row.length > 1 && "lg:flex-row")}
+                >
+                  {row.map(({ room, setting }) => {
                 const key = `${selectedWeekday}-${room.id}`;
                 const roomAssignments = assignmentsByDayRoom.get(key) ?? [];
                 const noteAssignment = roomAssignments.find(
@@ -2784,8 +2822,11 @@ export default function WeeklyPlan() {
                   remainingEligible.length === 0;
 
                 return (
-                <Card
+                <div
                   key={room.id}
+                  className={cn(row.length > 1 ? "flex-1 min-w-0" : "w-full")}
+                >
+                <Card
                   className={cn(
                     "border-none kabeg-shadow",
                     isReorderMode && "cursor-grab active:cursor-grabbing",
@@ -3118,8 +3159,11 @@ export default function WeeklyPlan() {
                       </CardContent>
                     )}
                   </Card>
+                </div>
                 );
-              })
+              })}
+                </div>
+              ))
             )}
           </div>
         </div>

@@ -31,8 +31,18 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useState, type MouseEvent } from "react";
-import { competencyApi, roomApi, physicalRoomApi } from "@/lib/api";
-import type { Competency, Resource, PhysicalRoom } from "@shared/schema";
+import {
+  competencyApi,
+  roomApi,
+  physicalRoomApi,
+  roomGroupApi,
+} from "@/lib/api";
+import type {
+  Competency,
+  Resource,
+  PhysicalRoom,
+  RoomGroup,
+} from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 
@@ -80,6 +90,7 @@ interface RoomState {
   id: number;
   name: string;
   category: Resource["category"];
+  roomGroupId: number | null;
   isAvailable: boolean;
   blockReason: string;
   description: string;
@@ -92,6 +103,13 @@ interface RoomState {
   physicalRoomIds: number[];
   isActive: boolean;
   rowColor: string | null;
+}
+
+interface RoomGroupState {
+  id: number;
+  name: string;
+  sortOrder: number;
+  roomIds: number[];
 }
 
 const initialWeeklySchedule = (): WeeklySchedule[] =>
@@ -112,6 +130,7 @@ export default function ResourceManagement() {
     Competency[]
   >([]);
   const [physicalRooms, setPhysicalRooms] = useState<PhysicalRoom[]>([]);
+  const [roomGroups, setRoomGroups] = useState<RoomGroupState[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editingRoom, setEditingRoom] = useState<RoomState | null>(null);
@@ -122,6 +141,10 @@ export default function ResourceManagement() {
     useState<PhysicalRoom | null>(null);
   const [isPhysicalDialogOpen, setIsPhysicalDialogOpen] = useState(false);
   const [isCreatingPhysicalRoom, setIsCreatingPhysicalRoom] = useState(false);
+  const [editingRoomGroup, setEditingRoomGroup] =
+    useState<RoomGroupState | null>(null);
+  const [isRoomGroupDialogOpen, setIsRoomGroupDialogOpen] = useState(false);
+  const [isCreatingRoomGroup, setIsCreatingRoomGroup] = useState(false);
 
   const canEdit = isAdmin || isTechnicalAdmin;
   const activePhysicalRooms = physicalRooms.filter(
@@ -145,6 +168,7 @@ export default function ResourceManagement() {
         competencyApi.getAll(),
         physicalRoomApi.getAll(),
       ]);
+      const roomGroupList = await roomGroupApi.getAll();
 
       setAvailableCompetencies(
         competencies.filter((comp) => comp.isActive !== false),
@@ -159,6 +183,16 @@ export default function ResourceManagement() {
       );
 
       setRooms(detailedRooms);
+      setRoomGroups(
+        roomGroupList.map((group) => ({
+          id: group.id,
+          name: group.name,
+          sortOrder: group.sortOrder ?? 0,
+          roomIds: detailedRooms
+            .filter((room) => room.roomGroupId === group.id)
+            .map((room) => room.id),
+        })),
+      );
     } catch (error) {
       toast({
         title: "Fehler",
@@ -222,6 +256,7 @@ export default function ResourceManagement() {
       id: room.id,
       name: room.name,
       category: room.category,
+      roomGroupId: room.roomGroupId ?? null,
       isAvailable: room.isAvailable,
       blockReason: room.blockReason || "",
       description: room.description || "",
@@ -241,6 +276,7 @@ export default function ResourceManagement() {
     id: 0,
     name: "",
     category: ROOM_CATEGORIES[0] ?? "Sonstiges",
+    roomGroupId: null,
     isAvailable: true,
     blockReason: "",
     description: "",
@@ -340,6 +376,43 @@ export default function ResourceManagement() {
     }
   };
 
+  const openCreateRoomGroupDialog = () => {
+    if (!canEdit) return;
+    setIsCreatingRoomGroup(true);
+    setEditingRoomGroup({
+      id: 0,
+      name: "",
+      sortOrder: roomGroups.length,
+      roomIds: [],
+    });
+    setIsRoomGroupDialogOpen(true);
+  };
+
+  const openEditRoomGroupDialog = (group: RoomGroupState) => {
+    if (!canEdit) return;
+    setIsCreatingRoomGroup(false);
+    setEditingRoomGroup({ ...group, roomIds: [...group.roomIds] });
+    setIsRoomGroupDialogOpen(true);
+  };
+
+  const handleRoomGroupDialogChange = (open: boolean) => {
+    setIsRoomGroupDialogOpen(open);
+    if (!open) {
+      setEditingRoomGroup(null);
+      setIsCreatingRoomGroup(false);
+    }
+  };
+
+  const toggleRoomGroupRoomAssignment = (roomId: number) => {
+    if (!editingRoomGroup) return;
+    setEditingRoomGroup({
+      ...editingRoomGroup,
+      roomIds: editingRoomGroup.roomIds.includes(roomId)
+        ? editingRoomGroup.roomIds.filter((id) => id !== roomId)
+        : [...editingRoomGroup.roomIds, roomId],
+    });
+  };
+
   const handleSave = async () => {
     if (!editingRoom) return;
     if (!canEdit) {
@@ -367,6 +440,7 @@ export default function ResourceManagement() {
       blockReason: editingRoom.blockReason || null,
       requiredRoleCompetencies: editingRoom.requiredRoleCompetencies,
       alternativeRoleCompetencies: editingRoom.alternativeRoleCompetencies,
+      roomGroupId: editingRoom.roomGroupId,
       rowColor: editingRoom.rowColor || null,
     };
 
@@ -476,6 +550,107 @@ export default function ResourceManagement() {
       toast({
         title: "Fehler",
         description: "Arbeitsplatz konnte nicht gelöscht werden",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveRoomGroup = async () => {
+    if (!editingRoomGroup) return;
+    if (!editingRoomGroup.name.trim()) {
+      toast({
+        title: "Fehler",
+        description: "Bitte einen Gruppennamen eingeben",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const isCreating = isCreatingRoomGroup || editingRoomGroup.id === 0;
+      const persistedGroup = isCreating
+        ? await roomGroupApi.create({
+            name: editingRoomGroup.name.trim(),
+            sortOrder: editingRoomGroup.sortOrder,
+          } as Omit<RoomGroup, "id" | "createdAt" | "updatedAt">)
+        : await roomGroupApi.update(editingRoomGroup.id, {
+            name: editingRoomGroup.name.trim(),
+            sortOrder: editingRoomGroup.sortOrder,
+          });
+
+      await roomGroupApi.updateRooms(persistedGroup.id, editingRoomGroup.roomIds);
+
+      setRoomGroups((prev) => {
+        const nextGroup: RoomGroupState = {
+          id: persistedGroup.id,
+          name: persistedGroup.name,
+          sortOrder: persistedGroup.sortOrder ?? 0,
+          roomIds: [...editingRoomGroup.roomIds],
+        };
+        return isCreating
+          ? [...prev, nextGroup]
+          : prev.map((group) => (group.id === persistedGroup.id ? nextGroup : group));
+      });
+
+      setRooms((prev) =>
+        prev.map((room) => ({
+          ...room,
+          roomGroupId: editingRoomGroup.roomIds.includes(room.id)
+            ? persistedGroup.id
+            : room.roomGroupId === persistedGroup.id
+              ? null
+              : room.roomGroupId,
+        })),
+      );
+
+      toast({
+        title: "Gespeichert",
+        description: isCreating
+          ? "Gruppe wurde angelegt"
+          : "Gruppe wurde aktualisiert",
+      });
+      handleRoomGroupDialogChange(false);
+    } catch (error) {
+      toast({
+        title: "Fehler",
+        description: "Gruppe konnte nicht gespeichert werden",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteRoomGroup = async () => {
+    if (!editingRoomGroup || isCreatingRoomGroup || !canEdit) return;
+    const confirmed = window.confirm("Diese Gruppe wirklich löschen?");
+    if (!confirmed) return;
+
+    setSaving(true);
+    try {
+      await roomGroupApi.delete(editingRoomGroup.id);
+      setRoomGroups((prev) =>
+        prev.filter((group) => group.id !== editingRoomGroup.id),
+      );
+      setRooms((prev) =>
+        prev.map((room) =>
+          room.roomGroupId === editingRoomGroup.id
+            ? { ...room, roomGroupId: null }
+            : room,
+        ),
+      );
+      toast({
+        title: "Gelöscht",
+        description: "Gruppe wurde entfernt",
+      });
+      handleRoomGroupDialogChange(false);
+    } catch (error) {
+      toast({
+        title: "Fehler",
+        description: "Gruppe konnte nicht gelöscht werden",
         variant: "destructive",
       });
     } finally {
@@ -668,6 +843,9 @@ export default function ResourceManagement() {
             >
               Räume
             </TabsTrigger>
+            <TabsTrigger value="groups" className="rounded-lg px-6 h-10">
+              Gruppen
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent
@@ -803,6 +981,82 @@ export default function ResourceManagement() {
                 Wochenplan-Editor konfiguriert und hier nur angezeigt.
               </p>
             </div>
+          </TabsContent>
+
+          <TabsContent
+            value="groups"
+            className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300"
+          >
+            {canEdit && (
+              <div className="flex justify-end">
+                <Button onClick={openCreateRoomGroupDialog}>
+                  Neue Gruppe anlegen
+                </Button>
+              </div>
+            )}
+
+            {loading ? (
+              <div className="flex items-center justify-center py-16 text-muted-foreground">
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                Gruppen werden geladen...
+              </div>
+            ) : roomGroups.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Keine Gruppen angelegt
+              </p>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2">
+                {roomGroups
+                  .slice()
+                  .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
+                  .map((group) => (
+                    <Card
+                      key={group.id}
+                      className="border-none shadow-sm transition-all cursor-pointer hover:shadow-md bg-card"
+                      onClick={() => openEditRoomGroupDialog(group)}
+                    >
+                      <CardContent className="p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="space-y-1">
+                            <div className="font-medium">{group.name}</div>
+                            <p className="text-xs text-muted-foreground">
+                              {group.roomIds.length} Arbeitsplätze zugeordnet
+                            </p>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openEditRoomGroupDialog(group);
+                            }}
+                          >
+                            <Pencil className="w-4 h-4 text-muted-foreground" />
+                          </Button>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {group.roomIds.length > 0 ? (
+                            group.roomIds.map((roomId) => {
+                              const room = rooms.find((entry) => entry.id === roomId);
+                              if (!room) return null;
+                              return (
+                                <Badge key={roomId} variant="secondary">
+                                  {room.name}
+                                </Badge>
+                              );
+                            })
+                          ) : (
+                            <p className="text-sm text-muted-foreground">
+                              Keine Arbeitsplätze zugeordnet
+                            </p>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent
@@ -1462,6 +1716,101 @@ export default function ResourceManagement() {
               disabled={!canEdit || saving}
               data-testid="button-save"
             >
+              {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Speichern
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isRoomGroupDialogOpen}
+        onOpenChange={handleRoomGroupDialogChange}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {isCreatingRoomGroup
+                ? "Neue Gruppe anlegen"
+                : `Gruppe bearbeiten: ${editingRoomGroup?.name}`}
+            </DialogTitle>
+          </DialogHeader>
+
+          {editingRoomGroup && (
+            <div className="space-y-5 mt-4">
+              <div className="space-y-2">
+                <Label htmlFor="room-group-name">Gruppenname</Label>
+                <Input
+                  id="room-group-name"
+                  value={editingRoomGroup.name}
+                  onChange={(event) =>
+                    setEditingRoomGroup({
+                      ...editingRoomGroup,
+                      name: event.target.value,
+                    })
+                  }
+                  disabled={!canEdit}
+                />
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <Label className="text-base font-medium">
+                    Zugeordnete Arbeitsplätze
+                  </Label>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Diese Arbeitsplätze werden im Wochenplan-Editor als Gruppe
+                    in gemeinsamen Zeilen dargestellt.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-[320px] overflow-y-auto rounded-lg border p-3">
+                  {rooms
+                    .slice()
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((room) => (
+                      <div
+                        key={room.id}
+                        className="flex items-center space-x-2 rounded-md border p-2"
+                      >
+                        <Checkbox
+                          id={`room-group-room-${room.id}`}
+                          checked={editingRoomGroup.roomIds.includes(room.id)}
+                          onCheckedChange={() =>
+                            toggleRoomGroupRoomAssignment(room.id)
+                          }
+                          disabled={!canEdit}
+                        />
+                        <Label
+                          htmlFor={`room-group-room-${room.id}`}
+                          className="cursor-pointer text-sm"
+                        >
+                          {room.name}
+                        </Label>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="mt-6">
+            {canEdit && !isCreatingRoomGroup && (
+              <Button
+                variant="destructive"
+                onClick={handleDeleteRoomGroup}
+                disabled={saving}
+                className="mr-auto"
+              >
+                Löschen
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              onClick={() => handleRoomGroupDialogChange(false)}
+            >
+              Abbrechen
+            </Button>
+            <Button onClick={handleSaveRoomGroup} disabled={!canEdit || saving}>
               {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Speichern
             </Button>

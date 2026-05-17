@@ -35,6 +35,7 @@ import type {
   Competency,
   Diploma,
   PhysicalRoom,
+  RoomGroup,
   ServiceLine,
   InsertServiceLine,
   Clinic,
@@ -1360,6 +1361,50 @@ export const roomApi = {
     const response = await apiFetch(`${API_BASE}/rooms/${id}/physical-rooms`, {
       method: "PUT",
       body: JSON.stringify({ physicalRoomIds }),
+    });
+    return handleResponse(response);
+  },
+};
+
+export const roomGroupApi = {
+  getAll: async (): Promise<RoomGroup[]> => {
+    const response = await apiFetch(`${API_BASE}/room-groups`);
+    return handleResponse<RoomGroup[]>(response);
+  },
+  create: async (
+    data: Omit<RoomGroup, "id" | "createdAt" | "updatedAt">,
+  ): Promise<RoomGroup> => {
+    const response = await apiFetch(`${API_BASE}/room-groups`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return handleResponse<RoomGroup>(response);
+  },
+  update: async (
+    id: number,
+    data: Partial<Pick<RoomGroup, "name" | "sortOrder">>,
+  ): Promise<RoomGroup> => {
+    const response = await apiFetch(`${API_BASE}/room-groups/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+    return handleResponse<RoomGroup>(response);
+  },
+  updateRooms: async (
+    id: number,
+    roomIds: number[],
+  ): Promise<{ groupId: number; roomIds: number[] }> => {
+    const response = await apiFetch(`${API_BASE}/room-groups/${id}/rooms`, {
+      method: "PUT",
+      body: JSON.stringify({ roomIds }),
+    });
+    return handleResponse(response);
+  },
+  delete: async (
+    id: number,
+  ): Promise<{ id: number; deleted: boolean }> => {
+    const response = await apiFetch(`${API_BASE}/room-groups/${id}`, {
+      method: "DELETE",
     });
     return handleResponse(response);
   },

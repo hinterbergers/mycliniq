@@ -847,6 +847,27 @@ export const insertAbsenceSchema = createInsertSchema(absences).omit({
 export type InsertAbsence = z.infer<typeof insertAbsenceSchema>;
 export type Absence = typeof absences.$inferSelect;
 
+export const roomGroups = pgTable(
+  "room_groups",
+  {
+    id: serial("id").primaryKey(),
+    name: text("name").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("room_groups_sort_order_idx").on(table.sortOrder)],
+);
+
+export const insertRoomGroupSchema = createInsertSchema(roomGroups).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertRoomGroup = z.infer<typeof insertRoomGroupSchema>;
+export type RoomGroup = typeof roomGroups.$inferSelect;
+
 // Rooms table (extended resources)
 export const rooms = pgTable(
   "rooms",
@@ -860,6 +881,9 @@ export const rooms = pgTable(
     rowColor: text("row_color"),
     isAvailable: boolean("is_available").notNull().default(true),
     blockReason: text("block_reason"),
+    roomGroupId: integer("room_group_id").references(() => roomGroups.id, {
+      onDelete: "set null",
+    }),
     requiredRoleCompetencies: text("required_role_competencies")
       .array()
       .notNull()
