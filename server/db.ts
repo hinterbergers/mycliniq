@@ -1,5 +1,7 @@
-import { drizzle } from "drizzle-orm/neon-serverless";
-import { Pool, neonConfig } from "@neondatabase/serverless";
+import { drizzle as drizzleNeon } from "drizzle-orm/neon-serverless";
+import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
+import { Pool as NeonPool, neonConfig } from "@neondatabase/serverless";
+import { Pool as PgPool } from "pg";
 import ws from "ws";
 
 // Configure WebSocket for Neon database
@@ -32,5 +34,12 @@ function getDatabaseUrl(): string {
 
 // Database setup
 const connectionString = getDatabaseUrl();
-const pool = new Pool({ connectionString });
-export const db = drizzle(pool);
+const databaseUrl = new URL(connectionString);
+const isLocalPostgres =
+  databaseUrl.hostname === "127.0.0.1" ||
+  databaseUrl.hostname === "localhost" ||
+  databaseUrl.hostname === "::1";
+
+export const db = isLocalPostgres
+  ? drizzlePg(new PgPool({ connectionString }))
+  : drizzleNeon(new NeonPool({ connectionString }));
