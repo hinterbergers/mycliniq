@@ -2340,7 +2340,7 @@ export default function WeeklyPlan() {
               <div className="flex h-full min-h-0 flex-col gap-4 pr-2">
                 <Card className="border-none kabeg-shadow flex h-[26vh] min-h-0 flex-col overflow-hidden">
                   <CardHeader className="sticky top-0 z-10 bg-white pb-2">
-                    <CardTitle className="text-sm font-medium">
+                    <CardTitle className="text-xs font-medium">
                       Abwesenheiten des Tages
                     </CardTitle>
                     <p className="text-xs text-muted-foreground">
