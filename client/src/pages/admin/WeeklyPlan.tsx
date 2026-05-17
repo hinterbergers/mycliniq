@@ -535,6 +535,8 @@ export default function WeeklyPlan() {
   const [selectedRuleEmployeeId, setSelectedRuleEmployeeId] = useState<
     number | null
   >(null);
+  const [showAssignedAvailableEmployees, setShowAssignedAvailableEmployees] =
+    useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isReorderMode, setIsReorderMode] = useState(false);
@@ -1857,6 +1859,19 @@ export default function WeeklyPlan() {
       }),
     [availableEmployees, assignedEmployeeIdsForSelectedDay],
   );
+  const visibleAvailableEmployeesOrdered = useMemo(
+    () =>
+      showAssignedAvailableEmployees
+        ? availableEmployeesOrdered
+        : availableEmployeesOrdered.filter(
+            (employee) => !assignedEmployeeIdsForSelectedDay.has(employee.id),
+          ),
+    [
+      availableEmployeesOrdered,
+      assignedEmployeeIdsForSelectedDay,
+      showAssignedAvailableEmployees,
+    ],
+  );
   const availableEmployeeSections = useMemo(() => {
     const sections = [
       { key: "senior", title: "Oberaerzte", employees: [] as Employee[] },
@@ -1864,12 +1879,12 @@ export default function WeeklyPlan() {
       { key: "turnus", title: "Turnusaerzte", employees: [] as Employee[] },
     ];
     const sectionMap = new Map(sections.map((section) => [section.key, section]));
-    availableEmployeesOrdered.forEach((employee) => {
+    visibleAvailableEmployeesOrdered.forEach((employee) => {
       const key = getAvailabilitySectionKey(employee);
       sectionMap.get(key)?.employees.push(employee);
     });
     return sections;
-  }, [availableEmployeesOrdered]);
+  }, [visibleAvailableEmployeesOrdered]);
   const selectedAbsences = absencesByDate.get(selectedDateKey) ?? [];
   const selectedAbsencesByReason = useMemo(() => {
     const grouped = new Map<string, typeof selectedAbsences>();
@@ -2512,6 +2527,19 @@ export default function WeeklyPlan() {
                         ? format(selectedDayDate, "dd.MM.yyyy", { locale: de })
                         : ""}
                     </p>
+                    <div className="flex items-center justify-between gap-3 pt-1">
+                      <Label
+                        htmlFor="show-assigned-available-employees"
+                        className="text-[11px] font-medium text-muted-foreground"
+                      >
+                        Eingeteilte anzeigen
+                      </Label>
+                      <Switch
+                        id="show-assigned-available-employees"
+                        checked={showAssignedAvailableEmployees}
+                        onCheckedChange={setShowAssignedAvailableEmployees}
+                      />
+                    </div>
                   </CardHeader>
                   <CardContent className="flex-1 min-h-0 overflow-y-scroll overscroll-contain pr-2">
                     <div
@@ -2560,7 +2588,7 @@ export default function WeeklyPlan() {
                         <div className="text-sm text-muted-foreground text-center py-4">
                           Laden...
                         </div>
-                      ) : availableEmployeesOrdered.length === 0 ? (
+                      ) : visibleAvailableEmployeesOrdered.length === 0 ? (
                         <div className="text-sm text-muted-foreground text-center py-4">
                           Keine Verfügbarkeit
                         </div>
