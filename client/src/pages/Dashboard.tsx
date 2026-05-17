@@ -516,7 +516,7 @@ export default function Dashboard() {
   const previewCards = useMemo<PreviewCard[]>(() => {
     if (!dashboardData?.weekPreview) return [];
     return dashboardData.weekPreview
-      .map((entry) => {
+      .map<PreviewCard | null>((entry) => {
         const iso = `${entry.date}T00:00:00`;
         const dateInstance = new Date(iso);
         if (Number.isNaN(dateInstance.getTime())) return null;

@@ -2896,24 +2896,6 @@ export default function WeeklyPlan() {
                       {!isReorderMode && (
                         <>
                           <div className="flex flex-wrap gap-2 mt-2">
-                            {room.physicalRooms?.length ? (
-                              room.physicalRooms.map((physical) => (
-                                <Badge
-                                  key={physical.id}
-                                  variant="secondary"
-                                  className="text-[10px]"
-                                >
-                                  {physical.name}
-                                </Badge>
-                              ))
-                            ) : (
-                              <Badge
-                                variant="secondary"
-                                className="text-[10px]"
-                              >
-                                Kein Raum
-                              </Badge>
-                            )}
                             {room.requiredCompetencies?.map((comp) => (
                               <Badge
                                 key={comp.id}
