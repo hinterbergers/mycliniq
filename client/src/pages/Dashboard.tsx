@@ -137,6 +137,7 @@ type PreviewCard = {
   date: string;
   statusLabel: string | null;
   workplace: string | null;
+  workplaceColor?: string | null;
   teammateNames: string[];
   dayLabel: string;
   dateLabel: string;
@@ -523,6 +524,7 @@ export default function Dashboard() {
           date: entry.date,
           statusLabel: entry.statusLabel ?? null,
           workplace: entry.workplace ?? null,
+          workplaceColor: entry.workplaceColor ?? null,
           teammateNames: (entry.teammates ?? [])
             .map((mate) => buildFullName(mate.firstName, mate.lastName))
             .filter(Boolean),
@@ -993,6 +995,7 @@ export default function Dashboard() {
       ) : (
         previewCards.map((item, i) => {
           const badgeText = getDutyBadgeText(item.statusLabel);
+          const previewAccent = item.workplaceColor ?? null;
 
           const normalizedStatus = (item.statusLabel ?? "").toLowerCase();
           const isAbsence = ABSENCE_KEYWORDS.some((k) =>
@@ -1010,8 +1013,17 @@ export default function Dashboard() {
             <div
               key={`${item.date}-${i}`}
               className={`p-3 rounded-lg border ${
-                i === 0 ? "bg-primary/5 border-primary/20" : "border-border"
+                previewAccent ? "" : i === 0 ? "bg-primary/5 border-primary/20" : "border-border"
               }`}
+              style={
+                previewAccent
+                  ? {
+                      backgroundColor: withHexAlpha(previewAccent, i === 0 ? "42" : "2E") ?? undefined,
+                      borderColor: withHexAlpha(previewAccent, i === 0 ? "B8" : "8E") ?? previewAccent,
+                      boxShadow: `inset 3px 0 0 ${darkenHexColor(previewAccent, 0.45) ?? previewAccent}`,
+                    }
+                  : undefined
+              }
               data-testid={`schedule-day-${i}`}
             >
               <div className="flex items-center justify-between mb-1">

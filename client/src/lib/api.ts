@@ -106,6 +106,7 @@ export type DashboardDay = {
   date: string;
   statusLabel: string | null;
   workplace: string | null;
+  workplaceColor?: string | null;
   teammates: DashboardTeammate[];
   absenceReason: string | null;
   ze?: DashboardZeInfo | null;

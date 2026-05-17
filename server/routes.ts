@@ -3251,6 +3251,7 @@ const buildAttendanceMembers = (
             : undefined;
 
           let workplace: string | null = null;
+          let workplaceColor: string | null = null;
           const teammates: Array<{
             firstName: string | null;
             lastName: string | null;
@@ -3260,6 +3261,7 @@ const buildAttendanceMembers = (
             const roomName = normalizeName(userAssignment.roomName);
             workplace =
               roomName && roomName !== "Diensthabende" ? roomName : null;
+            workplaceColor = normalizeName(userAssignment.roomColor);
 
             if (userAssignment.roomId) {
               const seen = new Set<number>();
@@ -3300,6 +3302,7 @@ const buildAttendanceMembers = (
             date,
             statusLabel,
             workplace,
+            workplaceColor,
             teammates,
             absenceReason,
           };
@@ -3374,6 +3377,7 @@ const buildAttendanceMembers = (
           date: todayVienna,
           statusLabel: todayDutyLabel,
           workplace: todayWeekEntry?.workplace ?? null,
+          workplaceColor: todayWeekEntry?.workplaceColor ?? null,
           teammates: todayWeekEntry?.teammates ?? [],
           absenceReason: todayWeekEntry?.absenceReason ?? null,
           duty: todayDuty,
