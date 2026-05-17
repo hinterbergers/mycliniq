@@ -2122,13 +2122,10 @@ export default function WeeklyPlan() {
   return (
     <Layout title="Wochenplan-Editor" disableMotion>
       <div className="space-y-4">
-        <div className="space-y-1">
+        <div>
           <h1 className="text-2xl font-bold text-foreground">
             Wochenplan-Editor
           </h1>
-          <p className="text-muted-foreground">
-            Wocheneinsatzpläne nach Arbeitsplätzen erstellen und anpassen.
-          </p>
         </div>
 
         <div
