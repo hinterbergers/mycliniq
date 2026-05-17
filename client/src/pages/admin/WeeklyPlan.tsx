@@ -2509,7 +2509,7 @@ export default function WeeklyPlan() {
             className="lg:col-span-3 overflow-visible lg:sticky lg:self-start lg:z-20"
             style={{
               top: rightPaneOffset,
-              height: `min(36vh, calc(100vh - ${rightPaneOffset}px - 160px))`,
+              height: `min(54vh, calc(100vh - ${rightPaneOffset}px - 140px))`,
             }}
           >
             <div className="h-full min-h-0">
