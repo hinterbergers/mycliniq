@@ -2504,7 +2504,7 @@ export default function WeeklyPlan() {
             >
               <div className="flex h-full min-h-0 flex-col overflow-hidden">
                 <Card className="border-none kabeg-shadow flex h-full min-h-0 overflow-hidden flex-col">
-                  <CardHeader className="shrink-0 bg-white pb-2">
+                  <CardHeader className="sticky top-0 z-10 shrink-0 bg-white pb-2">
                     <CardTitle className="text-sm font-medium flex items-center gap-2">
                       <User className="w-4 h-4" />
                       Verfügbares Personal
