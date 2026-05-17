@@ -2317,14 +2317,14 @@ export default function WeeklyPlan() {
         </div>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-start">
-          <div className="lg:col-span-2 overflow-visible">
-            <div
-              className="lg:sticky lg:self-start lg:z-20"
-              style={{
-                top: rightPaneOffset,
-                height: `min(46vh, calc(100vh - ${rightPaneOffset}px - 120px))`,
-              }}
-            >
+          <div
+            className="lg:col-span-2 overflow-visible lg:sticky lg:self-start lg:z-20"
+            style={{
+              top: rightPaneOffset,
+              height: `min(46vh, calc(100vh - ${rightPaneOffset}px - 120px))`,
+            }}
+          >
+            <div>
               <div className="flex h-full min-h-0 flex-col gap-4 pr-2">
                 <Card className="border-none kabeg-shadow flex h-[26vh] min-h-0 flex-col overflow-hidden">
                   <CardHeader className="sticky top-0 z-10 bg-white pb-2">
@@ -2494,14 +2494,14 @@ export default function WeeklyPlan() {
             </div>
           </div>
 
-          <div className="lg:col-span-3 overflow-visible">
-            <div
-              className="lg:sticky lg:self-start lg:z-20"
-              style={{
-                top: rightPaneOffset,
-                height: `min(46vh, calc(100vh - ${rightPaneOffset}px - 120px))`,
-              }}
-            >
+          <div
+            className="lg:col-span-3 overflow-visible lg:sticky lg:self-start lg:z-20"
+            style={{
+              top: rightPaneOffset,
+              height: `min(46vh, calc(100vh - ${rightPaneOffset}px - 120px))`,
+            }}
+          >
+            <div>
               <div className="flex h-full min-h-0 flex-col overflow-hidden">
                 <Card className="border-none kabeg-shadow flex h-full min-h-0 overflow-hidden flex-col">
                   <CardHeader className="sticky top-0 z-10 shrink-0 bg-white pb-2">
