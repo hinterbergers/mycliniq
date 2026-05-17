@@ -2573,9 +2573,9 @@ export default function WeeklyPlan() {
                             {availableEmployeeSections.map((section) => (
                               <div
                                 key={section.key}
-                                className="rounded-xl border bg-muted/20 p-2"
+                                className="max-h-[22vh] overflow-y-auto overscroll-contain rounded-xl border bg-muted/20 p-2"
                               >
-                                <div className="mb-2 flex items-center justify-between">
+                                <div className="sticky top-0 z-10 mb-2 flex items-center justify-between bg-muted/20 pb-1">
                                   <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                                     {section.title}
                                   </div>
@@ -2588,7 +2588,7 @@ export default function WeeklyPlan() {
                                     Keine Verfügbarkeit
                                   </div>
                                 ) : (
-                                  <div className="max-h-[19vh] overflow-y-auto overscroll-contain pr-1 space-y-1.5">
+                                  <div className="pr-1 space-y-1.5">
                                     {section.employees.map((employee) =>
                                       (() => {
                                         const isAssigned =
