@@ -2498,10 +2498,10 @@ export default function WeeklyPlan() {
             className="lg:col-span-3 overflow-visible lg:sticky lg:self-start lg:z-20"
             style={{
               top: rightPaneOffset,
-              height: `min(46vh, calc(100vh - ${rightPaneOffset}px - 120px))`,
+              height: `min(36vh, calc(100vh - ${rightPaneOffset}px - 160px))`,
             }}
           >
-            <div>
+            <div className="h-full min-h-0">
               <div className="flex h-full min-h-0 flex-col overflow-hidden">
                 <Card className="border-none kabeg-shadow flex h-full min-h-0 overflow-hidden flex-col">
                   <CardHeader className="sticky top-0 z-10 shrink-0 bg-white pb-2">
@@ -2573,9 +2573,9 @@ export default function WeeklyPlan() {
                             {availableEmployeeSections.map((section) => (
                               <div
                                 key={section.key}
-                                className="max-h-[22vh] overflow-y-auto overscroll-contain rounded-xl border bg-muted/20 p-2"
+                                className="rounded-xl border bg-muted/20 p-2"
                               >
-                                <div className="sticky top-0 z-10 mb-2 flex items-center justify-between bg-muted/20 pb-1">
+                                <div className="mb-2 flex items-center justify-between pb-1">
                                   <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                                     {section.title}
                                   </div>
