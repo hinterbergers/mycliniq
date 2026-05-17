@@ -536,6 +536,7 @@ export default function WeeklyPlan() {
   >(null);
   const [showAssignedAvailableEmployees, setShowAssignedAvailableEmployees] =
     useState(false);
+  const [hideCompletedRooms, setHideCompletedRooms] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isReorderMode, setIsReorderMode] = useState(false);
@@ -2062,12 +2063,48 @@ export default function WeeklyPlan() {
       .filter(Boolean) as typeof selectedRooms;
   }, [isReorderMode, roomOrderIds, selectedRooms]);
 
+  const filteredDisplayRooms = useMemo(() => {
+    if (!hideCompletedRooms || isReorderMode) {
+      return displayRooms;
+    }
+
+    return displayRooms.filter(({ room }) => {
+      const key = `${selectedWeekday}-${room.id}`;
+      const roomAssignments = assignmentsByDayRoom.get(key) ?? [];
+      const employeeAssignments = roomAssignments.filter(
+        (assignment) => assignment.employeeId,
+      );
+
+      const hasEligibleAssignment = employeeAssignments.some((assignment) => {
+        if (!assignment.employeeId) return false;
+        const employee = employeesById.get(assignment.employeeId);
+        return employee ? isEmployeeEligibleForRoom(employee, room) : false;
+      });
+
+      const competencyStatus =
+        employeeAssignments.length === 0
+          ? "missing"
+          : hasEligibleAssignment
+            ? "fulfilled"
+            : "partial";
+
+      return competencyStatus === "missing";
+    });
+  }, [
+    assignmentsByDayRoom,
+    displayRooms,
+    employeesById,
+    hideCompletedRooms,
+    isReorderMode,
+    selectedWeekday,
+  ]);
+
   const displayRoomRows = useMemo(() => {
     const rows: Array<typeof displayRooms> = [];
     const grouped = new Map<number, typeof displayRooms>();
     const handledGroupIds = new Set<number>();
 
-    displayRooms.forEach((item) => {
+    filteredDisplayRooms.forEach((item) => {
       const groupId = item.room.roomGroupId;
       if (!groupId) return;
       const existing = grouped.get(groupId);
@@ -2078,7 +2115,7 @@ export default function WeeklyPlan() {
       }
     });
 
-    displayRooms.forEach((item) => {
+    filteredDisplayRooms.forEach((item) => {
       const groupId = item.room.roomGroupId;
       if (!groupId) {
         rows.push([item]);
@@ -2093,7 +2130,7 @@ export default function WeeklyPlan() {
     });
 
     return rows;
-  }, [displayRooms]);
+  }, [filteredDisplayRooms]);
 
   const handleToggleReorderMode = async () => {
     if (isReorderMode) {
@@ -2248,6 +2285,19 @@ export default function WeeklyPlan() {
                   </div>
 
                   <div className="flex flex-wrap gap-2">
+                    <div className="flex items-center gap-2 rounded-lg border px-3 py-1.5">
+                      <Label
+                        htmlFor="hide-completed-rooms"
+                        className="text-[11px] font-medium text-muted-foreground"
+                      >
+                        Vollständige Räume ausblenden
+                      </Label>
+                      <Switch
+                        id="hide-completed-rooms"
+                        checked={hideCompletedRooms}
+                        onCheckedChange={setHideCompletedRooms}
+                      />
+                    </div>
                     <Button
                       variant="outline"
                       size="sm"
