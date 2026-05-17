@@ -107,7 +107,7 @@
   - `roster_shifts.employee_id` is nullable; `assignee_free_text` stores manual names
   - Manual inputs filter employees by service line eligibility; unmatched input is stored as free-text
 - Room weekday settings include recurrence: `weekly`, `monthly_first_third`, `monthly_once` (default weekly)
-- Run `npm run db:push` after pulling to apply schema changes (service_lines, employees.can_overduty, employees.username, roster_shifts.service_type -> text, roster_settings wish month + shift_wishes fields, roster_settings.weekly_rule_profile, room_groups, rooms.room_group_id)
+- Run `npm run db:push` after pulling to apply schema changes. The script is a repo-local idempotent SQL patch runner (not drizzle CLI push) and currently covers recent manual migrations including `rooms.row_color`, `roster_settings.weekly_rule_profile`, `roster_shift_change_logs`, `employees.username`, `room_groups`, and `rooms.room_group_id`.
 
 ## Vacation Planning
 - Admin UI: `/admin/urlaubsplan` shows a year/quarter grid with absences, conflicts, and status actions

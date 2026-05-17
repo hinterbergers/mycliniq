@@ -14,7 +14,7 @@
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
     "test:planning-solver": "tsx server/tests/planningSolver.test.ts",
-    "db:push": "npx drizzle-kit push",
+    "db:push": "tsx script/dbPush.ts",
     "format": "prettier --write \"server/**/*.ts\" \"client/**/*.{ts,tsx}\" \"shared/**/*.ts\" \"script/**/*.ts\"",
     "format:check": "prettier --check \"server/**/*.ts\" \"client/**/*.{ts,tsx}\" \"shared/**/*.ts\" \"script/**/*.ts\""
   },
