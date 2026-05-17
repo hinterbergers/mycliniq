@@ -535,7 +535,7 @@ export default function WeeklyPlan() {
     number | null
   >(null);
   const [showAssignedAvailableEmployees, setShowAssignedAvailableEmployees] =
-    useState(true);
+    useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isReorderMode, setIsReorderMode] = useState(false);
