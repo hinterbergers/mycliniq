@@ -2071,6 +2071,14 @@ export default function WeeklyPlan() {
     return displayRooms.filter(({ room }) => {
       const key = `${selectedWeekday}-${room.id}`;
       const roomAssignments = assignmentsByDayRoom.get(key) ?? [];
+      const isBlockedRoom = roomAssignments.some(
+        (assignment) => assignment.isBlocked,
+      );
+
+      if (isBlockedRoom) {
+        return false;
+      }
+
       const employeeAssignments = roomAssignments.filter(
         (assignment) => assignment.employeeId,
       );
