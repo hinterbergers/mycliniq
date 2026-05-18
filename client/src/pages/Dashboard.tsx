@@ -569,7 +569,6 @@ export default function Dashboard() {
   const attendanceEnabled = isWidgetEnabled("attendance");
   const birthdayEnabled = isWidgetEnabled("birthday");
   const documentsEnabled = isWidgetEnabled("documents");
-  const favoritesEnabled = isWidgetEnabled("favorites");
   const canSeeRecentChanges =
     !viewAsUser &&
     (isAdmin ||
@@ -1182,30 +1181,10 @@ export default function Dashboard() {
   };
 
   const renderMiscWidgets = () => {
-    if (!documentsEnabled && !favoritesEnabled) return null;
+    if (!documentsEnabled) return null;
 
     return (
       <>
-        {favoritesEnabled && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {favoritesEnabled && (
-              <Card className="border-none kabeg-shadow">
-                <CardContent className="p-4 flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center">
-                    <Star className="w-6 h-6 text-amber-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground font-medium">
-                      Meine Favoriten
-                    </p>
-                    <p className="text-2xl font-bold text-foreground">–</p>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        )}
-
         {documentsEnabled && (
           <Card className="border-none kabeg-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
