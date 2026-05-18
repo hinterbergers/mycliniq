@@ -569,7 +569,6 @@ export default function Dashboard() {
   const attendanceEnabled = isWidgetEnabled("attendance");
   const birthdayEnabled = isWidgetEnabled("birthday");
   const documentsEnabled = isWidgetEnabled("documents");
-  const sopsEnabled = isWidgetEnabled("sops_new");
   const favoritesEnabled = isWidgetEnabled("favorites");
   const canSeeRecentChanges =
     !viewAsUser &&
@@ -1183,27 +1182,12 @@ export default function Dashboard() {
   };
 
   const renderMiscWidgets = () => {
-    if (!documentsEnabled && !sopsEnabled && !favoritesEnabled) return null;
+    if (!documentsEnabled && !favoritesEnabled) return null;
 
     return (
       <>
-        {(sopsEnabled || favoritesEnabled) && (
+        {favoritesEnabled && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {sopsEnabled && (
-              <Card className="border-none kabeg-shadow">
-                <CardContent className="p-4 flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                    <BookOpen className="w-6 h-6 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground font-medium">
-                      Neue SOPs
-                    </p>
-                    <p className="text-2xl font-bold text-foreground">–</p>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
             {favoritesEnabled && (
               <Card className="border-none kabeg-shadow">
                 <CardContent className="p-4 flex items-center gap-4">

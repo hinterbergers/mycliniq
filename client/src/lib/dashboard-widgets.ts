@@ -3,7 +3,6 @@ export type DashboardWidgetKey =
   | "attendance"
   | "birthday"
   | "documents"
-  | "sops_new"
   | "favorites"
   | "absences";
 
@@ -18,7 +17,6 @@ export const DASHBOARD_WIDGETS: DashboardWidgetDefinition[] = [
   { key: "attendance", label: "Heute anwesend", defaultEnabled: true },
   { key: "birthday", label: "Geburtstag", defaultEnabled: true },
   { key: "documents", label: "Neue Dokumente", defaultEnabled: true },
-  { key: "sops_new", label: "Neue SOPs", defaultEnabled: true },
   { key: "favorites", label: "Favoriten", defaultEnabled: true },
   { key: "absences", label: "Abwesenheiten", defaultEnabled: true },
 ];
