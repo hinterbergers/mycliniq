@@ -87,6 +87,7 @@ import {
   type WeeklyPlanRoom,
   formatRoomTime,
   getEmployeeDisplayName,
+  getRecurringUnavailableWeekdays,
   getRoomSettingForDate,
   isEmployeeAbsentOnDate,
   isEmployeeEligibleForRoom,
@@ -935,6 +936,34 @@ export default function WeeklyPlan() {
     });
     return map;
   }, [plannedAbsences]);
+
+  const recurringAbsencesByDate = useMemo(() => {
+    const map = new Map<string, PlannedAbsenceLike[]>();
+    days.forEach((day) => {
+      const weekday = day.getDay() === 0 ? 7 : day.getDay();
+      const key = format(day, "yyyy-MM-dd");
+      employees.forEach((employee) => {
+        if (!employee.isActive) return;
+        if (
+          !getRecurringUnavailableWeekdays(employee).includes(
+            weekday as 1 | 2 | 3 | 4 | 5 | 6 | 7,
+          )
+        ) {
+          return;
+        }
+        const entries = map.get(key) ?? [];
+        entries.push({
+          employeeId: employee.id,
+          startDate: key,
+          endDate: key,
+          reason: "Regelmäßig frei",
+          status: "Genehmigt",
+        });
+        map.set(key, entries);
+      });
+    });
+    return map;
+  }, [days, employees]);
 
   const zeitausgleichAbsencesForSelectedDay = useMemo(() => {
     if (!selectedDateKey) return [];
@@ -1885,7 +1914,13 @@ export default function WeeklyPlan() {
     });
     return sections;
   }, [visibleAvailableEmployeesOrdered]);
-  const selectedAbsences = absencesByDate.get(selectedDateKey) ?? [];
+  const selectedAbsences = useMemo(
+    () => [
+      ...(absencesByDate.get(selectedDateKey) ?? []),
+      ...(recurringAbsencesByDate.get(selectedDateKey) ?? []),
+    ],
+    [absencesByDate, recurringAbsencesByDate, selectedDateKey],
+  );
   const selectedAbsencesByReason = useMemo(() => {
     const grouped = new Map<string, typeof selectedAbsences>();
     selectedAbsences.forEach((absence) => {

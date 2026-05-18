@@ -92,6 +92,11 @@ export const WEEKLY_PLANNING_REASON_MAP: Record<string, WeeklyPlanningReasonMeta
     title: "Abwesenheit",
     description: "Person ist an diesem Tag abwesend.",
   },
+  RECURRING_WEEKDAY_OFF: {
+    severity: "hard",
+    title: "Fester freier Wochentag",
+    description: "Person arbeitet an diesem Wochentag regelmaessig nicht.",
+  },
   LONG_TERM_ABSENCE_BLOCKED: {
     severity: "hard",
     title: "Langzeitabwesenheit",
@@ -173,6 +178,7 @@ export const WEEKLY_PLANNING_REASON_ORDER = [
   "ROOM_CLOSED",
   "LOCKED_EMPTY",
   "ABSENCE_BLOCKED",
+  "RECURRING_WEEKDAY_OFF",
   "LONG_TERM_ABSENCE_BLOCKED",
   "AFTER_DUTY_BLOCKED",
   "FORBIDDEN_AREA",

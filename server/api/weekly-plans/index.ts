@@ -126,6 +126,21 @@ function isEmployeeInactiveOnDate(
   );
 }
 
+function getRecurringUnavailableWeekdays(shiftPreferences: unknown): number[] {
+  if (!shiftPreferences || typeof shiftPreferences !== "object") return [];
+  const value = (shiftPreferences as { recurringUnavailableWeekdays?: unknown })
+    .recurringUnavailableWeekdays;
+  if (!Array.isArray(value)) return [];
+  return Array.from(
+    new Set(
+      value.filter(
+        (weekday): weekday is number =>
+          Number.isInteger(weekday) && weekday >= 1 && weekday <= 7,
+      ),
+    ),
+  );
+}
+
 function addMonths(date: Date, months: number): Date {
   const next = new Date(date);
   next.setMonth(next.getMonth() + months);
@@ -790,6 +805,14 @@ export function registerWeeklyPlanRoutes(router: Router) {
               )
             ) {
               reasons.add("ABSENCE_BLOCKED");
+            }
+
+            if (
+              getRecurringUnavailableWeekdays(employee.shiftPreferences).includes(
+                weekday,
+              )
+            ) {
+              reasons.add("RECURRING_WEEKDAY_OFF");
             }
 
             if (

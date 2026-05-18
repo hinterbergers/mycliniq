@@ -14,6 +14,10 @@ export type PlannedAbsenceLike = {
   reason?: string | null;
 };
 
+type ShiftPreferencesLike = {
+  recurringUnavailableWeekdays?: number[];
+};
+
 export type WeeklyPlanRoom = Resource & {
   weekdaySettings?: Array<{
     id: number;
@@ -172,6 +176,24 @@ type IsoWeekday = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 export const getWeekdayIndex = (date: Date): IsoWeekday =>
   getISODay(date) as IsoWeekday;
 
+export const getRecurringUnavailableWeekdays = (
+  employee: Pick<Employee, "shiftPreferences">,
+): IsoWeekday[] => {
+  const prefs =
+    employee.shiftPreferences && typeof employee.shiftPreferences === "object"
+      ? (employee.shiftPreferences as ShiftPreferencesLike)
+      : null;
+  if (!Array.isArray(prefs?.recurringUnavailableWeekdays)) return [];
+  return Array.from(
+    new Set(
+      prefs.recurringUnavailableWeekdays.filter(
+        (weekday): weekday is IsoWeekday =>
+          Number.isInteger(weekday) && weekday >= 1 && weekday <= 7,
+      ),
+    ),
+  );
+};
+
 export const getWeekdayOccurrence = (date: Date) =>
   Math.floor((date.getDate() - 1) / 7) + 1;
 
@@ -214,6 +236,9 @@ export const isEmployeeAbsentOnDate = (
   longTermAbsences: LongTermAbsence[],
 ) => {
   const dateStr = format(date, "yyyy-MM-dd");
+  if (getRecurringUnavailableWeekdays(employee).includes(getWeekdayIndex(date))) {
+    return true;
+  }
   const hasLongTerm = longTermAbsences.some(
     (absence) =>
       absence.employeeId === employee.id &&

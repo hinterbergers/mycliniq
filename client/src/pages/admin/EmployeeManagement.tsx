@@ -231,7 +231,18 @@ interface ShiftPreferences {
   serviceTypeOverrides?: ServiceType[];
   vacationVisibilityRoleGroups?: VacationVisibilityGroup[];
   externalDutyOnly?: boolean;
+  recurringUnavailableWeekdays?: number[];
 }
+
+const RECURRING_WEEKDAY_OPTIONS = [
+  { value: 1, label: "Montag" },
+  { value: 2, label: "Dienstag" },
+  { value: 3, label: "Mittwoch" },
+  { value: 4, label: "Donnerstag" },
+  { value: 5, label: "Freitag" },
+  { value: 6, label: "Samstag" },
+  { value: 7, label: "Sonntag" },
+] as const;
 
 interface CompetencyAssignment {
   roomName: string;
@@ -411,6 +422,8 @@ export default function EmployeeManagement() {
   const [editEmploymentFrom, setEditEmploymentFrom] = useState("");
   const [editEmploymentUntil, setEditEmploymentUntil] = useState("");
   const [editExternalDutyOnly, setEditExternalDutyOnly] = useState(false);
+  const [editRecurringUnavailableWeekdays, setEditRecurringUnavailableWeekdays] =
+    useState<number[]>([]);
   const [resetPasswordData, setResetPasswordData] = useState({
     newPassword: "",
     confirmPassword: "",
@@ -442,6 +455,8 @@ export default function EmployeeManagement() {
   const [newEmploymentFrom, setNewEmploymentFrom] = useState("");
   const [newEmploymentUntil, setNewEmploymentUntil] = useState("");
   const [newExternalDutyOnly, setNewExternalDutyOnly] = useState(false);
+  const [newRecurringUnavailableWeekdays, setNewRecurringUnavailableWeekdays] =
+    useState<number[]>([]);
 
   const canManageEmployees = isAdmin || isTechnicalAdmin;
 
@@ -584,6 +599,7 @@ export default function EmployeeManagement() {
     setNewEmploymentUntil("");
     setNewInactiveEnabled(false);
     setNewExternalDutyOnly(false);
+    setNewRecurringUnavailableWeekdays([]);
   };
 
   const hydrateEditForm = (emp: Employee) => {
@@ -662,6 +678,14 @@ export default function EmployeeManagement() {
       visibilityGroups.length ? visibilityGroups : DEFAULT_VISIBILITY_GROUPS,
     );
     setEditExternalDutyOnly(Boolean(prefs?.externalDutyOnly));
+    setEditRecurringUnavailableWeekdays(
+      Array.isArray(prefs?.recurringUnavailableWeekdays)
+        ? prefs.recurringUnavailableWeekdays.filter(
+            (weekday): weekday is number =>
+              Number.isInteger(weekday) && weekday >= 1 && weekday <= 7,
+          )
+        : [],
+    );
     setEditCompetencyIds([]);
     setEditDiplomaIds([]);
     setResetPasswordData({ newPassword: "", confirmPassword: "" });
@@ -780,6 +804,7 @@ export default function EmployeeManagement() {
       setEditEmploymentUntil("");
       setEditInactiveEnabled(false);
       setEditExternalDutyOnly(false);
+      setEditRecurringUnavailableWeekdays([]);
     }
   };
 
@@ -1003,6 +1028,14 @@ export default function EmployeeManagement() {
         delete (
           nextShiftPreferences as { serviceTypeOverrides?: ServiceType[] }
         ).serviceTypeOverrides;
+      }
+      if (editRecurringUnavailableWeekdays.length) {
+        nextShiftPreferences.recurringUnavailableWeekdays =
+          editRecurringUnavailableWeekdays;
+      } else {
+        delete (
+          nextShiftPreferences as { recurringUnavailableWeekdays?: number[] }
+        ).recurringUnavailableWeekdays;
       }
       const normalizedVisibilityGroups = normalizeVisibilityGroups(
         editVacationVisibilityGroups,
@@ -1284,6 +1317,10 @@ export default function EmployeeManagement() {
       if (newServiceTypeOverrides.length) {
         nextShiftPreferences.serviceTypeOverrides = newServiceTypeOverrides;
       }
+      if (newRecurringUnavailableWeekdays.length) {
+        nextShiftPreferences.recurringUnavailableWeekdays =
+          newRecurringUnavailableWeekdays;
+      }
       const normalizedVisibilityGroups = normalizeVisibilityGroups(
         newVacationVisibilityGroups,
       );
@@ -1486,6 +1523,22 @@ export default function EmployeeManagement() {
       prev.includes(type)
         ? prev.filter((value) => value !== type)
         : [...prev, type],
+    );
+  };
+
+  const toggleEditRecurringUnavailableWeekday = (weekday: number) => {
+    setEditRecurringUnavailableWeekdays((prev) =>
+      prev.includes(weekday)
+        ? prev.filter((value) => value !== weekday)
+        : [...prev, weekday].sort((a, b) => a - b),
+    );
+  };
+
+  const toggleNewRecurringUnavailableWeekday = (weekday: number) => {
+    setNewRecurringUnavailableWeekdays((prev) =>
+      prev.includes(weekday)
+        ? prev.filter((value) => value !== weekday)
+        : [...prev, weekday].sort((a, b) => a - b),
     );
   };
 
@@ -2505,6 +2558,43 @@ export default function EmployeeManagement() {
                                     className="text-sm font-normal cursor-pointer"
                                   >
                                     {line.label}
+                                  </Label>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="space-y-3 rounded-lg border border-border p-4">
+                            <div>
+                              <Label>Feste freie Wochentage</Label>
+                              <p className="text-xs text-muted-foreground">
+                                Diese Wochentage werden im Wochenplan jede Woche
+                                automatisch als abwesend gewertet.
+                              </p>
+                            </div>
+                            <div className="grid gap-2 md:grid-cols-2">
+                              {RECURRING_WEEKDAY_OPTIONS.map((weekday) => (
+                                <div
+                                  key={`new-recurring-weekday-${weekday.value}`}
+                                  className="flex items-center gap-2"
+                                >
+                                  <Checkbox
+                                    id={`new-recurring-weekday-${weekday.value}`}
+                                    checked={newRecurringUnavailableWeekdays.includes(
+                                      weekday.value,
+                                    )}
+                                    onCheckedChange={() =>
+                                      toggleNewRecurringUnavailableWeekday(
+                                        weekday.value,
+                                      )
+                                    }
+                                    disabled={!canManageEmployees}
+                                  />
+                                  <Label
+                                    htmlFor={`new-recurring-weekday-${weekday.value}`}
+                                    className="text-sm font-normal cursor-pointer"
+                                  >
+                                    {weekday.label}
                                   </Label>
                                 </div>
                               ))}
@@ -3571,6 +3661,43 @@ export default function EmployeeManagement() {
                               className="text-sm font-normal cursor-pointer"
                             >
                               {line.label}
+                            </Label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 rounded-lg border border-border p-4">
+                      <div>
+                        <Label>Feste freie Wochentage</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Diese Wochentage werden im Wochenplan jede Woche
+                          automatisch als abwesend gewertet.
+                        </p>
+                      </div>
+                      <div className="grid gap-2 md:grid-cols-2">
+                        {RECURRING_WEEKDAY_OPTIONS.map((weekday) => (
+                          <div
+                            key={`edit-recurring-weekday-${weekday.value}`}
+                            className="flex items-center gap-2"
+                          >
+                            <Checkbox
+                              id={`edit-recurring-weekday-${weekday.value}`}
+                              checked={editRecurringUnavailableWeekdays.includes(
+                                weekday.value,
+                              )}
+                              onCheckedChange={() =>
+                                toggleEditRecurringUnavailableWeekday(
+                                  weekday.value,
+                                )
+                              }
+                              disabled={!canManageEmployees}
+                            />
+                            <Label
+                              htmlFor={`edit-recurring-weekday-${weekday.value}`}
+                              className="text-sm font-normal cursor-pointer"
+                            >
+                              {weekday.label}
                             </Label>
                           </div>
                         ))}
