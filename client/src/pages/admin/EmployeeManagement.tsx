@@ -3605,6 +3605,23 @@ export default function EmployeeManagement() {
                       />
                     </div>
 
+                    <div className="flex items-center justify-between rounded-lg border border-border p-4">
+                      <div>
+                        <Label>Kann Überdienst machen</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Nur Mitarbeiter mit dieser Freigabe können im
+                          Überdienst eingetragen werden.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={editCanOverduty}
+                        onCheckedChange={(checked) =>
+                          setEditCanOverduty(Boolean(checked))
+                        }
+                        disabled={!canManageEmployees}
+                      />
+                    </div>
+
                     <div className="space-y-3 rounded-lg border border-border p-4">
                       <div>
                         <Label>Einsetzbar für (Abweichung)</Label>
@@ -4092,22 +4109,6 @@ export default function EmployeeManagement() {
                       Berechtigungen gelten pro Abteilung und steuern
                       Detailrechte in der Verwaltung.
                     </p>
-                    <div className="flex items-center justify-between rounded-lg border border-border p-4">
-                      <div>
-                        <Label>Kann Überdienst machen</Label>
-                        <p className="text-xs text-muted-foreground">
-                          Nur Mitarbeiter mit dieser Freigabe können im
-                          Überdienst eingetragen werden.
-                        </p>
-                      </div>
-                      <Switch
-                        checked={editCanOverduty}
-                        onCheckedChange={(checked) =>
-                          setEditCanOverduty(Boolean(checked))
-                        }
-                        disabled={!canManageEmployees}
-                      />
-                    </div>
                     {canManageEmployees && (
                       <div className="space-y-3 rounded-lg border border-border p-4">
                         <div>
