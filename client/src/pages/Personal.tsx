@@ -100,6 +100,7 @@ import type {
   ServiceLine,
   LongTermAbsence,
 } from "@shared/schema";
+import { getServiceLineDisplayLabel } from "@shared/shiftTypes";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import VacationPlanEditor from "@/pages/admin/VacationPlanEditor";
@@ -234,7 +235,7 @@ const buildServiceLineDisplay = (
     })
     .map((line, index) => ({
       key: line.key,
-      label: line.label,
+      label: getServiceLineDisplayLabel(line.key, line.label) ?? line.label,
       style: SERVICE_LINE_PALETTE[index % SERVICE_LINE_PALETTE.length],
     }));
 };
