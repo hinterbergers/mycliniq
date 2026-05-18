@@ -659,17 +659,17 @@ export default function Dashboard() {
           KABEG Klinikum Klagenfurt
         </Badge>
       </div>
-      <p className="text-primary-foreground/80 max-w-xl text-lg flex items-center gap-2">
+      <p className="text-primary-foreground/80 max-w-xl text-sm flex items-center gap-2">
         <span className="text-2xl">{heroEmoji}</span>
         <span>{heroMessage}</span>
       </p>
       {todayTeamLine && (
-        <p className="text-sm text-primary-foreground/70 mt-1">
+        <p className="text-xs text-primary-foreground/70 mt-1">
           {todayTeamLine}
         </p>
       )}
       {todayDutyLine && (
-        <p className="text-sm text-primary-foreground/70 mt-1">
+        <p className="text-xs text-primary-foreground/70 mt-1">
           {todayDutyLine}
         </p>
       )}
