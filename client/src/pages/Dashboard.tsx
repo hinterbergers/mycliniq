@@ -647,7 +647,7 @@ export default function Dashboard() {
     <div className="bg-gradient-to-br from-primary to-primary/80 rounded-2xl p-8 text-primary-foreground shadow-lg shadow-primary/10">
       <div className="flex items-center justify-between mb-2">
         <h2
-          className="text-3xl font-bold text-white"
+          className="text-xl font-bold text-white"
           data-testid="text-greeting"
         >
           {greeting} {firstName}
