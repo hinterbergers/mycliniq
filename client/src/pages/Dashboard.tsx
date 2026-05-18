@@ -229,13 +229,13 @@ const sortAttendanceMembers = (
 };
 
 const STAFF_BADGE_BASE =
-  "inline-flex flex-col items-start gap-1 rounded-md border px-3 py-1.5 md:px-4 md:py-2 text-[11px] sm:text-xs font-medium leading-tight";
+  "inline-flex max-w-full flex-col items-start gap-0.5 rounded-md border px-2.5 py-1 md:px-3 md:py-1.5 text-[10px] sm:text-[11px] font-medium leading-snug";
 const STAFF_BADGE_DUTY =
   "bg-rose-50 text-rose-700 border-rose-200 font-semibold";
 const STAFF_BADGE_NORMAL = "bg-slate-50 text-slate-700 border-slate-200";
-const STAFF_NAME_CLASS = "text-sm";
+const STAFF_NAME_CLASS = "text-[13px] sm:text-sm";
 const STAFF_WORKPLACE_CLASS =
-  "text-[10px] sm:text-xs text-muted-foreground leading-tight";
+  "text-[10px] text-muted-foreground leading-tight";
 const MONTH_NAMES = [
   "Jänner",
   "Februar",
@@ -717,7 +717,7 @@ export default function Dashboard() {
     members: DashboardAttendanceMember[],
     testPrefix: string,
   ) => (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-1.5">
       {members.length > 0 ? (
         members.map((p, i) => {
           const prev = i > 0 ? members[i - 1] : null;
@@ -729,7 +729,7 @@ export default function Dashboard() {
 
           return (
             <Fragment key={`${p.employeeId}-${i}`}>
-              {showDivider ? <Separator className="w-full my-1" /> : null}
+              {showDivider ? <Separator className="my-0.5 w-full" /> : null}
               <Badge
                 variant="secondary"
                 className={`${STAFF_BADGE_BASE} ${
@@ -806,7 +806,7 @@ export default function Dashboard() {
     });
 
     return (
-      <div className="space-y-4">
+      <div className="space-y-2.5">
         {sortedGroups.map((group, groupIndex) => {
           const sortedPeople = [...group.members].sort((a, b) => {
             const rankA = getRoleRank(a.role);
@@ -823,9 +823,9 @@ export default function Dashboard() {
 
           return (
             <Fragment key={`${testPrefix}-group-${group.roomId ?? group.label}`}>
-              {groupIndex > 0 ? <Separator /> : null}
+              {groupIndex > 0 ? <Separator className="my-0.5" /> : null}
               <div
-                className="space-y-2 rounded-md border p-2 shadow-sm"
+                className="space-y-1.5 rounded-md border p-1.5 shadow-sm"
                 style={
                   group.color
                     ? {
@@ -837,7 +837,7 @@ export default function Dashboard() {
                 }
               >
                 <p
-                  className="text-xs font-bold uppercase tracking-wide"
+                  className="text-[10px] font-bold uppercase tracking-wide"
                   style={
                     group.color
                       ? { color: darkenHexColor(group.color, 0.28) ?? darkenHexColor(group.color, 0.45) ?? group.color }
@@ -846,14 +846,14 @@ export default function Dashboard() {
                 >
                   {group.label}
                 </p>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-1.5">
                   {sortedPeople.map((person, personIndex) => {
                     const name = buildFullName(person.firstName, person.lastName) || "Kolleg:in";
                     return (
                       <Badge
                         key={`${testPrefix}-${group.label}-${person.employeeId}-${personIndex}`}
                         variant="secondary"
-                        className={`px-3 py-1.5 text-sm font-medium ${
+                        className={`px-2.5 py-1 text-[13px] sm:text-sm font-medium ${
                           person.isDuty ? STAFF_BADGE_DUTY : STAFF_BADGE_NORMAL
                         }`}
                         data-testid={`${testPrefix}-${groupIndex}-${personIndex}`}
@@ -872,16 +872,16 @@ export default function Dashboard() {
   };
 
   const renderAttendanceCardContent = () => (
-    <div className="space-y-4 md:px-6 md:pb-6">
+    <div className="space-y-3 md:px-4 md:pb-4">
       <Tabs
         value={attendanceViewMode}
         onValueChange={(value) =>
           setAttendanceViewMode(value === "workplaces" ? "workplaces" : "people")
         }
       >
-        <TabsList className="grid w-full max-w-xs grid-cols-2">
-          <TabsTrigger value="people">Personen</TabsTrigger>
-          <TabsTrigger value="workplaces">Arbeitsplätze</TabsTrigger>
+        <TabsList className="grid h-11 w-full max-w-[28rem] grid-cols-2">
+          <TabsTrigger className="text-sm" value="people">Personen</TabsTrigger>
+          <TabsTrigger className="text-sm" value="workplaces">Arbeitsplätze</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -889,8 +889,8 @@ export default function Dashboard() {
         ? renderAttendanceByWorkplaces(presentToday, "staff-workplace-present")
         : renderAttendanceBadges(presentToday, "staff-present")}
 
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Clock className="w-4 h-4" />
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Clock className="h-3.5 w-3.5" />
         <span>
           {typeof absentCountToday === "number"
             ? `${absentCountToday} Abwesende heute`
@@ -898,12 +898,12 @@ export default function Dashboard() {
         </span>
       </div>
 
-      <Separator />
+      <Separator className="my-0.5" />
 
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <CalendarDays className="w-4 h-4 text-muted-foreground" />
-          <p className="text-sm font-medium">Team morgen</p>
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-1.5">
+          <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+          <p className="text-xs font-medium">Team morgen</p>
         </div>
         {attendanceViewMode === "workplaces"
           ? renderAttendanceByWorkplaces(
@@ -919,13 +919,13 @@ export default function Dashboard() {
     if (!attendanceEnabled) return null;
     return (
       <Card className="border-none kabeg-shadow">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Users className="w-5 h-5" />
+        <CardHeader className="px-4 pb-1 pt-4 md:px-4">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Users className="h-5 w-5" />
             Heute anwesend
           </CardTitle>
         </CardHeader>
-        <CardContent className="pt-0 px-4 pb-4 md:px-6 md:pb-6">
+        <CardContent className="px-4 pb-4 pt-0 md:px-4 md:pb-4">
           {renderAttendanceCardContent()}
         </CardContent>
       </Card>
