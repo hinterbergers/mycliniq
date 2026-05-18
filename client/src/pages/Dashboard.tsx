@@ -644,8 +644,8 @@ export default function Dashboard() {
   );
 
   const renderHeroCard = () => (
-    <div className="bg-gradient-to-br from-primary to-primary/80 rounded-2xl p-8 text-primary-foreground shadow-lg shadow-primary/10">
-      <div className="flex items-center justify-between mb-2">
+    <div className="bg-gradient-to-br from-primary to-primary/80 rounded-2xl px-8 py-6 text-primary-foreground shadow-lg shadow-primary/10">
+      <div className="flex items-center justify-between mb-1.5">
         <h2
           className="text-xl font-bold text-white"
           data-testid="text-greeting"
@@ -659,24 +659,24 @@ export default function Dashboard() {
           KABEG Klinikum Klagenfurt
         </Badge>
       </div>
-      <p className="text-primary-foreground/80 max-w-xl text-sm flex items-center gap-2">
+      <p className="text-primary-foreground/80 max-w-xl text-sm flex items-center gap-1.5">
         <span className="text-2xl">{heroEmoji}</span>
         <span>{heroMessage}</span>
       </p>
       {todayTeamLine && (
-        <p className="text-xs text-primary-foreground/70 mt-1">
+        <p className="text-xs text-primary-foreground/70 mt-0.5">
           {todayTeamLine}
         </p>
       )}
       {todayDutyLine && (
-        <p className="text-xs text-primary-foreground/70 mt-1">
+        <p className="text-xs text-primary-foreground/70 mt-0.5">
           {todayDutyLine}
         </p>
       )}
-      <div className="mt-5 flex gap-2.5">
+      <div className="mt-4 flex gap-2">
         <Button
           variant="secondary"
-          className="h-10 px-4 text-sm text-primary font-medium shadow-none border-0"
+          className="h-9 px-3.5 text-sm text-primary font-medium shadow-none border-0"
           onClick={() => setLocation("/dienstplaene")}
           data-testid="button-to-roster"
         >
@@ -684,7 +684,7 @@ export default function Dashboard() {
         </Button>
         <Button
           variant="outline"
-          className="h-10 px-4 bg-transparent border-primary-foreground/20 text-primary-foreground text-sm hover:bg-primary-foreground/10 hover:text-primary-foreground"
+          className="h-9 px-3.5 bg-transparent border-primary-foreground/20 text-primary-foreground text-sm hover:bg-primary-foreground/10 hover:text-primary-foreground"
           onClick={() => setLocation("/dienstwuensche")}
           data-testid="button-request-vacation"
         >
@@ -699,7 +699,7 @@ export default function Dashboard() {
         </Button>
       </div>
       {showZeBadge && (
-        <div className="mt-4">
+        <div className="mt-3">
           <button
             type="button"
             className="inline-flex items-center justify-center rounded-full bg-rose-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-rose-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-200 disabled:cursor-not-allowed disabled:opacity-60"
