@@ -204,6 +204,32 @@ const getRoleRank = (role?: string | null) => {
   return 90;
 };
 
+const getAttendanceGroupRank = (role?: string | null) => {
+  const r = (role ?? "").toLowerCase();
+  if (!r) return 99;
+
+  if (r.includes("primar")) return 0;
+  if (r.includes("1. ober") || r.includes("erster ober")) return 1;
+
+  // Funktionsoberarzt und Ausbildungsoberarzt bewusst gemeinsam gruppieren.
+  if (r.includes("funktionsober") || r.includes("ausbildungsober")) return 2;
+
+  if (
+    r.includes("oberarzt") ||
+    r.includes("oberärzt") ||
+    r.includes("facharzt") ||
+    r.includes("fachärzt")
+  )
+    return 3;
+
+  if (r.includes("assistenz")) return 4;
+  if (r.includes("turnus")) return 5;
+  if (r.includes("kpj") || r.includes("student") || r.includes("famul")) return 6;
+  if (r.includes("sekret")) return 98;
+
+  return 90;
+};
+
 const sortAttendanceMembers = (
   members: DashboardAttendanceMember[],
 ): DashboardAttendanceMember[] => {
@@ -233,7 +259,7 @@ const STAFF_BADGE_BASE =
 const STAFF_BADGE_DUTY =
   "bg-rose-50 text-rose-700 border-rose-200 font-semibold";
 const STAFF_BADGE_NORMAL = "bg-slate-50 text-slate-700 border-slate-200";
-const STAFF_NAME_CLASS = "text-[13px] sm:text-sm";
+const STAFF_NAME_CLASS = "text-[12px] sm:text-[13px]";
 const STAFF_WORKPLACE_CLASS =
   "text-[10px] text-muted-foreground leading-tight";
 const MONTH_NAMES = [
@@ -721,8 +747,8 @@ export default function Dashboard() {
       {members.length > 0 ? (
         members.map((p, i) => {
           const prev = i > 0 ? members[i - 1] : null;
-          const currentRank = getRoleRank(p.role);
-          const prevRank = prev ? getRoleRank(prev.role) : null;
+          const currentRank = getAttendanceGroupRank(p.role);
+          const prevRank = prev ? getAttendanceGroupRank(prev.role) : null;
           const showDivider = prevRank !== null && prevRank !== currentRank;
           const name = buildFullName(p.firstName, p.lastName);
           const workplace = normalizeWorkplace(p.workplace);
