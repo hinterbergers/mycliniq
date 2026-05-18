@@ -56,6 +56,7 @@ import {
   syncWidgetTodaySnapshot,
 } from "@/lib/mobileWidget";
 import { resolveApiUrl } from "@/lib/apiBase";
+import { getServiceLineDisplayLabel } from "@shared/shiftTypes";
 
 const DUTY_ABBREVIATIONS: Record<string, string> = {
   "gynaekologie (oa)": "Gyn",
@@ -409,12 +410,16 @@ export default function Dashboard() {
   const birthdayEntry = dashboardData?.birthday ?? null;
 
   const heroEmoji = dashboardError ? "⚠️" : todayEntry?.statusLabel ? "🩺" : "👋";
+  const normalizedTodayStatusLabel = todayEntry?.duty?.serviceType
+    ? getServiceLineDisplayLabel(todayEntry.duty.serviceType, todayEntry.statusLabel) ??
+      todayEntry.statusLabel
+    : todayEntry?.statusLabel ?? null;
   const heroMessage = dashboardError
     ? dashboardError.startsWith("Fehler")
       ? dashboardError
       : `Fehler: ${dashboardError}`
-    : todayEntry?.statusLabel
-      ? `Heute: ${todayEntry.statusLabel}`
+    : normalizedTodayStatusLabel
+      ? `Heute: ${normalizedTodayStatusLabel}`
       : "Willkommen zurück.";
   const todayTeamNames = useMemo(
     () =>
@@ -461,7 +466,11 @@ export default function Dashboard() {
   const todayDutyLine = useMemo(() => {
     const duty = todayEntry?.duty;
     if (!duty) return null;
-    const label = duty.labelShort ?? duty.serviceType ?? "Dienst";
+    const label =
+      getServiceLineDisplayLabel(duty.serviceType, duty.labelShort) ??
+      duty.labelShort ??
+      duty.serviceType ??
+      "Dienst";
     const baseLabel = label === "Dienst" ? "Dienst" : `Dienst (${label})`;
     const otherNames = (duty.othersOnDuty ?? [])
       .map((mate) => buildFullName(mate.firstName, mate.lastName))
