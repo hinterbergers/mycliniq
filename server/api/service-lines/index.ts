@@ -22,12 +22,13 @@ import {
   employees,
   departments,
 } from "@shared/schema";
+import { getServiceLineDisplayLabel } from "@shared/shiftTypes";
 import { hasCapability } from "../middleware/auth";
 
 const DEFAULT_SERVICE_LINES = [
   {
     key: "kreiszimmer",
-    label: "Kreißzimmer (Ass.)",
+    label: "Kreisszimmerdienst",
     roleGroup: "ASS",
     startTime: "07:30",
     endTime: "08:00",
@@ -39,7 +40,7 @@ const DEFAULT_SERVICE_LINES = [
   },
   {
     key: "gyn",
-    label: "Gynäkologie (OA)",
+    label: "Hauptdienst",
     roleGroup: "OA",
     startTime: "07:30",
     endTime: "08:00",
@@ -51,7 +52,7 @@ const DEFAULT_SERVICE_LINES = [
   },
   {
     key: "turnus",
-    label: "Turnus (Ass./TA)",
+    label: "Turnusdienst",
     roleGroup: "TURNUS",
     startTime: "07:30",
     endTime: "08:00",
@@ -220,11 +221,17 @@ export function registerServiceLineRoutes(router: Router) {
         .where(eq(serviceLines.clinicId, clinicId))
         .orderBy(asc(serviceLines.sortOrder), asc(serviceLines.label));
 
+      const normalizeLines = <T extends { key: string; label: string }>(items: T[]) =>
+        items.map((line) => ({
+          ...line,
+          label: getServiceLineDisplayLabel(line.key, line.label) ?? line.label,
+        }));
+
       if (!lines.length) {
-        return ok(res, seeded);
+        return ok(res, normalizeLines(seeded));
       }
 
-      return ok(res, lines);
+      return ok(res, normalizeLines(lines));
     }),
   );
 

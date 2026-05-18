@@ -57,9 +57,9 @@ interface ShiftSwapDialogProps {
 }
 
 const FALLBACK_SERVICE_LINES = [
-  { key: "gyn", label: "Gynäkologie" },
-  { key: "kreiszimmer", label: "Kreißzimmer" },
-  { key: "turnus", label: "Turnus" },
+  { key: "gyn", label: "Hauptdienst" },
+  { key: "kreiszimmer", label: "Kreisszimmerdienst" },
+  { key: "turnus", label: "Turnusdienst" },
   { key: "overduty", label: "Überdienst" },
 ];
 

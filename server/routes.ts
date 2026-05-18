@@ -58,7 +58,11 @@ import {
   REQUIRED_SERVICE_GAP_REASON,
 } from "./services/rosterGenerator";
 import { registerModularApiRoutes } from "./api";
-import { employeeDoesShifts, OVERDUTY_KEY } from "@shared/shiftTypes";
+import {
+  employeeDoesShifts,
+  getServiceLineDisplayLabel,
+  OVERDUTY_KEY,
+} from "@shared/shiftTypes";
 import { getEffectiveServiceLineKeys } from "@shared/serviceLineAccess";
 import {
   buildNormalizedServiceLineKeySet,
@@ -591,7 +595,7 @@ const DEFAULT_LAST_APPROVED = { year: 2026, month: 1 };
 const DEFAULT_SERVICE_LINES = [
   {
     key: "kreiszimmer",
-    label: "Kreißzimmer (Ass.)",
+    label: "Kreisszimmerdienst",
     startTime: "07:30",
     endTime: "08:00",
     endsNextDay: true,
@@ -600,7 +604,7 @@ const DEFAULT_SERVICE_LINES = [
   },
   {
     key: "gyn",
-    label: "Gynäkologie (OA)",
+    label: "Hauptdienst",
     startTime: "07:30",
     endTime: "08:00",
     endsNextDay: true,
@@ -609,7 +613,7 @@ const DEFAULT_SERVICE_LINES = [
   },
   {
     key: "turnus",
-    label: "Turnus (Ass./TA)",
+    label: "Turnusdienst",
     startTime: "07:30",
     endTime: "08:00",
     endsNextDay: true,
@@ -740,7 +744,7 @@ const loadServiceLines = async (
 
   return rows.map((row) => ({
     key: row.key,
-    label: row.label,
+    label: getServiceLineDisplayLabel(row.key, row.label) ?? row.label,
     startTime: normalizeTime(row.startTime, "07:30"),
     endTime: normalizeTime(row.endTime, "08:00"),
     endsNextDay: Boolean(row.endsNextDay),

@@ -582,7 +582,7 @@ export default function ClinicSettings() {
                                 e.target.value,
                               )
                             }
-                            placeholder="z.B. Kreißzimmer (Ass.)"
+                            placeholder="z.B. Kreisszimmerdienst"
                           />
                         </div>
                         <div className="space-y-2">

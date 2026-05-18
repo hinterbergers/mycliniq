@@ -209,9 +209,9 @@ const SERVICE_LINE_PALETTE = [
 ];
 
 const FALLBACK_SERVICE_LINES = [
-  { key: "kreiszimmer", label: "Kreißzimmer", sortOrder: 1, isActive: true },
-  { key: "gyn", label: "Gyn-Dienst", sortOrder: 2, isActive: true },
-  { key: "turnus", label: "Turnus", sortOrder: 3, isActive: true },
+  { key: "kreiszimmer", label: "Kreisszimmerdienst", sortOrder: 1, isActive: true },
+  { key: "gyn", label: "Hauptdienst", sortOrder: 2, isActive: true },
+  { key: "turnus", label: "Turnusdienst", sortOrder: 3, isActive: true },
   { key: "overduty", label: "Überdienst", sortOrder: 4, isActive: true },
 ];
 

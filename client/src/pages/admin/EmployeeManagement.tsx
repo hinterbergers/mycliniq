@@ -150,21 +150,21 @@ const FALLBACK_SERVICE_LINES: Array<
 > = [
   {
     key: "kreiszimmer",
-    label: "Kreißzimmer",
+    label: "Kreisszimmerdienst",
     roleGroup: "ASS",
     sortOrder: 1,
     isActive: true,
   },
   {
     key: "gyn",
-    label: "Gyn-Dienst",
+    label: "Hauptdienst",
     roleGroup: "OA",
     sortOrder: 2,
     isActive: true,
   },
   {
     key: "turnus",
-    label: "Turnus",
+    label: "Turnusdienst",
     roleGroup: "TURNUS",
     sortOrder: 3,
     isActive: true,

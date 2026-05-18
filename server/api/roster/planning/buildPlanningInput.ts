@@ -15,9 +15,9 @@ type ServiceRole = {
 };
 
 const SERVICE_ROLES: ServiceRole[] = [
-  { id: "kreiszimmer", label: "Kreißzimmer (Ass.)", startTime: "07:30", endTime: "15:30", tags: ["ASS"] },
-  { id: "gyn", label: "Gynäkologie (OA)", startTime: "07:30", endTime: "15:30", tags: ["OA"] },
-  { id: "turnus", label: "Turnus (Ass./TA)", startTime: "07:30", endTime: "15:30", tags: ["TA"] },
+  { id: "kreiszimmer", label: "Kreisszimmerdienst", startTime: "07:30", endTime: "15:30", tags: ["ASS"] },
+  { id: "gyn", label: "Hauptdienst", startTime: "07:30", endTime: "15:30", tags: ["OA"] },
+  { id: "turnus", label: "Turnusdienst", startTime: "07:30", endTime: "15:30", tags: ["TA"] },
   { id: "overduty", label: "Überdienst", startTime: "18:00", endTime: "07:00", tags: ["OA", "ASS", "TA"] },
 ];
 

@@ -24,6 +24,19 @@ export const DEFAULT_SERVICE_TYPES: ServiceType[] = [
 export const SERVICE_TYPES = DEFAULT_SERVICE_TYPES;
 export const OVERDUTY_KEY: ServiceType = "overduty";
 
+const CANONICAL_SERVICE_LINE_LABELS: Record<string, string> = {
+  kreiszimmer: "Kreisszimmerdienst",
+  gyn: "Hauptdienst",
+  turnus: "Turnusdienst",
+};
+
+const LEGACY_SERVICE_LINE_LABEL_TO_KEY: Record<string, string> = {
+  "kreißzimmer (ass.)": "kreiszimmer",
+  "kreißzimmer": "kreiszimmer",
+  "gynäkologie (oa)": "gyn",
+  "turnus (ass./ta)": "turnus",
+};
+
 export type ServiceLineMeta = {
   key: string;
   roleGroup?: string | null;
@@ -109,6 +122,27 @@ export function getServiceTypesForRole(
   return DEFAULT_SERVICE_TYPES.filter((service) =>
     (DEFAULT_SERVICE_CAPABILITIES[service] || []).includes(normalized),
   );
+}
+
+export function getServiceLineDisplayLabel(
+  serviceType?: string | null,
+  fallbackLabel?: string | null,
+): string | null {
+  const normalizedType = typeof serviceType === "string" ? serviceType.trim() : "";
+  if (normalizedType && CANONICAL_SERVICE_LINE_LABELS[normalizedType]) {
+    return CANONICAL_SERVICE_LINE_LABELS[normalizedType];
+  }
+
+  const normalizedLabel = typeof fallbackLabel === "string" ? fallbackLabel.trim() : "";
+  if (normalizedLabel) {
+    const mappedKey = LEGACY_SERVICE_LINE_LABEL_TO_KEY[normalizedLabel.toLowerCase()];
+    if (mappedKey && CANONICAL_SERVICE_LINE_LABELS[mappedKey]) {
+      return CANONICAL_SERVICE_LINE_LABELS[mappedKey];
+    }
+    return normalizedLabel;
+  }
+
+  return normalizedType || null;
 }
 
 export function getServiceTypesForEmployee(

@@ -189,21 +189,21 @@ const API_BASE = "/api";
 const FALLBACK_SERVICE_LINES = [
   {
     key: "kreiszimmer",
-    label: "Kreißzimmer (Ass.)",
+    label: "Kreisszimmerdienst",
     roleGroup: "ASS",
     sortOrder: 1,
     isActive: true,
   },
   {
     key: "gyn",
-    label: "Gynäkologie (OA)",
+    label: "Hauptdienst",
     roleGroup: "OA",
     sortOrder: 2,
     isActive: true,
   },
   {
     key: "turnus",
-    label: "Turnus (Ass./TA)",
+    label: "Turnusdienst",
     roleGroup: "TURNUS",
     sortOrder: 3,
     isActive: true,
