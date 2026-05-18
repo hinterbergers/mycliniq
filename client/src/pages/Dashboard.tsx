@@ -568,7 +568,6 @@ export default function Dashboard() {
   const absencesEnabled = isWidgetEnabled("absences");
   const attendanceEnabled = isWidgetEnabled("attendance");
   const birthdayEnabled = isWidgetEnabled("birthday");
-  const documentsEnabled = isWidgetEnabled("documents");
   const canSeeRecentChanges =
     !viewAsUser &&
     (isAdmin ||
@@ -1180,110 +1179,7 @@ export default function Dashboard() {
     );
   };
 
-  const renderMiscWidgets = () => {
-    if (!documentsEnabled) return null;
-
-    return (
-      <>
-        {documentsEnabled && (
-          <Card className="border-none kabeg-shadow">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-lg">Neue Dokumente</CardTitle>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground"
-                onClick={() => setLocation("/wissen")}
-              >
-                Alle anzeigen
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div>
-                  <h4 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4" />
-                    Neu hinzugefügt
-                  </h4>
-                  <div className="space-y-2">
-                    {DUMMY_NEW_SOPS.map((sop) => (
-                      <div
-                        key={sop.id}
-                        className="flex items-center justify-between p-3 rounded-lg hover:bg-secondary/50 transition-colors border border-transparent hover:border-border group cursor-pointer"
-                        data-testid={`sop-new-${sop.id}`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
-                            <FileText className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <h4 className="font-medium text-foreground text-sm">
-                              {sop.title}
-                            </h4>
-                            <div className="flex items-center gap-2">
-                              <Badge
-                                variant="outline"
-                                className="text-[10px] px-1.5 py-0"
-                              >
-                                {sop.category}
-                              </Badge>
-                              <span className="text-[10px] text-muted-foreground">
-                                {sop.date}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
-                    <Star className="w-4 h-4" />
-                    Meist genutzt
-                  </h4>
-                  <div className="space-y-2">
-                    {DUMMY_POPULAR_SOPS.map((sop) => (
-                      <div
-                        key={sop.id}
-                        className="flex items-center justify-between p-3 rounded-lg hover:bg-secondary/50 transition-colors border border-transparent hover:border-border group cursor-pointer"
-                        data-testid={`sop-popular-${sop.id}`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600 group-hover:bg-amber-500 group-hover:text-white transition-colors">
-                            <FileText className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <h4 className="font-medium text-foreground text-sm">
-                              {sop.title}
-                            </h4>
-                            <div className="flex items-center gap-2">
-                              <Badge
-                                variant="outline"
-                                className="text-[10px] px-1.5 py-0"
-                              >
-                                {sop.category}
-                              </Badge>
-                              <span className="text-[10px] text-muted-foreground">
-                                {sop.views} Aufrufe
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-amber-600 transition-colors" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-      </>
-    );
-  };
+  const renderMiscWidgets = () => null;
 
   const renderBirthdayCard = () => {
     if (!birthdayEnabled) return null;

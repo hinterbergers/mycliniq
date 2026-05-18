@@ -2,7 +2,6 @@ export type DashboardWidgetKey =
   | "week_preview"
   | "attendance"
   | "birthday"
-  | "documents"
   | "absences";
 
 export type DashboardWidgetDefinition = {
@@ -15,7 +14,6 @@ export const DASHBOARD_WIDGETS: DashboardWidgetDefinition[] = [
   { key: "week_preview", label: "Wochenvorschau", defaultEnabled: true },
   { key: "attendance", label: "Heute anwesend", defaultEnabled: true },
   { key: "birthday", label: "Geburtstag", defaultEnabled: true },
-  { key: "documents", label: "Neue Dokumente", defaultEnabled: true },
   { key: "absences", label: "Abwesenheiten", defaultEnabled: true },
 ];
 
