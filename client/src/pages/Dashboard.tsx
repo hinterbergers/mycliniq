@@ -673,10 +673,10 @@ export default function Dashboard() {
           {todayDutyLine}
         </p>
       )}
-      <div className="mt-6 flex gap-3">
+      <div className="mt-5 flex gap-2.5">
         <Button
           variant="secondary"
-          className="text-primary font-medium shadow-none border-0"
+          className="h-10 px-4 text-sm text-primary font-medium shadow-none border-0"
           onClick={() => setLocation("/dienstplaene")}
           data-testid="button-to-roster"
         >
@@ -684,14 +684,14 @@ export default function Dashboard() {
         </Button>
         <Button
           variant="outline"
-          className="bg-transparent border-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"
+          className="h-10 px-4 bg-transparent border-primary-foreground/20 text-primary-foreground text-sm hover:bg-primary-foreground/10 hover:text-primary-foreground"
           onClick={() => setLocation("/dienstwuensche")}
           data-testid="button-request-vacation"
         >
           <span className="flex flex-col leading-tight text-left">
             <span>Dienstwünsche</span>
             {wishMonthLabel ? (
-              <span className="text-[11px] text-primary-foreground/80">
+              <span className="text-[10px] text-primary-foreground/80">
                 {wishMonthLabel}
               </span>
             ) : null}
