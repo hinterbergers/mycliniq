@@ -392,7 +392,7 @@ export default function Settings() {
       : false;
   const canEditBasicInfo = isViewingOwnProfile || isAdmin;
   const canEditRosterPreferences = isViewingOwnProfile || isAdmin;
-  const canEditPrivateInfo = isAdmin;
+  const canEditPrivateInfo = isViewingOwnProfile || isAdmin;
   const canEditRoleAndCompetencies = isAdmin;
   const canEditVacationEntitlement = isAdmin || isTechnicalAdmin;
   const canEditDiplomas = isViewingOwnProfile || isAdmin;
