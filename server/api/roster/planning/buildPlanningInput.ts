@@ -124,6 +124,8 @@ const normalizeOptionalInt = (
   return rounded;
 };
 
+const normalizeBoolean = (value: unknown): boolean => value === true;
+
 const createSlotsForPeriod = (year: number, month: number) => {
   const start = startOfMonth(new Date(year, month - 1, 1));
   const end = endOfMonth(start);
@@ -227,6 +229,9 @@ export async function buildPlanningInput(year: number, month: number) {
       typeof normalizedWish?.maxWeekendShifts === "number"
         ? normalizedWish.maxWeekendShifts
         : null;
+    const preferFridayBeforeSunday = normalizeBoolean(
+      (employee.shiftPreferences as any)?.preferFridayBeforeSunday,
+    );
 
     return {
       id: String(employee.id),
@@ -258,6 +263,7 @@ export async function buildPlanningInput(year: number, month: number) {
           avoidDates: normalizedWish?.avoidDates ?? [],
           preferServiceTypes: normalizedWish?.preferredServiceTypes ?? [],
           avoidServiceTypes: normalizedWish?.avoidServiceTypes ?? [],
+          preferFridayBeforeSunday,
         },
       },
     };

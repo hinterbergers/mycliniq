@@ -171,6 +171,7 @@
               "avoidDates": { "type": "array", "items": { "type": "string", "format": "date" } },
               "preferServiceTypes": { "type": "array", "items": { "type": "string" } },
               "avoidServiceTypes": { "type": "array", "items": { "type": "string" } },
+              "preferFridayBeforeSunday": { "type": "boolean" },
 
               "preferSlotIds": { "type": "array", "items": { "type": "string" } },
               "avoidSlotIds": { "type": "array", "items": { "type": "string" } },

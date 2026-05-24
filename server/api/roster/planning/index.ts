@@ -212,6 +212,7 @@ type PlannerEmployeeState = {
     avoidDates: Set<string>;
     preferServiceTypes: Set<string>;
     avoidServiceTypes: Set<string>;
+    preferFridayBeforeSunday: boolean;
   };
 };
 
@@ -258,6 +259,7 @@ const buildEmployeeStates = (employees: Array<{ id: string; capabilities: { canR
       avoidServiceTypes: new Set(
         normalizeStringArray(soft?.avoidServiceTypes ?? []),
       ),
+      preferFridayBeforeSunday: soft?.preferFridayBeforeSunday === true,
     };
 
     states.set(employee.id, {
@@ -356,10 +358,20 @@ const scoreCandidateForSlot = (
   slot: { date: string; roleId: string },
 ) => {
   let score = 0;
+  const slotDate = parseISO(slot.date);
   if (state.preferences.preferDates.has(slot.date)) score += 100;
   if (state.preferences.avoidDates.has(slot.date)) score -= 100;
   if (state.preferences.preferServiceTypes.has(slot.roleId)) score += 30;
   if (state.preferences.avoidServiceTypes.has(slot.roleId)) score -= 30;
+  if (
+    state.preferences.preferFridayBeforeSunday &&
+    slotDate.getDay() === 0 &&
+    state.assignedDates.has(
+      formatISO(addDays(slotDate, -2), { representation: "date" }),
+    )
+  ) {
+    score += 40;
+  }
   score -= state.assignedCount * 0.5;
   return score;
 };

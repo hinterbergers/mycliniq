@@ -29,6 +29,7 @@ const createState = (overrides: Partial<PlannerEmployeeState> = {}): PlannerEmpl
     avoidDates: new Set(),
     preferServiceTypes: new Set(),
     avoidServiceTypes: new Set(),
+    preferFridayBeforeSunday: false,
   },
   ...overrides,
 });
@@ -41,6 +42,7 @@ const testScoreRespectsPreferences = () => {
       avoidDates: new Set(),
       preferServiceTypes: new Set(["gyn"]),
       avoidServiceTypes: new Set(),
+      preferFridayBeforeSunday: false,
     },
   });
   const avoidState = createState({
@@ -49,6 +51,7 @@ const testScoreRespectsPreferences = () => {
       avoidDates: new Set(["2026-03-01"]),
       preferServiceTypes: new Set(),
       avoidServiceTypes: new Set(["gyn"]),
+      preferFridayBeforeSunday: false,
     },
   });
 
@@ -57,6 +60,37 @@ const testScoreRespectsPreferences = () => {
   assert(
     preferScore > avoidScore,
     "preferred service types should score higher than avoided ones",
+  );
+};
+
+const testSundayPrefersExistingFridayAssignment = () => {
+  const slot = { date: "2026-03-08", roleId: "gyn" };
+  const comboState = createState({
+    assignedDates: new Set(["2026-03-06"]),
+    preferences: {
+      preferDates: new Set(),
+      avoidDates: new Set(),
+      preferServiceTypes: new Set(),
+      avoidServiceTypes: new Set(),
+      preferFridayBeforeSunday: true,
+    },
+  });
+  const neutralState = createState({
+    assignedDates: new Set(["2026-03-06"]),
+    preferences: {
+      preferDates: new Set(),
+      avoidDates: new Set(),
+      preferServiceTypes: new Set(),
+      avoidServiceTypes: new Set(),
+      preferFridayBeforeSunday: false,
+    },
+  });
+
+  const comboScore = scoreCandidateForSlot(comboState, slot);
+  const neutralScore = scoreCandidateForSlot(neutralState, slot);
+  assert(
+    comboScore > neutralScore,
+    "sunday assignment should prefer employees already assigned on the prior friday",
   );
 };
 
@@ -144,6 +178,7 @@ const testFixedPreferredAssignment = () => {
 
 const runTests = () => {
   testScoreRespectsPreferences();
+  testSundayPrefersExistingFridayAssignment();
   testBanWeekdayBlocksAssignment();
   testFixedPreferredAssignment();
   console.log("Planning solver smoke tests passed");

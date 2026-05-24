@@ -57,6 +57,7 @@ const preferencesSchema = z.object({
   preferredOffDays: z.array(z.number().min(1).max(31)).optional(),
   maxShiftsPerWeek: z.number().min(0).max(7).nullable().optional(),
   notesForPlanning: z.string().nullable().optional(),
+  preferFridayBeforeSunday: z.boolean().optional(),
 });
 
 /**
@@ -331,7 +332,12 @@ export function registerEmployeeRoutes(router: Router) {
     asyncHandler(async (req, res) => {
       const { id } = req.params;
       const employeeId = Number(id);
-      const { preferredOffDays, maxShiftsPerWeek, notesForPlanning } = req.body;
+      const {
+        preferredOffDays,
+        maxShiftsPerWeek,
+        notesForPlanning,
+        preferFridayBeforeSunday,
+      } = req.body;
 
       // Check if employee exists
       const existing = await storage.getEmployee(employeeId);
@@ -350,6 +356,10 @@ export function registerEmployeeRoutes(router: Router) {
           notesForPlanning ??
           (existing.shiftPreferences as any)?.notesForPlanning ??
           null,
+        preferFridayBeforeSunday:
+          preferFridayBeforeSunday ??
+          (existing.shiftPreferences as any)?.preferFridayBeforeSunday ??
+          false,
       };
 
       // Update employee
@@ -368,6 +378,7 @@ export function registerEmployeeRoutes(router: Router) {
           preferredOffDays: shiftPreferences.preferredOffDays,
           maxShiftsPerWeek: employee.maxShiftsPerWeek,
           notesForPlanning: shiftPreferences.notesForPlanning,
+          preferFridayBeforeSunday: shiftPreferences.preferFridayBeforeSunday,
         },
       });
     }),

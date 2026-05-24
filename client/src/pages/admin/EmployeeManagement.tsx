@@ -232,6 +232,7 @@ interface ShiftPreferences {
   vacationVisibilityRoleGroups?: VacationVisibilityGroup[];
   externalDutyOnly?: boolean;
   recurringUnavailableWeekdays?: number[];
+  preferFridayBeforeSunday?: boolean;
 }
 
 const RECURRING_WEEKDAY_OPTIONS = [
@@ -422,6 +423,8 @@ export default function EmployeeManagement() {
   const [editEmploymentFrom, setEditEmploymentFrom] = useState("");
   const [editEmploymentUntil, setEditEmploymentUntil] = useState("");
   const [editExternalDutyOnly, setEditExternalDutyOnly] = useState(false);
+  const [editPreferFridayBeforeSunday, setEditPreferFridayBeforeSunday] =
+    useState(false);
   const [editRecurringUnavailableWeekdays, setEditRecurringUnavailableWeekdays] =
     useState<number[]>([]);
   const [resetPasswordData, setResetPasswordData] = useState({
@@ -455,6 +458,8 @@ export default function EmployeeManagement() {
   const [newEmploymentFrom, setNewEmploymentFrom] = useState("");
   const [newEmploymentUntil, setNewEmploymentUntil] = useState("");
   const [newExternalDutyOnly, setNewExternalDutyOnly] = useState(false);
+  const [newPreferFridayBeforeSunday, setNewPreferFridayBeforeSunday] =
+    useState(false);
   const [newRecurringUnavailableWeekdays, setNewRecurringUnavailableWeekdays] =
     useState<number[]>([]);
 
@@ -599,6 +604,7 @@ export default function EmployeeManagement() {
     setNewEmploymentUntil("");
     setNewInactiveEnabled(false);
     setNewExternalDutyOnly(false);
+    setNewPreferFridayBeforeSunday(false);
     setNewRecurringUnavailableWeekdays([]);
   };
 
@@ -678,6 +684,7 @@ export default function EmployeeManagement() {
       visibilityGroups.length ? visibilityGroups : DEFAULT_VISIBILITY_GROUPS,
     );
     setEditExternalDutyOnly(Boolean(prefs?.externalDutyOnly));
+    setEditPreferFridayBeforeSunday(Boolean(prefs?.preferFridayBeforeSunday));
     setEditRecurringUnavailableWeekdays(
       Array.isArray(prefs?.recurringUnavailableWeekdays)
         ? prefs.recurringUnavailableWeekdays.filter(
@@ -804,6 +811,7 @@ export default function EmployeeManagement() {
       setEditEmploymentUntil("");
       setEditInactiveEnabled(false);
       setEditExternalDutyOnly(false);
+      setEditPreferFridayBeforeSunday(false);
       setEditRecurringUnavailableWeekdays([]);
     }
   };
@@ -1021,6 +1029,13 @@ export default function EmployeeManagement() {
       } else {
         delete (nextShiftPreferences as { externalDutyOnly?: boolean })
           .externalDutyOnly;
+      }
+      if (editPreferFridayBeforeSunday) {
+        nextShiftPreferences.preferFridayBeforeSunday = true;
+      } else {
+        delete (
+          nextShiftPreferences as { preferFridayBeforeSunday?: boolean }
+        ).preferFridayBeforeSunday;
       }
       if (editServiceTypeOverrides.length) {
         nextShiftPreferences.serviceTypeOverrides = editServiceTypeOverrides;
@@ -1313,6 +1328,13 @@ export default function EmployeeManagement() {
       } else {
         delete (nextShiftPreferences as { externalDutyOnly?: boolean })
           .externalDutyOnly;
+      }
+      if (newPreferFridayBeforeSunday) {
+        nextShiftPreferences.preferFridayBeforeSunday = true;
+      } else {
+        delete (
+          nextShiftPreferences as { preferFridayBeforeSunday?: boolean }
+        ).preferFridayBeforeSunday;
       }
       if (newServiceTypeOverrides.length) {
         nextShiftPreferences.serviceTypeOverrides = newServiceTypeOverrides;
@@ -2652,6 +2674,25 @@ export default function EmployeeManagement() {
                             <div className="border-t border-border/60 pt-3">
                               <div className="flex items-center justify-between gap-4">
                                 <div>
+                                  <Label>Fr/So Kombination</Label>
+                                  <p className="text-xs text-muted-foreground">
+                                    Wenn diese Person am Sonntag Dienst hat, wird der
+                                    Freitag davor im Monatsdienstplan bevorzugt.
+                                  </p>
+                                </div>
+                                <Switch
+                                  checked={newPreferFridayBeforeSunday}
+                                  onCheckedChange={(checked) =>
+                                    setNewPreferFridayBeforeSunday(Boolean(checked))
+                                  }
+                                  disabled={!canManageEmployees}
+                                />
+                              </div>
+                            </div>
+
+                            <div className="border-t border-border/60 pt-3">
+                              <div className="flex items-center justify-between gap-4">
+                                <div>
                                   <Label>Für Fremddienste freischalten</Label>
                                   <p className="text-xs text-muted-foreground">
                                     Wird nach 3 Monaten ab Startdatum wirksam. Danach nur Dienstplan & Dienstwünsche.
@@ -3768,6 +3809,25 @@ export default function EmployeeManagement() {
                           </div>
                         </div>
                       )}
+
+                      <div className="border-t border-border/60 pt-3">
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <Label>Fr/So Kombination</Label>
+                            <p className="text-xs text-muted-foreground">
+                              Wenn diese Person am Sonntag Dienst hat, wird der
+                              Freitag davor im Monatsdienstplan bevorzugt.
+                            </p>
+                          </div>
+                          <Switch
+                            checked={editPreferFridayBeforeSunday}
+                            onCheckedChange={(checked) =>
+                              setEditPreferFridayBeforeSunday(Boolean(checked))
+                            }
+                            disabled={!canManageEmployees}
+                          />
+                        </div>
+                      </div>
 
                       <div className="border-t border-border/60 pt-3">
                         <div className="flex items-center justify-between gap-4">

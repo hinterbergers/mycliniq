@@ -310,6 +310,7 @@ const LONG_TERM_STATUS_LABELS: Record<string, string> = {
 interface ShiftPreferences {
   deploymentRoomIds?: number[];
   serviceTypeOverrides?: ServiceType[];
+  preferFridayBeforeSunday?: boolean;
 }
 
 type LongTermAbsenceDraft = {
@@ -390,6 +391,7 @@ export default function Settings() {
       ? viewingUserId === user.employeeId
       : false;
   const canEditBasicInfo = isViewingOwnProfile || isAdmin;
+  const canEditRosterPreferences = isViewingOwnProfile || isAdmin;
   const canEditPrivateInfo = isAdmin;
   const canEditRoleAndCompetencies = isAdmin;
   const canEditVacationEntitlement = isAdmin || isTechnicalAdmin;
@@ -446,6 +448,8 @@ export default function Settings() {
   const [serviceTypeOverrides, setServiceTypeOverrides] = useState<
     ServiceType[]
   >([]);
+  const [preferFridayBeforeSunday, setPreferFridayBeforeSunday] =
+    useState(false);
   const [roomSearch, setRoomSearch] = useState("");
 
   const [passwordData, setPasswordData] = useState({
@@ -669,6 +673,7 @@ export default function Settings() {
           )
         : [],
     );
+    setPreferFridayBeforeSunday(Boolean(prefs?.preferFridayBeforeSunday));
   };
 
   const loadData = async () => {
@@ -944,7 +949,7 @@ export default function Settings() {
         });
       }
 
-      if (canEditRoleAndCompetencies) {
+      if (canEditRoleAndCompetencies || canEditRosterPreferences) {
         const baseShiftPreferences =
           employee.shiftPreferences &&
           typeof employee.shiftPreferences === "object"
@@ -952,14 +957,23 @@ export default function Settings() {
             : {};
         const nextShiftPreferences: ShiftPreferences = {
           ...baseShiftPreferences,
-          deploymentRoomIds: deploymentRoomIds,
         };
-        if (serviceTypeOverrides.length) {
-          nextShiftPreferences.serviceTypeOverrides = serviceTypeOverrides;
+        if (canEditRoleAndCompetencies) {
+          nextShiftPreferences.deploymentRoomIds = deploymentRoomIds;
+          if (serviceTypeOverrides.length) {
+            nextShiftPreferences.serviceTypeOverrides = serviceTypeOverrides;
+          } else {
+            delete (
+              nextShiftPreferences as { serviceTypeOverrides?: ServiceType[] }
+            ).serviceTypeOverrides;
+          }
+        }
+        if (preferFridayBeforeSunday) {
+          nextShiftPreferences.preferFridayBeforeSunday = true;
         } else {
           delete (
-            nextShiftPreferences as { serviceTypeOverrides?: ServiceType[] }
-          ).serviceTypeOverrides;
+            nextShiftPreferences as { preferFridayBeforeSunday?: boolean }
+          ).preferFridayBeforeSunday;
         }
 
         Object.assign(payload, {
@@ -2314,10 +2328,33 @@ export default function Settings() {
                   )}
                 </div>
 
+                <div className="space-y-3 rounded-lg border border-border p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <Label>Fr/So Kombination</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Wenn am Sonntag ein Dienst geplant wird, wird der
+                        Freitag davor für diese Person bevorzugt.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={preferFridayBeforeSunday}
+                      onCheckedChange={(checked) =>
+                        setPreferFridayBeforeSunday(Boolean(checked))
+                      }
+                      disabled={!canEditRosterPreferences}
+                    />
+                  </div>
+                </div>
+
                 <div className="flex justify-end">
                   <Button
                     onClick={handleSave}
-                    disabled={!canEditRoleAndCompetencies || saving}
+                    disabled={
+                      (!canEditRoleAndCompetencies &&
+                        !canEditRosterPreferences) ||
+                      saving
+                    }
                   >
                     <Save className="w-4 h-4 mr-2" />
                     Speichern
