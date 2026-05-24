@@ -1996,6 +1996,25 @@ export default function Settings() {
                   />
                 </div>
 
+                <div className="space-y-3 rounded-lg border border-border p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <Label>Fr/So Kombination</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Wenn am Sonntag ein Dienst geplant wird, wird der
+                        Freitag davor fuer diese Person bevorzugt.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={preferFridayBeforeSunday}
+                      onCheckedChange={(checked) =>
+                        setPreferFridayBeforeSunday(Boolean(checked))
+                      }
+                      disabled={!canEditRosterPreferences}
+                    />
+                  </div>
+                </div>
+
                 <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
                   Langzeit-Abwesenheiten werden im Reiter "Langzeit-Abwesenheit"
                   eingereicht und freigegeben.
@@ -2326,25 +2345,6 @@ export default function Settings() {
                       </PopoverContent>
                     </Popover>
                   )}
-                </div>
-
-                <div className="space-y-3 rounded-lg border border-border p-4">
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <Label>Fr/So Kombination</Label>
-                      <p className="text-xs text-muted-foreground">
-                        Wenn am Sonntag ein Dienst geplant wird, wird der
-                        Freitag davor für diese Person bevorzugt.
-                      </p>
-                    </div>
-                    <Switch
-                      checked={preferFridayBeforeSunday}
-                      onCheckedChange={(checked) =>
-                        setPreferFridayBeforeSunday(Boolean(checked))
-                      }
-                      disabled={!canEditRosterPreferences}
-                    />
-                  </div>
                 </div>
 
                 <div className="flex justify-end">

@@ -2473,6 +2473,24 @@ export default function EmployeeManagement() {
 
                           <div className="flex items-center justify-between rounded-lg border border-border p-4">
                             <div>
+                              <Label>Fr/So Kombination</Label>
+                              <p className="text-xs text-muted-foreground">
+                                Wenn diese Person am Sonntag Dienst hat, wird
+                                der Freitag davor im Monatsdienstplan
+                                bevorzugt.
+                              </p>
+                            </div>
+                            <Switch
+                              checked={newPreferFridayBeforeSunday}
+                              onCheckedChange={(checked) =>
+                                setNewPreferFridayBeforeSunday(Boolean(checked))
+                              }
+                              disabled={!canManageEmployees}
+                            />
+                          </div>
+
+                          <div className="flex items-center justify-between rounded-lg border border-border p-4">
+                            <div>
                               <Label>Kann Überdienst machen</Label>
                               <p className="text-xs text-muted-foreground">
                                 Erlaubt Eintragung im Überdienst
@@ -2670,25 +2688,6 @@ export default function EmployeeManagement() {
                                 </div>
                               </div>
                             )}
-
-                            <div className="border-t border-border/60 pt-3">
-                              <div className="flex items-center justify-between gap-4">
-                                <div>
-                                  <Label>Fr/So Kombination</Label>
-                                  <p className="text-xs text-muted-foreground">
-                                    Wenn diese Person am Sonntag Dienst hat, wird der
-                                    Freitag davor im Monatsdienstplan bevorzugt.
-                                  </p>
-                                </div>
-                                <Switch
-                                  checked={newPreferFridayBeforeSunday}
-                                  onCheckedChange={(checked) =>
-                                    setNewPreferFridayBeforeSunday(Boolean(checked))
-                                  }
-                                  disabled={!canManageEmployees}
-                                />
-                              </div>
-                            </div>
 
                             <div className="border-t border-border/60 pt-3">
                               <div className="flex items-center justify-between gap-4">
@@ -3648,6 +3647,23 @@ export default function EmployeeManagement() {
 
                     <div className="flex items-center justify-between rounded-lg border border-border p-4">
                       <div>
+                        <Label>Fr/So Kombination</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Wenn diese Person am Sonntag Dienst hat, wird der
+                          Freitag davor im Monatsdienstplan bevorzugt.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={editPreferFridayBeforeSunday}
+                        onCheckedChange={(checked) =>
+                          setEditPreferFridayBeforeSunday(Boolean(checked))
+                        }
+                        disabled={!canManageEmployees}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-lg border border-border p-4">
+                      <div>
                         <Label>Kann Überdienst machen</Label>
                         <p className="text-xs text-muted-foreground">
                           Nur Mitarbeiter mit dieser Freigabe können im
@@ -3809,25 +3825,6 @@ export default function EmployeeManagement() {
                           </div>
                         </div>
                       )}
-
-                      <div className="border-t border-border/60 pt-3">
-                        <div className="flex items-center justify-between gap-4">
-                          <div>
-                            <Label>Fr/So Kombination</Label>
-                            <p className="text-xs text-muted-foreground">
-                              Wenn diese Person am Sonntag Dienst hat, wird der
-                              Freitag davor im Monatsdienstplan bevorzugt.
-                            </p>
-                          </div>
-                          <Switch
-                            checked={editPreferFridayBeforeSunday}
-                            onCheckedChange={(checked) =>
-                              setEditPreferFridayBeforeSunday(Boolean(checked))
-                            }
-                            disabled={!canManageEmployees}
-                          />
-                        </div>
-                      </div>
 
                       <div className="border-t border-border/60 pt-3">
                         <div className="flex items-center justify-between gap-4">
