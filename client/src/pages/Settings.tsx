@@ -1601,15 +1601,15 @@ export default function Settings() {
 
           <TabsContent value="profile" className="space-y-4">
             <Card>
-              <CardHeader>
+              <CardHeader className="pb-4">
                 <CardTitle>Basisdaten</CardTitle>
                 <CardDescription>
                   Verwalten Sie Ihre persönlichen Informationen
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
+              <CardContent className="space-y-3 pt-0">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-1.5">
                     <Label>Titel</Label>
                     <Input
                       value={formData.title}
@@ -1622,7 +1622,7 @@ export default function Settings() {
                       disabled={!canEditBasicInfo}
                     />
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     <Label>Vorname</Label>
                     <Input
                       value={formData.firstName}
@@ -1635,7 +1635,7 @@ export default function Settings() {
                       disabled={!canEditBasicInfo}
                     />
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     <Label>Nachname</Label>
                     <Input
                       value={formData.lastName}
@@ -1648,7 +1648,7 @@ export default function Settings() {
                       disabled={!canEditBasicInfo}
                     />
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     <Label>Geburtsdatum</Label>
                     <div className="flex items-center gap-2">
                       <Popover>
@@ -1696,10 +1696,10 @@ export default function Settings() {
                   </div>
                 </div>
 
-                <Separator />
+                <Separator className="my-1" />
 
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-1.5">
                     <Label>Benutzername</Label>
                     <div className="relative">
                       <User className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
@@ -1717,7 +1717,7 @@ export default function Settings() {
                       />
                     </div>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     <Label>E-Mail (Dienst)</Label>
                     <div className="relative">
                       <Mail className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
@@ -1734,7 +1734,7 @@ export default function Settings() {
                       />
                     </div>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     <Label>E-Mail (privat)</Label>
                     <div className="relative">
                       <Mail className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
@@ -1753,8 +1753,8 @@ export default function Settings() {
                   </div>
                 </div>
 
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-1.5">
                     <Label>Telefon (Dienst)</Label>
                     <div className="relative">
                       <Phone className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
@@ -1771,7 +1771,7 @@ export default function Settings() {
                       />
                     </div>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     <Label>Telefon (privat)</Label>
                     <div className="relative">
                       <Phone className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
