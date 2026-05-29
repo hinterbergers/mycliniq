@@ -31,6 +31,7 @@ import {
   insertLongTermShiftWishSchema,
   insertLongTermAbsenceSchema,
   plannedAbsences,
+  longTermAbsences,
   absences,
   departments,
   employees,
@@ -40,6 +41,11 @@ import {
   dutyPlans,
   rosterShifts as rosterShiftsTable,
   rooms,
+  roomWeekdaySettings,
+  roomRequiredCompetencies,
+  roomPhysicalRooms,
+  physicalRooms,
+  competencies,
   weeklyPlans,
   weeklyPlanAssignments,
   weeklyAssignments,
@@ -4636,6 +4642,228 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
       res.status(500).json({ error: "Kalender konnte nicht erstellt werden" });
     }
   });
+
+  app.get(
+    "/public-api/weekly-plan/week/:year/:week",
+    async (req: Request, res: Response) => {
+      try {
+        const year = Number(req.params.year);
+        const week = Number(req.params.week);
+        if (!Number.isInteger(year) || !Number.isInteger(week)) {
+          return res.status(400).json({
+            success: false,
+            error: "Ungültige Woche",
+          });
+        }
+
+        const [plan] = await db
+          .select()
+          .from(weeklyPlans)
+          .where(and(eq(weeklyPlans.year, year), eq(weeklyPlans.weekNumber, week)))
+          .limit(1);
+
+        const roomsList = await db
+          .select()
+          .from(rooms)
+          .where(and(eq(rooms.useInWeeklyPlan, true), eq(rooms.isActive, true)))
+          .orderBy(asc(rooms.weeklyPlanSortOrder), asc(rooms.name));
+
+        const roomIds = roomsList.map((room) => room.id);
+        const [weekdaySettings, requiredCompetencies, physicalRoomLinks] =
+          roomIds.length > 0
+            ? await Promise.all([
+                db
+                  .select()
+                  .from(roomWeekdaySettings)
+                  .where(inArray(roomWeekdaySettings.roomId, roomIds)),
+                db
+                  .select({
+                    id: roomRequiredCompetencies.id,
+                    roomId: roomRequiredCompetencies.roomId,
+                    competencyId: roomRequiredCompetencies.competencyId,
+                    relationType: roomRequiredCompetencies.relationType,
+                    competencyCode: competencies.code,
+                    competencyName: competencies.name,
+                  })
+                  .from(roomRequiredCompetencies)
+                  .leftJoin(
+                    competencies,
+                    eq(roomRequiredCompetencies.competencyId, competencies.id),
+                  )
+                  .where(inArray(roomRequiredCompetencies.roomId, roomIds)),
+                db
+                  .select({
+                    roomId: roomPhysicalRooms.roomId,
+                    id: physicalRooms.id,
+                    name: physicalRooms.name,
+                    isActive: physicalRooms.isActive,
+                  })
+                  .from(roomPhysicalRooms)
+                  .leftJoin(
+                    physicalRooms,
+                    eq(roomPhysicalRooms.physicalRoomId, physicalRooms.id),
+                  )
+                  .where(inArray(roomPhysicalRooms.roomId, roomIds)),
+              ])
+            : [[], [], []];
+
+        const settingsByRoom = new Map<number, typeof weekdaySettings>();
+        for (const setting of weekdaySettings) {
+          const current = settingsByRoom.get(setting.roomId) ?? [];
+          current.push(setting);
+          settingsByRoom.set(setting.roomId, current);
+        }
+
+        const competenciesByRoom = new Map<number, typeof requiredCompetencies>();
+        for (const row of requiredCompetencies) {
+          const current = competenciesByRoom.get(row.roomId) ?? [];
+          current.push(row);
+          competenciesByRoom.set(row.roomId, current);
+        }
+
+        const physicalRoomsByRoom = new Map<number, typeof physicalRoomLinks>();
+        for (const row of physicalRoomLinks) {
+          const current = physicalRoomsByRoom.get(row.roomId) ?? [];
+          current.push(row);
+          physicalRoomsByRoom.set(row.roomId, current);
+        }
+
+        const weeklyRooms = roomsList.map((room) => ({
+          ...room,
+          weekdaySettings: settingsByRoom.get(room.id) ?? [],
+          requiredCompetencies: competenciesByRoom.get(room.id) ?? [],
+          physicalRooms: physicalRoomsByRoom.get(room.id) ?? [],
+        }));
+
+        const assignments = plan
+          ? await db
+              .select({
+                id: weeklyPlanAssignments.id,
+                weeklyPlanId: weeklyPlanAssignments.weeklyPlanId,
+                roomId: weeklyPlanAssignments.roomId,
+                weekday: weeklyPlanAssignments.weekday,
+                employeeId: weeklyPlanAssignments.employeeId,
+                roleLabel: weeklyPlanAssignments.roleLabel,
+                assignmentType: weeklyPlanAssignments.assignmentType,
+                note: weeklyPlanAssignments.note,
+                isBlocked: weeklyPlanAssignments.isBlocked,
+                createdAt: weeklyPlanAssignments.createdAt,
+                updatedAt: weeklyPlanAssignments.updatedAt,
+                roomName: rooms.name,
+                roomCategory: rooms.category,
+                employeeName: employees.name,
+                employeeLastName: employees.lastName,
+                employeeRole: employees.role,
+              })
+              .from(weeklyPlanAssignments)
+              .leftJoin(rooms, eq(weeklyPlanAssignments.roomId, rooms.id))
+              .leftJoin(employees, eq(weeklyPlanAssignments.employeeId, employees.id))
+              .where(eq(weeklyPlanAssignments.weeklyPlanId, plan.id))
+              .orderBy(
+                asc(weeklyPlanAssignments.weekday),
+                asc(weeklyPlanAssignments.roomId),
+                asc(weeklyPlanAssignments.id),
+              )
+          : [];
+
+        const assignmentsByWeekday: Record<number, typeof assignments> = {};
+        for (let weekday = 1; weekday <= 7; weekday += 1) {
+          assignmentsByWeekday[weekday] = assignments.filter(
+            (entry) => entry.weekday === weekday,
+          );
+        }
+
+        const isoWeekBase = startOfWeek(parseISO(`${year}-01-04`), {
+          weekStartsOn: 1,
+        });
+        const weekStart = addWeeks(isoWeekBase, week - 1);
+        const from = format(weekStart, "yyyy-MM-dd");
+        const to = format(addDays(weekStart, 6), "yyyy-MM-dd");
+        const previousDay = format(subDays(weekStart, 1), "yyyy-MM-dd");
+        const publicRosterShifts = await db
+          .select()
+          .from(rosterShifts)
+          .where(and(gte(rosterShifts.date, previousDay), lte(rosterShifts.date, to)));
+
+        const publicPlannedAbsences = await db
+          .select({
+            id: plannedAbsences.id,
+            employeeId: plannedAbsences.employeeId,
+            employeeName: employees.name,
+            employeeLastName: employees.lastName,
+            startDate: plannedAbsences.startDate,
+            endDate: plannedAbsences.endDate,
+            reason: plannedAbsences.reason,
+            status: plannedAbsences.status,
+            notes: plannedAbsences.notes,
+          })
+          .from(plannedAbsences)
+          .leftJoin(employees, eq(plannedAbsences.employeeId, employees.id))
+          .where(
+            and(
+              ne(plannedAbsences.status, "Abgelehnt"),
+              lte(plannedAbsences.startDate, to),
+              gte(plannedAbsences.endDate, from),
+            ),
+          );
+
+        const publicLongTermAbsences = await db
+          .select()
+          .from(longTermAbsences)
+          .where(eq(longTermAbsences.status, "Genehmigt"));
+
+        const publicEmployees = await db
+          .select()
+          .from(employees)
+          .where(eq(employees.isActive, true));
+
+        const publicServiceLines = await db
+          .select()
+          .from(serviceLines)
+          .where(eq(serviceLines.isActive, true))
+          .orderBy(asc(serviceLines.sortOrder), asc(serviceLines.label));
+
+        return res.json({
+          success: true,
+          data: {
+            year,
+            week,
+            from,
+            to,
+            plan: plan
+              ? {
+                  ...plan,
+                  assignments,
+                  assignmentsByWeekday,
+                  summary: {
+                    totalAssignments: assignments.length,
+                    monday: assignmentsByWeekday[1]?.length || 0,
+                    tuesday: assignmentsByWeekday[2]?.length || 0,
+                    wednesday: assignmentsByWeekday[3]?.length || 0,
+                    thursday: assignmentsByWeekday[4]?.length || 0,
+                    friday: assignmentsByWeekday[5]?.length || 0,
+                    saturday: assignmentsByWeekday[6]?.length || 0,
+                    sunday: assignmentsByWeekday[7]?.length || 0,
+                  },
+                }
+              : null,
+            rooms: weeklyRooms,
+            employees: publicEmployees,
+            serviceLines: publicServiceLines,
+            rosterShifts: publicRosterShifts,
+            plannedAbsences: publicPlannedAbsences,
+            longTermAbsences: publicLongTermAbsences,
+          },
+        });
+      } catch (error: any) {
+        console.error("Public weekly plan error:", error);
+        return res.status(500).json({
+          success: false,
+          error: "Öffentlicher Wochenplan konnte nicht geladen werden",
+        });
+      }
+    },
+  );
 
   app.get(
     "/api/roster/export",

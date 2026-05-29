@@ -24,4 +24,5 @@ AGENTS.md
 *.swp
 *.swo
 .DS_Store
+._*
 ecosystem.config.cjs

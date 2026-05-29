@@ -216,6 +216,11 @@ const FALLBACK_SERVICE_LINES = [
   { key: "overduty", label: "Überdienst", sortOrder: 4, isActive: true },
 ];
 
+const PREVIOUS_DAY_DUTY_SERVICE_LINE_ORDER = ["kreiszimmer", "gyn", "turnus"] as const;
+const PREVIOUS_DAY_DUTY_SERVICE_LINE_SET: ReadonlySet<string> = new Set(
+  PREVIOUS_DAY_DUTY_SERVICE_LINE_ORDER,
+);
+
 const buildServiceLineDisplay = (
   lines: ServiceLine[],
   shifts: RosterShift[],
@@ -2230,6 +2235,7 @@ function WeeklyView({
   const [rooms, setRooms] = useState<WeeklyPlanRoom[]>([]);
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlanResponse | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [serviceLines, setServiceLines] = useState<ServiceLine[]>([]);
   const [plannedAbsences, setPlannedAbsences] = useState<PlannedAbsenceAdmin[]>(
     [],
   );
@@ -2388,26 +2394,35 @@ function WeeklyView({
       setIsLoading(true);
       const from = format(weekStart, "yyyy-MM-dd");
       const to = format(weekEnd, "yyyy-MM-dd");
-      const startMonth = getMonth(weekStart) + 1;
-      const endMonth = getMonth(weekEnd) + 1;
-      const startYear = getYear(weekStart);
-      const endYear = getYear(weekEnd);
+      const rosterMonthRequests = Array.from(
+        new Map(
+          [subDays(weekStart, 1), ...weekDays].map((date) => {
+            const year = getYear(date);
+            const month = getMonth(date) + 1;
+            return [`${year}-${month}`, { year, month }];
+          }),
+        ).values(),
+      );
       try {
-        const rosterPromises =
-          startYear === endYear && startMonth === endMonth
-            ? [rosterApi.getByMonth(startYear, startMonth)]
-            : [
-                rosterApi.getByMonth(startYear, startMonth),
-                rosterApi.getByMonth(endYear, endMonth),
-              ];
-
-        const [roomData, employeeData, absenceData, longTermData, rosterData] =
+        const [
+          roomData,
+          employeeData,
+          serviceLineData,
+          absenceData,
+          longTermData,
+          rosterData,
+        ] =
           await Promise.all([
             roomApi.getWeeklyPlan(),
             employeeApi.getAll(),
+            serviceLinesApi.getAll(),
             plannedAbsencesAdminApi.getRange({ from, to }),
             longTermAbsencesApi.getByStatus("Genehmigt", from, to),
-            Promise.all(rosterPromises).then((results) => results.flat()),
+            Promise.all(
+              rosterMonthRequests.map(({ year, month }) =>
+                rosterApi.getByMonth(year, month),
+              ),
+            ).then((results) => results.flat()),
           ]);
 
         let planData: WeeklyPlanResponse | null = null;
@@ -2423,6 +2438,7 @@ function WeeklyView({
         if (!active) return;
         setRooms(roomData);
         setEmployees(employeeData);
+        setServiceLines(serviceLineData);
         setPlannedAbsences(absenceData);
         setLongTermAbsences(longTermData);
         const rosterMap = new Map<number, RosterShift>();
@@ -2504,6 +2520,64 @@ function WeeklyView({
     }
     return absence.employeeName || "Unbekannt";
   };
+
+  const previousDayDutyByDate = useMemo(() => {
+    const map = new Map<
+      string,
+      Array<{
+        serviceType: string;
+        assignee: string;
+      }>
+    >();
+
+    weekDays.forEach((day) => {
+      const dateKey = format(day, "yyyy-MM-dd");
+      const previousDateKey = format(subDays(day, 1), "yyyy-MM-dd");
+      const entries = rosterShifts
+        .filter((shift) => shift.date === previousDateKey)
+        .map((shift) => {
+          const normalizedServiceType = normalizeServiceLineKey(shift.serviceType);
+          if (!PREVIOUS_DAY_DUTY_SERVICE_LINE_SET.has(normalizedServiceType)) {
+            return null;
+          }
+
+          return {
+            serviceType: normalizedServiceType,
+            assignee: resolveEmployeeLastName(
+              shift.employeeId ?? null,
+              shift.assigneeFreeText ?? null,
+              null,
+            ),
+          };
+        })
+        .filter(
+          (
+            entry,
+          ): entry is {
+            serviceType: string;
+            assignee: string;
+          } => Boolean(entry),
+        )
+        .sort((a, b) => {
+          const orderA = PREVIOUS_DAY_DUTY_SERVICE_LINE_ORDER.findIndex(
+            (key) => key === a.serviceType,
+          );
+          const orderB = PREVIOUS_DAY_DUTY_SERVICE_LINE_ORDER.findIndex(
+            (key) => key === b.serviceType,
+          );
+          if (orderA !== orderB) return orderA - orderB;
+          return a.assignee.localeCompare(b.assignee, "de");
+        });
+
+      map.set(dateKey, entries);
+    });
+
+    return map;
+  }, [
+    rosterShifts,
+    weekDays,
+    resolveEmployeeLastName,
+  ]);
 
   const isAssignedEmployeeAbsent = useCallback(
     (employeeId: number | null | undefined, date: Date) => {
@@ -2747,6 +2821,37 @@ function WeeklyView({
         }, 1);
       absRow.height = Math.max(68, Math.min(220, absMaxLines * 16));
 
+      const freeAfterDutyRow = sheet.addRow([
+        "Frei nach Dienst",
+        ...weekDays.map((day) => {
+          const key = format(day, "yyyy-MM-dd");
+          const items = previousDayDutyByDate.get(key) ?? [];
+          if (items.length === 0) return "—";
+          return withExcelTopPadding(items.map((item) => item.assignee).join("\n"));
+        }),
+      ]);
+      freeAfterDutyRow.eachCell((cell, colNumber) => {
+        applyCellStyle(cell, {
+          bgColor: "#F1F5F9",
+          bold: colNumber === 1,
+          indent: 1,
+        });
+      });
+      const freeAfterDutyValues = Array.isArray(freeAfterDutyRow.values)
+        ? freeAfterDutyRow.values
+        : [];
+      const freeAfterDutyMaxLines = freeAfterDutyValues
+        .slice(1)
+        .reduce((max: number, value: unknown) => {
+          const text = String(value ?? "");
+          const lineCount = Math.max(1, text.split("\n").length);
+          return Math.max(max, lineCount);
+        }, 1);
+      freeAfterDutyRow.height = Math.max(
+        68,
+        Math.min(220, freeAfterDutyMaxLines * 16),
+      );
+
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -2859,15 +2964,15 @@ function WeeklyView({
             <div className="overflow-x-auto">
               <table className="w-full min-w-[980px] text-sm">
                 <thead>
-                  <tr className="bg-muted/50 border-b border-border">
-                    <th className="p-3 text-left font-medium w-56">
-                      Arbeitsplatz
-                    </th>
-                    {weekDays.map((day, index) => (
-                      <th
-                        key={day.toISOString()}
-                        className="p-3 text-center font-medium min-w-[120px]"
-                      >
+	                  <tr className="border-b border-border bg-muted/50">
+	                    <th className="sticky left-0 top-0 z-40 w-56 bg-muted/50 p-3 text-left font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]">
+	                      Arbeitsplatz
+	                    </th>
+	                    {weekDays.map((day, index) => (
+	                      <th
+	                        key={day.toISOString()}
+	                        className="sticky top-0 z-30 min-w-[120px] bg-muted/50 p-3 text-center font-medium"
+	                      >
                         <div className="text-xs text-muted-foreground">
                           {WEEKDAY_LABELS[index]}
                         </div>
@@ -2889,7 +2994,14 @@ function WeeklyView({
                           : undefined
                       }
                     >
-                      <td className="p-3">
+                      <td
+                        className="sticky left-0 z-20 p-3 shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]"
+                        style={
+                          room.rowColor
+                            ? { backgroundColor: room.rowColor }
+                            : { backgroundColor: "white" }
+                        }
+                      >
                         <div className="font-medium">{room.name}</div>
                         {room.physicalRooms &&
                           room.physicalRooms.length > 0 && (
@@ -3070,7 +3182,9 @@ function WeeklyView({
                     </tr>
                   ))}
                   <tr className="bg-muted/30 align-top">
-                    <td className="p-3 text-xs font-medium">Abwesenheiten</td>
+                    <td className="sticky left-0 z-20 bg-muted/30 p-3 text-xs font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]">
+                      Abwesenheiten
+                    </td>
                     {weekDays.map((day) => {
                       const key = format(day, "yyyy-MM-dd");
                       const items = absencesByDate.get(key) ?? [];
@@ -3088,6 +3202,31 @@ function WeeklyView({
                                   {resolveAbsenceName(absence)} (
                                   {absence.reason})
                                 </div>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                  <tr className="bg-muted/30 align-top">
+                    <td className="sticky left-0 z-20 bg-muted/30 p-3 text-xs font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]">
+                      Frei nach Dienst
+                    </td>
+                    {weekDays.map((day) => {
+                      const key = format(day, "yyyy-MM-dd");
+                      const items = previousDayDutyByDate.get(key) ?? [];
+                      return (
+                        <td
+                          key={`free-after-duty-${key}`}
+                          className="p-2 text-[10px] text-muted-foreground"
+                        >
+                          {items.length === 0 ? (
+                            "—"
+                          ) : (
+                            <div className="space-y-1">
+                              {items.map((item) => (
+                                <div key={`${key}-${item.serviceType}`}>{item.assignee}</div>
                               ))}
                             </div>
                           )}
