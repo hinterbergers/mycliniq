@@ -178,6 +178,7 @@ export default function PublicWeeklyPlan() {
       roomsSorted.filter((room) => {
         const title = (room.name ?? "").toLowerCase();
         return (
+          !title.includes("diensthabende") &&
           !title.includes("raum verwaltung") &&
           !title.includes("diensthabende am wochenende")
         );
@@ -298,7 +299,7 @@ export default function PublicWeeklyPlan() {
       <div className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 print:max-w-none print:px-0 print:py-0">
         <div className="mb-4 flex flex-col gap-3 print:hidden sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-slate-900">Öffentlicher Wochenplan</h1>
+            <h1 className="text-2xl font-semibold text-slate-900">Wochenplan</h1>
             <p className="text-sm text-slate-600">
               KW {weekNumber} / {weekYear} · {format(weekStart, "dd.MM.yyyy", { locale: de })} bis{" "}
               {format(weekEnd, "dd.MM.yyyy", { locale: de })}
@@ -387,11 +388,6 @@ export default function PublicWeeklyPlan() {
                           }
                         >
                           <div className="font-medium text-slate-900">{room.name}</div>
-                          {room.physicalRooms && room.physicalRooms.length > 0 && (
-                            <div className="text-[11px] text-slate-500">
-                              {room.physicalRooms.map((pr) => pr.name).join(", ")}
-                            </div>
-                          )}
                         </td>
                         {weekDays.map((day, index) => {
                           const weekday = index + 1;
@@ -410,9 +406,9 @@ export default function PublicWeeklyPlan() {
                             return (
                               <td
                                 key={`${room.id}-${weekday}`}
-                                className="border-b border-slate-200 p-3 text-center text-xs text-slate-500"
+                                className="border-b border-slate-200 bg-slate-100/80 p-3 text-center text-xs text-slate-500"
                               >
-                                {setting.closedReason ? `Gesperrt: ${setting.closedReason}` : "Gesperrt"}
+                                {"\u00A0"}
                               </td>
                             );
                           }
@@ -442,9 +438,7 @@ export default function PublicWeeklyPlan() {
                                 </div>
                               )}
                               {isBlockedCell ? (
-                                <div className="inline-flex rounded-full bg-slate-300 px-3 py-1 text-[10px] font-semibold text-slate-800">
-                                  Gesperrt
-                                </div>
+                                <div className="min-h-[48px] w-full bg-slate-100/80" />
                               ) : employeeAssignments.length === 0 ? (
                                 <div className="text-xs text-slate-400">—</div>
                               ) : (

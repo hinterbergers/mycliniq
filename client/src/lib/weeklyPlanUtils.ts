@@ -296,7 +296,17 @@ export const formatRoomTime = (
   timeFrom?: string | null,
   timeTo?: string | null,
 ) => {
+  const normalize = (value?: string | null) => {
+    if (!value) return "";
+    const match = /^(\d{2}:\d{2})(?::\d{2})?$/.exec(value.trim());
+    return match ? match[1] : value.trim();
+  };
+
+  const from = normalize(timeFrom);
+  const to = normalize(timeTo);
+
+  if (from === "07:30" && to === "13:30") return "";
   if (!timeFrom && !timeTo) return "";
-  if (timeFrom && timeTo) return `${timeFrom}–${timeTo}`;
-  return timeFrom || timeTo || "";
+  if (from && to) return `${from}–${to}`;
+  return from || to || "";
 };

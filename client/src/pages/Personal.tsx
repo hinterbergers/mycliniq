@@ -2346,15 +2346,16 @@ function WeeklyView({
     });
   }, [rooms]);
 
-  const visibleRooms = useMemo(() => {
-    return roomsSorted.filter((room) => {
-      const title = (room.name ?? "").toLowerCase();
-      return (
-        !title.includes("raum verwaltung") &&
-        !title.includes("diensthabende am wochenende")
-      );
-    });
-  }, [roomsSorted]);
+	  const visibleRooms = useMemo(() => {
+	    return roomsSorted.filter((room) => {
+	      const title = (room.name ?? "").toLowerCase();
+	      return (
+	        !title.includes("diensthabende") &&
+	        !title.includes("raum verwaltung") &&
+	        !title.includes("diensthabende am wochenende")
+	      );
+	    });
+	  }, [roomsSorted]);
 
   const employeesById = useMemo(() => {
     return new Map(employees.map((employee) => [employee.id, employee]));
@@ -3001,17 +3002,9 @@ function WeeklyView({
                             ? { backgroundColor: room.rowColor }
                             : { backgroundColor: "white" }
                         }
-                      >
-                        <div className="font-medium">{room.name}</div>
-                        {room.physicalRooms &&
-                          room.physicalRooms.length > 0 && (
-                            <div className="text-[11px] text-muted-foreground">
-                              {room.physicalRooms
-                                .map((pr) => pr.name)
-                                .join(", ")}
-                            </div>
-                          )}
-                      </td>
+	                      >
+	                        <div className="font-medium">{room.name}</div>
+	                      </td>
                       {weekDays.map((day, index) => {
                         const weekday = index + 1;
                         const setting = getRoomSettingForDate(room, day);
