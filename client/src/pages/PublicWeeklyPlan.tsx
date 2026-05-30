@@ -106,6 +106,7 @@ export default function PublicWeeklyPlan() {
   const [payload, setPayload] = useState<PublicWeeklyPlanPayload | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showFullLabels, setShowFullLabels] = useState(false);
   const [zoomLevel, setZoomLevel] = useState<(typeof PUBLIC_WEEKLY_PLAN_ZOOM_STEPS)[number]>(1);
   const [search, setSearch] = useState(() =>
     typeof window !== "undefined" ? window.location.search : "",
@@ -445,8 +446,17 @@ export default function PublicWeeklyPlan() {
               )}
               style={{ zoom: zoomLevel }}
             >
-              <div className="sticky left-0 z-40 w-36 border-b border-slate-300 bg-slate-100 p-3 text-left font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]">
-                Arbeitsplatz
+              <div className="sticky left-0 z-40 flex w-36 items-center justify-between gap-2 border-b border-slate-300 bg-slate-100 p-3 text-left font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]">
+                <span>Arbeitsplatz</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowFullLabels((value) => !value)}
+                  className="h-7 px-2 text-[10px] leading-none"
+                >
+                  {showFullLabels ? "Kurz" : "Lang"}
+                </Button>
               </div>
               {weekDays.map((day, index) => (
                 <div
@@ -508,7 +518,7 @@ export default function PublicWeeklyPlan() {
                             title={room.name}
                             aria-label={room.name}
                           >
-                            {getWeeklyPlanRoomShortLabel(room.name)}
+                            {showFullLabels ? room.name : getWeeklyPlanRoomShortLabel(room.name)}
                           </div>
                         </td>
                         {weekDays.map((day, index) => {
