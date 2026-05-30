@@ -410,15 +410,23 @@ export const buildWeeklyPlanAssignmentsByRoomWeekday = <
   weekDays: Date[],
   employeesById: Map<number, Employee>,
 ) => {
+  const { kreisssaalRoomId, bettenstationRoomId } = findWeekendTargetRoomIds(rooms);
   const map = new Map<string, T[]>();
   assignments.forEach((assignment) => {
+    const isWeekend = assignment.weekday === 6 || assignment.weekday === 7;
+    const isWeekendDutyTarget =
+      isWeekend &&
+      (assignment.roomId === kreisssaalRoomId || assignment.roomId === bettenstationRoomId);
+    if (isWeekendDutyTarget) {
+      return;
+    }
+
     const key = `${assignment.roomId}-${assignment.weekday}`;
     const current = map.get(key) ?? [];
     current.push(assignment);
     map.set(key, current);
   });
 
-  const { kreisssaalRoomId, bettenstationRoomId } = findWeekendTargetRoomIds(rooms);
   if (kreisssaalRoomId == null || bettenstationRoomId == null) return map;
 
   let syntheticId = -1;
