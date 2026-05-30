@@ -111,7 +111,8 @@
 
 ## Vacation Planning
 - Admin UI: `/admin/urlaubsplan` shows a year/quarter grid with absences, conflicts, and status actions
-- Admin API: `GET /api/absences?from=YYYY-MM-DD&to=YYYY-MM-DD` + `PUT /api/absences/:id/status`
+- Existing planned absences in `/admin/urlaubsplan` can be edited in place (date range, reason, notes) via the action table; approval status remains managed by the separate status actions
+- Admin API: `GET /api/absences?from=YYYY-MM-DD&to=YYYY-MM-DD`, `PUT /api/absences/:id`, and `PUT /api/absences/:id/status`
 - Vacation rules: `vacation_rules` with types `role_min`, `competency_min`, `total_min`, `training_priority`
 - Entitlement: `employees.vacationEntitlement` limits `Urlaub` days per year (server enforced)
 - Visibility filter: `employees.shiftPreferences.vacationVisibilityRoleGroups` (OA/ASS/TA/SEK) limits which roles a user can see in the vacation plan; UI filter still allows narrowing by role/competency

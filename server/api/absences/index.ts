@@ -47,6 +47,28 @@ const createAbsenceSchema = z.object({
   createdById: z.number().positive().optional(),
 });
 
+const updateAbsenceSchema = z.object({
+  startDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Datum im Format YYYY-MM-DD"),
+  endDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Datum im Format YYYY-MM-DD"),
+  reason: z.enum([
+    "Urlaub",
+    "Krankenstand",
+    "Fortbildung",
+    "Ruhezeit",
+    "Zeitausgleich",
+    "Gebührenurlaub",
+    "Sonderurlaub",
+    "Zusatzurlaub",
+    "Pflegeurlaub",
+    "Quarantäne",
+  ]),
+  notes: z.string().nullable().optional(),
+});
+
 /**
  * Schema for updating absence status
  */
@@ -244,6 +266,18 @@ const isOwnerOrAdmin = (
   if (!reqUser) return false;
   if (reqUser.isAdmin) return true;
   return reqUser.employeeId === employeeId;
+};
+
+const canManageAbsenceForEmployee = (
+  reqUser: Express.Request["user"],
+  employeeId: number,
+) => {
+  if (isOwnerOrAdmin(reqUser, employeeId)) return true;
+  if (!reqUser) return false;
+  return (
+    (reqUser.capabilities?.includes("absence.create") ?? false) ||
+    (reqUser.capabilities?.includes("vacation.approve") ?? false)
+  );
 };
 
 const countVacationDaysForYear = async (
@@ -555,7 +589,7 @@ export function registerAbsenceRoutes(router: Router) {
           .status(401)
           .json({ success: false, error: "Anmeldung erforderlich" });
       }
-      if (!isOwnerOrAdmin(req.user, employeeId)) {
+      if (!canManageAbsenceForEmployee(req.user, employeeId)) {
         return res.status(403).json({
           success: false,
           error: "Keine Berechtigung fuer diese Abwesenheit",
@@ -661,6 +695,108 @@ export function registerAbsenceRoutes(router: Router) {
         ...absence,
         employeeName: employee.name,
         employeeLastName: employee.lastName,
+      });
+    }),
+  );
+
+  /**
+   * PUT /api/absences/:id
+   * Update a planned absence
+   * Body: { startDate, endDate, reason, notes? }
+   */
+  router.put(
+    "/:id",
+    validateParams(idParamSchema),
+    validateBody(updateAbsenceSchema),
+    asyncHandler(async (req, res) => {
+      const { id } = req.params;
+      const absenceId = Number(id);
+      const { startDate, endDate, reason, notes } = req.body;
+
+      if (!req.user) {
+        return res
+          .status(401)
+          .json({ success: false, error: "Anmeldung erforderlich" });
+      }
+
+      const [existing] = await db
+        .select()
+        .from(plannedAbsences)
+        .where(eq(plannedAbsences.id, absenceId));
+
+      if (!existing) {
+        return notFound(res, "Abwesenheit");
+      }
+
+      if (!canManageAbsenceForEmployee(req.user, existing.employeeId)) {
+        return res.status(403).json({
+          success: false,
+          error: "Keine Berechtigung fuer diese Abwesenheit",
+        });
+      }
+
+      if (new Date(endDate) < new Date(startDate)) {
+        return validationError(res, "Enddatum muss nach Startdatum liegen");
+      }
+
+      if (!canBypassVacationLock(req.user) && isLockRestrictedReason(reason)) {
+        const { lockFrom, lockUntil } = await getVacationLockRange();
+        if (
+          lockFrom &&
+          lockUntil &&
+          overlapsLockRange(startDate, endDate, lockFrom, lockUntil)
+        ) {
+          return res.status(403).json({
+            success: false,
+            error: `Urlaubsplanung ist von ${formatDate(lockFrom)} bis ${formatDate(lockUntil)} gesperrt.`,
+          });
+        }
+      }
+
+      if (reason === "Urlaub" && existing.status !== "Abgelehnt") {
+        const entitlementCheck = await ensureVacationEntitlement(
+          existing.employeeId,
+          startDate,
+          endDate,
+          absenceId,
+        );
+        if (!entitlementCheck.ok) {
+          return validationError(
+            res,
+            entitlementCheck.error || "Urlaubsanspruch ueberschritten",
+          );
+        }
+      }
+
+      const { year, month } = getYearMonth(startDate);
+      const [updated] = await db
+        .update(plannedAbsences)
+        .set({
+          year,
+          month,
+          startDate,
+          endDate,
+          reason,
+          notes: notes || null,
+          updatedAt: new Date(),
+        })
+        .where(eq(plannedAbsences.id, absenceId))
+        .returning();
+
+      const [employee] = await db
+        .select({
+          name: employees.name,
+          lastName: employees.lastName,
+          role: employees.role,
+        })
+        .from(employees)
+        .where(eq(employees.id, updated.employeeId));
+
+      return ok(res, {
+        ...updated,
+        employeeName: employee?.name ?? null,
+        employeeLastName: employee?.lastName ?? null,
+        employeeRole: employee?.role ?? null,
       });
     }),
   );
@@ -858,7 +994,7 @@ export function registerAbsenceRoutes(router: Router) {
         return notFound(res, "Abwesenheit");
       }
 
-      if (!isOwnerOrAdmin(req.user, existing.employeeId)) {
+      if (!canManageAbsenceForEmployee(req.user, existing.employeeId)) {
         return res.status(403).json({
           success: false,
           error: "Keine Berechtigung fuer diese Aktion",

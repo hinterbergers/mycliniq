@@ -2957,6 +2957,22 @@ export const plannedAbsencesAdminApi = {
     });
     return handleResponse<PlannedAbsenceAdmin>(response);
   },
+  update: async (
+    id: number,
+    data: {
+      startDate: string;
+      endDate: string;
+      reason: string;
+      notes?: string | null;
+    },
+  ): Promise<PlannedAbsenceAdmin> => {
+    const response = await apiFetch(`${API_BASE}/absences/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    return handleResponse<PlannedAbsenceAdmin>(response);
+  },
   delete: async (id: number): Promise<void> => {
     const response = await apiFetch(`${API_BASE}/absences/${id}`, {
       method: "DELETE",

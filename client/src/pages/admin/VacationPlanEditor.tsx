@@ -15,6 +15,7 @@ import {
   ChevronRight,
   Filter,
   Loader2,
+  Pencil,
   Plus,
   RotateCcw,
   Trash2,
@@ -215,6 +216,14 @@ type AbsenceDraft = {
   notes: string;
 };
 
+const createEmptyAbsenceDraft = (employeeId: number | null): AbsenceDraft => ({
+  employeeId,
+  reason: "Urlaub",
+  startDate: formatDateInput(new Date()),
+  endDate: formatDateInput(new Date()),
+  notes: "",
+});
+
 type VacationRuleDraft = {
   departmentId?: number;
   ruleType: VacationRuleInput["ruleType"];
@@ -395,13 +404,11 @@ export default function VacationPlanEditor({
   );
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<number[]>([]);
   const [employeeFilterQuery, setEmployeeFilterQuery] = useState("");
-  const [absenceDraft, setAbsenceDraft] = useState<AbsenceDraft>({
-    employeeId: currentUser?.id ?? null,
-    reason: "Urlaub",
-    startDate: formatDateInput(new Date()),
-    endDate: formatDateInput(new Date()),
-    notes: "",
-  });
+  const [absenceDraft, setAbsenceDraft] = useState<AbsenceDraft>(() =>
+    createEmptyAbsenceDraft(currentUser?.id ?? null),
+  );
+  const [editingAbsence, setEditingAbsence] =
+    useState<PlannedAbsenceAdmin | null>(null);
   const [ruleDialogOpen, setRuleDialogOpen] = useState(false);
   const [ruleDraft, setRuleDraft] = useState<VacationRuleDraft>({
     departmentId: currentUser?.departmentId ?? undefined,
@@ -1189,6 +1196,7 @@ export default function VacationPlanEditor({
   };
 
   const openAbsenceDialog = (employeeId: number, date?: Date) => {
+    setEditingAbsence(null);
     if (!date) {
       setAbsenceDraft((prev) => ({
         ...prev,
@@ -1214,6 +1222,24 @@ export default function VacationPlanEditor({
     setAbsenceDialogOpen(true);
   };
 
+  const openAbsenceEditDialog = (absence: PlannedAbsenceAdmin) => {
+    setEditingAbsence(absence);
+    setAbsenceDraft({
+      employeeId: absence.employeeId,
+      reason: absence.reason as (typeof ABSENCE_REASONS)[number],
+      startDate: absence.startDate,
+      endDate: absence.endDate,
+      notes: absence.notes ?? "",
+    });
+    setAbsenceDialogOpen(true);
+  };
+
+  const closeAbsenceDialog = () => {
+    setAbsenceDialogOpen(false);
+    setEditingAbsence(null);
+    setAbsenceDraft(createEmptyAbsenceDraft(currentUser?.id ?? null));
+  };
+
   const handleAbsenceSave = async () => {
     if (!absenceDraft.employeeId) return;
     if (!absenceDraft.startDate || !absenceDraft.endDate) return;
@@ -1230,26 +1256,37 @@ export default function VacationPlanEditor({
     }
     setSavingAbsence(true);
     try {
-      await plannedAbsencesAdminApi.create({
-        employeeId: absenceDraft.employeeId,
-        startDate: absenceDraft.startDate,
-        endDate: absenceDraft.endDate,
-        reason: absenceDraft.reason,
-        notes: absenceDraft.notes || null,
-      });
+      if (editingAbsence) {
+        await plannedAbsencesAdminApi.update(editingAbsence.id, {
+          startDate: absenceDraft.startDate,
+          endDate: absenceDraft.endDate,
+          reason: absenceDraft.reason,
+          notes: absenceDraft.notes || null,
+        });
+      } else {
+        await plannedAbsencesAdminApi.create({
+          employeeId: absenceDraft.employeeId,
+          startDate: absenceDraft.startDate,
+          endDate: absenceDraft.endDate,
+          reason: absenceDraft.reason,
+          notes: absenceDraft.notes || null,
+        });
+      }
       toast({
-        title: "Abwesenheit gespeichert",
-        description: "Eintrag wurde uebernommen.",
+        title: editingAbsence
+          ? "Abwesenheit aktualisiert"
+          : "Abwesenheit gespeichert",
+        description: editingAbsence
+          ? "Eintrag wurde aktualisiert."
+          : "Eintrag wurde uebernommen.",
       });
-      setAbsenceDialogOpen(false);
-      setAbsenceDraft((prev) => ({
-        ...prev,
-        notes: "",
-      }));
+      closeAbsenceDialog();
       await loadData();
     } catch (error: any) {
       toast({
-        title: "Abwesenheit konnte nicht gespeichert werden",
+        title: editingAbsence
+          ? "Abwesenheit konnte nicht aktualisiert werden"
+          : "Abwesenheit konnte nicht gespeichert werden",
         description: error.message || "Bitte spaeter erneut versuchen.",
         variant: "destructive",
       });
@@ -1661,7 +1698,13 @@ export default function VacationPlanEditor({
               </Button>
               <Dialog
                 open={absenceDialogOpen}
-                onOpenChange={setAbsenceDialogOpen}
+                onOpenChange={(open) => {
+                  if (open) {
+                    setAbsenceDialogOpen(true);
+                    return;
+                  }
+                  closeAbsenceDialog();
+                }}
               >
                 <DialogTrigger asChild>
                   <Button className="gap-2" disabled={!currentUser}>
@@ -1671,7 +1714,11 @@ export default function VacationPlanEditor({
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-[520px]">
                   <DialogHeader>
-                    <DialogTitle>Abwesenheit eintragen</DialogTitle>
+                    <DialogTitle>
+                      {editingAbsence
+                        ? "Abwesenheit bearbeiten"
+                        : "Abwesenheit eintragen"}
+                    </DialogTitle>
                   </DialogHeader>
                   <div className="space-y-4">
                     <div className="space-y-2">
@@ -1683,6 +1730,7 @@ export default function VacationPlanEditor({
                               ? String(absenceDraft.employeeId)
                               : ""
                           }
+                          disabled={Boolean(editingAbsence)}
                           onValueChange={(value) =>
                             setAbsenceDraft((prev) => ({
                               ...prev,
@@ -1781,7 +1829,7 @@ export default function VacationPlanEditor({
                     <div className="flex justify-end gap-2">
                       <Button
                         variant="outline"
-                        onClick={() => setAbsenceDialogOpen(false)}
+                        onClick={closeAbsenceDialog}
                       >
                         Abbrechen
                       </Button>
@@ -1792,7 +1840,7 @@ export default function VacationPlanEditor({
                         {savingAbsence && (
                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                         )}
-                        Speichern
+                        {editingAbsence ? "Aktualisieren" : "Speichern"}
                       </Button>
                     </div>
                   </div>
@@ -2375,6 +2423,7 @@ export default function VacationPlanEditor({
                                   );
                                 const canEditRow =
                                   (canApprove ||
+                                    canEditOthers ||
                                     absence.employeeId === currentUser?.id) &&
                                   !isRowLocked;
                                 return (
@@ -2490,6 +2539,19 @@ export default function VacationPlanEditor({
                                               Ablehnen
                                             </Button>
                                           </>
+                                        )}
+                                        {canEditRow && (
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() =>
+                                              openAbsenceEditDialog(absence)
+                                            }
+                                            disabled={updatingId === absence.id}
+                                          >
+                                            <Pencil className="w-4 h-4 mr-1" />
+                                            Bearbeiten
+                                          </Button>
                                         )}
                                         {canEditRow && (
                                           <Button
