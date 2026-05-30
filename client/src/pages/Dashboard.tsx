@@ -670,7 +670,7 @@ export default function Dashboard() {
   );
 
   const renderHeroCard = () => (
-    <div className="bg-gradient-to-br from-primary to-primary/80 rounded-2xl px-8 py-6 text-primary-foreground shadow-lg shadow-primary/10">
+    <div className="kabeg-deep-gradient rounded-2xl px-8 py-6 text-primary-foreground shadow-lg shadow-primary/15">
       <div className="flex items-center justify-between mb-1.5">
         <h2
           className="text-xl font-bold text-white"

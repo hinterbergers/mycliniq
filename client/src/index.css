@@ -77,11 +77,18 @@
   .kabeg-gradient {
     background: linear-gradient(135deg, hsl(213 40% 72%) 0%, hsl(212 84% 36%) 100%);
   }
+  .kabeg-deep-gradient {
+    background:
+      radial-gradient(circle at top right, rgba(115, 173, 245, 0.22) 0%, rgba(115, 173, 245, 0) 34%),
+      linear-gradient(135deg, #0b2344 0%, #113f72 52%, #0f5ba7 100%);
+  }
   .kabeg-shadow {
     box-shadow: 0 2px 8px rgba(15, 91, 167, 0.08);
   }
   .kabeg-header {
-    background: linear-gradient(90deg, hsl(213 40% 72%) 0%, hsl(212 84% 36%) 100%);
+    background:
+      radial-gradient(circle at top center, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0) 30%),
+      linear-gradient(90deg, #6d9fda 0%, #2d69ab 26%, #15467b 62%, #0f5ba7 100%);
   }
 }
 

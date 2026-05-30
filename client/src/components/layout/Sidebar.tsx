@@ -132,7 +132,7 @@ export function Sidebar({
 
   return (
     <aside
-      className={cn("bg-sidebar flex flex-col", containerClass, className)}
+      className={cn("kabeg-deep-gradient flex flex-col", containerClass, className)}
       data-variant={variant}
     >
       <a
@@ -142,7 +142,7 @@ export function Sidebar({
           setLocation("/");
           onNavigate?.();
         }}
-        className="p-6 flex items-center gap-3 border-b border-sidebar-border hover:bg-white/5 transition-colors cursor-pointer"
+        className="p-6 flex items-center gap-3 border-b border-white/10 hover:bg-white/5 transition-colors cursor-pointer"
         data-testid="link-home"
       >
         <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center text-white">
@@ -159,7 +159,7 @@ export function Sidebar({
       </a>
 
       {variant === "mobile" && (
-        <div className="px-4 pb-4 border-b border-sidebar-border">
+        <div className="px-4 pb-4 border-b border-white/10">
           <label className="text-xs uppercase tracking-wide text-white/70 mb-1 block">
             Suchen
           </label>
@@ -213,7 +213,7 @@ export function Sidebar({
                     className={cn(
                       "flex items-center gap-3",
                       isGroupActive
-                        ? "bg-sidebar-accent text-white"
+                        ? "rounded-lg bg-white/14 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
                         : "text-white/80",
                     )}
                   >
@@ -241,7 +241,7 @@ export function Sidebar({
                             className={cn(
                               "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200",
                               isActive
-                                ? "bg-sidebar-accent text-white"
+                                ? "bg-white/14 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
                                 : "text-white/70 hover:bg-white/10 hover:text-white",
                             )}
                             data-testid={`nav-${child.href
@@ -276,7 +276,7 @@ export function Sidebar({
                 className={cn(
                   "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
                   isActive
-                    ? "bg-sidebar-accent text-white"
+                    ? "bg-white/14 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
                     : "text-white/80 hover:bg-white/10 hover:text-white",
                 )}
                 data-testid={`nav-${href.replace(/\//g, "-").slice(1) || "home"}`}
@@ -289,7 +289,7 @@ export function Sidebar({
       </nav>
 
       {(employee || user || token) && (
-        <div className="p-4 border-t border-sidebar-border">
+        <div className="p-4 border-t border-white/10">
           <div
             className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-white/10 transition-colors cursor-pointer group"
             onClick={handleLogout}
