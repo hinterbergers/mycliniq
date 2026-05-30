@@ -2274,6 +2274,10 @@ function WeeklyView({
   const [rosterShifts, setRosterShifts] = useState<RosterShift[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [weeklyExporting, setWeeklyExporting] = useState(false);
+  const [showFullLabels, setShowFullLabels] = useState(false);
+  const headerScrollRef = useRef<HTMLDivElement | null>(null);
+  const bodyScrollRef = useRef<HTMLDivElement | null>(null);
+  const syncingScrollRef = useRef<"header" | "body" | null>(null);
 
   const getWeeklyCalendarUrl = () => {
     if (!calendarToken || typeof window === "undefined") return null;
@@ -2366,6 +2370,9 @@ function WeeklyView({
     () => eachDayOfInterval({ start: weekStart, end: weekEnd }),
     [weekStart, weekEnd],
   );
+  const firstColumnWidthRem = showFullLabels ? 12 : 6.5;
+  const firstColumnWidth = `${firstColumnWidthRem}rem`;
+  const weeklyPlanMinWidth = `${firstColumnWidthRem + weekDays.length * 7.5}rem`;
 
   const roomsSorted = useMemo(() => {
     return [...rooms].sort((a, b) => {
@@ -2399,6 +2406,22 @@ function WeeklyView({
       employeesById,
     );
   }, [employeesById, rosterShifts, visibleRooms, weekDays, weeklyPlan]);
+
+  const syncHorizontalScroll = useCallback((source: "header" | "body") => {
+    const header = headerScrollRef.current;
+    const body = bodyScrollRef.current;
+    if (!header || !body) return;
+    if (syncingScrollRef.current === source) return;
+
+    const target = source === "header" ? body : header;
+    syncingScrollRef.current = source;
+    target.scrollLeft = source === "header" ? header.scrollLeft : body.scrollLeft;
+    window.requestAnimationFrame(() => {
+      if (syncingScrollRef.current === source) {
+        syncingScrollRef.current = null;
+      }
+    });
+  }, []);
 
   const absencesByDate = useMemo(() => {
     const map = new Map<string, PlannedAbsenceAdmin[]>();
@@ -2973,23 +2996,49 @@ function WeeklyView({
                 </div>
               </div>
             </div>
-            <div className="mt-4 grid min-w-[984px] grid-cols-[9rem_repeat(7,minmax(120px,1fr))] border-t border-slate-200 border-b border-slate-300 bg-slate-100">
-              <div className="sticky left-0 z-40 w-36 border-b border-slate-300 bg-slate-100 p-3 text-left font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]">
-                Arbeitsplatz
-              </div>
-              {weekDays.map((day, index) => (
+            <div
+              ref={headerScrollRef}
+              onScroll={() => syncHorizontalScroll("header")}
+              className="mt-4 overflow-x-auto"
+            >
+              <div
+                className="grid border-t border-slate-200 border-b border-slate-300 bg-slate-100"
+                style={{
+                  minWidth: weeklyPlanMinWidth,
+                  gridTemplateColumns: `${firstColumnWidth} repeat(7, minmax(120px, 1fr))`,
+                }}
+              >
                 <div
-                  key={day.toISOString()}
-                  className="min-w-[120px] bg-slate-100 p-3 text-center font-medium"
+                  className="sticky left-0 z-40 flex flex-col items-start gap-2 border-b border-slate-300 bg-slate-100 p-2 text-left font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]"
+                  style={{ width: firstColumnWidth }}
                 >
-                  <div className="text-xs text-muted-foreground">
-                    {WEEKDAY_LABELS[index]}
-                  </div>
-                  <div className="text-sm" title={WEEKDAY_FULL[index]}>
-                    {format(day, "dd.MM", { locale: de })}
-                  </div>
+                  <span className="leading-tight">
+                    {showFullLabels ? "Arbeitsplatz" : "AP"}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowFullLabels((value) => !value)}
+                    className="h-6 px-2 text-[10px] leading-none"
+                  >
+                    {showFullLabels ? "Kurz" : "Lang"}
+                  </Button>
                 </div>
-              ))}
+                {weekDays.map((day, index) => (
+                  <div
+                    key={day.toISOString()}
+                    className="min-w-[120px] bg-slate-100 p-3 text-center font-medium"
+                  >
+                    <div className="text-xs text-muted-foreground">
+                      {WEEKDAY_LABELS[index]}
+                    </div>
+                    <div className="text-sm" title={WEEKDAY_FULL[index]}>
+                      {format(day, "dd.MM", { locale: de })}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </CardHeader>
         <CardContent className="p-0">
@@ -3002,12 +3051,22 @@ function WeeklyView({
               Keine Arbeitsplätze für den Wochenplan gefunden.
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[984px] table-fixed text-sm">
+            <div
+              ref={bodyScrollRef}
+              onScroll={() => syncHorizontalScroll("body")}
+              className="overflow-x-auto"
+            >
+              <table
+                className="w-full table-fixed text-sm"
+                style={{ minWidth: weeklyPlanMinWidth }}
+              >
                 <colgroup>
-                  <col className="w-36" />
+                  <col style={{ width: firstColumnWidth }} />
                   {weekDays.map((day) => (
-                    <col key={`private-col-${day.toISOString()}`} className="w-[120px]" />
+                    <col
+                      key={`private-col-${day.toISOString()}`}
+                      style={{ width: "7.5rem" }}
+                    />
                   ))}
                 </colgroup>
                 <tbody>
@@ -3034,7 +3093,9 @@ function WeeklyView({
                           title={room.name}
                           aria-label={room.name}
                         >
-                          {getWeeklyPlanRoomShortLabel(room.name)}
+                          {showFullLabels
+                            ? room.name
+                            : getWeeklyPlanRoomShortLabel(room.name)}
                         </div>
                       </td>
                       {weekDays.map((day, index) => {
