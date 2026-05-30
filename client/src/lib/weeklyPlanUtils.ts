@@ -73,6 +73,46 @@ export const normalizeWeeklyPlanText = (value?: string | null) =>
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 
+export const getWeeklyPlanRoomShortLabel = (roomName?: string | null) => {
+  const normalized = normalizeWeeklyPlanText(roomName);
+  if (!normalized) return roomName || "";
+
+  if (
+    normalized.includes("geburtshilfe") ||
+    normalized.includes("kreisssaal") ||
+    normalized.includes("kreis")
+  ) {
+    return "Geb.";
+  }
+  if (normalized.includes("gynakologische bettenstation")) return "Gyn";
+  if (normalized.includes("risiko ambulanz i")) return "Risiko I";
+  if (normalized.includes("risiko ambulanz ii")) return "Risiko II";
+  if (normalized.includes("schwangeren sprechstunde")) return "SchwAm";
+  if (normalized.includes("chef sprechstunde")) return "Chef";
+  if (normalized.includes("vulvaambulanz")) return "Vulva";
+  if (
+    normalized.includes("bestell und notfallambulanz") ||
+    normalized.includes("gynakologische ambulanz")
+  ) {
+    return "GynAm";
+  }
+  if (normalized.includes("dysplasie")) return "Dysp";
+  if (normalized.includes("urodynamik")) return "Uro";
+  if (normalized.includes("tumornachsorge")) return "TNS";
+  if (normalized.includes("mamma")) return "Mamma";
+  if (normalized.includes("teaching")) return "TCH";
+  if (normalized.includes("perinatologische")) return "PN";
+  if (normalized.includes("tumorboard")) return "TB";
+  if (
+    normalized.includes("verwaltung organisation") ||
+    normalized.includes("organisation")
+  ) {
+    return "Org";
+  }
+
+  return roomName || "";
+};
+
 export const getEmployeeRoleKeys = (role?: string | null): string[] => {
   const normalized = normalizeValue(role);
   if (!normalized) return [];

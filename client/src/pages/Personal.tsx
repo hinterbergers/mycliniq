@@ -108,10 +108,11 @@ import {
   WEEKDAY_FULL,
   type WeeklyPlanRoom,
   buildWeeklyPlanAssignmentsByRoomWeekday,
-  isEmployeeOnDutyDate,
-  isEmployeeAbsentOnDate,
   formatRoomTime,
   getRoomSettingForDate,
+  getWeeklyPlanRoomShortLabel,
+  isEmployeeOnDutyDate,
+  isEmployeeAbsentOnDate,
 } from "@/lib/weeklyPlanUtils";
 
 const PLAN_STATUS_LABELS: Record<DutyPlan["status"], string> = {
@@ -3021,9 +3022,15 @@ function WeeklyView({
                             ? { backgroundColor: room.rowColor }
                             : { backgroundColor: "white" }
                         }
-	                      >
-	                        <div className="font-medium">{room.name}</div>
-	                      </td>
+                      >
+                        <div
+                          className="text-sm font-medium leading-tight"
+                          title={room.name}
+                          aria-label={room.name}
+                        >
+                          {getWeeklyPlanRoomShortLabel(room.name)}
+                        </div>
+                      </td>
                       {weekDays.map((day, index) => {
                         const weekday = index + 1;
                         const setting = getRoomSettingForDate(room, day);

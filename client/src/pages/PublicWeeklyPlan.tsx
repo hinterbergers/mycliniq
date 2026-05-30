@@ -9,6 +9,7 @@ import {
   buildWeeklyPlanAssignmentsByRoomWeekday,
   formatRoomTime,
   getRoomSettingForDate,
+  getWeeklyPlanRoomShortLabel,
   isEmployeeAbsentOnDate,
   isEmployeeOnDutyDate,
 } from "@/lib/weeklyPlanUtils";
@@ -502,7 +503,13 @@ export default function PublicWeeklyPlan() {
                               : { backgroundColor: "white" }
                           }
                         >
-                          <div className="font-medium text-slate-900">{room.name}</div>
+                          <div
+                            className="text-sm font-medium leading-tight text-slate-900"
+                            title={room.name}
+                            aria-label={room.name}
+                          >
+                            {getWeeklyPlanRoomShortLabel(room.name)}
+                          </div>
                         </td>
                         {weekDays.map((day, index) => {
                           const weekday = index + 1;
