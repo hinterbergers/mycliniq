@@ -311,6 +311,9 @@ export default function PublicWeeklyPlan() {
           );
           if (orderA !== orderB) return orderA - orderB;
           return a.assignee.localeCompare(b.assignee, "de");
+        })
+        .filter((entry, index, items) => {
+          return items.findIndex((candidate) => candidate.assignee === entry.assignee) === index;
         });
       map.set(dateKey, entries);
     });
