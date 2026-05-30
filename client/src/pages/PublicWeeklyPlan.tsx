@@ -6,6 +6,7 @@ import {
   WEEKDAY_FULL,
   WEEKDAY_LABELS,
   type WeeklyPlanRoom,
+  buildWeeklyPlanAssignmentsByRoomWeekday,
   formatRoomTime,
   getRoomSettingForDate,
   isEmployeeAbsentOnDate,
@@ -25,7 +26,7 @@ import {
 } from "date-fns";
 import { de } from "date-fns/locale";
 import { ChevronLeft, ChevronRight, Printer } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import type { Employee, LongTermAbsence, RosterShift, ServiceLine } from "@shared/schema";
 import { normalizeServiceLineKey } from "@shared/serviceLineKey";
@@ -196,15 +197,14 @@ export default function PublicWeeklyPlan() {
     [employees],
   );
   const assignmentsByRoomWeekday = useMemo(() => {
-    const map = new Map<string, NonNullable<WeeklyPlanResponse["assignments"]>>();
-    (weeklyPlan?.assignments || []).forEach((assignment) => {
-      const key = `${assignment.roomId}-${assignment.weekday}`;
-      const current = map.get(key) ?? [];
-      current.push(assignment);
-      map.set(key, current);
-    });
-    return map;
-  }, [weeklyPlan]);
+    return buildWeeklyPlanAssignmentsByRoomWeekday(
+      weeklyPlan?.assignments || [],
+      visibleRooms,
+      rosterShifts,
+      weekDays,
+      employeesById,
+    );
+  }, [employeesById, rosterShifts, visibleRooms, weekDays, weeklyPlan]);
   const absencesByDate = useMemo(() => {
     const map = new Map<string, PublicPlannedAbsence[]>();
     plannedAbsences.forEach((absence) => {
@@ -297,51 +297,69 @@ export default function PublicWeeklyPlan() {
   return (
     <div className="min-h-screen bg-slate-50 print:bg-white">
       <div className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 print:max-w-none print:px-0 print:py-0">
-        <div className="mb-4 flex flex-col gap-3 print:hidden sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900">Wochenplan</h1>
-            <p className="text-sm text-slate-600">
-              KW {weekNumber} / {weekYear} · {format(weekStart, "dd.MM.yyyy", { locale: de })} bis{" "}
-              {format(weekEnd, "dd.MM.yyyy", { locale: de })}
-            </p>
+        <div className="sticky top-0 z-40 mb-4 bg-white pb-4 print:static">
+          <div className="flex flex-col gap-3 print:hidden sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h1 className="text-2xl font-semibold text-slate-900">Wochenplan</h1>
+              <p className="text-sm text-slate-600">
+                KW {weekNumber} / {weekYear} · {format(weekStart, "dd.MM.yyyy", { locale: de })} bis{" "}
+                {format(weekEnd, "dd.MM.yyyy", { locale: de })}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const next = setWeekSearch(addWeeks(currentDate, -1));
+                  setSearch(next.split("?")[1] ? `?${next.split("?")[1]}` : "");
+                  setLocation(next);
+                }}
+              >
+                <ChevronLeft className="mr-1 h-4 w-4" />
+                Vorwoche
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const next = setWeekSearch(new Date());
+                  setSearch(next.split("?")[1] ? `?${next.split("?")[1]}` : "");
+                  setLocation(next);
+                }}
+              >
+                Aktuelle Woche
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const next = setWeekSearch(addWeeks(currentDate, 1));
+                  setSearch(next.split("?")[1] ? `?${next.split("?")[1]}` : "");
+                  setLocation(next);
+                }}
+              >
+                Nächste Woche
+                <ChevronRight className="ml-1 h-4 w-4" />
+              </Button>
+              <Button onClick={() => window.print()}>
+                <Printer className="mr-2 h-4 w-4" />
+                Drucken
+              </Button>
+            </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              onClick={() => {
-                const next = setWeekSearch(addWeeks(currentDate, -1));
-                setSearch(next.split("?")[1] ? `?${next.split("?")[1]}` : "");
-                setLocation(next);
-              }}
-            >
-              <ChevronLeft className="mr-1 h-4 w-4" />
-              Vorwoche
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                const next = setWeekSearch(new Date());
-                setSearch(next.split("?")[1] ? `?${next.split("?")[1]}` : "");
-                setLocation(next);
-              }}
-            >
-              Aktuelle Woche
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                const next = setWeekSearch(addWeeks(currentDate, 1));
-                setSearch(next.split("?")[1] ? `?${next.split("?")[1]}` : "");
-                setLocation(next);
-              }}
-            >
-              Nächste Woche
-              <ChevronRight className="ml-1 h-4 w-4" />
-            </Button>
-            <Button onClick={() => window.print()}>
-              <Printer className="mr-2 h-4 w-4" />
-              Drucken
-            </Button>
+          <div className="mt-4 grid min-w-[980px] grid-cols-[14rem_repeat(7,minmax(120px,1fr))] border-t border-slate-200 border-b border-slate-300 bg-slate-100">
+            <div className="sticky left-0 z-40 border-b border-slate-300 bg-slate-100 p-3 text-left font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]">
+              Arbeitsplatz
+            </div>
+            {weekDays.map((day, index) => (
+              <div
+                key={day.toISOString()}
+                className="min-w-[120px] bg-slate-100 p-3 text-center font-medium"
+              >
+                <div className="text-xs text-slate-500">{WEEKDAY_LABELS[index]}</div>
+                <div className="text-sm" title={WEEKDAY_FULL[index]}>
+                  {format(day, "dd.MM", { locale: de })}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -354,24 +372,6 @@ export default function PublicWeeklyPlan() {
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[980px] text-sm">
-                  <thead>
-	                    <tr className="border-b border-slate-200 bg-slate-100">
-	                      <th className="sticky left-0 top-0 z-40 w-56 bg-slate-100 p-3 text-left font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]">
-	                        Arbeitsplatz
-	                      </th>
-	                      {weekDays.map((day, index) => (
-	                        <th
-	                          key={day.toISOString()}
-	                          className="sticky top-0 z-30 min-w-[120px] bg-slate-100 p-3 text-center font-medium"
-	                        >
-                          <div className="text-xs text-slate-500">{WEEKDAY_LABELS[index]}</div>
-                          <div className="text-sm" title={WEEKDAY_FULL[index]}>
-                            {format(day, "dd.MM", { locale: de })}
-                          </div>
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
                   <tbody>
                     {visibleRooms.map((room) => (
                       <tr
@@ -380,7 +380,7 @@ export default function PublicWeeklyPlan() {
                         style={room.rowColor ? { backgroundColor: room.rowColor } : undefined}
                       >
                         <td
-                          className="sticky left-0 z-20 border-b border-slate-200 p-3 shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]"
+                          className="sticky left-0 z-20 border-b border-slate-300 p-3 align-middle shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]"
                           style={
                             room.rowColor
                               ? { backgroundColor: room.rowColor }
@@ -396,7 +396,7 @@ export default function PublicWeeklyPlan() {
                             return (
                               <td
                                 key={`${room.id}-${weekday}`}
-                                className="border-b border-slate-200 p-3 text-center text-xs text-slate-400"
+                                className="border-b border-slate-300 p-3 text-center text-xs text-slate-400"
                               >
                                 —
                               </td>
@@ -406,7 +406,7 @@ export default function PublicWeeklyPlan() {
                             return (
                               <td
                                 key={`${room.id}-${weekday}`}
-                                className="border-b border-slate-200 bg-slate-100/80 p-3 text-center text-xs text-slate-500"
+                                className="border-b border-slate-300 bg-slate-100/80 p-3 text-center text-xs text-slate-500"
                               >
                                 {"\u00A0"}
                               </td>
@@ -428,7 +428,7 @@ export default function PublicWeeklyPlan() {
                             <td
                               key={`${room.id}-${weekday}`}
                               className={cn(
-                                "border-b border-slate-200 p-3 align-top",
+                                "border-b border-slate-300 p-3 align-middle",
                                 isBlockedCell && "bg-slate-100/80",
                               )}
                             >
@@ -500,6 +500,19 @@ export default function PublicWeeklyPlan() {
                       {weekDays.map((day) => {
                         const key = format(day, "yyyy-MM-dd");
                         const items = absencesByDate.get(key) ?? [];
+                        const groupedItems = items.reduce<
+                          Array<{ reason: string; names: string[] }>
+                        >((groups, absence) => {
+                          const reason = absence.reason || "Abwesenheit";
+                          const existing = groups.find((group) => group.reason === reason);
+                          const name = resolveAbsenceName(absence);
+                          if (existing) {
+                            existing.names.push(name);
+                          } else {
+                            groups.push({ reason, names: [name] });
+                          }
+                          return groups;
+                        }, []);
                         return (
                           <td
                             key={`absences-${key}`}
@@ -508,10 +521,17 @@ export default function PublicWeeklyPlan() {
                             {items.length === 0 ? (
                               "—"
                             ) : (
-                              <div className="space-y-1">
-                                {items.map((absence) => (
-                                  <div key={absence.id}>
-                                    {resolveAbsenceName(absence)} ({absence.reason})
+                              <div className="space-y-2">
+                                {groupedItems.map((group) => (
+                                  <div key={`${key}-${group.reason}`} className="space-y-1">
+                                    <div className="font-medium underline underline-offset-2">
+                                      {group.reason}
+                                    </div>
+                                    <div className="space-y-1">
+                                      {group.names.map((name, index) => (
+                                        <div key={`${key}-${group.reason}-${index}`}>{name}</div>
+                                      ))}
+                                    </div>
                                   </div>
                                 ))}
                               </div>

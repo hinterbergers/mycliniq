@@ -5,6 +5,7 @@ import type {
   RosterShift,
   Resource,
 } from "@shared/schema";
+import { normalizeServiceLineKey } from "@shared/serviceLineKey";
 
 export type PlannedAbsenceLike = {
   employeeId: number;
@@ -66,6 +67,11 @@ const normalizeValue = (value?: string | null) => {
 
 const uniqueValues = (values: string[]) =>
   Array.from(new Set(values.filter(Boolean)));
+
+export const normalizeWeeklyPlanText = (value?: string | null) =>
+  normalizeValue(value)
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 
 export const getEmployeeRoleKeys = (role?: string | null): string[] => {
   const normalized = normalizeValue(role);
@@ -309,4 +315,129 @@ export const formatRoomTime = (
   if (!timeFrom && !timeTo) return "";
   if (from && to) return `${from}–${to}`;
   return from || to || "";
+};
+
+type WeeklyPlanAssignmentLike = {
+  id: number;
+  weeklyPlanId?: number;
+  roomId: number;
+  weekday: number;
+  employeeId: number | null;
+  roleLabel?: string | null;
+  assignmentType: "Plan" | "Zeitausgleich" | "Fortbildung";
+  note?: string | null;
+  isBlocked?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  roomName?: string | null;
+  roomCategory?: string | null;
+  employeeName?: string | null;
+  employeeLastName?: string | null;
+  employeeRole?: string | null;
+};
+
+const findWeekendTargetRoomIds = (rooms: WeeklyPlanRoom[]) => {
+  let kreisssaalRoomId: number | null = null;
+  let bettenstationRoomId: number | null = null;
+
+  rooms.forEach((room) => {
+    const normalized = normalizeWeeklyPlanText(room.name);
+    if (
+      kreisssaalRoomId == null &&
+      (normalized.includes("geburtshilfe") || normalized.includes("kreisssaal"))
+    ) {
+      kreisssaalRoomId = room.id;
+    }
+    if (
+      bettenstationRoomId == null &&
+      (normalized.includes("gynakologische bettenstation") ||
+        normalized.includes("bettenstation"))
+    ) {
+      bettenstationRoomId = room.id;
+    }
+  });
+
+  return { kreisssaalRoomId, bettenstationRoomId };
+};
+
+export const buildWeeklyPlanAssignmentsByRoomWeekday = <
+  T extends WeeklyPlanAssignmentLike,
+>(
+  assignments: T[],
+  rooms: WeeklyPlanRoom[],
+  rosterShifts: RosterShift[],
+  weekDays: Date[],
+  employeesById: Map<number, Employee>,
+) => {
+  const map = new Map<string, T[]>();
+  assignments.forEach((assignment) => {
+    const key = `${assignment.roomId}-${assignment.weekday}`;
+    const current = map.get(key) ?? [];
+    current.push(assignment);
+    map.set(key, current);
+  });
+
+  const { kreisssaalRoomId, bettenstationRoomId } = findWeekendTargetRoomIds(rooms);
+  if (kreisssaalRoomId == null || bettenstationRoomId == null) return map;
+
+  let syntheticId = -1;
+
+  weekDays.forEach((day) => {
+    const weekday = getWeekdayIndex(day);
+    if (weekday !== 6 && weekday !== 7) return;
+
+    const dateKey = format(day, "yyyy-MM-dd");
+    rosterShifts
+      .filter((shift) => shift.date === dateKey)
+      .forEach((shift) => {
+        const serviceType = normalizeServiceLineKey(shift.serviceType);
+        const targetRoomId =
+          serviceType === "kreiszimmer"
+            ? kreisssaalRoomId
+            : serviceType === "gyn" || serviceType === "turnus"
+              ? bettenstationRoomId
+              : null;
+        if (targetRoomId == null) return;
+
+        const key = `${targetRoomId}-${weekday}`;
+        const current = map.get(key) ?? [];
+        const employee = shift.employeeId ? employeesById.get(shift.employeeId) ?? null : null;
+        const fallbackName = shift.assigneeFreeText?.trim() ?? null;
+        const fallbackLastName = fallbackName
+          ? fallbackName.split(/\s+/).filter(Boolean).slice(-1)[0] ?? fallbackName
+          : null;
+
+        const duplicate = current.some((assignment) => {
+          if (shift.employeeId && assignment.employeeId === shift.employeeId) return true;
+          if (!fallbackLastName) return false;
+          return (
+            normalizeWeeklyPlanText(
+              assignment.employeeLastName ?? assignment.employeeName ?? null,
+            ) === normalizeWeeklyPlanText(fallbackLastName)
+          );
+        });
+        if (duplicate) return;
+
+        const syntheticAssignment: WeeklyPlanAssignmentLike = {
+          id: syntheticId--,
+          weeklyPlanId: assignments[0]?.weeklyPlanId,
+          roomId: targetRoomId,
+          weekday,
+          employeeId: shift.employeeId ?? null,
+          roleLabel: null,
+          assignmentType: "Plan",
+          note: null,
+          isBlocked: false,
+          roomName: rooms.find((room) => room.id === targetRoomId)?.name ?? null,
+          roomCategory: null,
+          employeeName: employee?.name ?? fallbackName,
+          employeeLastName: employee?.lastName ?? fallbackLastName,
+          employeeRole: employee?.role ?? null,
+        };
+        current.push(syntheticAssignment as unknown as T);
+        map.set(key, current);
+      });
+  });
+
+  return map;
 };

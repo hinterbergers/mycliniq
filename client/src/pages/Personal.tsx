@@ -37,7 +37,6 @@ import {
   ClipboardCopy,
   Download,
   Heart,
-  Info,
   Loader2,
   RefreshCw,
   Rss,
@@ -46,7 +45,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getAustrianHoliday } from "@/lib/holidays";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   format,
   addMonths,
@@ -108,6 +107,7 @@ import {
   WEEKDAY_LABELS,
   WEEKDAY_FULL,
   type WeeklyPlanRoom,
+  buildWeeklyPlanAssignmentsByRoomWeekday,
   isEmployeeOnDutyDate,
   isEmployeeAbsentOnDate,
   formatRoomTime,
@@ -319,6 +319,8 @@ export default function Personal() {
   const isExternalDuty = user?.accessScope === "external_duty";
   const [unassignedCount, setUnassignedCount] = useState(0);
   const [pendingSwapRequestCount, setPendingSwapRequestCount] = useState(0);
+  const pageStickyHeaderRef = useRef<HTMLDivElement | null>(null);
+  const [pageStickyHeaderHeight, setPageStickyHeaderHeight] = useState(0);
   const [unassignedDebug, setUnassignedDebug] =
     useState<OpenShiftDebugDetail | null>(null);
   const {
@@ -418,6 +420,22 @@ export default function Personal() {
     };
     loadPendingSwapRequests();
   }, [currentEmployee?.id]);
+
+  useEffect(() => {
+    const node = pageStickyHeaderRef.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+
+    const updateHeight = () => {
+      setPageStickyHeaderHeight(Math.ceil(node.getBoundingClientRect().height));
+    };
+
+    updateHeight();
+
+    const observer = new ResizeObserver(() => updateHeight());
+    observer.observe(node);
+
+    return () => observer.disconnect();
+  }, []);
 
   const handleSubscribe = async () => {
     if (!token) {
@@ -527,135 +545,140 @@ export default function Personal() {
   return (
     <Layout title="Dienstpläne">
       <div className="space-y-6">
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Dienstpläne</h1>
-            <p className="text-muted-foreground">
-              Monatsdienstplan, Wochenplan und Urlaubsplanung.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            className="gap-2"
-            onClick={() => {
-              setSwapDialogInitialTab("new");
-              setSwapDialogOpen(true);
-            }}
-            data-testid="button-swap"
-          >
-            <RefreshCw className="w-4 h-4" />
-            Diensttausch
-            {pendingSwapRequestCount > 0 && (
-              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-xs font-semibold text-white">
-                !
-              </span>
-            )}
-          </Button>
-          <Button
-            variant="outline"
-            className="gap-2"
-            onClick={() => setLocation("/dienstwuensche")}
-            data-testid="button-shift-wishes"
-          >
-            <CalendarDays className="w-4 h-4" />
-            Dienstwünsche
-          </Button>
-          {showTakeShiftButton && (
-            <Button
-              variant="outline"
-              className="gap-2"
-              onClick={() =>
-                window.dispatchEvent(new Event("mycliniq:openUnassigned"))
-              }
-              data-testid="button-unassigned-shifts-top"
-            >
-              Dienst übernehmen
-              {unassignedCount > 0 && (
-                <Badge variant="outline" className="h-5 px-1.5">
-                  {unassignedCount}
-                </Badge>
-              )}
-            </Button>
-          )}
-          </div>
-        </div>
-
-        {debugEnabled && token && (
-          <div className="rounded-lg border border-border bg-slate-50/60 p-3 text-xs text-muted-foreground space-y-2">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-              Unbesetzte Dienste Debug
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-[11px]">
-              <span className="font-medium">unassignedCount</span>
-              <span>{unassignedCount}</span>
-
-              <span className="font-medium">planStatus</span>
-              <span>{unassignedDebug?.planStatus ?? "—"}</span>
-
-              <span className="font-medium">statusAllowed</span>
-              <span>{String(unassignedDebug?.statusAllowed ?? false)}</span>
-
-              <span className="font-medium">showClaimButton</span>
-              <span>{String(unassignedDebug?.showClaimButton ?? false)}</span>
-
-              <span className="font-medium">unassignedTotal</span>
-              <span>{unassignedDebug?.unassignedTotal ?? "—"}</span>
-
-              <span className="font-medium">visibleAfterPrevDayRule</span>
-              <span>{unassignedDebug?.visibleAfterPrevDayRule ?? "—"}</span>
-
-              <span className="font-medium">claimableCount</span>
-              <span>{unassignedDebug?.claimableCount ?? "—"}</span>
-
-              <span className="font-medium">allowedKeysCount</span>
-              <span>{unassignedDebug?.allowedKeysCount ?? 0}</span>
-
-              <span className="font-medium">allowedKeys</span>
-              <span className="break-words">
-                {isAdmin || isTechnicalAdmin
-                  ? (unassignedDebug?.allowedKeys?.length
-                      ? unassignedDebug.allowedKeys.join(", ")
-                      : "—")
-                  : `(${unassignedDebug?.allowedKeysCount ?? 0})`}
-              </span>
-              <span className="font-medium">missingCounts</span>
-              <span className="break-words">
-                {JSON.stringify(unassignedDebug?.missingCounts ?? {})}
-              </span>
-              <span className="font-medium">requiredDaily</span>
-              <span className="break-words">
-                {JSON.stringify(unassignedDebug?.requiredDaily ?? {})}
-              </span>
-            </div>
-          </div>
-        )}
-
         <Tabs defaultValue="roster" className="space-y-6">
-          <TabsList className="bg-background border border-border p-1 h-12 rounded-xl shadow-sm">
-            <TabsTrigger
-              value="roster"
-              className="rounded-lg px-6 h-10"
-              data-testid="tab-roster"
-            >
-              Dienstplan
-            </TabsTrigger>
-            <TabsTrigger
-              value="weekly"
-              className="rounded-lg px-6 h-10"
-              data-testid="tab-weekly"
-            >
-              Wochenplan
-            </TabsTrigger>
-            <TabsTrigger
-              value="vacation"
-              className="rounded-lg px-6 h-10"
-              data-testid="tab-vacation"
-            >
-              Urlaubsplanung
-            </TabsTrigger>
-          </TabsList>
+          <div
+            ref={pageStickyHeaderRef}
+            className="sticky top-0 z-50 space-y-4 bg-background pb-3"
+          >
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+              <div>
+                <h1 className="text-2xl font-bold text-foreground">Dienstpläne</h1>
+                <p className="text-muted-foreground">
+                  Monatsdienstplan, Wochenplan und Urlaubsplanung.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => {
+                  setSwapDialogInitialTab("new");
+                  setSwapDialogOpen(true);
+                }}
+                data-testid="button-swap"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Diensttausch
+                {pendingSwapRequestCount > 0 && (
+                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-xs font-semibold text-white">
+                    !
+                  </span>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => setLocation("/dienstwuensche")}
+                data-testid="button-shift-wishes"
+              >
+                <CalendarDays className="w-4 h-4" />
+                Dienstwünsche
+              </Button>
+              {showTakeShiftButton && (
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() =>
+                    window.dispatchEvent(new Event("mycliniq:openUnassigned"))
+                  }
+                  data-testid="button-unassigned-shifts-top"
+                >
+                  Dienst übernehmen
+                  {unassignedCount > 0 && (
+                    <Badge variant="outline" className="h-5 px-1.5">
+                      {unassignedCount}
+                    </Badge>
+                  )}
+                </Button>
+              )}
+              </div>
+            </div>
+
+            {debugEnabled && token && (
+              <div className="rounded-lg border border-border bg-slate-50/60 p-3 text-xs text-muted-foreground space-y-2">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                  Unbesetzte Dienste Debug
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  <span className="font-medium">unassignedCount</span>
+                  <span>{unassignedCount}</span>
+
+                  <span className="font-medium">planStatus</span>
+                  <span>{unassignedDebug?.planStatus ?? "—"}</span>
+
+                  <span className="font-medium">statusAllowed</span>
+                  <span>{String(unassignedDebug?.statusAllowed ?? false)}</span>
+
+                  <span className="font-medium">showClaimButton</span>
+                  <span>{String(unassignedDebug?.showClaimButton ?? false)}</span>
+
+                  <span className="font-medium">unassignedTotal</span>
+                  <span>{unassignedDebug?.unassignedTotal ?? "—"}</span>
+
+                  <span className="font-medium">visibleAfterPrevDayRule</span>
+                  <span>{unassignedDebug?.visibleAfterPrevDayRule ?? "—"}</span>
+
+                  <span className="font-medium">claimableCount</span>
+                  <span>{unassignedDebug?.claimableCount ?? "—"}</span>
+
+                  <span className="font-medium">allowedKeysCount</span>
+                  <span>{unassignedDebug?.allowedKeysCount ?? 0}</span>
+
+                  <span className="font-medium">allowedKeys</span>
+                  <span className="break-words">
+                    {isAdmin || isTechnicalAdmin
+                      ? (unassignedDebug?.allowedKeys?.length
+                          ? unassignedDebug.allowedKeys.join(", ")
+                          : "—")
+                      : `(${unassignedDebug?.allowedKeysCount ?? 0})`}
+                  </span>
+                  <span className="font-medium">missingCounts</span>
+                  <span className="break-words">
+                    {JSON.stringify(unassignedDebug?.missingCounts ?? {})}
+                  </span>
+                  <span className="font-medium">requiredDaily</span>
+                  <span className="break-words">
+                    {JSON.stringify(unassignedDebug?.requiredDaily ?? {})}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <TabsList className="bg-background border border-border p-1 h-12 rounded-xl shadow-sm">
+              <TabsTrigger
+                value="roster"
+                className="rounded-lg px-6 h-10"
+                data-testid="tab-roster"
+              >
+                Dienstplan
+              </TabsTrigger>
+              <TabsTrigger
+                value="weekly"
+                className="rounded-lg px-6 h-10"
+                data-testid="tab-weekly"
+              >
+                Wochenplan
+              </TabsTrigger>
+              <TabsTrigger
+                value="vacation"
+                className="rounded-lg px-6 h-10"
+                data-testid="tab-vacation"
+              >
+                Urlaubsplanung
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
           <TabsContent
             value="roster"
@@ -674,7 +697,10 @@ export default function Personal() {
             value="weekly"
             className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300"
           >
-            <WeeklyView calendarToken={resolvedCalendarToken} />
+            <WeeklyView
+              calendarToken={resolvedCalendarToken}
+              stickyTopOffset={pageStickyHeaderHeight}
+            />
           </TabsContent>
 
           <TabsContent
@@ -1294,7 +1320,7 @@ function RosterView({
 
   return (
     <div className="space-y-6">
-      <Card className="border-none kabeg-shadow overflow-hidden">
+      <Card className="border-none kabeg-shadow overflow-visible">
         <div className="p-4 border-b border-border flex items-center justify-between bg-card">
           <div className="flex items-center gap-4">
             <h3 className="text-lg font-semibold flex items-center gap-2">
@@ -2226,8 +2252,10 @@ function ShiftSwapRosterDialog({
 
 function WeeklyView({
   calendarToken,
+  stickyTopOffset,
 }: {
   calendarToken: string | null;
+  stickyTopOffset: number;
 }) {
   const { employee: currentUser } = useAuth();
   const { toast } = useToast();
@@ -2362,15 +2390,14 @@ function WeeklyView({
   }, [employees]);
 
   const assignmentsByRoomWeekday = useMemo(() => {
-    const map = new Map<string, WeeklyPlanResponse["assignments"]>();
-    (weeklyPlan?.assignments || []).forEach((assignment) => {
-      const key = `${assignment.roomId}-${assignment.weekday}`;
-      const current = map.get(key) ?? [];
-      current.push(assignment);
-      map.set(key, current);
-    });
-    return map;
-  }, [weeklyPlan]);
+    return buildWeeklyPlanAssignmentsByRoomWeekday(
+      weeklyPlan?.assignments || [],
+      visibleRooms,
+      rosterShifts,
+      weekDays,
+      employeesById,
+    );
+  }, [employeesById, rosterShifts, visibleRooms, weekDays, weeklyPlan]);
 
   const absencesByDate = useMemo(() => {
     const map = new Map<string, PlannedAbsenceAdmin[]>();
@@ -2878,17 +2905,11 @@ function WeeklyView({
 
   return (
     <div className="space-y-6">
-      <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 flex gap-3">
-        <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
-        <p className="text-sm text-blue-700">
-          Der Wochenplan wird automatisch aus dem freigegebenen Dienstplan
-          erzeugt. Kurzfristige Änderungen können von berechtigten Personen
-          vorgenommen werden.
-        </p>
-      </div>
-
-      <Card className="border-none kabeg-shadow overflow-hidden">
-          <CardHeader className="pb-2">
+      <Card className="border-none kabeg-shadow overflow-visible">
+          <CardHeader
+            className="sticky z-40 bg-white pb-2 shadow-sm"
+            style={{ top: `${stickyTopOffset}px` }}
+          >
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="space-y-1">
                 <CardTitle className="flex items-center gap-2">
@@ -2951,6 +2972,24 @@ function WeeklyView({
                 </div>
               </div>
             </div>
+            <div className="mt-4 grid min-w-[980px] grid-cols-[14rem_repeat(7,minmax(120px,1fr))] border-t border-slate-200 border-b border-slate-300 bg-slate-100">
+              <div className="sticky left-0 z-40 border-b border-slate-300 bg-slate-100 p-3 text-left font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]">
+                Arbeitsplatz
+              </div>
+              {weekDays.map((day, index) => (
+                <div
+                  key={day.toISOString()}
+                  className="min-w-[120px] bg-slate-100 p-3 text-center font-medium"
+                >
+                  <div className="text-xs text-muted-foreground">
+                    {WEEKDAY_LABELS[index]}
+                  </div>
+                  <div className="text-sm" title={WEEKDAY_FULL[index]}>
+                    {format(day, "dd.MM", { locale: de })}
+                  </div>
+                </div>
+              ))}
+            </div>
           </CardHeader>
         <CardContent className="p-0">
           {isLoading ? (
@@ -2964,31 +3003,11 @@ function WeeklyView({
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[980px] text-sm">
-                <thead>
-	                  <tr className="border-b border-border bg-muted/50">
-	                    <th className="sticky left-0 top-0 z-40 w-56 bg-muted/50 p-3 text-left font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]">
-	                      Arbeitsplatz
-	                    </th>
-	                    {weekDays.map((day, index) => (
-	                      <th
-	                        key={day.toISOString()}
-	                        className="sticky top-0 z-30 min-w-[120px] bg-muted/50 p-3 text-center font-medium"
-	                      >
-                        <div className="text-xs text-muted-foreground">
-                          {WEEKDAY_LABELS[index]}
-                        </div>
-                        <div className="text-sm" title={WEEKDAY_FULL[index]}>
-                          {format(day, "dd.MM", { locale: de })}
-                        </div>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
                 <tbody>
                   {visibleRooms.map((room) => (
                     <tr
                       key={room.id}
-                      className="border-b border-border align-top bg-white transition-colors hover:bg-slate-100/80"
+                      className="border-b border-slate-300 align-top bg-white transition-colors hover:bg-slate-100/80"
                       style={
                         room.rowColor
                           ? { backgroundColor: room.rowColor }
@@ -2996,7 +3015,7 @@ function WeeklyView({
                       }
                     >
                       <td
-                        className="sticky left-0 z-20 p-3 shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]"
+                        className="sticky left-0 z-20 border-b border-slate-300 p-3 align-middle shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]"
                         style={
                           room.rowColor
                             ? { backgroundColor: room.rowColor }
@@ -3083,7 +3102,7 @@ function WeeklyView({
                           <td
                             key={`${room.id}-${weekday}`}
                             className={cn(
-                              "p-3 align-top",
+                              "p-3 align-middle",
                               isBlockedCell && "bg-slate-100/80",
                             )}
                           >
@@ -3181,6 +3200,19 @@ function WeeklyView({
                     {weekDays.map((day) => {
                       const key = format(day, "yyyy-MM-dd");
                       const items = absencesByDate.get(key) ?? [];
+                      const groupedItems = items.reduce<
+                        Array<{ reason: string; names: string[] }>
+                      >((groups, absence) => {
+                        const reason = absence.reason || "Abwesenheit";
+                        const existing = groups.find((group) => group.reason === reason);
+                        const name = resolveAbsenceName(absence);
+                        if (existing) {
+                          existing.names.push(name);
+                        } else {
+                          groups.push({ reason, names: [name] });
+                        }
+                        return groups;
+                      }, []);
                       return (
                         <td
                           key={`absences-${key}`}
@@ -3189,11 +3221,17 @@ function WeeklyView({
                           {items.length === 0 ? (
                             "—"
                           ) : (
-                            <div className="space-y-1">
-                              {items.map((absence) => (
-                                <div key={absence.id}>
-                                  {resolveAbsenceName(absence)} (
-                                  {absence.reason})
+                            <div className="space-y-2">
+                              {groupedItems.map((group) => (
+                                <div key={`${key}-${group.reason}`} className="space-y-1">
+                                  <div className="font-medium underline underline-offset-2">
+                                    {group.reason}
+                                  </div>
+                                  <div className="space-y-1">
+                                    {group.names.map((name, index) => (
+                                      <div key={`${key}-${group.reason}-${index}`}>{name}</div>
+                                    ))}
+                                  </div>
                                 </div>
                               ))}
                             </div>
