@@ -97,6 +97,7 @@ export const getWeeklyPlanRoomShortLabel = (roomName?: string | null) => {
     return "GynAm";
   }
   if (normalized.includes("dysplasie")) return "Dysp";
+  if (normalized.includes("onkologische sprechstunde")) return "Onko";
   if (normalized.includes("urodynamik")) return "Uro";
   if (normalized.includes("tumornachsorge")) return "TNS";
   if (normalized.includes("mamma")) return "Mamma";
