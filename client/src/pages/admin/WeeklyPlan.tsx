@@ -251,6 +251,7 @@ const ABSENCE_REASONS = [
   "Zeitausgleich",
   "Karenz",
   "Sonstiges",
+  "Ruhezeit",
 ] as const;
 
 type AbsenceDraft = {

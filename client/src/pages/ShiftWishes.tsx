@@ -96,6 +96,7 @@ import { employeeDoesShifts } from "@shared/shiftTypes";
 const ABSENCE_REASONS = [
   { value: "Urlaub", label: "Urlaub" },
   { value: "Fortbildung", label: "Fortbildung" },
+  { value: "Ruhezeit", label: "Ruhezeit" },
 ];
 
 const MONTH_NAMES = [
