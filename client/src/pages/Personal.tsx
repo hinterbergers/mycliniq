@@ -2973,8 +2973,8 @@ function WeeklyView({
                 </div>
               </div>
             </div>
-            <div className="mt-4 grid min-w-[980px] grid-cols-[14rem_repeat(7,minmax(120px,1fr))] border-t border-slate-200 border-b border-slate-300 bg-slate-100">
-              <div className="sticky left-0 z-40 border-b border-slate-300 bg-slate-100 p-3 text-left font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]">
+            <div className="mt-4 grid min-w-[984px] grid-cols-[9rem_repeat(7,minmax(120px,1fr))] border-t border-slate-200 border-b border-slate-300 bg-slate-100">
+              <div className="sticky left-0 z-40 w-36 border-b border-slate-300 bg-slate-100 p-3 text-left font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]">
                 Arbeitsplatz
               </div>
               {weekDays.map((day, index) => (
@@ -3003,7 +3003,13 @@ function WeeklyView({
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[980px] text-sm">
+              <table className="w-full min-w-[984px] table-fixed text-sm">
+                <colgroup>
+                  <col className="w-36" />
+                  {weekDays.map((day) => (
+                    <col key={`private-col-${day.toISOString()}`} className="w-[120px]" />
+                  ))}
+                </colgroup>
                 <tbody>
                   {visibleRooms.map((room) => (
                     <tr

@@ -62,7 +62,7 @@ const PREVIOUS_DAY_DUTY_SERVICE_LINE_ORDER = ["kreiszimmer", "gyn", "turnus"] as
 const PREVIOUS_DAY_DUTY_SERVICE_LINE_SET: ReadonlySet<string> = new Set(
   PREVIOUS_DAY_DUTY_SERVICE_LINE_ORDER,
 );
-const PUBLIC_WEEKLY_PLAN_MIN_WIDTH_CLASS = "min-w-[1064px]";
+const PUBLIC_WEEKLY_PLAN_MIN_WIDTH_CLASS = "min-w-[984px]";
 const PUBLIC_WEEKLY_PLAN_ZOOM_STEPS = [0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.4] as const;
 
 const getQueryWeekDate = (search: string) => {
@@ -440,12 +440,12 @@ export default function PublicWeeklyPlan() {
           >
             <div
               className={cn(
-                "grid grid-cols-[14rem_repeat(7,minmax(120px,1fr))] border-t border-slate-200 border-b border-slate-300 bg-slate-100",
+                "grid grid-cols-[9rem_repeat(7,minmax(120px,1fr))] border-t border-slate-200 border-b border-slate-300 bg-slate-100",
                 PUBLIC_WEEKLY_PLAN_MIN_WIDTH_CLASS,
               )}
               style={{ zoom: zoomLevel }}
             >
-              <div className="sticky left-0 z-40 w-56 border-b border-slate-300 bg-slate-100 p-3 text-left font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]">
+              <div className="sticky left-0 z-40 w-36 border-b border-slate-300 bg-slate-100 p-3 text-left font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]">
                 Arbeitsplatz
               </div>
               {weekDays.map((day, index) => (
@@ -483,7 +483,7 @@ export default function PublicWeeklyPlan() {
                   style={{ zoom: zoomLevel }}
                 >
                   <colgroup>
-                    <col className="w-56" />
+                    <col className="w-36" />
                     {weekDays.map((day) => (
                       <col key={`public-col-${day.toISOString()}`} className="w-[120px]" />
                     ))}
