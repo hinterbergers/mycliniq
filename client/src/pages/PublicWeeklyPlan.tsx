@@ -136,6 +136,26 @@ export default function PublicWeeklyPlan() {
   }, [location]);
 
   useEffect(() => {
+    if (typeof document === "undefined") return;
+    const viewportMeta = document.querySelector('meta[name="viewport"]');
+    if (!viewportMeta) return;
+
+    const previousContent = viewportMeta.getAttribute("content");
+    viewportMeta.setAttribute(
+      "content",
+      "width=device-width, initial-scale=1.0, maximum-scale=5, user-scalable=yes, viewport-fit=cover",
+    );
+
+    return () => {
+      if (previousContent) {
+        viewportMeta.setAttribute("content", previousContent);
+      } else {
+        viewportMeta.removeAttribute("content");
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (hasValidWeekParams(search)) return;
     const next = setWeekSearch(new Date());
     setSearch(next.split("?")[1] ? `?${next.split("?")[1]}` : "");
