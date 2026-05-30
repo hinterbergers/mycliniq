@@ -62,7 +62,7 @@ const PREVIOUS_DAY_DUTY_SERVICE_LINE_SET: ReadonlySet<string> = new Set(
   PREVIOUS_DAY_DUTY_SERVICE_LINE_ORDER,
 );
 const PUBLIC_WEEKLY_PLAN_MIN_WIDTH_CLASS = "min-w-[1064px]";
-const PUBLIC_WEEKLY_PLAN_ZOOM_STEPS = [0.8, 0.9, 1, 1.1, 1.25, 1.4] as const;
+const PUBLIC_WEEKLY_PLAN_ZOOM_STEPS = [0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.4] as const;
 
 const getQueryWeekDate = (search: string) => {
   const params = new URLSearchParams(search);
