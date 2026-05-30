@@ -1035,10 +1035,10 @@ export default function Guidelines() {
                     Wissensbasis
                   </Badge>
                   <div className="space-y-3">
-                    <h1 className="max-w-3xl font-serif text-4xl leading-tight text-white lg:text-5xl">
+                    <h1 className="max-w-3xl text-xl font-bold leading-tight text-white">
                       SOPs und Dienstanweisungen wie eine interne Wiki-Bibliothek.
                     </h1>
-                    <p className="max-w-2xl text-base text-white/80">
+                    <p className="max-w-xl text-sm text-primary-foreground/80">
                       Die Startseite fokussiert auf haeufig genutzte und neue Seiten.
                       Einzelne Eintraege oeffnen als eigenstaendige Wissensseiten mit
                       direkter Inline-Bearbeitung fuer die Redaktion.
