@@ -4783,7 +4783,13 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
         const publicRosterShifts = await db
           .select()
           .from(rosterShifts)
-          .where(and(gte(rosterShifts.date, previousDay), lte(rosterShifts.date, to)));
+          .where(
+            and(
+              gte(rosterShifts.date, previousDay),
+              lte(rosterShifts.date, to),
+              eq(rosterShifts.isDraft, false),
+            ),
+          );
 
         const publicPlannedAbsences = await db
           .select({
