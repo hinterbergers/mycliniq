@@ -3113,24 +3113,14 @@ function WeeklyView({
                         }
                         if (setting.isClosed) {
                           const closedReason = setting.closedReason?.trim();
-                          if (!closedReason && room.rowColor) {
-                            return (
-                              <td
-                                key={`${room.id}-${weekday}`}
-                                className="p-3 text-center text-xs text-muted-foreground"
-                              >
-                                {"\u00A0"}
-                              </td>
-                            );
-                          }
                           return (
                             <td
                               key={`${room.id}-${weekday}`}
-                              className="p-3 text-center text-xs text-muted-foreground"
+                              className="border-b border-slate-300 bg-slate-100/80 p-3 text-center text-xs text-slate-500"
                             >
                               {closedReason
                                 ? `Gesperrt: ${closedReason}`
-                                : "Gesperrt"}
+                                : "\u00A0"}
                             </td>
                           );
                         }
