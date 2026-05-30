@@ -63,7 +63,16 @@ const updateRoomSchema = z.object({
 const weekdaySettingSchema = z.object({
   weekday: z.number().min(1).max(7),
   recurrence: z
-    .enum(["weekly", "monthly_first_third", "monthly_once"])
+    .enum([
+      "weekly",
+      "monthly_first_third",
+      "monthly_once",
+      "monthly_selected_weeks",
+    ])
+    .optional(),
+  monthWeeks: z
+    .array(z.number().int().min(1).max(5))
+    .max(5)
     .optional(),
   usageLabel: z.string().nullable().optional(),
   timeFrom: z
@@ -421,6 +430,9 @@ export function registerRoomRoutes(router: Router) {
             roomId,
             weekday: setting.weekday,
             recurrence: setting.recurrence || "weekly",
+            monthWeeks: Array.from(new Set(setting.monthWeeks ?? [])).sort(
+              (a, b) => a - b,
+            ),
             usageLabel: setting.usageLabel || null,
             timeFrom: setting.timeFrom || null,
             timeTo: setting.timeTo || null,

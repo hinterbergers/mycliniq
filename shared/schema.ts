@@ -158,6 +158,7 @@ export const roomWeekdayRecurrenceEnum = pgEnum("room_weekday_recurrence", [
   "weekly",
   "monthly_first_third",
   "monthly_once",
+  "monthly_selected_weeks",
 ]);
 
 // Competency relation type enum (for room requirements)
@@ -980,6 +981,10 @@ export const roomWeekdaySettings = pgTable(
     recurrence: roomWeekdayRecurrenceEnum("recurrence")
       .notNull()
       .default("weekly"),
+    monthWeeks: integer("month_weeks")
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::integer[]`),
     usageLabel: text("usage_label"),
     timeFrom: time("time_from"),
     timeTo: time("time_to"),

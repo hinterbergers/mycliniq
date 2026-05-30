@@ -366,13 +366,23 @@ const employeeMatchesRoleRules = (
 const weekdayOccurrence = (date: Date) => Math.floor((date.getDate() - 1) / 7) + 1;
 
 const matchesRecurrence = (
-  recurrence: "weekly" | "monthly_first_third" | "monthly_once" | null | undefined,
+  recurrence:
+    | "weekly"
+    | "monthly_first_third"
+    | "monthly_once"
+    | "monthly_selected_weeks"
+    | null
+    | undefined,
   date: Date,
+  monthWeeks?: number[] | null,
 ) => {
   if (!recurrence || recurrence === "weekly") return true;
   const occurrence = weekdayOccurrence(date);
   if (recurrence === "monthly_first_third") return occurrence === 1 || occurrence === 3;
   if (recurrence === "monthly_once") return occurrence === 1;
+  if (recurrence === "monthly_selected_weeks") {
+    return Array.isArray(monthWeeks) && monthWeeks.includes(occurrence);
+  }
   return true;
 };
 
@@ -658,7 +668,7 @@ export function registerWeeklyPlanRoutes(router: Router) {
               ?.find(
                 (entry) =>
                   entry.weekday === weekday &&
-                  matchesRecurrence(entry.recurrence, day),
+                  matchesRecurrence(entry.recurrence, day, entry.monthWeeks),
               ) ?? null;
           return { room, setting };
         })

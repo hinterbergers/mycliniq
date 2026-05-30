@@ -79,6 +79,12 @@ CREATE INDEX IF NOT EXISTS room_groups_sort_order_idx
 ALTER TABLE rooms
 ADD COLUMN IF NOT EXISTS room_group_id integer;
 
+ALTER TYPE room_weekday_recurrence
+ADD VALUE IF NOT EXISTS 'monthly_selected_weeks';
+
+ALTER TABLE room_weekday_settings
+ADD COLUMN IF NOT EXISTS month_weeks integer[] NOT NULL DEFAULT ARRAY[]::integer[];
+
 DO $$
 BEGIN
   IF NOT EXISTS (

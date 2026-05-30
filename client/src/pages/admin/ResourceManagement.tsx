@@ -68,13 +68,20 @@ const ROLE_COMPETENCIES = [
   { id: "sekretaerin", label: "Sekretärin" },
 ];
 
+type WeeklyScheduleRecurrence =
+  | "weekly"
+  | "monthly_first_third"
+  | "monthly_once"
+  | "monthly_selected_weeks";
+
 const RECURRENCE_OPTIONS: Array<{
-  value: "weekly" | "monthly_first_third" | "monthly_once";
+  value: WeeklyScheduleRecurrence;
   label: string;
 }> = [
   { value: "weekly", label: "Wöchentlich" },
   { value: "monthly_first_third", label: "1. & 3. im Monat" },
   { value: "monthly_once", label: "1x pro Monat" },
+  { value: "monthly_selected_weeks", label: "Bestimmte Wochen im Monat" },
 ];
 
 interface WeeklySchedule {
@@ -83,7 +90,8 @@ interface WeeklySchedule {
   timeTo: string;
   blocked: boolean;
   blockReason: string;
-  recurrence: "weekly" | "monthly_first_third" | "monthly_once";
+  recurrence: WeeklyScheduleRecurrence;
+  monthWeeks: number[];
 }
 
 interface RoomState {
@@ -112,6 +120,25 @@ interface RoomGroupState {
   roomIds: number[];
 }
 
+const MONTH_WEEK_OPTIONS = [
+  { value: 1, label: "1." },
+  { value: 2, label: "2." },
+  { value: 3, label: "3." },
+  { value: 4, label: "4." },
+  { value: 5, label: "5." },
+];
+
+const getDefaultMonthWeeks = (recurrence: WeeklyScheduleRecurrence): number[] => {
+  if (recurrence === "monthly_first_third") return [1, 3];
+  if (recurrence === "monthly_once") return [1];
+  return [];
+};
+
+const normalizeMonthWeeks = (value: number[] | undefined, recurrence: WeeklyScheduleRecurrence) =>
+  Array.from(new Set(value ?? getDefaultMonthWeeks(recurrence)))
+    .filter((week) => Number.isInteger(week) && week >= 1 && week <= 5)
+    .sort((a, b) => a - b);
+
 const initialWeeklySchedule = (): WeeklySchedule[] =>
   WEEKDAYS.map(() => ({
     usage: "",
@@ -120,6 +147,7 @@ const initialWeeklySchedule = (): WeeklySchedule[] =>
     blocked: false,
     blockReason: "",
     recurrence: "weekly",
+    monthWeeks: [],
   }));
 
 export default function ResourceManagement() {
@@ -209,7 +237,8 @@ export default function ResourceManagement() {
     detail: Resource & {
       weekdaySettings?: Array<{
         weekday: number;
-        recurrence?: "weekly" | "monthly_first_third" | "monthly_once";
+        recurrence?: WeeklyScheduleRecurrence;
+        monthWeeks?: number[];
         usageLabel?: string | null;
         timeFrom?: string | null;
         timeTo?: string | null;
@@ -238,6 +267,10 @@ export default function ResourceManagement() {
           blocked: Boolean(setting.isClosed),
           blockReason: setting.closedReason || "",
           recurrence: setting.recurrence || "weekly",
+          monthWeeks: normalizeMonthWeeks(
+            setting.monthWeeks,
+            setting.recurrence || "weekly",
+          ),
         };
       });
     }
@@ -427,6 +460,21 @@ export default function ResourceManagement() {
       });
       return;
     }
+    if (
+      editingRoom.weeklySchedule.some(
+        (entry) =>
+          entry.recurrence === "monthly_selected_weeks" &&
+          normalizeMonthWeeks(entry.monthWeeks, entry.recurrence).length === 0,
+      )
+    ) {
+      toast({
+        title: "Fehler",
+        description:
+          "Bitte wählen Sie fuer benutzerdefinierte Monatswochen mindestens eine Woche aus.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     setSaving(true);
     try {
@@ -467,6 +515,10 @@ export default function ResourceManagement() {
         (entry, index) => ({
           weekday: index + 1,
           recurrence: entry.recurrence,
+          monthWeeks:
+            entry.recurrence === "monthly_selected_weeks"
+              ? normalizeMonthWeeks(entry.monthWeeks, entry.recurrence)
+              : [],
           usageLabel: entry.usage || null,
           timeFrom: entry.timeFrom || null,
           timeTo: entry.timeTo || null,
@@ -742,9 +794,23 @@ export default function ResourceManagement() {
   ) => {
     if (editingRoom) {
       const newSchedule = [...editingRoom.weeklySchedule];
-      newSchedule[dayIndex] = { ...newSchedule[dayIndex], ...updates };
+      const nextEntry = { ...newSchedule[dayIndex], ...updates };
+      nextEntry.monthWeeks = normalizeMonthWeeks(
+        nextEntry.monthWeeks,
+        nextEntry.recurrence,
+      );
+      newSchedule[dayIndex] = nextEntry;
       setEditingRoom({ ...editingRoom, weeklySchedule: newSchedule });
     }
+  };
+
+  const toggleMonthWeek = (dayIndex: number, week: number) => {
+    if (!editingRoom) return;
+    const current = editingRoom.weeklySchedule[dayIndex];
+    const monthWeeks = current.monthWeeks.includes(week)
+      ? current.monthWeeks.filter((value) => value !== week)
+      : [...current.monthWeeks, week];
+    updateWeeklySchedule(dayIndex, { monthWeeks });
   };
 
   const toggleRoleCompetency = (
@@ -1426,8 +1492,11 @@ export default function ResourceManagement() {
                                 }
                                 onValueChange={(value) =>
                                   updateWeeklySchedule(index, {
-                                    recurrence:
-                                      value as WeeklySchedule["recurrence"],
+                                    recurrence: value as WeeklyScheduleRecurrence,
+                                    monthWeeks: normalizeMonthWeeks(
+                                      editingRoom.weeklySchedule[index].monthWeeks,
+                                      value as WeeklyScheduleRecurrence,
+                                    ),
                                   })
                                 }
                                 disabled={!canEdit}
@@ -1469,6 +1538,36 @@ export default function ResourceManagement() {
                               </div>
                             </div>
                           </div>
+                          {editingRoom.weeklySchedule[index].recurrence ===
+                            "monthly_selected_weeks" && (
+                            <div className="mt-3 ml-12 rounded-md border border-dashed p-3">
+                              <div className="mb-2 text-xs text-muted-foreground">
+                                Gültig in diesen Wochen des Monats
+                              </div>
+                              <div className="flex flex-wrap gap-3">
+                                {MONTH_WEEK_OPTIONS.map((option) => (
+                                  <div
+                                    key={`${day}-week-${option.value}`}
+                                    className="flex items-center gap-2"
+                                  >
+                                    <Checkbox
+                                      checked={editingRoom.weeklySchedule[
+                                        index
+                                      ].monthWeeks.includes(option.value)}
+                                      onCheckedChange={() =>
+                                        toggleMonthWeek(index, option.value)
+                                      }
+                                      disabled={!canEdit}
+                                      data-testid={`checkbox-month-week-${day}-${option.value}`}
+                                    />
+                                    <Label className="text-sm">
+                                      {option.label} Woche
+                                    </Label>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                           {editingRoom.weeklySchedule[index].blocked && (
                             <div className="mt-2 ml-12">
                               <Input

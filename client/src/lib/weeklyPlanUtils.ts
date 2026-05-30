@@ -24,7 +24,12 @@ export type WeeklyPlanRoom = Resource & {
     id: number;
     roomId: number;
     weekday: number;
-    recurrence?: "weekly" | "monthly_first_third" | "monthly_once";
+    recurrence?:
+      | "weekly"
+      | "monthly_first_third"
+      | "monthly_once"
+      | "monthly_selected_weeks";
+    monthWeeks?: number[];
     usageLabel?: string | null;
     timeFrom?: string | null;
     timeTo?: string | null;
@@ -250,6 +255,7 @@ type WeekdayRecurrence = WeekdaySetting["recurrence"];
 export const matchesRecurrence = (
   recurrence: WeekdayRecurrence,
   date: Date,
+  monthWeeks?: number[] | null,
 ) => {
   if (!recurrence || recurrence === "weekly") return true;
 
@@ -263,6 +269,10 @@ export const matchesRecurrence = (
     return occurrence === 1;
   }
 
+  if (recurrence === "monthly_selected_weeks") {
+    return Array.isArray(monthWeeks) && monthWeeks.includes(occurrence);
+  }
+
   return true;
 };
 
@@ -272,7 +282,9 @@ export const getRoomSettingForDate = (room: WeeklyPlanRoom, date: Date) => {
     (entry) => entry.weekday === weekday,
   );
   if (!setting) return null;
-  if (!matchesRecurrence(setting.recurrence, date)) return null;
+  if (!matchesRecurrence(setting.recurrence, date, setting.monthWeeks)) {
+    return null;
+  }
   return setting;
 };
 
