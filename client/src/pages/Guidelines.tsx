@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   Clock3,
   Download,
+  Printer,
   ExternalLink,
   FileText,
   History,
@@ -158,6 +159,7 @@ export default function Guidelines() {
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailSop, setDetailSop] = useState<SopDetail | null>(null);
+  const [selectedSopId, setSelectedSopId] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("Alle");
   const [usageCounts, setUsageCounts] = useState<Record<number, number>>({});
@@ -191,12 +193,23 @@ export default function Guidelines() {
   const canPublishKnowledge =
     isAdmin || isTechnicalAdmin || user?.appRole === "Admin" || can("sop.publish");
 
-  const routeState = useMemo(() => parseKnowledgeLocation(location), [location]);
-  const activeSopId = routeState.sopId;
+  const routeState = useMemo(() => {
+    if (typeof window !== "undefined") {
+      return parseKnowledgeLocation(
+        `${window.location.pathname}${window.location.search}`,
+      );
+    }
+    return parseKnowledgeLocation(location);
+  }, [location]);
+  const activeSopId = selectedSopId ?? routeState.sopId;
 
   useEffect(() => {
     setSearchTerm(routeState.query);
   }, [routeState.query]);
+
+  useEffect(() => {
+    setSelectedSopId(routeState.sopId);
+  }, [routeState.sopId]);
 
   useEffect(() => {
     try {
@@ -253,6 +266,7 @@ export default function Guidelines() {
           description: "Die Wissensseite konnte nicht geladen werden.",
           variant: "destructive",
         });
+        setSelectedSopId(null);
         setLocation(buildKnowledgeUrl({ query: searchTerm }));
       } finally {
         setDetailLoading(false);
@@ -395,6 +409,7 @@ export default function Guidelines() {
     });
     setDraftingNew(true);
     setEditingInline(false);
+    setSelectedSopId(null);
     setLocation(buildKnowledgeUrl({ query: searchTerm }));
   };
 
@@ -454,6 +469,7 @@ export default function Guidelines() {
           status: canManageKnowledge ? "in_progress" : "proposed",
         });
         await refreshListAndDetail(created.id);
+        setSelectedSopId(created.id);
         setLocation(buildKnowledgeUrl({ sopId: created.id, query: searchTerm }));
       } else if (detailSop) {
         await sopApi.update(detailSop.id, payload);
@@ -619,13 +635,24 @@ export default function Guidelines() {
     }
   };
 
+  const printArticle = () => {
+    if (typeof window === "undefined") return;
+    window.print();
+  };
+
   const renderKnowledgeCard = (entry: Sop) => {
     const category = normalizeSopCategory(entry.category);
     return (
       <button
         key={entry.id}
         type="button"
-        onClick={() => setLocation(buildKnowledgeUrl({ sopId: entry.id, query: searchTerm }))}
+        onClick={() => {
+          setSelectedSopId(entry.id);
+          setLocation(buildKnowledgeUrl({ sopId: entry.id, query: searchTerm }));
+          if (typeof window !== "undefined") {
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          }
+        }}
         className="w-full text-left"
       >
         <Card className="h-full border-border/70 transition-all hover:-translate-y-0.5 hover:shadow-lg">
@@ -643,7 +670,9 @@ export default function Guidelines() {
               </span>
             </div>
             <div className="space-y-2">
-              <CardTitle className="text-lg leading-snug text-primary">{entry.title}</CardTitle>
+              <CardTitle className="line-clamp-4 break-words text-lg leading-snug text-primary">
+                {entry.title}
+              </CardTitle>
               <CardDescription className="line-clamp-3">
                 {extractExcerpt(entry.contentMarkdown)}
               </CardDescription>
@@ -770,17 +799,26 @@ export default function Guidelines() {
               <Button
                 variant="ghost"
                 className="gap-2 px-0 text-muted-foreground hover:text-primary"
-                onClick={() => setLocation(buildKnowledgeUrl({ query: searchTerm }))}
+                onClick={() => {
+                  setSelectedSopId(null);
+                  setLocation(buildKnowledgeUrl({ query: searchTerm }));
+                }}
               >
                 <ArrowLeft className="h-4 w-4" />
                 Zurueck zur Wissensbasis
               </Button>
               <div className="flex flex-wrap gap-2">
                 {canAcceptProposal && <Button onClick={acceptProposal}>Annehmen</Button>}
-                {canWriteArticle && (
+                {!editingInline && canWriteArticle && (
                   <Button variant="outline" onClick={startInlineEditing}>
                     <Pencil className="mr-2 h-4 w-4" />
                     Bearbeiten
+                  </Button>
+                )}
+                {!editingInline && detailSop && (
+                  <Button variant="outline" onClick={printArticle}>
+                    <Printer className="mr-2 h-4 w-4" />
+                    Drucken
                   </Button>
                 )}
                 {canManageKnowledge && detailSop && (
@@ -844,8 +882,10 @@ export default function Guidelines() {
             )}
 
             {!detailLoading && detailSop && (
-              <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-                <div className="space-y-6">
+              <div className="space-y-6">
+                {editingInline ? (
+                  renderArticleEditor()
+                ) : (
                   <Card className="overflow-hidden border-border/70 shadow-lg">
                     <CardHeader className="space-y-4 bg-gradient-to-br from-white via-white to-blue-50/60">
                       <div className="flex flex-wrap items-center gap-2">
@@ -864,20 +904,16 @@ export default function Guidelines() {
                         <h1 className="font-serif text-4xl leading-tight text-primary">
                           {detailSop.title}
                         </h1>
-                        <p className="max-w-3xl text-base text-muted-foreground">
+                        <p className="max-w-4xl text-base text-muted-foreground">
                           {extractExcerpt(detailSop.contentMarkdown)}
                         </p>
                       </div>
                     </CardHeader>
-                    <CardContent className="space-y-6 p-6">
-                      {editingInline ? (
-                        renderArticleEditor()
-                      ) : (
-                        <MarkdownViewer
-                          value={detailSop.contentMarkdown || "_Noch kein Inhalt hinterlegt._"}
-                          className="rounded-2xl border bg-white p-6"
-                        />
-                      )}
+                    <CardContent className="space-y-6 p-6 lg:p-8">
+                      <MarkdownViewer
+                        value={detailSop.contentMarkdown || "_Noch kein Inhalt hinterlegt._"}
+                        className="rounded-2xl border bg-white p-6 lg:p-8"
+                      />
 
                       {detailSop.awmfLink && (
                         <a
@@ -892,9 +928,10 @@ export default function Guidelines() {
                       )}
                     </CardContent>
                   </Card>
-                </div>
+                )}
 
-                <div className="space-y-4">
+                {!editingInline && (
+                  <div className="grid gap-4 xl:grid-cols-3">
                   <Card className="border-border/70">
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2 text-lg">
@@ -963,66 +1000,67 @@ export default function Guidelines() {
                           Noch keine delegierten Bearbeiter hinterlegt.
                         </p>
                       )}
-                    </CardContent>
-                  </Card>
+                      </CardContent>
+                    </Card>
 
-                  <Card className="border-border/70">
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2 text-lg">
-                        <Clock3 className="h-4 w-4" />
-                        Versionshistorie
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      {(detailSop.versions || []).slice(0, 3).map((version) => (
-                        <div key={version.id} className="rounded-lg border px-3 py-2 text-sm">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-medium">Version {version.versionNumber}</span>
-                            <span className="text-muted-foreground">
-                              {formatDate(version.releasedAt)}
-                            </span>
-                          </div>
-                          <p className="mt-1 text-muted-foreground">
-                            {version.changeNote || "Keine Freigabenotiz"}
-                          </p>
-                        </div>
-                      ))}
-                      <Button
-                        variant="outline"
-                        className="w-full"
-                        onClick={() => setHistoryOpen(true)}
-                        disabled={!detailSop.versions?.length}
-                      >
-                        <History className="mr-2 h-4 w-4" />
-                        Ganze Historie
-                      </Button>
-                    </CardContent>
-                  </Card>
-
-                  {(detailSop.references || []).length > 0 && (
                     <Card className="border-border/70">
                       <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-lg">
-                          <FileText className="h-4 w-4" />
-                          Referenzen
+                          <Clock3 className="h-4 w-4" />
+                          Versionshistorie
                         </CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-3">
-                        {(detailSop.references || [])
-                          .filter((reference) => reference.status === "accepted")
-                          .slice(0, 5)
-                          .map((reference) => (
-                            <div key={reference.id} className="rounded-lg border px-3 py-2 text-sm">
-                              <div className="font-medium">{reference.title}</div>
-                              <div className="text-muted-foreground">
-                                {reference.publisher || "Unbekannt"} {reference.yearOrVersion || ""}
-                              </div>
+                        {(detailSop.versions || []).slice(0, 3).map((version) => (
+                          <div key={version.id} className="rounded-lg border px-3 py-2 text-sm">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-medium">Version {version.versionNumber}</span>
+                              <span className="text-muted-foreground">
+                                {formatDate(version.releasedAt)}
+                              </span>
                             </div>
-                          ))}
+                            <p className="mt-1 text-muted-foreground">
+                              {version.changeNote || "Keine Freigabenotiz"}
+                            </p>
+                          </div>
+                        ))}
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => setHistoryOpen(true)}
+                          disabled={!detailSop.versions?.length}
+                        >
+                          <History className="mr-2 h-4 w-4" />
+                          Ganze Historie
+                        </Button>
                       </CardContent>
                     </Card>
-                  )}
-                </div>
+
+                    {(detailSop.references || []).length > 0 && (
+                      <Card className="border-border/70">
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2 text-lg">
+                            <FileText className="h-4 w-4" />
+                            Referenzen
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          {(detailSop.references || [])
+                            .filter((reference) => reference.status === "accepted")
+                            .slice(0, 5)
+                            .map((reference) => (
+                              <div key={reference.id} className="rounded-lg border px-3 py-2 text-sm">
+                                <div className="font-medium">{reference.title}</div>
+                                <div className="text-muted-foreground">
+                                  {reference.publisher || "Unbekannt"} {reference.yearOrVersion || ""}
+                                </div>
+                              </div>
+                            ))}
+                        </CardContent>
+                      </Card>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
