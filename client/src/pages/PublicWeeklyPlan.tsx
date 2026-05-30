@@ -61,6 +61,7 @@ const PREVIOUS_DAY_DUTY_SERVICE_LINE_ORDER = ["kreiszimmer", "gyn", "turnus"] as
 const PREVIOUS_DAY_DUTY_SERVICE_LINE_SET: ReadonlySet<string> = new Set(
   PREVIOUS_DAY_DUTY_SERVICE_LINE_ORDER,
 );
+const PUBLIC_WEEKLY_PLAN_MIN_WIDTH_CLASS = "min-w-[1064px]";
 
 const getQueryWeekDate = (search: string) => {
   const params = new URLSearchParams(search);
@@ -372,8 +373,13 @@ export default function PublicWeeklyPlan() {
             onScroll={() => syncHorizontalScroll("header")}
             className="mt-4 overflow-x-auto"
           >
-            <div className="grid min-w-[980px] grid-cols-[14rem_repeat(7,minmax(120px,1fr))] border-t border-slate-200 border-b border-slate-300 bg-slate-100">
-              <div className="sticky left-0 z-40 border-b border-slate-300 bg-slate-100 p-3 text-left font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]">
+            <div
+              className={cn(
+                "grid grid-cols-[14rem_repeat(7,minmax(120px,1fr))] border-t border-slate-200 border-b border-slate-300 bg-slate-100",
+                PUBLIC_WEEKLY_PLAN_MIN_WIDTH_CLASS,
+              )}
+            >
+              <div className="sticky left-0 z-40 w-56 border-b border-slate-300 bg-slate-100 p-3 text-left font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]">
                 Arbeitsplatz
               </div>
               {weekDays.map((day, index) => (
@@ -403,7 +409,18 @@ export default function PublicWeeklyPlan() {
                 onScroll={() => syncHorizontalScroll("body")}
                 className="overflow-x-auto"
               >
-                <table className="w-full min-w-[980px] text-sm">
+                <table
+                  className={cn(
+                    "w-full table-fixed text-sm",
+                    PUBLIC_WEEKLY_PLAN_MIN_WIDTH_CLASS,
+                  )}
+                >
+                  <colgroup>
+                    <col className="w-56" />
+                    {weekDays.map((day) => (
+                      <col key={`public-col-${day.toISOString()}`} className="w-[120px]" />
+                    ))}
+                  </colgroup>
                   <tbody>
                     {visibleRooms.map((room) => (
                       <tr
