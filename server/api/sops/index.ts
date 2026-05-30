@@ -860,6 +860,7 @@ export function registerSopRoutes(router: Router) {
       }
       const {
         title,
+        version,
         category,
         contentMarkdown,
         keywords,
@@ -881,6 +882,7 @@ export function registerSopRoutes(router: Router) {
         .insert(sops)
         .values({
           title,
+          version: version || "1.0",
           category: category || "SOP",
           contentMarkdown: contentMarkdown || null,
           keywords: keywords || null,
@@ -1059,14 +1061,21 @@ export function registerSopRoutes(router: Router) {
     "/:id/request-review",
     validateParams(idParamSchema),
     asyncHandler(async (req, res) => {
-      if (!canManage(req)) {
+      if (!req.user) {
         return res
-          .status(403)
-          .json({ success: false, error: "Keine Berechtigung" });
+          .status(401)
+          .json({ success: false, error: "Nicht authentifiziert" });
       }
       const sopId = Number(req.params.id);
       const [existing] = await db.select().from(sops).where(eq(sops.id, sopId));
       if (!existing) return notFound(res, "SOP");
+      const memberRole = await getMemberRole(sopId, req.user.employeeId);
+      const owner = existing.createdById === req.user.employeeId;
+      if (!canManage(req) && !owner && memberRole !== "edit") {
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
+      }
       const [updated] = await db
         .update(sops)
         .set({ status: "review", updatedAt: new Date() })

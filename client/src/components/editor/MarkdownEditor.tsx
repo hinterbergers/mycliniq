@@ -36,6 +36,7 @@ const EDITOR_COMMANDS = [
   commands.codeBlock,
   commands.divider,
   commands.link,
+  commands.image,
   commands.table,
   commands.hr,
 ];

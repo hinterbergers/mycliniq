@@ -107,3 +107,16 @@
 .wmde-markdown u {
   text-decoration: underline;
 }
+
+.wmde-markdown img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.75rem;
+  margin: 0.75rem 0;
+}
+
+.wmde-markdown table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+}
