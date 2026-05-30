@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -22,7 +23,15 @@ import {
 import { toolsApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
-import { Baby, TestTube2, Sparkles, Ruler } from "lucide-react";
+import {
+  Baby,
+  TestTube2,
+  Sparkles,
+  Ruler,
+  Calculator,
+  ArrowUp,
+  ArrowDown,
+} from "lucide-react";
 import {
   addDays,
   subDays,
@@ -31,7 +40,11 @@ import {
   startOfDay,
 } from "date-fns";
 
-type ToolKey = "pregnancy_weeks" | "pul_calculator" | "body_surface_area";
+type ToolKey =
+  | "pregnancy_weeks"
+  | "pul_calculator"
+  | "body_surface_area"
+  | "bishop_score";
 
 const TOOL_CATALOG: Array<{
   key: ToolKey;
@@ -65,12 +78,28 @@ const TOOL_CATALOG: Array<{
     accent: "text-sky-600",
     bg: "bg-sky-50",
   },
+  {
+    key: "bishop_score",
+    title: "Bishop-Score-Rechner",
+    description: "Zervixbefund strukturiert erfassen und Bishop-Score berechnen.",
+    icon: Calculator,
+    accent: "text-emerald-600",
+    bg: "bg-emerald-50",
+  },
 ];
 
 const DEFAULT_VISIBILITY: Record<ToolKey, boolean> = {
   pregnancy_weeks: true,
   pul_calculator: true,
   body_surface_area: true,
+  bishop_score: true,
+};
+
+const DEFAULT_SORT_ORDER: Record<ToolKey, number> = {
+  pregnancy_weeks: 0,
+  pul_calculator: 1,
+  body_surface_area: 2,
+  bishop_score: 3,
 };
 
 function parseDateValue(value: string): Date | null {
@@ -554,11 +583,153 @@ function BodySurfaceAreaCalculator() {
   );
 }
 
+function BishopScoreCalculator() {
+  const [dilation, setDilation] = useState("0");
+  const [effacement, setEffacement] = useState("0");
+  const [station, setStation] = useState("0");
+  const [consistency, setConsistency] = useState("0");
+  const [position, setPosition] = useState("0");
+
+  const score =
+    Number(dilation) +
+    Number(effacement) +
+    Number(station) +
+    Number(consistency) +
+    Number(position);
+
+  const interpretation =
+    score >= 8
+      ? {
+          label: "Guenstiger Befund",
+          detail:
+            "Ein Bishop-Score ab 8 spricht fuer eine eher guenstige Zervixreife.",
+        }
+      : score >= 6
+        ? {
+            label: "Grenzwertiger Befund",
+            detail:
+              "Bei 6-7 Punkten ist die Zervixreife intermediär und der Kontext entscheidend.",
+          }
+        : {
+            label: "Eher unguenstiger Befund",
+            detail:
+              "Ein Score bis 5 spricht eher fuer eine unreife Zervix und moeglichen Ripening-Bedarf.",
+          };
+
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="space-y-2">
+          <Label htmlFor="bishop-dilation">Muttermund</Label>
+          <Select value={dilation} onValueChange={setDilation}>
+            <SelectTrigger id="bishop-dilation">
+              <SelectValue placeholder="Muttermund" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="0">Geschlossen (0)</SelectItem>
+              <SelectItem value="1">1-2 cm (1)</SelectItem>
+              <SelectItem value="2">3-4 cm (2)</SelectItem>
+              <SelectItem value="3">5+ cm (3)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="bishop-effacement">Zervixlänge</Label>
+          <Select value={effacement} onValueChange={setEffacement}>
+            <SelectTrigger id="bishop-effacement">
+              <SelectValue placeholder="Zervixlänge" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="0">&gt; 4 cm (0)</SelectItem>
+              <SelectItem value="1">2-4 cm (1)</SelectItem>
+              <SelectItem value="2">1-2 cm (2)</SelectItem>
+              <SelectItem value="3">&lt; 1 cm (3)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="bishop-station">Hoehenstand</Label>
+          <Select value={station} onValueChange={setStation}>
+            <SelectTrigger id="bishop-station">
+              <SelectValue placeholder="Hoehenstand" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="0">-3 (0)</SelectItem>
+              <SelectItem value="1">-2 (1)</SelectItem>
+              <SelectItem value="2">-1 / 0 (2)</SelectItem>
+              <SelectItem value="3">+1 / +2 (3)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="bishop-consistency">Konsistenz</Label>
+          <Select value={consistency} onValueChange={setConsistency}>
+            <SelectTrigger id="bishop-consistency">
+              <SelectValue placeholder="Konsistenz" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="0">Fest (0)</SelectItem>
+              <SelectItem value="1">Mittel (1)</SelectItem>
+              <SelectItem value="2">Weich (2)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="bishop-position">Position</Label>
+          <Select value={position} onValueChange={setPosition}>
+            <SelectTrigger id="bishop-position">
+              <SelectValue placeholder="Position" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="0">Posterior (0)</SelectItem>
+              <SelectItem value="1">Mittig (1)</SelectItem>
+              <SelectItem value="2">Anterior (2)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <Card className="border-dashed">
+        <CardContent className="p-6 space-y-4">
+          <div className="grid gap-4 md:grid-cols-3">
+            <div>
+              <p className="text-xs uppercase text-muted-foreground">
+                Bishop-Score
+              </p>
+              <p className="text-2xl font-semibold">{score}</p>
+            </div>
+            <div className="md:col-span-2 space-y-1">
+              <p className="text-xs uppercase text-muted-foreground">
+                Einordnung
+              </p>
+              <p className="text-base font-semibold">{interpretation.label}</p>
+              <p className="text-xs text-muted-foreground">
+                {interpretation.detail}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <p className="text-xs text-muted-foreground">
+        Hinweis: Vereinfachte klinische Orientierung. Die geburtshilfliche
+        Gesamtbeurteilung bleibt ausschlaggebend.
+      </p>
+    </div>
+  );
+}
+
 export default function Tools() {
   const { isAdmin } = useAuth();
   const { toast } = useToast();
   const [visibility, setVisibility] =
     useState<Record<ToolKey, boolean>>(DEFAULT_VISIBILITY);
+  const [sortOrder, setSortOrder] =
+    useState<Record<ToolKey, number>>(DEFAULT_SORT_ORDER);
   const [selectedTool, setSelectedTool] = useState<ToolKey | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingKey, setSavingKey] = useState<ToolKey | null>(null);
@@ -575,7 +746,15 @@ export default function Tools() {
           },
           { ...DEFAULT_VISIBILITY },
         );
+        const orderMap = settings.reduce<Record<ToolKey, number>>(
+          (acc, setting) => {
+            acc[setting.toolKey as ToolKey] = setting.sortOrder;
+            return acc;
+          },
+          { ...DEFAULT_SORT_ORDER },
+        );
         setVisibility(map);
+        setSortOrder(orderMap);
       } catch (error) {
         toast({
           title: "Fehler",
@@ -591,11 +770,14 @@ export default function Tools() {
   }, [toast]);
 
   const toolsToDisplay = useMemo(() => {
+    const orderedTools = [...TOOL_CATALOG].sort(
+      (a, b) => sortOrder[a.key] - sortOrder[b.key],
+    );
     if (isAdmin) {
-      return TOOL_CATALOG;
+      return orderedTools;
     }
-    return TOOL_CATALOG.filter((tool) => visibility[tool.key] !== false);
-  }, [isAdmin, visibility]);
+    return orderedTools.filter((tool) => visibility[tool.key] !== false);
+  }, [isAdmin, sortOrder, visibility]);
 
   useEffect(() => {
     if (!selectedTool && toolsToDisplay.length) {
@@ -607,16 +789,28 @@ export default function Tools() {
     setSavingKey(key);
     try {
       const updated = await toolsApi.updateVisibility([
-        { toolKey: key, isEnabled: nextValue },
+        {
+          toolKey: key,
+          isEnabled: nextValue,
+          sortOrder: sortOrder[key],
+        },
       ]);
-      const map = updated.reduce<Record<ToolKey, boolean>>(
+      const nextVisibility = updated.reduce<Record<ToolKey, boolean>>(
         (acc, setting) => {
           acc[setting.toolKey as ToolKey] = setting.isEnabled;
           return acc;
         },
         { ...DEFAULT_VISIBILITY },
       );
-      setVisibility(map);
+      const nextSortOrder = updated.reduce<Record<ToolKey, number>>(
+        (acc, setting) => {
+          acc[setting.toolKey as ToolKey] = setting.sortOrder;
+          return acc;
+        },
+        { ...DEFAULT_SORT_ORDER },
+      );
+      setVisibility(nextVisibility);
+      setSortOrder(nextSortOrder);
       toast({
         title: "Gespeichert",
         description: "Tool-Sichtbarkeit aktualisiert.",
@@ -633,6 +827,74 @@ export default function Tools() {
     }
   };
 
+  const handleMoveTool = async (key: ToolKey, direction: "up" | "down") => {
+    const previousSortOrder = { ...sortOrder };
+    const orderedKeys = [...TOOL_CATALOG]
+      .sort((a, b) => sortOrder[a.key] - sortOrder[b.key])
+      .map((tool) => tool.key);
+    const currentIndex = orderedKeys.indexOf(key);
+    const targetIndex =
+      direction === "up" ? currentIndex - 1 : currentIndex + 1;
+
+    if (currentIndex === -1 || targetIndex < 0 || targetIndex >= orderedKeys.length) {
+      return;
+    }
+
+    const nextKeys = [...orderedKeys];
+    const [moved] = nextKeys.splice(currentIndex, 1);
+    nextKeys.splice(targetIndex, 0, moved);
+
+    const nextSortOrder = nextKeys.reduce<Record<ToolKey, number>>(
+      (acc, toolKey, index) => {
+        acc[toolKey] = index;
+        return acc;
+      },
+      { ...DEFAULT_SORT_ORDER },
+    );
+
+    setSavingKey(key);
+    setSortOrder(nextSortOrder);
+
+    try {
+      const updated = await toolsApi.updateVisibility(
+        nextKeys.map((toolKey, index) => ({
+          toolKey,
+          isEnabled: visibility[toolKey],
+          sortOrder: index,
+        })),
+      );
+      const persistedVisibility = updated.reduce<Record<ToolKey, boolean>>(
+        (acc, setting) => {
+          acc[setting.toolKey as ToolKey] = setting.isEnabled;
+          return acc;
+        },
+        { ...DEFAULT_VISIBILITY },
+      );
+      const persistedSortOrder = updated.reduce<Record<ToolKey, number>>(
+        (acc, setting) => {
+          acc[setting.toolKey as ToolKey] = setting.sortOrder;
+          return acc;
+        },
+        { ...DEFAULT_SORT_ORDER },
+      );
+      setVisibility(persistedVisibility);
+      setSortOrder(persistedSortOrder);
+      toast({
+        title: "Gespeichert",
+        description: "Reihenfolge der Tools aktualisiert.",
+      });
+    } catch (error) {
+      setSortOrder(previousSortOrder);
+      toast({
+        title: "Fehler",
+        description: "Reihenfolge konnte nicht gespeichert werden.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
   const renderToolContent = () => {
     if (!selectedTool) return null;
     if (selectedTool === "pregnancy_weeks") {
@@ -641,7 +903,10 @@ export default function Tools() {
     if (selectedTool === "pul_calculator") {
       return <PulCalculator />;
     }
-    return <BodySurfaceAreaCalculator />;
+    if (selectedTool === "body_surface_area") {
+      return <BodySurfaceAreaCalculator />;
+    }
+    return <BishopScoreCalculator />;
   };
 
   return (
@@ -651,48 +916,9 @@ export default function Tools() {
           <h2 className="text-2xl font-bold tracking-tight">
             Praktische Helfer
           </h2>
-          <p className="text-muted-foreground">
-            Ausgewählte Tools für schnelle Berechnungen im klinischen Alltag.
-          </p>
         </div>
 
-        {isAdmin && (
-          <Card className="border-none shadow-sm bg-secondary/20">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Sparkles className="w-4 h-4" />
-                Tools für Ihre Abteilung ein- oder ausblenden
-              </CardTitle>
-              <CardDescription>
-                Diese Auswahl gilt für alle Nutzer Ihrer Abteilung.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {TOOL_CATALOG.map((tool) => (
-                <div
-                  key={tool.key}
-                  className="flex items-center justify-between gap-4"
-                >
-                  <div>
-                    <p className="text-sm font-medium">{tool.title}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {tool.description}
-                    </p>
-                  </div>
-                  <Switch
-                    checked={visibility[tool.key]}
-                    onCheckedChange={(value) =>
-                      handleToggle(tool.key, Boolean(value))
-                    }
-                    disabled={savingKey === tool.key || loading}
-                  />
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
           {toolsToDisplay.map((tool) => {
             const isDisabled = visibility[tool.key] === false;
             const isActive = selectedTool === tool.key;
@@ -704,22 +930,24 @@ export default function Tools() {
                 } ${isDisabled && isAdmin ? "opacity-70" : ""}`}
                 onClick={() => setSelectedTool(tool.key)}
               >
-                <CardContent className="p-6 flex items-start gap-4">
+                <CardContent className="p-5 md:p-6 flex flex-col items-start gap-4">
                   <div
-                    className={`w-12 h-12 rounded-xl ${tool.bg} flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-200`}
+                    className={`w-10 h-10 md:w-12 md:h-12 rounded-xl ${tool.bg} flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-200`}
                   >
-                    <tool.icon className={`w-6 h-6 ${tool.accent}`} />
+                    <tool.icon className={`w-5 h-5 md:w-6 md:h-6 ${tool.accent}`} />
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-2 min-w-0 w-full">
                     <div className="flex items-center gap-2">
-                      <h3 className="font-semibold text-lg">{tool.title}</h3>
+                      <h3 className="font-semibold text-base md:text-lg leading-snug break-words">
+                        {tool.title}
+                      </h3>
                       {isDisabled && isAdmin && (
                         <Badge variant="outline" className="text-xs">
                           Ausgeblendet
                         </Badge>
                       )}
                     </div>
-                    <p className="text-muted-foreground text-sm">
+                    <p className="text-muted-foreground text-xs md:text-sm leading-snug break-words">
                       {tool.description}
                     </p>
                   </div>
@@ -750,6 +978,68 @@ export default function Tools() {
               </CardDescription>
             </CardHeader>
             <CardContent>{renderToolContent()}</CardContent>
+          </Card>
+        )}
+
+        {isAdmin && (
+          <Card className="border-none shadow-sm bg-secondary/20">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Sparkles className="w-4 h-4" />
+                Tools für Ihre Abteilung ein- oder ausblenden
+              </CardTitle>
+              <CardDescription>
+                Diese Auswahl gilt für alle Nutzer Ihrer Abteilung.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {toolsToDisplay.map((tool, index) => (
+                <div
+                  key={tool.key}
+                  className="flex items-center justify-between gap-4"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">{tool.title}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {tool.description}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => handleMoveTool(tool.key, "up")}
+                      disabled={loading || savingKey === tool.key || index === 0}
+                    >
+                      <ArrowUp className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => handleMoveTool(tool.key, "down")}
+                      disabled={
+                        loading ||
+                        savingKey === tool.key ||
+                        index === toolsToDisplay.length - 1
+                      }
+                    >
+                      <ArrowDown className="h-4 w-4" />
+                    </Button>
+                    <Switch
+                      checked={visibility[tool.key]}
+                      onCheckedChange={(value) =>
+                        handleToggle(tool.key, Boolean(value))
+                      }
+                      disabled={savingKey === tool.key || loading}
+                    />
+                  </div>
+                </div>
+              ))}
+            </CardContent>
           </Card>
         )}
       </div>

@@ -2023,6 +2023,7 @@ export const toolVisibility = pgTable(
       .notNull(),
     toolKey: text("tool_key").notNull(),
     isEnabled: boolean("is_enabled").notNull().default(true),
+    sortOrder: integer("sort_order").notNull().default(0),
     updatedById: integer("updated_by_id").references(() => employees.id),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),

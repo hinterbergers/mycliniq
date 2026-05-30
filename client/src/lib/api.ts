@@ -3122,6 +3122,7 @@ export const plannedAbsencesApi = {
 export interface ToolVisibilitySetting {
   toolKey: string;
   isEnabled: boolean;
+  sortOrder: number;
 }
 
 // Tools API

@@ -85,6 +85,19 @@ ADD VALUE IF NOT EXISTS 'monthly_selected_weeks';
 ALTER TABLE room_weekday_settings
 ADD COLUMN IF NOT EXISTS month_weeks integer[] NOT NULL DEFAULT ARRAY[]::integer[];
 
+ALTER TABLE tool_visibility
+ADD COLUMN IF NOT EXISTS sort_order integer NOT NULL DEFAULT 0;
+
+UPDATE tool_visibility
+SET sort_order = CASE tool_key
+  WHEN 'pregnancy_weeks' THEN 0
+  WHEN 'pul_calculator' THEN 1
+  WHEN 'body_surface_area' THEN 2
+  WHEN 'bishop_score' THEN 3
+  ELSE sort_order
+END
+WHERE sort_order = 0;
+
 DO $$
 BEGIN
   IF NOT EXISTS (
