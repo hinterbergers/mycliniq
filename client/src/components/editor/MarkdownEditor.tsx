@@ -1,5 +1,6 @@
 import MDEditor, { commands } from "@uiw/react-md-editor";
 import MarkdownPreview from "@uiw/react-markdown-preview";
+import { IndentIncrease, IndentDecrease } from "lucide-react";
 
 type MarkdownEditorProps = {
   value: string;
@@ -7,6 +8,54 @@ type MarkdownEditorProps = {
   height?: number;
   placeholder?: string;
   className?: string;
+};
+
+function transformSelectedLines(
+  state: any,
+  api: any,
+  transformer: (line: string) => string,
+) {
+  const selected = state.selectedText || "";
+  const hasSelection = selected.length > 0;
+  const source = hasSelection ? selected : state.text;
+  const nextValue = source
+    .split("\n")
+    .map((line: string) => transformer(line))
+    .join("\n");
+
+  if (hasSelection) {
+    api.replaceSelection(nextValue);
+    return;
+  }
+
+  api.setValue(nextValue);
+}
+
+const indentListCommand = {
+  name: "indent-list",
+  keyCommand: "indent-list",
+  buttonProps: { "aria-label": "Liste einruecken" },
+  icon: <IndentIncrease size={16} />,
+  execute: (state: any, api: any) => {
+    transformSelectedLines(state, api, (line) => {
+      if (!line.trim()) return line;
+      return `  ${line}`;
+    });
+  },
+};
+
+const outdentListCommand = {
+  name: "outdent-list",
+  keyCommand: "outdent-list",
+  buttonProps: { "aria-label": "Liste ausruecken" },
+  icon: <IndentDecrease size={16} />,
+  execute: (state: any, api: any) => {
+    transformSelectedLines(state, api, (line) => {
+      if (line.startsWith("  ")) return line.slice(2);
+      if (line.startsWith("\t")) return line.slice(1);
+      return line;
+    });
+  },
 };
 
 const EDITOR_COMMANDS = [
@@ -31,6 +80,8 @@ const EDITOR_COMMANDS = [
   commands.divider,
   commands.unorderedListCommand,
   commands.orderedListCommand,
+  indentListCommand,
+  outdentListCommand,
   commands.quote,
   commands.code,
   commands.codeBlock,

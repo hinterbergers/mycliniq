@@ -31,6 +31,7 @@ import {
   Calculator,
   ArrowUp,
   ArrowDown,
+  Scale,
 } from "lucide-react";
 import {
   addDays,
@@ -44,7 +45,8 @@ type ToolKey =
   | "pregnancy_weeks"
   | "pul_calculator"
   | "body_surface_area"
-  | "bishop_score";
+  | "bishop_score"
+  | "bmi_calculator";
 
 const TOOL_CATALOG: Array<{
   key: ToolKey;
@@ -86,6 +88,14 @@ const TOOL_CATALOG: Array<{
     accent: "text-emerald-600",
     bg: "bg-emerald-50",
   },
+  {
+    key: "bmi_calculator",
+    title: "BMI-Rechner",
+    description: "Body-Mass-Index berechnen und nach WHO beurteilen.",
+    icon: Scale,
+    accent: "text-violet-600",
+    bg: "bg-violet-50",
+  },
 ];
 
 const DEFAULT_VISIBILITY: Record<ToolKey, boolean> = {
@@ -93,6 +103,7 @@ const DEFAULT_VISIBILITY: Record<ToolKey, boolean> = {
   pul_calculator: true,
   body_surface_area: true,
   bishop_score: true,
+  bmi_calculator: true,
 };
 
 const DEFAULT_SORT_ORDER: Record<ToolKey, number> = {
@@ -100,6 +111,7 @@ const DEFAULT_SORT_ORDER: Record<ToolKey, number> = {
   pul_calculator: 1,
   body_surface_area: 2,
   bishop_score: 3,
+  bmi_calculator: 4,
 };
 
 function parseDateValue(value: string): Date | null {
@@ -723,6 +735,124 @@ function BishopScoreCalculator() {
   );
 }
 
+function BodyMassIndexCalculator() {
+  const [heightCm, setHeightCm] = useState("");
+  const [weightKg, setWeightKg] = useState("");
+
+  const heightValue = Number(heightCm);
+  const weightValue = Number(weightKg);
+  const heightMeters = heightValue > 0 ? heightValue / 100 : null;
+  const bmi =
+    heightMeters && weightValue > 0
+      ? weightValue / (heightMeters * heightMeters)
+      : null;
+
+  const assessment = useMemo(() => {
+    if (bmi === null || !Number.isFinite(bmi)) return null;
+    if (bmi < 18.5) {
+      return {
+        label: "Untergewicht",
+        detail: "WHO-Beurteilung: Untergewicht",
+      };
+    }
+    if (bmi < 25) {
+      return {
+        label: "Normalgewicht",
+        detail: "WHO-Beurteilung: Normalgewicht",
+      };
+    }
+    if (bmi < 30) {
+      return {
+        label: "Übergewicht",
+        detail: "WHO-Beurteilung: Präadipositas / Übergewicht",
+      };
+    }
+    if (bmi < 35) {
+      return {
+        label: "Adipositas Grad I",
+        detail: "WHO-Beurteilung: Adipositas Grad I",
+      };
+    }
+    if (bmi < 40) {
+      return {
+        label: "Adipositas Grad II",
+        detail: "WHO-Beurteilung: Adipositas Grad II",
+      };
+    }
+    return {
+      label: "Adipositas Grad III",
+      detail: "WHO-Beurteilung: Adipositas Grad III",
+    };
+  }, [bmi]);
+
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="bmi-height">Größe (cm)</Label>
+          <Input
+            id="bmi-height"
+            type="number"
+            inputMode="decimal"
+            step="0.1"
+            placeholder="z.B. 172"
+            value={heightCm}
+            onChange={(event) => setHeightCm(event.target.value)}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="bmi-weight">Gewicht (kg)</Label>
+          <Input
+            id="bmi-weight"
+            type="number"
+            inputMode="decimal"
+            step="0.1"
+            placeholder="z.B. 68"
+            value={weightKg}
+            onChange={(event) => setWeightKg(event.target.value)}
+          />
+        </div>
+      </div>
+
+      <Card className="border-dashed">
+        <CardContent className="p-6 space-y-4">
+          {bmi === null ? (
+            <p className="text-sm text-muted-foreground">
+              Bitte Größe und Gewicht eingeben, um den BMI zu berechnen.
+            </p>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-3">
+              <div>
+                <p className="text-xs uppercase text-muted-foreground">BMI</p>
+                <p className="text-2xl font-semibold">{bmi.toFixed(1)}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase text-muted-foreground">
+                  WHO-Kategorie
+                </p>
+                <p className="text-base font-semibold">
+                  {assessment?.label ?? "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs uppercase text-muted-foreground">
+                  Formel
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Gewicht / Größe²
+                </p>
+              </div>
+            </div>
+          )}
+          {assessment && (
+            <p className="text-xs text-muted-foreground">{assessment.detail}</p>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export default function Tools() {
   const { isAdmin } = useAuth();
   const { toast } = useToast();
@@ -906,7 +1036,10 @@ export default function Tools() {
     if (selectedTool === "body_surface_area") {
       return <BodySurfaceAreaCalculator />;
     }
-    return <BishopScoreCalculator />;
+    if (selectedTool === "bishop_score") {
+      return <BishopScoreCalculator />;
+    }
+    return <BodyMassIndexCalculator />;
   };
 
   return (
