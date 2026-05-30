@@ -30,6 +30,9 @@ import {
   Clock,
   BookOpen,
   TrendingUp,
+  Stethoscope,
+  Hand,
+  AlertTriangle,
 } from "lucide-react";
 import {
   dashboardApi,
@@ -85,7 +88,7 @@ const getGreeting = () => {
   const minutes = now.getHours() * 60 + now.getMinutes();
 
   if (minutes >= 23 * 60 + 1 || minutes <= 5 * 60) {
-    return "Noch wach? 😱";
+    return "Noch wach?";
   }
   if (minutes <= 9 * 60) {
     return "Guten Morgen";
@@ -435,7 +438,11 @@ export default function Dashboard() {
   const todayEntry = dashboardData?.today ?? null;
   const birthdayEntry = dashboardData?.birthday ?? null;
 
-  const heroEmoji = dashboardError ? "⚠️" : todayEntry?.statusLabel ? "🩺" : "👋";
+  const HeroIcon = dashboardError
+    ? AlertTriangle
+    : todayEntry?.statusLabel
+      ? Stethoscope
+      : Hand;
   const normalizedTodayStatusLabel = todayEntry?.duty?.serviceType
     ? getServiceLineDisplayLabel(todayEntry.duty.serviceType, todayEntry.statusLabel) ??
       todayEntry.statusLabel
@@ -686,7 +693,10 @@ export default function Dashboard() {
         </Badge>
       </div>
       <p className="text-primary-foreground/80 max-w-xl text-sm flex items-center gap-1.5">
-        <span className="text-2xl">{heroEmoji}</span>
+        <HeroIcon
+          className="h-5 w-5 shrink-0 text-primary-foreground/85"
+          aria-hidden="true"
+        />
         <span>{heroMessage}</span>
       </p>
       {todayTeamLine && (
