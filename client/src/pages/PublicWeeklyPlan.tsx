@@ -62,7 +62,6 @@ const PREVIOUS_DAY_DUTY_SERVICE_LINE_ORDER = ["kreiszimmer", "gyn", "turnus"] as
 const PREVIOUS_DAY_DUTY_SERVICE_LINE_SET: ReadonlySet<string> = new Set(
   PREVIOUS_DAY_DUTY_SERVICE_LINE_ORDER,
 );
-const PUBLIC_WEEKLY_PLAN_MIN_WIDTH_CLASS = "min-w-[984px]";
 const PUBLIC_WEEKLY_PLAN_ZOOM_STEPS = [0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.4] as const;
 
 const getQueryWeekDate = (search: string) => {
@@ -347,6 +346,9 @@ export default function PublicWeeklyPlan() {
   const zoomIndex = PUBLIC_WEEKLY_PLAN_ZOOM_STEPS.indexOf(zoomLevel);
   const canZoomOut = zoomIndex > 0;
   const canZoomIn = zoomIndex < PUBLIC_WEEKLY_PLAN_ZOOM_STEPS.length - 1;
+  const firstColumnWidthRem = showFullLabels ? 12 : 6.5;
+  const firstColumnWidth = `${firstColumnWidthRem}rem`;
+  const weeklyPlanMinWidth = `${firstColumnWidthRem + weekDays.length * 7.5}rem`;
 
   const handleZoomOut = () => {
     if (!canZoomOut) return;
@@ -440,20 +442,24 @@ export default function PublicWeeklyPlan() {
             className="mt-4 overflow-x-auto"
           >
             <div
-              className={cn(
-                "grid grid-cols-[9rem_repeat(7,minmax(120px,1fr))] border-t border-slate-200 border-b border-slate-300 bg-slate-100",
-                PUBLIC_WEEKLY_PLAN_MIN_WIDTH_CLASS,
-              )}
-              style={{ zoom: zoomLevel }}
+              className="grid border-t border-slate-200 border-b border-slate-300 bg-slate-100"
+              style={{
+                zoom: zoomLevel,
+                minWidth: weeklyPlanMinWidth,
+                gridTemplateColumns: `${firstColumnWidth} repeat(7, minmax(120px, 1fr))`,
+              }}
             >
-              <div className="sticky left-0 z-40 flex w-36 items-center justify-between gap-2 border-b border-slate-300 bg-slate-100 p-3 text-left font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]">
-                <span>Arbeitsplatz</span>
+              <div
+                className="sticky left-0 z-40 flex flex-col items-start gap-2 border-b border-slate-300 bg-slate-100 p-2 text-left font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]"
+                style={{ width: firstColumnWidth }}
+              >
+                <span className="leading-tight">{showFullLabels ? "Arbeitsplatz" : "AP"}</span>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   onClick={() => setShowFullLabels((value) => !value)}
-                  className="h-7 px-2 text-[10px] leading-none"
+                  className="h-6 px-2 text-[10px] leading-none"
                 >
                   {showFullLabels ? "Kurz" : "Lang"}
                 </Button>
@@ -486,16 +492,13 @@ export default function PublicWeeklyPlan() {
                 className="overflow-x-auto"
               >
                 <table
-                  className={cn(
-                    "w-full table-fixed text-sm",
-                    PUBLIC_WEEKLY_PLAN_MIN_WIDTH_CLASS,
-                  )}
-                  style={{ zoom: zoomLevel }}
+                  className="w-full table-fixed text-sm"
+                  style={{ zoom: zoomLevel, minWidth: weeklyPlanMinWidth }}
                 >
                   <colgroup>
-                    <col className="w-36" />
+                    <col style={{ width: firstColumnWidth }} />
                     {weekDays.map((day) => (
-                      <col key={`public-col-${day.toISOString()}`} className="w-[120px]" />
+                      <col key={`public-col-${day.toISOString()}`} style={{ width: "7.5rem" }} />
                     ))}
                   </colgroup>
                   <tbody>
