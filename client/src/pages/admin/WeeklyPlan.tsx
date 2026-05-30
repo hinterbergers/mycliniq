@@ -473,6 +473,7 @@ export default function WeeklyPlan() {
   const { toast } = useToast();
 
   const [currentDate, setCurrentDate] = useState(new Date());
+  const initializedWeekRef = useRef(false);
   const [selectedWeekday, setSelectedWeekday] = useState(1);
   const [rooms, setRooms] = useState<WeeklyPlanRoom[]>([]);
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlanResponse | null>(null);
@@ -583,6 +584,65 @@ export default function WeeklyPlan() {
         }
       }
     }
+  }, []);
+
+  useEffect(() => {
+    if (initializedWeekRef.current) return;
+    initializedWeekRef.current = true;
+    if (typeof window !== "undefined") {
+      const search = new URLSearchParams(window.location.search);
+      if (search.get("day") || search.get("year") || search.get("week")) {
+        return;
+      }
+    }
+
+    let active = true;
+    const today = new Date();
+
+    const resolveInitialWeek = async () => {
+      for (let offset = 0; offset < 16; offset += 1) {
+        const candidateDate = addWeeks(today, offset);
+        const candidateWeekStart = startOfWeek(candidateDate, { weekStartsOn: 1 });
+        const candidateWeekEnd = endOfWeek(candidateDate, { weekStartsOn: 1 });
+        if (candidateWeekEnd < today) continue;
+
+        const candidateWeekNumber = getWeek(candidateDate, { weekStartsOn: 1 });
+        const candidateWeekYear = getYear(candidateWeekStart);
+
+        try {
+          const candidatePlan = await weeklyPlanApi.getByWeek(
+            candidateWeekYear,
+            candidateWeekNumber,
+            false,
+          );
+          const lockedWeekdays = candidatePlan.lockedWeekdays ?? [];
+          if (lockedWeekdays.length < 7) {
+            if (active) {
+              setCurrentDate(candidateWeekStart);
+              setSelectedWeekday(1);
+            }
+            return;
+          }
+        } catch (error: any) {
+          const message = String(error?.message || "").toLowerCase();
+          if (message.includes("wochenplan")) {
+            if (active) {
+              setCurrentDate(candidateWeekStart);
+              setSelectedWeekday(1);
+            }
+            return;
+          }
+          console.error("Failed to resolve initial admin weekly plan week", error);
+          return;
+        }
+      }
+    };
+
+    void resolveInitialWeek();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   useLayoutEffect(() => {

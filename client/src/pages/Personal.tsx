@@ -2261,7 +2261,6 @@ function WeeklyView({
   const { employee: currentUser } = useAuth();
   const { toast } = useToast();
   const [currentDate, setCurrentDate] = useState(() => new Date());
-  const initializedWeekRef = useRef(false);
   const [rooms, setRooms] = useState<WeeklyPlanRoom[]>([]);
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlanResponse | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -2367,53 +2366,6 @@ function WeeklyView({
     () => eachDayOfInterval({ start: weekStart, end: weekEnd }),
     [weekStart, weekEnd],
   );
-
-  useEffect(() => {
-    if (initializedWeekRef.current) return;
-    initializedWeekRef.current = true;
-
-    let active = true;
-    const today = startOfDay(new Date());
-
-    const resolveInitialWeek = async () => {
-      for (let offset = 0; offset < 16; offset += 1) {
-        const candidateDate = addWeeks(today, offset);
-        const candidateWeekStart = startOfWeek(candidateDate, { weekStartsOn: 1 });
-        const candidateWeekEnd = endOfWeek(candidateDate, { weekStartsOn: 1 });
-        if (candidateWeekEnd < today) continue;
-
-        const candidateWeekNumber = getWeek(candidateDate, { weekStartsOn: 1 });
-        const candidateWeekYear = getYear(candidateWeekStart);
-
-        try {
-          const candidatePlan = await weeklyPlanApi.getByWeek(
-            candidateWeekYear,
-            candidateWeekNumber,
-            false,
-          );
-          const lockedWeekdays = candidatePlan.lockedWeekdays ?? [];
-          if (lockedWeekdays.length < 7) {
-            if (active) setCurrentDate(candidateWeekStart);
-            return;
-          }
-        } catch (error: any) {
-          const message = String(error?.message || "").toLowerCase();
-          if (message.includes("wochenplan")) {
-            if (active) setCurrentDate(candidateWeekStart);
-            return;
-          }
-          console.error("Failed to resolve initial weekly plan week", error);
-          return;
-        }
-      }
-    };
-
-    void resolveInitialWeek();
-
-    return () => {
-      active = false;
-    };
-  }, []);
 
   const roomsSorted = useMemo(() => {
     return [...rooms].sort((a, b) => {
