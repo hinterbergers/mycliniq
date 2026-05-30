@@ -25,7 +25,7 @@ import {
   subDays,
 } from "date-fns";
 import { de } from "date-fns/locale";
-import { ChevronLeft, ChevronRight, Printer } from "lucide-react";
+import { ChevronLeft, ChevronRight, Minus, Plus, Printer } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import type { Employee, LongTermAbsence, RosterShift, ServiceLine } from "@shared/schema";
@@ -62,6 +62,7 @@ const PREVIOUS_DAY_DUTY_SERVICE_LINE_SET: ReadonlySet<string> = new Set(
   PREVIOUS_DAY_DUTY_SERVICE_LINE_ORDER,
 );
 const PUBLIC_WEEKLY_PLAN_MIN_WIDTH_CLASS = "min-w-[1064px]";
+const PUBLIC_WEEKLY_PLAN_ZOOM_STEPS = [0.8, 0.9, 1, 1.1, 1.25, 1.4] as const;
 
 const getQueryWeekDate = (search: string) => {
   const params = new URLSearchParams(search);
@@ -104,6 +105,7 @@ export default function PublicWeeklyPlan() {
   const [payload, setPayload] = useState<PublicWeeklyPlanPayload | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [zoomLevel, setZoomLevel] = useState<(typeof PUBLIC_WEEKLY_PLAN_ZOOM_STEPS)[number]>(1);
   const [search, setSearch] = useState(() =>
     typeof window !== "undefined" ? window.location.search : "",
   );
@@ -340,6 +342,20 @@ export default function PublicWeeklyPlan() {
     return map;
   }, [employeesById, rosterShifts, weekDays]);
 
+  const zoomIndex = PUBLIC_WEEKLY_PLAN_ZOOM_STEPS.indexOf(zoomLevel);
+  const canZoomOut = zoomIndex > 0;
+  const canZoomIn = zoomIndex < PUBLIC_WEEKLY_PLAN_ZOOM_STEPS.length - 1;
+
+  const handleZoomOut = () => {
+    if (!canZoomOut) return;
+    setZoomLevel(PUBLIC_WEEKLY_PLAN_ZOOM_STEPS[zoomIndex - 1]);
+  };
+
+  const handleZoomIn = () => {
+    if (!canZoomIn) return;
+    setZoomLevel(PUBLIC_WEEKLY_PLAN_ZOOM_STEPS[zoomIndex + 1]);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 print:bg-white">
       <div className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 print:max-w-none print:px-0 print:py-0">
@@ -389,6 +405,31 @@ export default function PublicWeeklyPlan() {
                 <Printer className="mr-2 h-4 w-4" />
                 Drucken
               </Button>
+              <div className="flex items-center rounded-md border border-slate-300 bg-white">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleZoomOut}
+                  disabled={!canZoomOut}
+                  className="rounded-r-none border-r border-slate-300"
+                >
+                  <Minus className="h-4 w-4" />
+                </Button>
+                <div className="min-w-[4.5rem] px-3 text-center text-sm font-medium text-slate-700">
+                  {Math.round(zoomLevel * 100)}%
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleZoomIn}
+                  disabled={!canZoomIn}
+                  className="rounded-l-none border-l border-slate-300"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           </div>
           <div
@@ -401,6 +442,7 @@ export default function PublicWeeklyPlan() {
                 "grid grid-cols-[14rem_repeat(7,minmax(120px,1fr))] border-t border-slate-200 border-b border-slate-300 bg-slate-100",
                 PUBLIC_WEEKLY_PLAN_MIN_WIDTH_CLASS,
               )}
+              style={{ zoom: zoomLevel }}
             >
               <div className="sticky left-0 z-40 w-56 border-b border-slate-300 bg-slate-100 p-3 text-left font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]">
                 Arbeitsplatz
@@ -437,6 +479,7 @@ export default function PublicWeeklyPlan() {
                     "w-full table-fixed text-sm",
                     PUBLIC_WEEKLY_PLAN_MIN_WIDTH_CLASS,
                   )}
+                  style={{ zoom: zoomLevel }}
                 >
                   <colgroup>
                     <col className="w-56" />
