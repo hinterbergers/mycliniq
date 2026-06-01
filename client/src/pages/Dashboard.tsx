@@ -326,6 +326,7 @@ type DashboardNoticeItem = {
   targetUrl?: string | null;
   tone?: "default" | "danger";
   meta?: string | null;
+  notificationId?: number;
 };
 
 export default function Dashboard() {
@@ -525,6 +526,50 @@ export default function Dashboard() {
       cancelled = true;
     };
   }, []);
+
+  const handleMarkNotificationRead = useCallback(
+    async (notificationId: number) => {
+      try {
+        const updated = await notificationsApi.markRead(notificationId);
+        setNotificationsData((current) =>
+          current.map((item) => (item.id === notificationId ? updated : item)),
+        );
+      } catch (error: any) {
+        toast({
+          title: "Benachrichtigung konnte nicht aktualisiert werden",
+          description:
+            error?.message || "Der Gelesen-Status konnte nicht gespeichert werden.",
+          variant: "destructive",
+        });
+      }
+    },
+    [toast],
+  );
+
+  const handleMarkAllNotificationsRead = useCallback(async () => {
+    const unreadIds = notificationsData
+      .filter((item) => !item.isRead)
+      .map((item) => item.id);
+
+    if (unreadIds.length === 0) return;
+
+    try {
+      const updatedItems = await Promise.all(
+        unreadIds.map((notificationId) => notificationsApi.markRead(notificationId)),
+      );
+      const updatedMap = new Map(updatedItems.map((item) => [item.id, item]));
+      setNotificationsData((current) =>
+        current.map((item) => updatedMap.get(item.id) ?? item),
+      );
+    } catch (error: any) {
+      toast({
+        title: "Benachrichtigungen konnten nicht aktualisiert werden",
+        description:
+          error?.message || "Der Gelesen-Status konnte nicht vollständig gespeichert werden.",
+        variant: "destructive",
+      });
+    }
+  }, [notificationsData, toast]);
 
   useEffect(() => {
     if (!heroAbsenceDialogOpen || !canCreateAbsence || heroAbsenceEmployees.length > 0) {
@@ -834,6 +879,7 @@ export default function Dashboard() {
     unreadNotifications.slice(0, 5).forEach((item) => {
       items.push({
         id: `notification-${item.id}`,
+        notificationId: item.id,
         title: item.title,
         subtitle: item.message ?? null,
         targetUrl: item.link ?? "/nachrichten",
@@ -1014,6 +1060,19 @@ export default function Dashboard() {
 
     return (
       <div className="space-y-2">
+        {unreadNotifications.length > 0 ? (
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-[11px]"
+              onClick={handleMarkAllNotificationsRead}
+            >
+              Alle gelesen
+            </Button>
+          </div>
+        ) : null}
         {dashboardNoticeItems.map((item) => {
           const clickable = Boolean(item.targetUrl);
           return (
@@ -1053,11 +1112,27 @@ export default function Dashboard() {
                     </p>
                   ) : null}
                 </div>
-                {item.meta ? (
-                  <span className="shrink-0 text-[10px] text-muted-foreground">
-                    {item.meta}
-                  </span>
-                ) : null}
+                <div className="flex shrink-0 items-start gap-2">
+                  {item.notificationId ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-1.5 text-[10px] text-muted-foreground hover:text-foreground"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleMarkNotificationRead(item.notificationId as number);
+                      }}
+                    >
+                      Gelesen
+                    </Button>
+                  ) : null}
+                  {item.meta ? (
+                    <span className="shrink-0 text-[10px] text-muted-foreground">
+                      {item.meta}
+                    </span>
+                  ) : null}
+                </div>
               </div>
             </div>
           );
