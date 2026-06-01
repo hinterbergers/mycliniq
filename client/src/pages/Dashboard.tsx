@@ -976,6 +976,44 @@ export default function Dashboard() {
       cancelled = true;
     };
   }, [canApproveVacation]);
+
+  const handleApprovePendingAbsence = useCallback(
+    async (absenceId: number) => {
+      if (!absenceId) return;
+      setApprovingAbsenceIds((current) =>
+        current.includes(absenceId) ? current : [...current, absenceId],
+      );
+      try {
+        await plannedAbsencesAdminApi.updateStatus(absenceId, "Genehmigt");
+        setPendingAbsenceApprovalNotices((current) =>
+          current.filter((notice) => notice.id !== absenceId),
+        );
+        toast({
+          title: "Abwesenheit freigegeben",
+          description: "Der Antrag wurde genehmigt und aus den Notifications entfernt.",
+        });
+        if (absencesEnabled) {
+          void dashboardApi
+            .getAbsences()
+            .then(setAbsencesData)
+            .catch(() => undefined);
+        }
+        await refreshDashboard();
+      } catch (error: any) {
+        toast({
+          title: "Abwesenheit konnte nicht freigegeben werden",
+          description: error?.message || "Bitte erneut versuchen.",
+          variant: "destructive",
+        });
+      } finally {
+        setApprovingAbsenceIds((current) =>
+          current.filter((id) => id !== absenceId),
+        );
+      }
+    },
+    [absencesEnabled, refreshDashboard, toast],
+  );
+
   const handleMarkAllNotificationsRead = useCallback(async () => {
     const unreadIds = notificationsData
       .filter((item) => !item.isRead)
