@@ -1656,7 +1656,7 @@ export default function Dashboard() {
     : `${typeof absentCountToday === "number" ? absentCountToday : 0} heute · ${absenceTypeCount} Einträge`;
   const birthdaySummary = birthdayName
     ? `Heute Geburtstag: ${birthdayName}`
-    : "Heute kein Geburtstag";
+    : null;
 
   return (
     <Layout title="Dashboard">
