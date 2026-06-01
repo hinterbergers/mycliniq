@@ -1078,7 +1078,7 @@ export default function Dashboard() {
           return (
             <div
               key={item.id}
-              className={`rounded-lg border px-3 py-2 text-left ${
+              className={`group rounded-lg border px-3 py-2 text-left ${
                 item.tone === "danger"
                   ? "border-rose-200 bg-rose-50/70"
                   : "border-slate-200 bg-slate-50/70"
@@ -1118,7 +1118,7 @@ export default function Dashboard() {
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="h-6 px-1.5 text-[10px] text-muted-foreground hover:text-foreground"
+                      className="h-6 px-1.5 text-[10px] text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
                       onClick={(event) => {
                         event.stopPropagation();
                         handleMarkNotificationRead(item.notificationId as number);
