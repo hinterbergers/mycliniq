@@ -78,6 +78,20 @@ type PortalThread = MessageThreadListItem & {
 };
 
 type ComposeMode = "direct" | "group" | "system";
+type InboxPaneMode = "threads" | "notifications";
+
+const isSystemThreadNotification = (note: Notification) => {
+  if (note.type !== "system") return false;
+  const metadata =
+    note.metadata && typeof note.metadata === "object"
+      ? (note.metadata as Record<string, unknown>)
+      : null;
+  return (
+    typeof metadata?.createdByEmployeeId === "number" ||
+    typeof metadata?.createdByName === "string" ||
+    metadata?.kind === "forwarded_system_message"
+  );
+};
 
 function formatTimestamp(value?: string | Date | null) {
   if (!value) return "";
@@ -271,9 +285,17 @@ export default function Messages() {
   const [loadingMessages, setLoadingMessages] = useState(false);
 
   const [selectedThreadId, setSelectedThreadId] = useState<number | null>(null);
+  const [inboxPaneMode, setInboxPaneMode] = useState<InboxPaneMode>("threads");
+  const [selectedPortalNotificationId, setSelectedPortalNotificationId] = useState<
+    number | null
+  >(null);
   const [messages, setMessages] = useState<ThreadMessageItem[]>([]);
   const [messageDraft, setMessageDraft] = useState("");
   const [threadSearch, setThreadSearch] = useState("");
+  const [notificationFilter, setNotificationFilter] = useState<
+    Notification["type"] | "all"
+  >("all");
+  const [showReadNotifications, setShowReadNotifications] = useState(false);
   const [processingNotificationIds, setProcessingNotificationIds] = useState<
     number[]
   >([]);
@@ -486,7 +508,15 @@ export default function Messages() {
   };
 
   const systemNotifications = useMemo(
-    () => notifications.filter((note) => note.type === "system"),
+    () => notifications.filter((note) => isSystemThreadNotification(note)),
+    [notifications],
+  );
+
+  const portalNotifications = useMemo(
+    () =>
+      notifications.filter(
+        (note) => note.type !== "message" && !isSystemThreadNotification(note),
+      ),
     [notifications],
   );
 
@@ -623,13 +653,45 @@ export default function Messages() {
     (isGroupOwner || canManageGroups);
 
   const unreadNotifications = useMemo(
-    () => notifications.filter((note) => !note.isRead),
-    [notifications],
+    () => portalNotifications.filter((note) => !note.isRead),
+    [portalNotifications],
   );
   const processedNotifications = useMemo(
-    () => notifications.filter((note) => note.isRead),
-    [notifications],
+    () => portalNotifications.filter((note) => note.isRead),
+    [portalNotifications],
   );
+  const filteredPortalNotifications = useMemo(() => {
+    return portalNotifications.filter((note) => {
+      if (!showReadNotifications && note.isRead) return false;
+      if (notificationFilter !== "all" && note.type !== notificationFilter) {
+        return false;
+      }
+      return true;
+    });
+  }, [notificationFilter, portalNotifications, showReadNotifications]);
+  const selectedPortalNotification = useMemo(
+    () =>
+      filteredPortalNotifications.find(
+        (note) => note.id === selectedPortalNotificationId,
+      ) ||
+      filteredPortalNotifications[0] ||
+      null,
+    [filteredPortalNotifications, selectedPortalNotificationId],
+  );
+  useEffect(() => {
+    if (!filteredPortalNotifications.length) {
+      setSelectedPortalNotificationId(null);
+      return;
+    }
+    if (
+      selectedPortalNotificationId == null ||
+      !filteredPortalNotifications.some(
+        (note) => note.id === selectedPortalNotificationId,
+      )
+    ) {
+      setSelectedPortalNotificationId(filteredPortalNotifications[0].id);
+    }
+  }, [filteredPortalNotifications, selectedPortalNotificationId]);
   const systemThreadMessages = useMemo<ThreadMessageItem[]>(
     () =>
       [...systemNotifications]
@@ -712,6 +774,7 @@ export default function Messages() {
   };
 
   const openThread = (threadId: number) => {
+    setInboxPaneMode("threads");
     setSelectedThreadId(threadId);
     setLocation(`/nachrichten?thread=${threadId}`);
     if (threadId === SYSTEM_THREAD_ID) {
@@ -727,6 +790,13 @@ export default function Messages() {
         );
       }
     }
+    const workspace = document.getElementById("chat-workspace");
+    workspace?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const selectPortalNotification = (note: Notification) => {
+    setInboxPaneMode("notifications");
+    setSelectedPortalNotificationId(note.id);
     const workspace = document.getElementById("chat-workspace");
     workspace?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
@@ -1599,7 +1669,11 @@ export default function Messages() {
                 type="button"
                 size="sm"
                 variant="outline"
-                onClick={() => void loadThreads()}
+                onClick={() =>
+                  void (inboxPaneMode === "threads"
+                    ? loadThreads()
+                    : loadNotifications())
+                }
               >
                 <RefreshCcw className="mr-2 h-4 w-4" />
                 Aktualisieren
@@ -1666,26 +1740,83 @@ export default function Messages() {
           <CardContent>
             <div className={cn("grid gap-4", !isMobile && "lg:grid-cols-[320px_minmax(0,1fr)]")}>
               <div className="space-y-3">
-                <Input
-                  placeholder="Chats durchsuchen..."
-                  value={threadSearch}
-                  onChange={(event) => setThreadSearch(event.target.value)}
-                />
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={inboxPaneMode === "threads" ? "default" : "outline"}
+                    onClick={() => setInboxPaneMode("threads")}
+                  >
+                    <MessageCircle className="mr-2 h-4 w-4" />
+                    Chats
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={
+                      inboxPaneMode === "notifications" ? "default" : "outline"
+                    }
+                    onClick={() => setInboxPaneMode("notifications")}
+                  >
+                    <Inbox className="mr-2 h-4 w-4" />
+                    Hinweise
+                  </Button>
+                </div>
+                {inboxPaneMode === "threads" ? (
+                  <Input
+                    placeholder="Chats durchsuchen..."
+                    value={threadSearch}
+                    onChange={(event) => setThreadSearch(event.target.value)}
+                  />
+                ) : (
+                  <div className="space-y-3 rounded-3xl border bg-slate-50/60 p-3">
+                    <div className="flex flex-wrap gap-2">
+                      {(["all", "system", "project", "sop"] as const).map((type) => (
+                        <Button
+                          key={type}
+                          type="button"
+                          size="sm"
+                          variant={
+                            notificationFilter === type ? "default" : "outline"
+                          }
+                          onClick={() => setNotificationFilter(type)}
+                        >
+                          {type === "all"
+                            ? "Alle"
+                            : getNotificationTypeLabel(type as Notification["type"])}
+                        </Button>
+                      ))}
+                    </div>
+                    <label className="flex items-center gap-2 text-sm text-slate-700">
+                      <Checkbox
+                        checked={showReadNotifications}
+                        onCheckedChange={(checked) =>
+                          setShowReadNotifications(Boolean(checked))
+                        }
+                      />
+                      Gelesene einblenden
+                    </label>
+                  </div>
+                )}
                 <ScrollArea
                   className={cn(
                     "rounded-3xl border bg-slate-50/60 p-3",
                     isMobile ? "h-[300px]" : "h-[560px]",
                   )}
                 >
-                  {loadingThreads && (
+                  {inboxPaneMode === "threads" && loadingThreads && (
                     <p className="text-sm text-muted-foreground">Lade Chats...</p>
                   )}
-                  {!loadingThreads && filteredThreads.length === 0 && (
+                  {inboxPaneMode === "threads" &&
+                    !loadingThreads &&
+                    filteredThreads.length === 0 && (
                     <p className="text-sm text-muted-foreground">
                       Keine passenden Threads gefunden.
                     </p>
                   )}
-                  {!loadingThreads && filteredThreads.length > 0 && (
+                  {inboxPaneMode === "threads" &&
+                    !loadingThreads &&
+                    filteredThreads.length > 0 && (
                     <div className="space-y-2">
                       {filteredThreads.map((thread) => {
                         const isActive = selectedThreadId === thread.id;
@@ -1777,11 +1908,73 @@ export default function Messages() {
                       })}
                     </div>
                   )}
+                  {inboxPaneMode === "notifications" && loadingNotifications && (
+                    <p className="text-sm text-muted-foreground">
+                      Lade Hinweise...
+                    </p>
+                  )}
+                  {inboxPaneMode === "notifications" &&
+                    !loadingNotifications &&
+                    filteredPortalNotifications.length === 0 && (
+                      <p className="text-sm text-muted-foreground">
+                        Keine passenden Hinweise vorhanden.
+                      </p>
+                    )}
+                  {inboxPaneMode === "notifications" &&
+                    !loadingNotifications &&
+                    filteredPortalNotifications.length > 0 && (
+                      <div className="space-y-2">
+                        {filteredPortalNotifications.map((note) => {
+                          const isActive = selectedPortalNotification?.id === note.id;
+                          return (
+                            <button
+                              key={note.id}
+                              type="button"
+                              onClick={() => selectPortalNotification(note)}
+                              className={cn(
+                                "w-full rounded-3xl border p-3 text-left transition-all",
+                                isActive
+                                  ? "border-blue-200 bg-blue-50 shadow-sm"
+                                  : "bg-white hover:border-blue-100 hover:bg-slate-50",
+                              )}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Badge
+                                      variant="outline"
+                                      className={cn(
+                                        "border",
+                                        getNotificationTone(note.type),
+                                      )}
+                                    >
+                                      {getNotificationTypeLabel(note.type)}
+                                    </Badge>
+                                    {note.isRead && (
+                                      <Badge variant="secondary">Gelesen</Badge>
+                                    )}
+                                  </div>
+                                  <p className="mt-2 truncate text-sm font-semibold text-slate-900">
+                                    {note.title}
+                                  </p>
+                                  <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                                    {note.message || "Keine Zusatzinformation"}
+                                  </p>
+                                </div>
+                                <span className="shrink-0 text-[11px] text-muted-foreground">
+                                  {formatTimestamp(note.createdAt)}
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                 </ScrollArea>
               </div>
 
               <div className="flex min-h-[420px] flex-col rounded-[28px] border bg-[linear-gradient(180deg,_rgba(248,250,252,0.95),_rgba(255,255,255,1))]">
-                {!selectedThread && (
+                {inboxPaneMode === "threads" && !selectedThread && (
                   <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
                     <div className="rounded-full bg-blue-50 p-4 text-blue-600">
                       <Sparkles className="h-6 w-6" />
@@ -1797,7 +1990,7 @@ export default function Messages() {
                   </div>
                 )}
 
-                {selectedThread && (
+                {inboxPaneMode === "threads" && selectedThread && (
                   <>
                     <div className="border-b px-5 py-4">
                       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -2016,6 +2209,201 @@ export default function Messages() {
                             : "Senden"}
                         </Button>
                       </div>
+                    </div>
+                  </>
+                )}
+
+                {inboxPaneMode === "notifications" && !selectedPortalNotification && (
+                  <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+                    <div className="rounded-full bg-blue-50 p-4 text-blue-600">
+                      <Inbox className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <p className="text-base font-semibold text-slate-900">
+                        Einen Hinweis auswaehlen
+                      </p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Links erscheinen alle nicht-chatbasierten Notifications mit Filter.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {inboxPaneMode === "notifications" && selectedPortalNotification && (
+                  <>
+                    <div className="border-b px-5 py-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "border",
+                                getNotificationTone(selectedPortalNotification.type),
+                              )}
+                            >
+                              {getNotificationTypeLabel(selectedPortalNotification.type)}
+                            </Badge>
+                            {selectedPortalNotification.isRead && (
+                              <Badge variant="secondary">Gelesen</Badge>
+                            )}
+                          </div>
+                          <p className="mt-3 text-lg font-semibold text-slate-900">
+                            {selectedPortalNotification.title}
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {formatTimestamp(selectedPortalNotification.createdAt)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex-1 space-y-4 overflow-auto px-5 py-5">
+                      <div className="rounded-[24px] border bg-white p-4 shadow-sm">
+                        {selectedPortalNotification.message ? (
+                          <p className="whitespace-pre-wrap text-sm text-slate-700">
+                            {selectedPortalNotification.message}
+                          </p>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">
+                            Keine Zusatzinformation vorhanden.
+                          </p>
+                        )}
+                        {selectedPortalNotification.isRead && (
+                          (() => {
+                            const actionInfo = getNotificationActionInfo(
+                              selectedPortalNotification,
+                            );
+                            return actionInfo.details ? (
+                              <p className="mt-3 text-xs text-slate-500">
+                                Bearbeitung: {actionInfo.details}
+                              </p>
+                            ) : null;
+                          })()
+                        )}
+                      </div>
+
+                      {getZeitausgleichMetadata(selectedPortalNotification) && (
+                        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-blue-100 bg-white p-4">
+                          <span className="text-xs font-medium text-slate-700">
+                            Zeitausgleich beantworten
+                          </span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={processingNotificationIds.includes(
+                              selectedPortalNotification.id,
+                            )}
+                            onClick={() =>
+                              void handleZeitausgleichResponse(
+                                selectedPortalNotification,
+                                "accept",
+                              )
+                            }
+                          >
+                            Bestaetigen
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={processingNotificationIds.includes(
+                              selectedPortalNotification.id,
+                            )}
+                            onClick={() =>
+                              void handleZeitausgleichResponse(
+                                selectedPortalNotification,
+                                "decline",
+                              )
+                            }
+                          >
+                            Ablehnen
+                          </Button>
+                        </div>
+                      )}
+
+                      {getShiftSwapMetadata(selectedPortalNotification) && (
+                        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-blue-100 bg-white p-4">
+                          <span className="text-xs font-medium text-slate-700">
+                            Diensttausch beantworten
+                          </span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={processingNotificationIds.includes(
+                              selectedPortalNotification.id,
+                            )}
+                            onClick={() =>
+                              void handleShiftSwapResponse(
+                                selectedPortalNotification,
+                                "accept",
+                              )
+                            }
+                          >
+                            Annehmen
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={processingNotificationIds.includes(
+                              selectedPortalNotification.id,
+                            )}
+                            onClick={() =>
+                              void handleShiftSwapResponse(
+                                selectedPortalNotification,
+                                "reject",
+                              )
+                            }
+                          >
+                            Ablehnen
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+
+                    <Separator />
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 p-4">
+                      <div className="flex flex-wrap gap-2">
+                        {!selectedPortalNotification.isRead && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            onClick={() =>
+                              void handleMarkRead(selectedPortalNotification)
+                            }
+                          >
+                            <CheckCircle2 className="mr-2 h-4 w-4" />
+                            Gelesen
+                          </Button>
+                        )}
+                        {selectedPortalNotification.link && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              void handleOpenNotification(selectedPortalNotification)
+                            }
+                          >
+                            <ExternalLink className="mr-2 h-4 w-4" />
+                            Oeffnen
+                          </Button>
+                        )}
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() =>
+                          void handleDeleteNotification(selectedPortalNotification.id)
+                        }
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Entfernen
+                      </Button>
                     </div>
                   </>
                 )}
