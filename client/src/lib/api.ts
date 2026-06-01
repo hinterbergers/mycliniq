@@ -467,6 +467,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
     return {} as T;
   }
 
+  const contentType = response.headers.get("content-type") || "";
   const body = await response.json().catch(() => null);
 
   if (!response.ok) {
@@ -487,6 +488,12 @@ async function handleResponse<T>(response: Response): Promise<T> {
     if (typeof envelope.data !== "undefined") {
       return envelope.data;
     }
+  }
+
+  if (contentType.includes("text/html")) {
+    const error = new Error("API returned HTML instead of JSON");
+    (error as any).status = response.status;
+    throw error;
   }
 
   return body as T;
@@ -548,10 +555,27 @@ export const dashboardApi = {
   ): Promise<{
     id: number;
     accepted: boolean;
+    status?: string | null;
+    isApproved?: boolean | null;
     acceptedAt?: string | null;
     acceptedById?: number | null;
   }> => {
     const response = await apiFetch(`${API_BASE}/zeitausgleich/${id}/accept`, {
+      method: "POST",
+    });
+    return handleResponse(response);
+  },
+  declineZeitausgleich: async (
+    id: number,
+  ): Promise<{
+    id: number;
+    accepted: boolean;
+    status?: string | null;
+    isApproved?: boolean | null;
+    acceptedAt?: string | null;
+    acceptedById?: number | null;
+  }> => {
+    const response = await apiFetch(`${API_BASE}/zeitausgleich/${id}/decline`, {
       method: "POST",
     });
     return handleResponse(response);
@@ -2424,11 +2448,31 @@ export const notificationsApi = {
     return handleResponse<Notification[]>(response);
   },
 
-  markRead: async (id: number): Promise<Notification> => {
+  markRead: async (
+    id: number,
+    data?: {
+      actionType?: string;
+      actionLabel?: string;
+      actionDetails?: string | null;
+    },
+  ): Promise<Notification> => {
     const response = await apiFetch(`${API_BASE}/notifications/${id}/read`, {
       method: "POST",
+      body: data ? JSON.stringify(data) : undefined,
     });
     return handleResponse<Notification>(response);
+  },
+
+  broadcast: async (data: {
+    title: string;
+    message: string;
+    link?: string;
+  }): Promise<{ count: number }> => {
+    const response = await apiFetch(`${API_BASE}/notifications/broadcast`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return handleResponse<{ count: number }>(response);
   },
 
   delete: async (id: number): Promise<void> => {
@@ -2470,6 +2514,15 @@ export type MessageWithSender = Message & {
   senderLastName?: string | null;
 };
 
+export type ForwardMessagePayload = {
+  mode: "direct" | "group" | "system";
+  recipientEmployeeId?: number;
+  targetThreadId?: number;
+  systemTitle?: string;
+  link?: string;
+  comment?: string;
+};
+
 // Messaging API
 export const messagesApi = {
   getThreads: async (): Promise<MessageThreadListItem[]> => {
@@ -2505,6 +2558,34 @@ export const messagesApi = {
       },
     );
     return handleResponse<Message>(response);
+  },
+
+  deleteThread: async (threadId: number): Promise<void> => {
+    const response = await apiFetch(`${API_BASE}/messages/threads/${threadId}`, {
+      method: "DELETE",
+    });
+    return handleResponse<void>(response);
+  },
+
+  deleteMessage: async (messageId: number): Promise<void> => {
+    const response = await apiFetch(`${API_BASE}/messages/messages/${messageId}`, {
+      method: "DELETE",
+    });
+    return handleResponse<void>(response);
+  },
+
+  forwardMessage: async (
+    messageId: number,
+    data: ForwardMessagePayload,
+  ): Promise<void> => {
+    const response = await apiFetch(
+      `${API_BASE}/messages/messages/${messageId}/forward`,
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      },
+    );
+    return handleResponse<void>(response);
   },
 
   renameThread: async (

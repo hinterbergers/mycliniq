@@ -103,6 +103,26 @@ const ALLOWED_UNASSIGNED_STATUSES = new Set<DutyPlan["status"]>([
 
 const padTwo = (value: number) => String(value).padStart(2, "0");
 
+const syncUserRosterChangeIntoDraft = async (year: number, month: number) => {
+  const [plan] = await db
+    .select()
+    .from(dutyPlans)
+    .where(and(eq(dutyPlans.year, year), eq(dutyPlans.month, month)))
+    .limit(1);
+
+  if (!plan) return;
+  if (!ALLOWED_CLAIM_STATUSES.has(plan.status)) return;
+
+  await syncDraftFromFinal(year, month);
+
+  if (plan.status === "Freigegeben") {
+    await db
+      .update(dutyPlans)
+      .set({ status: "Vorläufig" })
+      .where(eq(dutyPlans.id, plan.id));
+  }
+};
+
 type OpenShiftSlotSource = "final" | "draft";
 
 type OpenShiftSlot = {
@@ -2063,6 +2083,7 @@ export async function registerRoutes(
           ...getAuditActorFromRequest(req),
           context: "api.roster.claim",
         });
+        await syncUserRosterChangeIntoDraft(year, month);
         res.json(updated);
       } catch (error) {
         console.error("Claim shift error:", error);
@@ -2351,6 +2372,10 @@ export async function registerRoutes(
         ...getAuditActorFromRequest(req),
         context: "api.roster.open-shifts.claim.assign",
       });
+
+      if (!targetIsDraft) {
+        await syncUserRosterChangeIntoDraft(planYear, planMonth);
+      }
 
       res.status(201).json(updated);
     } catch (error) {
@@ -3423,6 +3448,7 @@ const buildAttendanceMembers = (
                 afterEmployeeId: rosterShiftChangeLogs.afterEmployeeId,
                 beforeAssigneeFreeText: rosterShiftChangeLogs.beforeAssigneeFreeText,
                 afterAssigneeFreeText: rosterShiftChangeLogs.afterAssigneeFreeText,
+                actorEmployeeId: rosterShiftChangeLogs.actorEmployeeId,
                 actorName: rosterShiftChangeLogs.actorName,
                 context: rosterShiftChangeLogs.context,
                 createdAt: rosterShiftChangeLogs.createdAt,
@@ -3437,6 +3463,9 @@ const buildAttendanceMembers = (
                 endDate: plannedAbsences.endDate,
                 reason: plannedAbsences.reason,
                 status: plannedAbsences.status,
+                createdById: plannedAbsences.createdById,
+                approvedById: plannedAbsences.approvedById,
+                acceptedById: plannedAbsences.acceptedById,
                 createdAt: plannedAbsences.createdAt,
                 updatedAt: plannedAbsences.updatedAt,
                 firstName: employees.firstName,
@@ -3450,6 +3479,7 @@ const buildAttendanceMembers = (
               .select({
                 id: dailyOverrides.id,
                 date: dailyOverrides.date,
+                createdById: dailyOverrides.createdById,
                 createdAt: dailyOverrides.createdAt,
                 roomName: rooms.name,
                 reason: dailyOverrides.reason,
@@ -3463,6 +3493,8 @@ const buildAttendanceMembers = (
                 id: weeklyPlanAssignments.id,
                 weekday: weeklyPlanAssignments.weekday,
                 roleLabel: weeklyPlanAssignments.roleLabel,
+                createdById: weeklyPlanAssignments.createdById,
+                updatedById: weeklyPlanAssignments.updatedById,
                 createdAt: weeklyPlanAssignments.createdAt,
                 updatedAt: weeklyPlanAssignments.updatedAt,
                 roomName: rooms.name,
@@ -3489,6 +3521,46 @@ const buildAttendanceMembers = (
             7: "So",
           };
 
+          const employeeIdsForLookup = new Set<number>();
+          dutyChangeRows.forEach((row) => {
+            if (row.beforeEmployeeId) employeeIdsForLookup.add(row.beforeEmployeeId);
+            if (row.afterEmployeeId) employeeIdsForLookup.add(row.afterEmployeeId);
+            if (row.actorEmployeeId) employeeIdsForLookup.add(row.actorEmployeeId);
+          });
+          plannedChangeRows.forEach((row) => {
+            if (row.createdById) employeeIdsForLookup.add(row.createdById);
+            if (row.approvedById) employeeIdsForLookup.add(row.approvedById);
+            if (row.acceptedById) employeeIdsForLookup.add(row.acceptedById);
+          });
+          weeklyOverrideRows.forEach((row) => {
+            if (row.createdById) employeeIdsForLookup.add(row.createdById);
+          });
+          weeklyAssignmentRows.forEach((row) => {
+            if (row.createdById) employeeIdsForLookup.add(row.createdById);
+            if (row.updatedById) employeeIdsForLookup.add(row.updatedById);
+          });
+
+          const employeeNameRows = employeeIdsForLookup.size
+            ? await db
+                .select({
+                  id: employees.id,
+                  firstName: employees.firstName,
+                  lastName: employees.lastName,
+                  name: employees.name,
+                })
+                .from(employees)
+                .where(inArray(employees.id, [...employeeIdsForLookup]))
+            : [];
+
+          const employeeNameById = new Map<number, string>();
+          employeeNameRows.forEach((row) => {
+            const displayName =
+              formatDisplayName(row.firstName, row.lastName) || normalize(row.name) || null;
+            if (displayName) {
+              employeeNameById.set(row.id, displayName);
+            }
+          });
+
           const ignoredDutyAuditContexts = [
             "syncDraftFromFinal.",
             "syncFinalFromDraft.replaceFinalMonth.clearFinal",
@@ -3498,6 +3570,15 @@ const buildAttendanceMembers = (
           const dutyItems = dutyChangeRows
             .filter((row) => {
               const context = row.context ?? "";
+              if (
+                row.actorEmployeeId &&
+                row.actorEmployeeId === req.user?.employeeId
+              ) {
+                return false;
+              }
+              if (!row.afterEmployeeId && !row.afterAssigneeFreeText && !row.beforeEmployeeId && !row.beforeAssigneeFreeText) {
+                return false;
+              }
               return !ignoredDutyAuditContexts.some((prefix) =>
                 context.startsWith(prefix),
               );
@@ -3508,8 +3589,11 @@ const buildAttendanceMembers = (
             const planLabel = row.isDraft ? "Dienstplan (Entwurf)" : "Dienstplan";
             const beforeAssigned = Boolean(row.beforeEmployeeId || row.beforeAssigneeFreeText);
             const afterAssigned = Boolean(row.afterEmployeeId || row.afterAssigneeFreeText);
+            const isShiftSwap = (row.context ?? "").startsWith("api.shift-swap.accept.");
             let dutyActionLabel = "Dienst geändert";
-            if (row.action === "insert") {
+            if (isShiftSwap) {
+              dutyActionLabel = "Diensttausch durchgeführt";
+            } else if (row.action === "insert") {
               dutyActionLabel = afterAssigned ? "Dienst eingetragen" : "Dienst-Slot angelegt";
             } else if (row.action === "delete") {
               dutyActionLabel = beforeAssigned ? "Dienst gelöscht" : "Dienst-Slot gelöscht";
@@ -3524,9 +3608,20 @@ const buildAttendanceMembers = (
               dutyActionLabel = "Dienst neu eingeteilt";
             }
 
+            const actorName =
+              (row.actorEmployeeId ? employeeNameById.get(row.actorEmployeeId) ?? null : null) ||
+              normalize(row.actorName) ||
+              null;
+            const affectedName =
+              row.afterEmployeeId
+                ? employeeNameById.get(row.afterEmployeeId) ?? null
+                : row.afterAssigneeFreeText ??
+                  (row.beforeEmployeeId
+                    ? employeeNameById.get(row.beforeEmployeeId) ?? null
+                    : row.beforeAssigneeFreeText ?? null);
             const subtitleParts = [
               String(row.date),
-              serviceLabel,
+              affectedName ? `${serviceLabel} (${affectedName})` : serviceLabel,
             ].filter((part): part is string => Boolean(part));
 
             return {
@@ -3534,14 +3629,20 @@ const buildAttendanceMembers = (
               source: "dutyplan_shift" as const,
               changedAt: row.createdAt,
               action: "updated" as const,
-              title: `${planLabel}: ${dutyActionLabel}`,
+              title: affectedName ? `${planLabel}: ${dutyActionLabel} – ${affectedName}` : `${planLabel}: ${dutyActionLabel}`,
               subtitle: subtitleParts.join(" • "),
-              actorName: normalize(row.actorName) || null,
+              actorName,
               targetUrl: `/admin/weekly?day=${encodeURIComponent(String(row.date))}`,
             };
           });
 
-          const plannedItems = plannedChangeRows.map((row) => {
+          const plannedItems = plannedChangeRows
+            .filter((row) => {
+              const changedById =
+                row.acceptedById ?? row.approvedById ?? row.createdById ?? null;
+              return changedById !== req.user?.employeeId;
+            })
+            .map((row) => {
             const changedAt = row.updatedAt ?? row.createdAt;
             const createdMs =
               row.createdAt instanceof Date
@@ -3559,6 +3660,11 @@ const buildAttendanceMembers = (
               row.startDate === row.endDate
                 ? String(row.startDate)
                 : `${row.startDate} bis ${row.endDate}`;
+            const actorName =
+              (row.acceptedById ? employeeNameById.get(row.acceptedById) : null) ??
+              (row.approvedById ? employeeNameById.get(row.approvedById) : null) ??
+              (row.createdById ? employeeNameById.get(row.createdById) : null) ??
+              null;
             return {
               id: `planned-${row.id}`,
               source: "dutyplan_absence" as const,
@@ -3566,12 +3672,14 @@ const buildAttendanceMembers = (
               action,
               title: `Abwesenheit: ${employeeName} (${row.reason})`,
               subtitle: `${dateRange}${row.status ? ` • ${row.status}` : ""}`,
-              actorName: null,
+              actorName,
               targetUrl: `/admin/weekly?day=${encodeURIComponent(String(row.startDate))}`,
             };
           });
 
-          const weeklyItems = weeklyOverrideRows.map((row) => {
+          const weeklyItems = weeklyOverrideRows
+            .filter((row) => row.createdById !== req.user?.employeeId)
+            .map((row) => {
             const roomName = normalize(row.roomName) || "Raum";
             const weeklyTargetUrl = `/admin/weekly?day=${encodeURIComponent(String(row.date))}`;
             return {
@@ -3581,12 +3689,17 @@ const buildAttendanceMembers = (
               action: "created" as const,
               title: `Wochenplan: ${String(row.date)} • ${roomName}`,
               subtitle: normalize(row.reason) || "Tages-Override angelegt",
-              actorName: null,
+              actorName: row.createdById ? employeeNameById.get(row.createdById) ?? null : null,
               targetUrl: weeklyTargetUrl,
             };
           });
 
-          const weeklyAssignmentItems = weeklyAssignmentRows.map((row) => {
+          const weeklyAssignmentItems = weeklyAssignmentRows
+            .filter((row) => {
+              const changedById = row.updatedById ?? row.createdById ?? null;
+              return changedById !== req.user?.employeeId;
+            })
+            .map((row) => {
             const changedAt = row.updatedAt ?? row.createdAt;
             const createdMs =
               row.createdAt instanceof Date
@@ -3606,6 +3719,10 @@ const buildAttendanceMembers = (
                 ? `KW ${String(row.weekNumber).padStart(2, "0")}/${row.weekYear}`
                 : "KW ?";
 
+            const actorName =
+              (row.updatedById ? employeeNameById.get(row.updatedById) : null) ??
+              (row.createdById ? employeeNameById.get(row.createdById) : null) ??
+              null;
             return {
               id: `weekly-assignment-${row.id}`,
               source: "weeklyplan_override" as const,
@@ -3617,7 +3734,7 @@ const buildAttendanceMembers = (
               subtitle: [weekLabel, weekdayLabel, roomName, normalize(row.roleLabel) || null]
                 .filter((part): part is string => Boolean(part))
                 .join(" • "),
-              actorName: null,
+              actorName,
               targetUrl:
                 row.weekYear && row.weekNumber
                   ? `/admin/weekly?year=${row.weekYear}&week=${row.weekNumber}&weekday=${row.weekday}`
@@ -3963,9 +4080,12 @@ const buildAttendanceMembers = (
         const [updated] = await db
           .update(plannedAbsences)
           .set({
+            status: "Genehmigt",
+            isApproved: true,
             accepted: true,
             acceptedAt: new Date(),
             acceptedById: currentEmployeeId,
+            approvedById: currentEmployeeId,
             updatedAt: new Date(),
           })
           .where(eq(plannedAbsences.id, zeId))
@@ -3976,6 +4096,8 @@ const buildAttendanceMembers = (
           data: {
             id: updated.id,
             accepted: Boolean(updated.accepted),
+            status: updated.status,
+            isApproved: updated.isApproved,
             acceptedAt: updated.acceptedAt,
             acceptedById: updated.acceptedById,
           },
@@ -3985,6 +4107,152 @@ const buildAttendanceMembers = (
         res.status(500).json({
           success: false,
           error: "Zeitausgleich konnte nicht akzeptiert werden",
+        });
+      }
+    },
+  );
+
+  app.post(
+    "/api/zeitausgleich/:id/decline",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const zeId = Number(req.params.id);
+        if (Number.isNaN(zeId)) {
+          return res
+            .status(400)
+            .json({ success: false, error: "Ungültige Zeitausgleich-ID" });
+        }
+
+        const [entry] = await db
+          .select()
+          .from(plannedAbsences)
+          .where(eq(plannedAbsences.id, zeId));
+
+        if (!entry) {
+          return res
+            .status(404)
+            .json({ success: false, error: "Zeitausgleich nicht gefunden" });
+        }
+
+        if (entry.reason !== "Zeitausgleich") {
+          return res.status(400).json({
+            success: false,
+            error: "Nur Zeitausgleich-Einträge können abgelehnt werden",
+          });
+        }
+
+        const currentEmployeeId = req.user?.employeeId;
+        if (!currentEmployeeId || entry.employeeId !== currentEmployeeId) {
+          return res.status(403).json({
+            success: false,
+            error: "Keine Berechtigung für diesen Zeitausgleich",
+          });
+        }
+
+        if (entry.status === "Abgelehnt") {
+          return res.json({
+            success: true,
+            data: {
+              id: entry.id,
+              accepted: Boolean(entry.accepted),
+              status: entry.status,
+              isApproved: entry.isApproved,
+              acceptedAt: entry.acceptedAt,
+              acceptedById: entry.acceptedById,
+            },
+          });
+        }
+
+        const [employeeRow] = await db
+          .select({
+            departmentId: employees.departmentId,
+            firstName: employees.firstName,
+            lastName: employees.lastName,
+            name: employees.name,
+          })
+          .from(employees)
+          .where(eq(employees.id, currentEmployeeId));
+
+        const [updated] = await db
+          .update(plannedAbsences)
+          .set({
+            status: "Abgelehnt",
+            isApproved: false,
+            accepted: false,
+            acceptedAt: null,
+            acceptedById: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(plannedAbsences.id, zeId))
+          .returning();
+
+        const employeeName =
+          formatDisplayName(employeeRow?.firstName, employeeRow?.lastName) ??
+          normalize(employeeRow?.name) ??
+          "Mitarbeiter:in";
+        const weeklyEditorLink = `/admin/weekly?day=${encodeURIComponent(String(updated.startDate))}&employeeId=${currentEmployeeId}`;
+
+        const adminRecipients = await db
+          .select({
+            id: employees.id,
+            departmentId: employees.departmentId,
+            systemRole: employees.systemRole,
+            appRole: employees.appRole,
+            isAdmin: employees.isAdmin,
+          })
+          .from(employees)
+          .where(eq(employees.isActive, true));
+
+        const recipientIds = adminRecipients
+          .filter((row) => {
+            if (employeeRow?.departmentId != null && row.departmentId !== employeeRow.departmentId) {
+              return false;
+            }
+            return (
+              row.isAdmin ||
+              row.appRole === "Admin" ||
+              row.appRole === "Editor" ||
+              row.systemRole !== "employee"
+            );
+          })
+          .map((row) => row.id)
+          .filter((id) => id !== currentEmployeeId);
+
+        if (recipientIds.length > 0) {
+          const rows = recipientIds.map((recipientId) => ({
+            recipientId,
+            type: "system" as const,
+            title: `Zeitausgleich abgelehnt – ${employeeName}`,
+            message: `${String(updated.startDate)} neu im Wochenplan einteilen.`,
+            link: weeklyEditorLink,
+            metadata: {
+              kind: "zeitausgleich_declined",
+              absenceId: updated.id,
+              employeeId: currentEmployeeId,
+              startDate: updated.startDate,
+              endDate: updated.endDate,
+            },
+          }));
+          await db.insert(notifications).values(rows);
+        }
+
+        return res.json({
+          success: true,
+          data: {
+            id: updated.id,
+            accepted: Boolean(updated.accepted),
+            status: updated.status,
+            isApproved: updated.isApproved,
+            acceptedAt: updated.acceptedAt,
+            acceptedById: updated.acceptedById,
+          },
+        });
+      } catch (error) {
+        console.error("Zeitausgleich konnte nicht abgelehnt werden:", error);
+        return res.status(500).json({
+          success: false,
+          error: "Zeitausgleich konnte nicht abgelehnt werden",
         });
       }
     },
@@ -4642,6 +4910,105 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
       res.status(500).json({ error: "Kalender konnte nicht erstellt werden" });
     }
   });
+
+  app.get(
+    "/public-api/roster/month/:year/:month",
+    async (req: Request, res: Response) => {
+      try {
+        const year = Number(req.params.year);
+        const month = Number(req.params.month);
+        if (
+          !Number.isInteger(year) ||
+          !Number.isInteger(month) ||
+          month < 1 ||
+          month > 12
+        ) {
+          return res.status(400).json({
+            success: false,
+            error: "Ungültiger Monat",
+          });
+        }
+
+        const monthStart = `${year}-${padTwo(month)}-01`;
+        const monthEnd = `${year}-${padTwo(month)}-${padTwo(
+          new Date(year, month, 0).getDate(),
+        )}`;
+
+        const [plan] = await db
+          .select()
+          .from(dutyPlans)
+          .where(and(eq(dutyPlans.year, year), eq(dutyPlans.month, month)))
+          .limit(1);
+
+        const [publicRosterShifts, publicPlannedAbsences, publicLongTermAbsences, publicEmployees, publicServiceLines] =
+          await Promise.all([
+            db
+              .select()
+              .from(rosterShifts)
+              .where(
+                and(
+                  gte(rosterShifts.date, monthStart),
+                  lte(rosterShifts.date, monthEnd),
+                  eq(rosterShifts.isDraft, false),
+                ),
+              ),
+            db
+              .select({
+                id: plannedAbsences.id,
+                employeeId: plannedAbsences.employeeId,
+                employeeName: employees.name,
+                employeeLastName: employees.lastName,
+                startDate: plannedAbsences.startDate,
+                endDate: plannedAbsences.endDate,
+                reason: plannedAbsences.reason,
+                status: plannedAbsences.status,
+                notes: plannedAbsences.notes,
+              })
+              .from(plannedAbsences)
+              .leftJoin(employees, eq(plannedAbsences.employeeId, employees.id))
+              .where(
+                and(
+                  ne(plannedAbsences.status, "Abgelehnt"),
+                  lte(plannedAbsences.startDate, monthEnd),
+                  gte(plannedAbsences.endDate, monthStart),
+                ),
+              ),
+            db
+              .select()
+              .from(longTermAbsences)
+              .where(eq(longTermAbsences.status, "Genehmigt")),
+            db.select().from(employees).where(eq(employees.isActive, true)),
+            db
+              .select()
+              .from(serviceLines)
+              .where(eq(serviceLines.isActive, true))
+              .orderBy(asc(serviceLines.sortOrder), asc(serviceLines.label)),
+          ]);
+
+        return res.json({
+          success: true,
+          data: {
+            year,
+            month,
+            from: monthStart,
+            to: monthEnd,
+            planStatus: plan?.status ?? null,
+            employees: publicEmployees,
+            serviceLines: publicServiceLines,
+            rosterShifts: publicRosterShifts,
+            plannedAbsences: publicPlannedAbsences,
+            longTermAbsences: publicLongTermAbsences,
+          },
+        });
+      } catch (error: any) {
+        console.error("Public roster month error:", error);
+        return res.status(500).json({
+          success: false,
+          error: "Öffentlicher Monatsdienstplan konnte nicht geladen werden",
+        });
+      }
+    },
+  );
 
   app.get(
     "/public-api/weekly-plan/week/:year/:week",
@@ -5315,6 +5682,27 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
                 context: "api.shift-swap.accept.target-shift",
               },
             );
+
+            const affectedMonths = new Set<string>();
+            const maybeAddMonth = (dateValue?: string | null, isDraft?: boolean | null) => {
+              if (!dateValue || isDraft) return;
+              const parsed = parseISO(dateValue);
+              if (Number.isNaN(parsed.getTime())) return;
+              affectedMonths.add(
+                `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}`,
+              );
+            };
+
+            maybeAddMonth(requesterShift.date, requesterShift.isDraft);
+            maybeAddMonth(targetShift.date, targetShift.isDraft);
+
+            for (const monthKey of affectedMonths) {
+              const [yearText, monthText] = monthKey.split("-");
+              const year = Number(yearText);
+              const month = Number(monthText);
+              if (!Number.isFinite(year) || !Number.isFinite(month)) continue;
+              await syncUserRosterChangeIntoDraft(year, month);
+            }
           }
         }
 

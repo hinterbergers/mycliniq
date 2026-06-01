@@ -3,9 +3,8 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
-  type TouchEvent,
+  type ReactNode,
 } from "react";
 import { Layout } from "@/components/layout/Layout";
 import {
@@ -18,32 +17,56 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  Bell,
   CalendarDays,
   CalendarClock,
-  FileText,
-  ArrowRight,
-  Star,
-  Cake,
+  ChevronDown,
   Users,
   Clock,
-  BookOpen,
-  TrendingUp,
+  BriefcaseBusiness,
   Stethoscope,
   Hand,
   AlertTriangle,
 } from "lucide-react";
 import {
   dashboardApi,
+  employeeApi,
+  notificationsApi,
+  plannedAbsencesAdminApi,
   rosterSettingsApi,
   type DashboardAbsencesResponse,
   type DashboardAttendanceMember,
   type DashboardRecentChange,
   type DashboardResponse,
   type NextPlanningMonth,
+  type PlannedAbsenceAdmin,
 } from "@/lib/api";
 import { getAuthToken, useAuth } from "@/lib/auth";
+import type { Employee, Notification } from "@shared/schema";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
@@ -136,6 +159,22 @@ const DUMMY_POPULAR_SOPS = [
 
 const buildFullName = (firstName?: string | null, lastName?: string | null) =>
   [firstName, lastName].filter(Boolean).join(" ").trim();
+
+const buildAbsenceEmployeeName = (absence: PlannedAbsenceAdmin) => {
+  const combined = [absence.employeeName, absence.employeeLastName]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  if (!combined) return "Unbekannt";
+  const tokens = combined.split(/\s+/);
+  if (tokens.length >= 2) return combined;
+  const first = (absence.employeeName ?? "").trim();
+  const last = (absence.employeeLastName ?? "").trim();
+  if (first && last && first.toLowerCase() != last.toLowerCase()) {
+    return `${first} ${last}`.trim();
+  }
+  return combined;
+};
 
 type PreviewCard = {
   date: string;
@@ -279,11 +318,52 @@ const MONTH_NAMES = [
   "November",
   "Dezember",
 ];
-const DASHBOARD_ATTENDANCE_VIEW_MODE_KEY = "dashboard_attendance_view_mode";
+const DASHBOARD_TILES_OPEN_KEY = "dashboard_tiles_open_v1";
+const DASHBOARD_SEEN_CHANGE_IDS_KEY = "dashboard_seen_change_ids_v1";
+const HERO_ABSENCE_REASONS = [
+  "Urlaub",
+  "Fortbildung",
+  "Krankenstand",
+  "Zeitausgleich",
+  "Pflegeurlaub",
+] as const;
+
+type DashboardTileKey =
+  | "notifications"
+  | "today"
+  | "week"
+  | "people"
+  | "workplaces"
+  | "absences"
+  | "birthday";
+
+type DashboardNoticeItem = {
+  id: string;
+  title: string;
+  subtitle?: string | null;
+  targetUrl?: string | null;
+  tone?: "default" | "danger";
+  meta?: string | null;
+  notificationId?: number;
+  actorName?: string | null;
+  isRead?: boolean;
+  sourceChangeId?: string | null;
+  isSeen?: boolean;
+  absenceId?: number;
+  zeId?: number;
+};
+
+type PendingAbsenceNotice = {
+  id: number;
+  title: string;
+  subtitle: string;
+  targetUrl: string;
+};
 
 export default function Dashboard() {
   const { employee, user, can, token, isAdmin, viewAsUser } = useAuth();
   const [, setLocation] = useLocation();
+  const canCreateAbsence = can("absence.create");
 
   const firstName =
     employee?.firstName ||
@@ -298,16 +378,45 @@ export default function Dashboard() {
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(true);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [isAcceptingZe, setIsAcceptingZe] = useState(false);
-  const [mobilePanel, setMobilePanel] = useState<"week" | "team">("week");
-  const [attendanceViewMode, setAttendanceViewMode] = useState<"people" | "workplaces">(() => {
+  const [notificationsData, setNotificationsData] = useState<Notification[]>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notificationsError, setNotificationsError] = useState<string | null>(null);
+  const [seenRecentChangeIds, setSeenRecentChangeIds] = useState<string[]>([]);
+  const [pendingAbsenceApprovalNotices, setPendingAbsenceApprovalNotices] = useState<PendingAbsenceNotice[]>([]);
+  const [approvingAbsenceIds, setApprovingAbsenceIds] = useState<number[]>([]);
+  const [heroAbsenceDialogOpen, setHeroAbsenceDialogOpen] = useState(false);
+  const [heroAbsenceEmployees, setHeroAbsenceEmployees] = useState<Employee[]>([]);
+  const [heroAbsenceEmployeesLoading, setHeroAbsenceEmployeesLoading] = useState(false);
+  const [isSavingHeroAbsence, setIsSavingHeroAbsence] = useState(false);
+  const [heroAbsenceForm, setHeroAbsenceForm] = useState({
+    employeeId: "",
+    startDate: "",
+    endDate: "",
+    reason: "Urlaub",
+    notes: "",
+    status: "Geplant" as "Geplant" | "Genehmigt" | "Abgelehnt",
+  });
+  const [openTiles, setOpenTiles] = useState<DashboardTileKey[]>(() => {
     try {
-      const stored = localStorage.getItem(DASHBOARD_ATTENDANCE_VIEW_MODE_KEY);
-      return stored === "workplaces" ? "workplaces" : "people";
+      const stored = localStorage.getItem(DASHBOARD_TILES_OPEN_KEY);
+      if (!stored) return ["notifications", "today"];
+      const parsed = JSON.parse(stored);
+      if (!Array.isArray(parsed)) return ["notifications", "today"];
+      return parsed.filter((value): value is DashboardTileKey =>
+        [
+          "notifications",
+          "today",
+          "week",
+          "people",
+          "workplaces",
+          "absences",
+          "birthday",
+        ].includes(String(value)),
+      );
     } catch {
-      return "people";
+      return ["notifications", "today"];
     }
   });
-  const touchStart = useRef<{ x: number; y: number } | null>(null);
   const { toast } = useToast();
   const [absencesData, setAbsencesData] =
     useState<DashboardAbsencesResponse | null>(null);
@@ -350,11 +459,11 @@ export default function Dashboard() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(DASHBOARD_ATTENDANCE_VIEW_MODE_KEY, attendanceViewMode);
+      localStorage.setItem(DASHBOARD_TILES_OPEN_KEY, JSON.stringify(openTiles));
     } catch {
       // ignore localStorage issues
     }
-  }, [attendanceViewMode]);
+  }, [openTiles]);
 
   useEffect(() => {
     let cancelled = false;
@@ -381,6 +490,13 @@ export default function Dashboard() {
   }, [wishMonthInfo]);
 
   const fetchDashboard = useCallback(() => dashboardApi.get(), []);
+  const toggleTile = useCallback((tile: DashboardTileKey) => {
+    setOpenTiles((current) =>
+      current.includes(tile)
+        ? current.filter((item) => item !== tile)
+        : [...current, tile],
+    );
+  }, []);
   const refreshDashboard = useCallback(async () => {
     setIsLoadingDashboard(true);
     setDashboardError(null);
@@ -393,23 +509,6 @@ export default function Dashboard() {
       setIsLoadingDashboard(false);
     }
   }, [fetchDashboard]);
-
-  const handleTouchStart = (event: TouchEvent<HTMLDivElement>) => {
-    const touch = event.touches[0];
-    if (!touch) return;
-    touchStart.current = { x: touch.clientX, y: touch.clientY };
-  };
-
-  const handleTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
-    const touch = event.changedTouches[0];
-    if (!touchStart.current || !touch) return;
-    const dx = touch.clientX - touchStart.current.x;
-    const dy = touch.clientY - touchStart.current.y;
-    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
-      setMobilePanel(dx < 0 ? "team" : "week");
-    }
-    touchStart.current = null;
-  };
 
   useEffect(() => {
     let cancelled = false;
@@ -434,6 +533,127 @@ export default function Dashboard() {
       cancelled = true;
     };
   }, [fetchDashboard]);
+
+  useEffect(() => {
+    const employeeId = employee?.id;
+    if (!employeeId || typeof window === "undefined") {
+      setSeenRecentChangeIds([]);
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem(`${DASHBOARD_SEEN_CHANGE_IDS_KEY}_${employeeId}`);
+      if (!raw) {
+        setSeenRecentChangeIds([]);
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      setSeenRecentChangeIds(Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : []);
+    } catch {
+      setSeenRecentChangeIds([]);
+    }
+  }, [employee?.id]);
+
+  const persistSeenRecentChangeIds = useCallback((updater: (current: string[]) => string[]) => {
+    setSeenRecentChangeIds((current) => {
+      const next = updater(current);
+      const deduped = Array.from(new Set(next));
+      if (typeof window !== "undefined" && employee?.id) {
+        window.localStorage.setItem(
+          `${DASHBOARD_SEEN_CHANGE_IDS_KEY}_${employee.id}`,
+          JSON.stringify(deduped),
+        );
+      }
+      return deduped;
+    });
+  }, [employee?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setNotificationsLoading(true);
+    setNotificationsError(null);
+
+    notificationsApi
+      .getAll()
+      .then((data) => {
+        if (cancelled) return;
+        setNotificationsData(data);
+      })
+      .catch((error: Error) => {
+        if (cancelled) return;
+        setNotificationsError(
+          error.message || "Fehler beim Laden der Benachrichtigungen",
+        );
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setNotificationsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleMarkNotificationRead = useCallback(
+    async (notificationId: number) => {
+      try {
+        const updated = await notificationsApi.markRead(notificationId);
+        setNotificationsData((current) =>
+          current.map((item) => (item.id === notificationId ? updated : item)),
+        );
+      } catch (error: any) {
+        toast({
+          title: "Benachrichtigung konnte nicht aktualisiert werden",
+          description:
+            error?.message || "Der Gelesen-Status konnte nicht gespeichert werden.",
+          variant: "destructive",
+        });
+      }
+    },
+    [toast],
+  );
+
+  const handleMarkRecentChangeSeen = useCallback(
+    (changeId: string) => {
+      persistSeenRecentChangeIds((current) => [...current, changeId]);
+    },
+    [persistSeenRecentChangeIds],
+  );
+
+  useEffect(() => {
+    if (!heroAbsenceDialogOpen || !canCreateAbsence || heroAbsenceEmployees.length > 0) {
+      return;
+    }
+    let cancelled = false;
+    setHeroAbsenceEmployeesLoading(true);
+    void employeeApi
+      .getAll()
+      .then((rows) => {
+        if (cancelled) return;
+        setHeroAbsenceEmployees(rows);
+      })
+      .catch((error: Error) => {
+        if (cancelled) return;
+        toast({
+          title: "Mitarbeiter konnten nicht geladen werden",
+          description: error.message || "Bitte erneut versuchen.",
+          variant: "destructive",
+        });
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setHeroAbsenceEmployeesLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    canCreateAbsence,
+    heroAbsenceDialogOpen,
+    heroAbsenceEmployees.length,
+    toast,
+  ]);
 
   const todayEntry = dashboardData?.today ?? null;
   const birthdayEntry = dashboardData?.birthday ?? null;
@@ -540,6 +760,81 @@ export default function Dashboard() {
     }
   };
 
+  const handleDeclineZe = async (zeId?: number | null) => {
+    if (!zeId) return;
+    setIsAcceptingZe(true);
+    try {
+      await dashboardApi.declineZeitausgleich(zeId);
+      toast({
+        title: "Zeitausgleich abgelehnt",
+        description: "Die Planung wurde informiert und kann dich neu einteilen.",
+      });
+      await refreshDashboard();
+    } catch (error: any) {
+      toast({
+        title: "Zeitausgleich konnte nicht abgelehnt werden",
+        description: error?.message || "Bitte versuche es erneut.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAcceptingZe(false);
+    }
+  };
+
+  const handleCreateHeroAbsence = async () => {
+    if (
+      !heroAbsenceForm.employeeId ||
+      !heroAbsenceForm.startDate ||
+      !heroAbsenceForm.endDate
+    ) {
+      toast({
+        title: "Unvollständige Angaben",
+        description: "Bitte Mitarbeiter:in und Zeitraum wählen.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSavingHeroAbsence(true);
+    try {
+      await plannedAbsencesAdminApi.create({
+        employeeId: Number(heroAbsenceForm.employeeId),
+        startDate: heroAbsenceForm.startDate,
+        endDate: heroAbsenceForm.endDate,
+        reason: heroAbsenceForm.reason,
+        notes: heroAbsenceForm.notes.trim() || null,
+        status: heroAbsenceForm.status,
+      });
+      toast({
+        title: "Abwesenheit gespeichert",
+        description: "Der Eintrag wurde angelegt.",
+      });
+      setHeroAbsenceDialogOpen(false);
+      setHeroAbsenceForm({
+        employeeId: "",
+        startDate: "",
+        endDate: "",
+        reason: "Urlaub",
+        notes: "",
+        status: "Geplant",
+      });
+      await Promise.all([
+        refreshDashboard(),
+        absencesEnabled
+          ? dashboardApi.getAbsences().then(setAbsencesData).catch(() => undefined)
+          : Promise.resolve(),
+      ]);
+    } catch (error: any) {
+      toast({
+        title: "Abwesenheit konnte nicht gespeichert werden",
+        description: error?.message || "Bitte erneut versuchen.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingHeroAbsence(false);
+    }
+  };
+
   const attendanceWidget = dashboardData?.attendanceWidget ?? null;
   const todayAttendance = attendanceWidget?.today ?? null;
   const presentToday = useMemo<DashboardAttendanceMember[]>(() => {
@@ -609,7 +904,8 @@ export default function Dashboard() {
   const weekPreviewEnabled = isWidgetEnabled("week_preview");
   const absencesEnabled = isWidgetEnabled("absences");
   const attendanceEnabled = isWidgetEnabled("attendance");
-  const birthdayEnabled = isWidgetEnabled("birthday");
+  const canApproveVacation =
+    !viewAsUser && (isAdmin || user?.appRole === "Admin" || can("vacation.approve"));
   const canSeeRecentChanges =
     !viewAsUser &&
     (isAdmin ||
@@ -621,17 +917,231 @@ export default function Dashboard() {
   const recentChanges = canSeeRecentChanges
     ? (dashboardData?.recentChanges ?? [])
     : [];
-
-  const mobilePanelEnabled = weekPreviewEnabled || attendanceEnabled;
+  const unreadNotifications = useMemo(
+    () => notificationsData.filter((item) => !item.isRead),
+    [notificationsData],
+  );
+  const unreadRecentChanges = useMemo(
+    () => recentChanges.filter((item) => !seenRecentChangeIds.includes(item.id)),
+    [recentChanges, seenRecentChangeIds],
+  );
 
   useEffect(() => {
-    // Keep mobile panel in a valid state if one tab is disabled
-    if (!weekPreviewEnabled && attendanceEnabled) {
-      setMobilePanel("team");
-    } else if (weekPreviewEnabled && !attendanceEnabled) {
-      setMobilePanel("week");
+    if (!canApproveVacation) {
+      setPendingAbsenceApprovalNotices([]);
+      return;
     }
-  }, [weekPreviewEnabled, attendanceEnabled]);
+    let cancelled = false;
+    const today = format(new Date(), "yyyy-MM-dd");
+    const to = format(new Date(new Date().getFullYear() + 1, 11, 31), "yyyy-MM-dd");
+    void Promise.all([
+      plannedAbsencesAdminApi.getRange({ from: today, to, status: "Geplant" }),
+      plannedAbsencesAdminApi.getRange({ from: today, to }),
+    ])
+      .then(([pendingRows, allRows]) => {
+        if (cancelled) return;
+        const notices = pendingRows
+          .slice()
+          .sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)))
+          .map((absence) => {
+            const name = buildAbsenceEmployeeName(absence);
+            const start = format(new Date(`${absence.startDate}T00:00:00`), "dd.MM.", { locale: de });
+            const end = format(new Date(`${absence.endDate}T00:00:00`), "dd.MM.", { locale: de });
+            const period = absence.startDate === absence.endDate ? start : `${start}-${end}`;
+            const overlaps = allRows.filter((row) => {
+              if (row.id === absence.id) return false;
+              if (row.employeeId === absence.employeeId) return false;
+              return String(row.startDate) <= String(absence.endDate) && String(row.endDate) >= String(absence.startDate);
+            });
+            const overlapSummary = overlaps.length
+              ? overlaps
+                  .slice(0, 3)
+                  .map((row) => `${buildAbsenceEmployeeName(row)} (${row.reason}${row.status ? `, ${row.status}` : ""})`)
+                  .join(" • ")
+              : "Keine weiteren Einträge im Zeitraum";
+            return {
+              id: absence.id,
+              title: `${name} | ${period} | ${absence.reason}`,
+              subtitle: overlapSummary,
+              targetUrl: `/admin/urlaubsplan?absenceId=${absence.id}`,
+            };
+          });
+        setPendingAbsenceApprovalNotices(notices);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPendingAbsenceApprovalNotices([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canApproveVacation]);
+
+  const handleApprovePendingAbsence = useCallback(
+    async (absenceId: number) => {
+      if (!absenceId) return;
+      setApprovingAbsenceIds((current) =>
+        current.includes(absenceId) ? current : [...current, absenceId],
+      );
+      try {
+        await plannedAbsencesAdminApi.updateStatus(absenceId, "Genehmigt");
+        setPendingAbsenceApprovalNotices((current) =>
+          current.filter((notice) => notice.id !== absenceId),
+        );
+        toast({
+          title: "Abwesenheit freigegeben",
+          description: "Der Antrag wurde genehmigt und aus den Notifications entfernt.",
+        });
+        if (absencesEnabled) {
+          void dashboardApi
+            .getAbsences()
+            .then(setAbsencesData)
+            .catch(() => undefined);
+        }
+        await refreshDashboard();
+      } catch (error: any) {
+        toast({
+          title: "Abwesenheit konnte nicht freigegeben werden",
+          description: error?.message || "Bitte erneut versuchen.",
+          variant: "destructive",
+        });
+      } finally {
+        setApprovingAbsenceIds((current) =>
+          current.filter((id) => id !== absenceId),
+        );
+      }
+    },
+    [absencesEnabled, refreshDashboard, toast],
+  );
+
+  const handleMarkAllNotificationsRead = useCallback(async () => {
+    const unreadIds = notificationsData
+      .filter((item) => !item.isRead)
+      .map((item) => item.id);
+    const unseenRecentIds = recentChanges
+      .map((item) => item.id)
+      .filter((id) => !seenRecentChangeIds.includes(id));
+
+    if (unreadIds.length === 0 && unseenRecentIds.length === 0) return;
+
+    try {
+      if (unreadIds.length > 0) {
+        const updatedItems = await Promise.all(
+          unreadIds.map((notificationId) => notificationsApi.markRead(notificationId)),
+        );
+        const updatedMap = new Map(updatedItems.map((item) => [item.id, item]));
+        setNotificationsData((current) =>
+          current.map((item) => updatedMap.get(item.id) ?? item),
+        );
+      }
+      if (unseenRecentIds.length > 0) {
+        persistSeenRecentChangeIds((current) => [...current, ...unseenRecentIds]);
+      }
+    } catch (error: any) {
+      toast({
+        title: "Benachrichtigungen konnten nicht aktualisiert werden",
+        description:
+          error?.message || "Der Gelesen-Status konnte nicht vollständig gespeichert werden.",
+        variant: "destructive",
+      });
+    }
+  }, [notificationsData, recentChanges, seenRecentChangeIds, persistSeenRecentChangeIds, toast]);
+  const workplaceGroupCountToday = useMemo(() => {
+    const keys = new Set<string>();
+    presentToday.forEach((member) => {
+      const workplace = normalizeWorkplace(member.workplace) ?? "Ohne Arbeitsplatz";
+      const key =
+        member.workplaceRoomId != null
+          ? `room-${member.workplaceRoomId}`
+          : `label-${workplace}`;
+      keys.add(key);
+    });
+    return keys.size;
+  }, [presentToday]);
+  const workplaceGroupCountTomorrow = useMemo(() => {
+    const keys = new Set<string>();
+    presentTomorrow.forEach((member) => {
+      const workplace = normalizeWorkplace(member.workplace) ?? "Ohne Arbeitsplatz";
+      const key =
+        member.workplaceRoomId != null
+          ? `room-${member.workplaceRoomId}`
+          : `label-${workplace}`;
+      keys.add(key);
+    });
+    return keys.size;
+  }, [presentTomorrow]);
+  const dashboardNoticeItems = useMemo<DashboardNoticeItem[]>(() => {
+    const items: DashboardNoticeItem[] = [];
+
+    unreadNotifications.slice(0, 5).forEach((item) => {
+      items.push({
+        id: `notification-${item.id}`,
+        notificationId: item.id,
+        title: item.title,
+        subtitle: item.message ?? null,
+        targetUrl: item.link ?? "/nachrichten",
+        meta: item.createdAt
+          ? format(new Date(item.createdAt), "dd.MM. HH:mm", { locale: de })
+          : null,
+        isRead: item.isRead,
+      });
+    });
+
+    pendingAbsenceApprovalNotices.forEach((notice) => {
+      items.push({
+        id: `pending-absence-${notice.id}`,
+        title: notice.title,
+        subtitle: notice.subtitle,
+        targetUrl: notice.targetUrl,
+        tone: "danger",
+        absenceId: notice.id,
+      });
+    });
+
+    if (wishMonthLabel) {
+      items.push({
+        id: "wish-month",
+        title: `Dienstwünsche ${wishMonthLabel}`,
+        subtitle: "Eingaben und Freigaben prüfen",
+        targetUrl: "/dienstwuensche",
+      });
+    }
+
+    if (showZeBadge) {
+      items.push({
+        id: "ze",
+        title: "Zeitausgleich möglich",
+        subtitle: "Direkt hier annehmen oder ablehnen",
+        tone: "danger",
+        zeId: todayEntry?.ze?.id ?? undefined,
+      });
+    }
+
+    if (canSeeRecentChanges) {
+      unreadRecentChanges.slice(0, 5).forEach((item) => {
+        items.push({
+          id: `change-${item.id}`,
+          title: item.title,
+          subtitle: item.subtitle,
+          targetUrl: item.targetUrl ?? null,
+          tone: item.source === "dutyplan_shift" ? "danger" : "default",
+          meta: format(new Date(item.changedAt), "dd.MM. HH:mm", { locale: de }),
+          actorName: item.actorName ?? null,
+          sourceChangeId: item.id,
+          isSeen: false,
+        });
+      });
+    }
+
+    return items.slice(0, 10);
+  }, [
+    canSeeRecentChanges,
+    pendingAbsenceApprovalNotices,
+    unreadRecentChanges,
+    showZeBadge,
+    unreadNotifications,
+    wishMonthLabel,
+  ]);
 
   useEffect(() => {
     if (!absencesEnabled) {
@@ -675,44 +1185,46 @@ export default function Dashboard() {
     () => absenceDays.some((day) => day.types.length > 0),
     [absenceDays],
   );
+  const absenceTypeCount = useMemo(
+    () =>
+      absenceDays.reduce((total, day) => {
+        return total + day.types.reduce((inner, type) => inner + type.names.length, 0);
+      }, 0),
+    [absenceDays],
+  );
 
-  const renderHeroCard = () => (
-    <div className="kabeg-deep-gradient rounded-2xl px-8 py-6 text-primary-foreground shadow-lg shadow-primary/15">
-      <div className="flex items-center justify-between mb-1.5">
-        <h2
-          className="text-xl font-bold text-white"
-          data-testid="text-greeting"
-        >
-          {greeting} {firstName}
-        </h2>
+  const renderTodayTileContent = () => (
+    <div className="kabeg-deep-gradient rounded-xl px-4 py-4 text-primary-foreground shadow-lg shadow-primary/15">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1">
+          <p
+            className="text-lg font-bold text-white sm:text-xl"
+            data-testid="text-greeting"
+          >
+            {greeting} {firstName}
+          </p>
+          <div className="flex items-center gap-2 text-sm text-primary-foreground/90">
+            <HeroIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>{heroMessage}</span>
+          </div>
+          {todayTeamLine ? (
+            <p className="text-xs text-primary-foreground/75">{todayTeamLine}</p>
+          ) : null}
+          {todayDutyLine ? (
+            <p className="text-xs text-primary-foreground/75">{todayDutyLine}</p>
+          ) : null}
+        </div>
         <Badge
           variant="outline"
-          className="text-primary-foreground border-primary-foreground/30 bg-primary-foreground/10"
+          className="shrink-0 border-primary-foreground/30 bg-primary-foreground/10 text-[10px] text-primary-foreground"
         >
           KABEG Klinikum Klagenfurt
         </Badge>
       </div>
-      <p className="text-primary-foreground/80 max-w-xl text-sm flex items-center gap-1.5">
-        <HeroIcon
-          className="h-5 w-5 shrink-0 text-primary-foreground/85"
-          aria-hidden="true"
-        />
-        <span>{heroMessage}</span>
-      </p>
-      {todayTeamLine && (
-        <p className="text-xs text-primary-foreground/70 mt-0.5">
-          {todayTeamLine}
-        </p>
-      )}
-      {todayDutyLine && (
-        <p className="text-xs text-primary-foreground/70 mt-0.5">
-          {todayDutyLine}
-        </p>
-      )}
-      <div className="mt-4 flex gap-2">
+      <div className="mt-3 flex flex-wrap gap-2">
         <Button
           variant="secondary"
-          className="h-9 px-3.5 text-sm text-primary font-medium shadow-none border-0"
+          className="h-8 px-3 text-xs text-primary shadow-none"
           onClick={() => setLocation("/dienstplaene")}
           data-testid="button-to-roster"
         >
@@ -720,34 +1232,289 @@ export default function Dashboard() {
         </Button>
         <Button
           variant="outline"
-          className="h-9 px-3.5 bg-transparent border-primary-foreground/20 text-primary-foreground text-sm hover:bg-primary-foreground/10 hover:text-primary-foreground"
+          className="h-8 border-primary-foreground/20 bg-transparent px-3 text-xs text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"
           onClick={() => setLocation("/dienstwuensche")}
           data-testid="button-request-vacation"
         >
-          <span className="flex flex-col leading-tight text-left">
-            <span>Dienstwünsche</span>
-            {wishMonthLabel ? (
-              <span className="text-[10px] text-primary-foreground/80">
-                {wishMonthLabel}
-              </span>
-            ) : null}
-          </span>
+          Dienstwünsche{wishMonthLabel ? ` ${wishMonthLabel}` : ""}
         </Button>
-      </div>
-      {showZeBadge && (
-        <div className="mt-3">
+        {canCreateAbsence ? (
+          <Button
+            variant="outline"
+            className="h-8 border-primary-foreground/20 bg-transparent px-3 text-xs text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"
+            onClick={() => setHeroAbsenceDialogOpen(true)}
+          >
+            Abwesenheit eintragen
+          </Button>
+        ) : null}
+        {showZeBadge ? (
           <button
             type="button"
-            className="inline-flex items-center justify-center rounded-full bg-rose-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-rose-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-200 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-8 items-center justify-center rounded-full bg-rose-600 px-3 text-xs font-semibold text-white transition hover:bg-rose-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-200 disabled:cursor-not-allowed disabled:opacity-60"
             onClick={handleAcceptZe}
             disabled={isAcceptingZe}
           >
             Zeitausgleich möglich
           </button>
-        </div>
-      )}
+        ) : null}
+      </div>
     </div>
   );
+
+  const renderNotificationsCardContent = () => {
+    if (notificationsLoading || isLoadingDashboard) {
+      return <p className="text-xs text-muted-foreground">Benachrichtigungen werden geladen…</p>;
+    }
+    if (notificationsError && dashboardError) {
+      return <p className="text-xs text-destructive">{notificationsError}</p>;
+    }
+    if (dashboardNoticeItems.length === 0) {
+      return <p className="text-xs text-muted-foreground">Keine neuen Hinweise.</p>;
+    }
+
+    return (
+      <div className="space-y-2">
+        {dashboardNoticeItems.map((item) => {
+          const clickable = Boolean(item.targetUrl);
+          const handleItemOpen = async () => {
+            if (item.notificationId && item.isRead === false) {
+              await handleMarkNotificationRead(item.notificationId);
+            }
+            if (item.sourceChangeId && item.isSeen === false) {
+              handleMarkRecentChangeSeen(item.sourceChangeId);
+            }
+            if (item.targetUrl) {
+              setLocation(item.targetUrl);
+            }
+          };
+          return (
+            <div
+              key={item.id}
+              className={`group rounded-lg border px-3 py-2 text-left ${
+                item.tone === "danger"
+                  ? "border-rose-200 bg-rose-50/70"
+                  : "border-slate-200 bg-slate-50/70"
+              } ${clickable ? "cursor-pointer hover:bg-slate-100/80" : ""}`}
+              onClick={clickable ? () => { void handleItemOpen(); } : undefined}
+              role={clickable ? "button" : undefined}
+              tabIndex={clickable ? 0 : undefined}
+              onKeyDown={
+                clickable
+                  ? (event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        void handleItemOpen();
+                      }
+                    }
+                  : undefined
+              }
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p
+                    className={`text-xs font-semibold leading-snug ${
+                      item.tone === "danger" ? "text-rose-700" : "text-foreground"
+                    }`}
+                  >
+                    {item.title}
+                  </p>
+                  {item.subtitle ? (
+                    <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                      {item.subtitle}
+                    </p>
+                  ) : null}
+                  {item.actorName ? (
+                    <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                      von {item.actorName}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex shrink-0 items-start gap-2">
+                  {item.absenceId ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-6 border-emerald-300 px-1.5 text-[10px] text-emerald-700 hover:bg-emerald-50"
+                      disabled={approvingAbsenceIds.includes(item.absenceId)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void handleApprovePendingAbsence(item.absenceId as number);
+                      }}
+                    >
+                      Freigeben
+                    </Button>
+                  ) : item.zeId ? (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-6 border-emerald-300 px-1.5 text-[10px] text-emerald-700 hover:bg-emerald-50"
+                        disabled={isAcceptingZe}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handleAcceptZe();
+                        }}
+                      >
+                        Annehmen
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-6 border-rose-300 px-1.5 text-[10px] text-rose-700 hover:bg-rose-50"
+                        disabled={isAcceptingZe}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handleDeclineZe(item.zeId as number);
+                        }}
+                      >
+                        Ablehnen
+                      </Button>
+                    </>
+                  ) : item.notificationId && item.isRead === false ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-1.5 text-[10px] text-muted-foreground transition-opacity hover:text-foreground sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void handleMarkNotificationRead(item.notificationId as number);
+                      }}
+                    >
+                      Gelesen
+                    </Button>
+                  ) : item.sourceChangeId && item.isSeen === false ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-1.5 text-[10px] text-muted-foreground transition-opacity hover:text-foreground sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleMarkRecentChangeSeen(item.sourceChangeId as string);
+                      }}
+                    >
+                      Gelesen
+                    </Button>
+                  ) : null}
+                  {item.meta ? (
+                    <span className="shrink-0 text-[10px] text-muted-foreground">
+                      {item.meta}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderDashboardTile = ({
+    tileKey,
+    title,
+    summary,
+    rightSummary,
+    headerAction,
+    icon: Icon,
+    content,
+    accent = false,
+    accentVariant = "blue",
+  }: {
+    tileKey: DashboardTileKey;
+    title: string;
+    summary: string;
+    rightSummary?: string | null;
+    headerAction?: ReactNode;
+    icon: typeof Bell;
+    content: ReactNode;
+    accent?: boolean;
+    accentVariant?: "blue" | "neutral" | "alert";
+  }) => {
+    const isOpen = openTiles.includes(tileKey);
+    const accentCardClass = accent
+      ? accentVariant === "alert"
+        ? "bg-gradient-to-r from-slate-950 via-slate-900 to-red-900 text-white"
+        : accentVariant === "neutral"
+          ? "bg-gradient-to-r from-slate-950 via-slate-900 to-slate-700 text-white"
+          : "bg-gradient-to-r from-slate-950 via-slate-900 to-blue-900 text-white"
+      : "";
+    const accentIconClass = accent
+      ? accentVariant === "alert"
+        ? "bg-red-500/15 text-red-300"
+        : "bg-white/10 text-white"
+      : "bg-primary/10 text-primary";
+    return (
+      <Collapsible open={isOpen} onOpenChange={() => toggleTile(tileKey)}>
+        <Card
+          className={`border-none kabeg-shadow overflow-hidden ${accentCardClass}`}
+        >
+          <CollapsibleTrigger asChild>
+            <button
+              type="button"
+              className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left"
+            >
+              <div className="flex min-w-0 items-start gap-3">
+                <div className={`mt-0.5 rounded-lg p-2 ${accentIconClass}`}>
+                  <Icon className="h-4 w-4" aria-hidden="true" />
+                </div>
+                <div className="min-w-0">
+                  <p
+                    className={`text-sm font-semibold leading-tight ${
+                      accent ? "text-white" : "text-foreground"
+                    }`}
+                  >
+                    {title}
+                  </p>
+                  <p
+                    className={`mt-1 text-[11px] leading-snug ${
+                      accent ? "text-white/70" : "text-muted-foreground"
+                    }`}
+                  >
+                    {summary}
+                  </p>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-start gap-3">
+                {headerAction ? (
+                  <div
+                    className="mt-0.5"
+                    onClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => event.stopPropagation()}
+                  >
+                    {headerAction}
+                  </div>
+                ) : null}
+                {rightSummary ? (
+                  <span
+                    className={`mt-0.5 text-right text-[11px] leading-snug ${
+                      accent ? "text-white/70" : "text-muted-foreground"
+                    }`}
+                  >
+                    {rightSummary}
+                  </span>
+                ) : null}
+                <ChevronDown
+                  className={`mt-0.5 h-4 w-4 shrink-0 transition-transform ${
+                    isOpen ? "rotate-180" : ""
+                  } ${accent ? "text-white/70" : "text-muted-foreground"}`}
+                />
+              </div>
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className={`px-4 pb-4 pt-0 ${accent ? "text-white" : ""}`}>
+              {content}
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
+    );
+  };
 
   const renderAttendanceBadges = (
     members: DashboardAttendanceMember[],
@@ -782,7 +1549,7 @@ export default function Dashboard() {
           );
         })
       ) : (
-        <p className="text-sm text-muted-foreground">Keine Daten verfuegbar.</p>
+        <p className="text-xs text-muted-foreground sm:text-sm">Keine Daten verfuegbar.</p>
       )}
     </div>
   );
@@ -792,7 +1559,7 @@ export default function Dashboard() {
     testPrefix: string,
   ) => {
     if (members.length === 0) {
-      return <p className="text-sm text-muted-foreground">Keine Daten verfuegbar.</p>;
+      return <p className="text-xs text-muted-foreground sm:text-sm">Keine Daten verfuegbar.</p>;
     }
 
     const groups = new Map<
@@ -889,7 +1656,7 @@ export default function Dashboard() {
                       <Badge
                         key={`${testPrefix}-${group.label}-${person.employeeId}-${personIndex}`}
                         variant="secondary"
-                        className={`px-2.5 py-1 text-[13px] sm:text-sm font-medium ${
+                        className={`px-2 py-1 text-xs sm:text-sm font-medium ${
                           person.isDuty ? STAFF_BADGE_DUTY : STAFF_BADGE_NORMAL
                         }`}
                         data-testid={`${testPrefix}-${groupIndex}-${personIndex}`}
@@ -907,25 +1674,21 @@ export default function Dashboard() {
     );
   };
 
-  const renderAttendanceCardContent = () => (
-    <div className="space-y-3 md:px-4 md:pb-4">
-      <Tabs
-        value={attendanceViewMode}
-        onValueChange={(value) =>
-          setAttendanceViewMode(value === "workplaces" ? "workplaces" : "people")
-        }
-      >
-        <TabsList className="grid h-11 w-full max-w-[28rem] grid-cols-2">
-          <TabsTrigger className="text-sm" value="people">Personen</TabsTrigger>
-          <TabsTrigger className="text-sm" value="workplaces">Arbeitsplätze</TabsTrigger>
-        </TabsList>
-      </Tabs>
+  const renderPeopleCardContent = () => (
+    <div className="space-y-3">
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Heute
+          </p>
+          <span className="text-[11px] text-muted-foreground">
+            {presentToday.length} Personen
+          </span>
+        </div>
+        {renderAttendanceBadges(presentToday, "staff-present")}
+      </div>
 
-      {attendanceViewMode === "workplaces"
-        ? renderAttendanceByWorkplaces(presentToday, "staff-workplace-present")
-        : renderAttendanceBadges(presentToday, "staff-present")}
-
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
         <Clock className="h-3.5 w-3.5" />
         <span>
           {typeof absentCountToday === "number"
@@ -936,52 +1699,67 @@ export default function Dashboard() {
 
       <Separator className="my-0.5" />
 
-      <div className="space-y-1.5">
-        <div className="flex items-center gap-1.5">
-          <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
-          <p className="text-xs font-medium">Team morgen</p>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Morgen
+          </p>
+          <span className="text-[11px] text-muted-foreground">
+            {presentTomorrow.length} Personen
+          </span>
         </div>
-        {attendanceViewMode === "workplaces"
-          ? renderAttendanceByWorkplaces(
-              presentTomorrow,
-              "staff-workplace-tomorrow",
-            )
-          : renderAttendanceBadges(presentTomorrow, "staff-tomorrow")}
+        {renderAttendanceBadges(presentTomorrow, "staff-tomorrow")}
       </div>
     </div>
   );
 
-  const renderAttendanceCard = () => {
-    if (!attendanceEnabled) return null;
-    return (
-      <Card className="border-none kabeg-shadow">
-        <CardHeader className="px-4 pb-1 pt-4 md:px-4">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Users className="h-5 w-5" />
-            Heute anwesend
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-4 pb-4 pt-0 md:px-4 md:pb-4">
-          {renderAttendanceCardContent()}
-        </CardContent>
-      </Card>
-    );
-  };
+  const renderWorkplacesCardContent = () => (
+    <div className="space-y-3">
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Heute
+          </p>
+          <span className="text-[11px] text-muted-foreground">
+            {workplaceGroupCountToday} Arbeitsplätze
+          </span>
+        </div>
+        {renderAttendanceByWorkplaces(presentToday, "staff-workplace-present")}
+      </div>
+
+      <Separator className="my-0.5" />
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Morgen
+          </p>
+          <span className="text-[11px] text-muted-foreground">
+            {workplaceGroupCountTomorrow} Arbeitsplätze
+          </span>
+        </div>
+        {renderAttendanceByWorkplaces(
+          presentTomorrow,
+          "staff-workplace-tomorrow",
+        )}
+      </div>
+    </div>
+  );
 
   const renderAbsencesCardContent = () => {
     if (absencesLoading) {
       return (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-xs text-muted-foreground sm:text-sm">
           Abwesenheiten werden geladen…
         </p>
       );
     }
     if (absencesError) {
-      return <p className="text-sm text-destructive">{absencesError}</p>;
+      return <p className="text-xs text-destructive sm:text-sm">{absencesError}</p>;
     }
     if (!hasAbsenceEntries) {
       return (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-xs text-muted-foreground sm:text-sm">
           Keine Abwesenheiten im Zeitraum.
         </p>
       );
@@ -1000,7 +1778,7 @@ export default function Dashboard() {
 
             return (
               <div key={day.date} className="space-y-2">
-                <p className="text-sm font-semibold text-foreground">
+                <p className="text-xs font-semibold text-foreground sm:text-sm">
                   {dateLabel}
                 </p>
                 <div className="space-y-2">
@@ -1025,13 +1803,13 @@ export default function Dashboard() {
   const renderWeekPreviewCardContent = () => (
     <div className="space-y-4">
       {isLoadingDashboard ? (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-xs text-muted-foreground sm:text-sm">
           Wochenvorschau wird geladen…
         </p>
       ) : dashboardError ? (
-        <p className="text-sm text-destructive">Fehler: {dashboardError}</p>
+        <p className="text-xs text-destructive sm:text-sm">Fehler: {dashboardError}</p>
       ) : previewCards.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-xs text-muted-foreground sm:text-sm">
           Keine Einsätze für die Vorschau verfügbar.
         </p>
       ) : (
@@ -1069,7 +1847,7 @@ export default function Dashboard() {
               data-testid={`schedule-day-${i}`}
             >
               <div className="flex items-center justify-between mb-1">
-                <span className="font-medium text-sm">
+                <span className="text-xs font-medium sm:text-sm">
                   {item.dayLabel}{" "}
                   <span className="text-muted-foreground">
                     – {item.dateLabel}
@@ -1094,8 +1872,6 @@ export default function Dashboard() {
       )}
     </div>
   );
-
-  const canCreateAbsence = can("absence.create");
   const renderAbsencesCard = () => (
     <Card className="border-none kabeg-shadow flex flex-col">
       <CardHeader className="flex items-start justify-between gap-4">
@@ -1224,113 +2000,296 @@ export default function Dashboard() {
     );
   };
 
-  const renderMiscWidgets = () => null;
+  const notificationCategorySummary = useMemo(() => {
+    const categories: string[] = [];
+    if (unreadNotifications.length > 0) categories.push(`Hinweise ${unreadNotifications.length}`);
+    if (pendingAbsenceApprovalNotices.length > 0) {
+      categories.push(`Abwesenheiten ${pendingAbsenceApprovalNotices.length}`);
+    }
+    if (wishMonthLabel) categories.push("Dienstwünsche 1");
+    if (showZeBadge) categories.push("Zeitausgleich 1");
+    if (canSeeRecentChanges && unreadRecentChanges.length > 0) {
+      categories.push(`Änderungen ${unreadRecentChanges.length}`);
+    }
+    return categories;
+  }, [
+    unreadNotifications.length,
+    pendingAbsenceApprovalNotices.length,
+    wishMonthLabel,
+    showZeBadge,
+    canSeeRecentChanges,
+    unreadRecentChanges.length,
+  ]);
 
-  const renderBirthdayCard = () => {
-    if (!birthdayEnabled) return null;
-    return birthdayName ? (
-      <Card className="border-none kabeg-shadow bg-gradient-to-br from-pink-50 to-orange-50">
-        <CardContent className="p-4 flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-pink-100 flex items-center justify-center">
-            <Cake className="w-6 h-6 text-pink-600" />
-          </div>
-          <div>
-            <p className="text-sm font-medium text-foreground">
-              Heute hat Geburtstag:
-            </p>
-            <p
-              className="text-base font-bold text-pink-700"
-              data-testid="text-birthday"
-            >
-              {birthdayName}
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-    ) : null;
-  };
+  const notificationsSummary = notificationsLoading
+    ? "Benachrichtigungen werden geladen"
+    : dashboardNoticeItems.length > 0
+      ? notificationCategorySummary.length > 0
+        ? notificationCategorySummary.join(" · ")
+        : `${dashboardNoticeItems.length} Einträge`
+      : "Keine neuen Hinweise";
+  const todaySummary =
+    normalizedTodayStatusLabel ??
+    todayEntry?.workplace ??
+    todayDutyLine ??
+    "Kein aktueller Eintrag";
+  const weekSummary =
+    previewCards.length > 0
+      ? `${previewCards.length} Tage · ${previewCards[0]?.dayLabel} ${previewCards[0]?.dateLabel}`
+      : "Keine Einsätze";
+  const peopleSummary = `Heute ${presentToday.length} · morgen ${presentTomorrow.length}`;
+  const workplacesSummary = `Heute ${workplaceGroupCountToday} · morgen ${workplaceGroupCountTomorrow}`;
+  const absencesSummary = absencesLoading
+    ? "Lädt…"
+    : `${typeof absentCountToday === "number" ? absentCountToday : 0} heute · ${absenceTypeCount} Einträge`;
+  const birthdaySummary = birthdayName
+    ? `Heute Geburtstag: ${birthdayName}`
+    : null;
 
   return (
     <Layout title="Dashboard">
-      <div className="hidden md:grid grid-cols-1 md:grid-cols-12 gap-6">
-        <div className="md:col-span-12">
-          {renderHeroCard()}
-        </div>
-        <div className="md:col-span-12 grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-6">{renderAttendanceCard()}</div>
-          <div className="lg:col-span-3 space-y-6">
-            {renderRecentChangesCard()}
-            {weekPreviewEnabled && (
-              <Card className="border-none kabeg-shadow flex flex-col">
-                <CardHeader>
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <CalendarDays className="w-5 h-5" />
-                    Wochenvorschau
-                  </CardTitle>
-                  <CardDescription>Deine nächsten Einsätze</CardDescription>
-                </CardHeader>
-                <CardContent className="flex-1">
-                  {renderWeekPreviewCardContent()}
-                </CardContent>
-              </Card>
-            )}
+      <div className="space-y-4 px-3 md:px-0">
+        <div className="space-y-4">
+          <div>
+            {renderTodayTileContent()}
           </div>
-          <div className="lg:col-span-3 space-y-6">
-            {absencesEnabled && renderAbsencesCard()}
-            {renderBirthdayCard()}
-          </div>
-        </div>
-        <div className="md:col-span-12">
-          {renderMiscWidgets()}
-        </div>
-      </div>
 
-      <div className="md:hidden space-y-6 px-4">
-        {renderHeroCard()}
-        {mobilePanelEnabled && (
-          <Card
-            className="border-none kabeg-shadow"
-            onTouchStart={handleTouchStart}
-            onTouchEnd={handleTouchEnd}
-          >
-            <CardContent className="pb-2">
-              <div className="flex gap-2">
-                {weekPreviewEnabled && (
+          <div>
+            {renderDashboardTile({
+              tileKey: "notifications",
+              title: "Notifications",
+              summary: notificationsSummary,
+              headerAction:
+                unreadNotifications.length > 0 || unreadRecentChanges.length > 0 ? (
                   <Button
-                    variant={mobilePanel === "week" ? "secondary" : "ghost"}
+                    type="button"
+                    variant="ghost"
                     size="sm"
-                    className="px-3 py-1 text-xs"
-                    onClick={() => setMobilePanel("week")}
-                    aria-pressed={mobilePanel === "week"}
+                    className="h-7 px-2 text-[11px] text-white/80 hover:bg-white/10 hover:text-white"
+                    onClick={handleMarkAllNotificationsRead}
                   >
-                    Woche
+                    Alles gelesen
                   </Button>
-                )}
-                {attendanceEnabled && (
-                  <Button
-                    variant={mobilePanel === "team" ? "secondary" : "ghost"}
-                    size="sm"
-                    className="px-3 py-1 text-xs"
-                    onClick={() => setMobilePanel("team")}
-                    aria-pressed={mobilePanel === "team"}
-                  >
-                    Heute/Morgen
-                  </Button>
-                )}
+                ) : null,
+              rightSummary: birthdaySummary,
+              icon: Bell,
+              content: renderNotificationsCardContent(),
+              accent: true,
+              accentVariant:
+                unreadNotifications.length > 0 ||
+                pendingAbsenceApprovalNotices.length > 0
+                  ? "alert"
+                  : "neutral",
+            })}
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {weekPreviewEnabled ? (
+              <div>
+                {renderDashboardTile({
+                  tileKey: "week",
+                  title: "Meine Woche",
+                  summary: weekSummary,
+                  icon: CalendarDays,
+                  content: renderWeekPreviewCardContent(),
+                })}
               </div>
-            </CardContent>
-            <CardContent className="pt-0">
-              {(weekPreviewEnabled && mobilePanel === "week"
-                ? renderWeekPreviewCardContent()
-                : renderAttendanceCardContent())}
-            </CardContent>
-          </Card>
-        )}
-        {renderRecentChangesCard()}
-        {renderBirthdayCard()}
-        {absencesEnabled && renderAbsencesCard()}
-        {renderMiscWidgets()}
+            ) : null}
+
+            {absencesEnabled ? (
+              <div>
+                {renderDashboardTile({
+                  tileKey: "absences",
+                  title: "Abwesenheiten",
+                  summary: absencesSummary,
+                  icon: CalendarClock,
+                  content: (
+                    <div className="space-y-3">
+                      {canCreateAbsence ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs"
+                          onClick={() => setLocation("/admin/urlaubsplan")}
+                        >
+                          Abwesenheit eintragen
+                        </Button>
+                      ) : null}
+                      {renderAbsencesCardContent()}
+                    </div>
+                  ),
+                })}
+              </div>
+            ) : null}
+
+            {attendanceEnabled ? (
+              <div>
+                {renderDashboardTile({
+                  tileKey: "people",
+                  title: "Personen heute / morgen",
+                  summary: peopleSummary,
+                  icon: Users,
+                  content: renderPeopleCardContent(),
+                })}
+              </div>
+            ) : null}
+
+            {attendanceEnabled ? (
+              <div>
+                {renderDashboardTile({
+                  tileKey: "workplaces",
+                  title: "Arbeitsplätze heute / morgen",
+                  summary: workplacesSummary,
+                  icon: BriefcaseBusiness,
+                  content: renderWorkplacesCardContent(),
+                })}
+              </div>
+            ) : null}
+          </div>
+        </div>
       </div>
+      <Dialog open={heroAbsenceDialogOpen} onOpenChange={setHeroAbsenceDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Abwesenheit eintragen</DialogTitle>
+            <DialogDescription>
+              Schnellzugriff fuer Admins direkt aus dem Dashboard.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <div className="grid gap-1.5">
+              <Label htmlFor="hero-absence-employee">Mitarbeiter:in</Label>
+              <Select
+                value={heroAbsenceForm.employeeId}
+                onValueChange={(value) =>
+                  setHeroAbsenceForm((current) => ({
+                    ...current,
+                    employeeId: value,
+                  }))
+                }
+              >
+                <SelectTrigger id="hero-absence-employee">
+                  <SelectValue
+                    placeholder={
+                      heroAbsenceEmployeesLoading
+                        ? "Mitarbeiter werden geladen…"
+                        : "Mitarbeiter:in wählen"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {heroAbsenceEmployees.map((entry) => (
+                    <SelectItem key={entry.id} value={String(entry.id)}>
+                      {buildFullName(entry.firstName, entry.lastName) || entry.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label htmlFor="hero-absence-start">Von</Label>
+                <Input
+                  id="hero-absence-start"
+                  type="date"
+                  value={heroAbsenceForm.startDate}
+                  onChange={(event) =>
+                    setHeroAbsenceForm((current) => ({
+                      ...current,
+                      startDate: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="hero-absence-end">Bis</Label>
+                <Input
+                  id="hero-absence-end"
+                  type="date"
+                  value={heroAbsenceForm.endDate}
+                  onChange={(event) =>
+                    setHeroAbsenceForm((current) => ({
+                      ...current,
+                      endDate: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label htmlFor="hero-absence-reason">Grund</Label>
+                <Select
+                  value={heroAbsenceForm.reason}
+                  onValueChange={(value) =>
+                    setHeroAbsenceForm((current) => ({
+                      ...current,
+                      reason: value,
+                    }))
+                  }
+                >
+                  <SelectTrigger id="hero-absence-reason">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {HERO_ABSENCE_REASONS.map((reason) => (
+                      <SelectItem key={reason} value={reason}>
+                        {reason}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="hero-absence-status">Status</Label>
+                <Select
+                  value={heroAbsenceForm.status}
+                  onValueChange={(value: "Geplant" | "Genehmigt" | "Abgelehnt") =>
+                    setHeroAbsenceForm((current) => ({
+                      ...current,
+                      status: value,
+                    }))
+                  }
+                >
+                  <SelectTrigger id="hero-absence-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Geplant">Geplant</SelectItem>
+                    <SelectItem value="Genehmigt">Genehmigt</SelectItem>
+                    <SelectItem value="Abgelehnt">Abgelehnt</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="hero-absence-notes">Notiz</Label>
+              <Textarea
+                id="hero-absence-notes"
+                value={heroAbsenceForm.notes}
+                onChange={(event) =>
+                  setHeroAbsenceForm((current) => ({
+                    ...current,
+                    notes: event.target.value,
+                  }))
+                }
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setHeroAbsenceDialogOpen(false)}
+            >
+              Abbrechen
+            </Button>
+            <Button onClick={handleCreateHeroAbsence} disabled={isSavingHeroAbsence}>
+              {isSavingHeroAbsence ? "Speichert…" : "Speichern"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }

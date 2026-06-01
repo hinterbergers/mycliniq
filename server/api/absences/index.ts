@@ -207,6 +207,28 @@ const formatDate = (date: Date) => {
   return `${year}-${month}-${day}`;
 };
 
+const formatAbsencePeriodLabel = (startDate: string | Date, endDate: string | Date) => {
+  const start = new Date(`${String(startDate).slice(0, 10)}T00:00:00`);
+  const end = new Date(`${String(endDate).slice(0, 10)}T00:00:00`);
+  const startLabel = `${String(start.getDate()).padStart(2, "0")}.${String(start.getMonth() + 1).padStart(2, "0")}.`;
+  const endLabel = `${String(end.getDate()).padStart(2, "0")}.${String(end.getMonth() + 1).padStart(2, "0")}.`;
+  return startLabel === endLabel ? startLabel : `${startLabel}-${endLabel}`;
+};
+
+const buildEmployeeDisplayName = (employee: {
+  name?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+}) => {
+  const fullName = [employee.firstName, employee.lastName]
+    .map((part) => (part ?? "").trim())
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  if (fullName) return fullName;
+  return (employee.name ?? "").trim() || "Mitarbeiter:in";
+};
+
 const getVacationLockRange = async () => {
   const [settings] = await db
     .select({
@@ -887,11 +909,49 @@ export function registerAbsenceRoutes(router: Router) {
         .where(eq(plannedAbsences.id, absenceId))
         .returning();
 
-      // Get employee info
+      // Get employee and approver info
       const [employee] = await db
-        .select({ name: employees.name, lastName: employees.lastName })
+        .select({
+          name: employees.name,
+          firstName: employees.firstName,
+          lastName: employees.lastName,
+        })
         .from(employees)
         .where(eq(employees.id, updated.employeeId));
+
+      const shouldNotifyRecipient =
+        status === "Genehmigt" &&
+        updated.employeeId != null &&
+        updated.employeeId !== req.user.employeeId;
+
+      if (shouldNotifyRecipient) {
+        const [approverEmployee] = await db
+          .select({
+            name: employees.name,
+            firstName: employees.firstName,
+            lastName: employees.lastName,
+          })
+          .from(employees)
+          .where(eq(employees.id, req.user.employeeId));
+
+        const approverName = buildEmployeeDisplayName(approverEmployee ?? {});
+        const periodLabel = formatAbsencePeriodLabel(updated.startDate, updated.endDate);
+        await db.insert(notifications).values({
+          recipientId: updated.employeeId,
+          type: "system",
+          title: `${updated.reason} freigegeben`,
+          message: `${periodLabel} wurde von ${approverName} freigegeben.`,
+          link: "/dienstplaene",
+          metadata: {
+            kind: "absence_approved",
+            absenceId: updated.id,
+            reason: updated.reason,
+            startDate: updated.startDate,
+            endDate: updated.endDate,
+            approvedById: req.user.employeeId ?? null,
+          },
+        });
+      }
 
       return ok(res, {
         ...updated,
@@ -962,6 +1022,34 @@ export function registerAbsenceRoutes(router: Router) {
         })
         .where(eq(plannedAbsences.id, absenceId))
         .returning();
+
+      if (isApproved && updated.employeeId !== req.user.employeeId) {
+        const [approverEmployee] = await db
+          .select({
+            name: employees.name,
+            firstName: employees.firstName,
+            lastName: employees.lastName,
+          })
+          .from(employees)
+          .where(eq(employees.id, req.user.employeeId));
+        const approverName = buildEmployeeDisplayName(approverEmployee ?? {});
+        const periodLabel = formatAbsencePeriodLabel(updated.startDate, updated.endDate);
+        await db.insert(notifications).values({
+          recipientId: updated.employeeId,
+          type: "system",
+          title: `${updated.reason} freigegeben`,
+          message: `${periodLabel} wurde von ${approverName} freigegeben.`,
+          link: "/dienstplaene",
+          metadata: {
+            kind: "absence_approved",
+            absenceId: updated.id,
+            reason: updated.reason,
+            startDate: updated.startDate,
+            endDate: updated.endDate,
+            approvedById: req.user.employeeId ?? null,
+          },
+        });
+      }
 
       return ok(res, updated);
     }),

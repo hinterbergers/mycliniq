@@ -80,6 +80,9 @@ Schreiben Sie den Hauptinhalt hier. Bilder koennen mit \`![Alt-Text](https://...
 - Delegierte Bearbeiter koennen diese Seite direkt aktualisieren und zur Freigabe senden.
 `;
 
+const HISTORY_SECTION_HEADING = "## 6. Historie";
+const RESPONSIBLE_SECTION_HEADING = "## Verantwortliche";
+
 type ArticleActionDialog =
   | { kind: "publish"; title: string; description: string; confirmLabel: string }
   | { kind: "changes"; title: string; description: string; confirmLabel: string }
@@ -130,6 +133,55 @@ const toSafeFilename = (value: string) => {
   const ascii = value.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const cleaned = ascii.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
   return cleaned.slice(0, 60) || "wiki";
+};
+
+const normalizeLineBreaks = (value?: string | null) => (value || "").replace(/\r\n/g, "\n");
+
+const findMarkdownSection = (markdown: string, heading: string) => {
+  const lines = normalizeLineBreaks(markdown).split("\n");
+  const startIndex = lines.findIndex((line) => line.trim() === heading.trim());
+  if (startIndex === -1) return null;
+
+  let endIndex = lines.length;
+  for (let index = startIndex + 1; index < lines.length; index += 1) {
+    if (/^##\s/.test(lines[index].trim())) {
+      endIndex = index;
+      break;
+    }
+  }
+
+  return { lines, startIndex, endIndex };
+};
+
+const extractMarkdownSectionLines = (markdown: string, heading: string) => {
+  const section = findMarkdownSection(markdown, heading);
+  if (!section) return [];
+
+  return section.lines
+    .slice(section.startIndex + 1, section.endIndex)
+    .map((line) => line.trim())
+    .filter(Boolean);
+};
+
+const upsertMarkdownSection = (
+  markdown: string,
+  heading: string,
+  contentLines: string[],
+) => {
+  const normalized = normalizeLineBreaks(markdown).trimEnd();
+  const block = [heading, "", ...contentLines.filter(Boolean)].join("\n");
+  const section = findMarkdownSection(normalized, heading);
+
+  if (!section) {
+    return normalized ? `${normalized}\n\n${block}` : block;
+  }
+
+  const nextLines = [
+    ...section.lines.slice(0, section.startIndex),
+    ...block.split("\n"),
+    ...section.lines.slice(section.endIndex),
+  ];
+  return nextLines.join("\n").replace(/\n{3,}/g, "\n\n");
 };
 
 const parseKnowledgeLocation = (location: string) => {
@@ -683,6 +735,70 @@ export default function Guidelines() {
     );
   };
 
+  const historyEntries = useMemo(
+    () => extractMarkdownSectionLines(editorForm.contentMarkdown, HISTORY_SECTION_HEADING),
+    [editorForm.contentMarkdown],
+  );
+
+  const responsibleEntries = useMemo(
+    () =>
+      extractMarkdownSectionLines(editorForm.contentMarkdown, RESPONSIBLE_SECTION_HEADING).map(
+        (line) => line.replace(/^[-*]\s*/, ""),
+      ),
+    [editorForm.contentMarkdown],
+  );
+
+  const responsibleUserOptions = useMemo(
+    () =>
+      employees
+        .map((entry) => ({
+          value: formatEmployeeName(entry.name, entry.lastName),
+          label: `${formatEmployeeName(entry.name, entry.lastName)}${
+            entry.role ? ` (${entry.role})` : ""
+          }`,
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label, "de")),
+    [employees],
+  );
+
+  const setHistoryEntries = (entries: string[]) => {
+    setEditorForm((current) => ({
+      ...current,
+      contentMarkdown: upsertMarkdownSection(
+        current.contentMarkdown,
+        HISTORY_SECTION_HEADING,
+        entries,
+      ),
+    }));
+  };
+
+  const setResponsibleEntries = (entries: string[]) => {
+    setEditorForm((current) => ({
+      ...current,
+      contentMarkdown: upsertMarkdownSection(
+        current.contentMarkdown,
+        RESPONSIBLE_SECTION_HEADING,
+        entries.map((entry) => `- ${entry}`),
+      ),
+    }));
+  };
+
+  const importResponsibleUsers = () => {
+    const names = [
+      detailSop?.createdBy
+        ? `${formatEmployeeName(detailSop.createdBy.name, detailSop.createdBy.lastName)} (Autor)`
+        : null,
+      ...((detailSop?.members || []).map((member) => {
+        const roleLabel = member.role === "edit" ? "Bearbeitung" : "Lesen";
+        return `${formatEmployeeName(member.name, member.lastName)} (${roleLabel})`;
+      }) || []),
+    ].filter((entry): entry is string => Boolean(entry));
+
+    if (names.length) {
+      setResponsibleEntries(names);
+    }
+  };
+
   const renderArticleEditor = () => (
     <Card className="border-primary/20 shadow-lg">
       <CardHeader className="space-y-2">
@@ -765,6 +881,127 @@ export default function Guidelines() {
             height={560}
             className="rounded-xl border bg-white"
           />
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="space-y-3 rounded-xl border bg-slate-50/80 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-primary">Versionsverlauf</h3>
+                <p className="text-xs text-muted-foreground">
+                  Neue Zeilen koennen direkt ergänzt werden, um alte Versionen zu erwähnen.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setHistoryEntries([...(historyEntries.length ? historyEntries : []), ""])}
+              >
+                Zeile hinzufügen
+              </Button>
+            </div>
+            <div className="space-y-2">
+              {(historyEntries.length ? historyEntries : [""]).map((entry, index) => (
+                <div key={`history-${index}`} className="flex items-start gap-2">
+                  <Input
+                    value={entry}
+                    onChange={(event) => {
+                      const next = (historyEntries.length ? [...historyEntries] : [""]);
+                      next[index] = event.target.value;
+                      setHistoryEntries(next);
+                    }}
+                    placeholder="z.B. 4.0 Dokument aktualisiert durch ..."
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      const next = (historyEntries.length ? [...historyEntries] : [""]).filter(
+                        (_item, itemIndex) => itemIndex !== index,
+                      );
+                      setHistoryEntries(next);
+                    }}
+                  >
+                    Entfernen
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-3 rounded-xl border bg-slate-50/80 p-4">
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold text-primary">Verantwortliche</h3>
+              <p className="text-xs text-muted-foreground">
+                Kleiner Block mit zuständigen Personen für diese Seite.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={importResponsibleUsers}
+              >
+                Aus Delegation übernehmen
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setResponsibleEntries([
+                    ...(responsibleEntries.length ? responsibleEntries : []),
+                    "",
+                  ])
+                }
+              >
+                Person hinzufügen
+              </Button>
+            </div>
+            <div className="space-y-2">
+              {(responsibleEntries.length ? responsibleEntries : [""]).map((entry, index) => (
+                <div key={`responsible-${index}`} className="flex items-start gap-2">
+                  <Select
+                    value={entry}
+                    onValueChange={(value) => {
+                      const next = responsibleEntries.length
+                        ? [...responsibleEntries]
+                        : [""];
+                      next[index] = value;
+                      setResponsibleEntries(next);
+                    }}
+                  >
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Verantwortliche Person auswählen" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {responsibleUserOptions.map((option) => (
+                        <SelectItem key={`${option.value}-${index}`} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      const next = (responsibleEntries.length
+                        ? [...responsibleEntries]
+                        : [""]).filter((_item, itemIndex) => itemIndex !== index);
+                      setResponsibleEntries(next);
+                    }}
+                  >
+                    Entfernen
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div className="space-y-3 rounded-xl border bg-slate-50/80 p-4">

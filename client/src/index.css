@@ -103,6 +103,14 @@
   list-style-type: disc;
 }
 
+.wmde-markdown ul ul {
+  list-style-type: circle;
+}
+
+.wmde-markdown ul ul ul {
+  list-style-type: square;
+}
+
 .wmde-markdown ol {
   list-style-type: decimal;
 }

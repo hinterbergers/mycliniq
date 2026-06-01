@@ -152,7 +152,12 @@
 - Projects: proposed, active, done; delete is soft via `deleted_at`
 - Permissions: `perm.sop_manage`, `perm.sop_publish`, `perm.project_manage`, `perm.project_delete`, `perm.message_group_manage`
 - Messages: `GET /api/notifications` for system inbox, `/api/messages` for threads (direct/group)
+- `POST /api/notifications/:id/read` accepts optional action metadata (`actionType`, `actionLabel`, `actionDetails`) so Dashboard and `/nachrichten` can show how an item was handled
+- `POST /api/notifications/broadcast` sends a system message to all active employees; technical admin only
+- `/nachrichten` is a portal with new inbox, processed inbox, private compose, admin system compose, group creation, and chat workspace sections
+- Favorite group shortcut button in the Nachrichten header is stored per user in localStorage key `cliniq_messages_favorite_group_<employeeId>`
 - Direct threads are de-duplicated: starting a 1:1 with the same user returns the existing thread
+- Thread list ordering follows latest message activity, not only original thread creation time
 
 ## Client API Helpers (current approach)
 - `client/src/lib/authToken.ts` centralizes token read/write/clear

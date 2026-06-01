@@ -88,6 +88,12 @@ ADD COLUMN IF NOT EXISTS month_weeks integer[] NOT NULL DEFAULT ARRAY[]::integer
 ALTER TABLE tool_visibility
 ADD COLUMN IF NOT EXISTS sort_order integer NOT NULL DEFAULT 0;
 
+ALTER TABLE weekly_plan_assignments
+ADD COLUMN IF NOT EXISTS created_by_id integer REFERENCES employees(id);
+
+ALTER TABLE weekly_plan_assignments
+ADD COLUMN IF NOT EXISTS updated_by_id integer REFERENCES employees(id);
+
 UPDATE tool_visibility
 SET sort_order = CASE tool_key
   WHEN 'pregnancy_weeks' THEN 0

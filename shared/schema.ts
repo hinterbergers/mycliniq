@@ -1220,6 +1220,8 @@ export const weeklyPlanAssignments = pgTable(
       .default("Plan"),
     note: text("note"),
     isBlocked: boolean("is_blocked").notNull().default(false),
+    createdById: integer("created_by_id").references(() => employees.id),
+    updatedById: integer("updated_by_id").references(() => employees.id),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

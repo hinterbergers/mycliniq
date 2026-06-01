@@ -11,6 +11,7 @@ const TOOL_KEYS = [
   "pul_calculator",
   "body_surface_area",
   "bishop_score",
+  "bmi_calculator",
 ] as const;
 const toolKeySchema = z.enum(TOOL_KEYS);
 

@@ -306,8 +306,29 @@ const withExcelTopPadding = (value: string): string => {
   return `\n${value}`;
 };
 
+const getRosterHeaderShortLabel = (label: string, key: string) => {
+  const normalizedKey = normalizeServiceLineKey(key);
+  switch (normalizedKey) {
+    case "kreiszimmer":
+      return "Geb";
+    case "gyn":
+      return "Gyn";
+    case "turnus":
+      return "TA";
+    case "overduty":
+      return "Ü";
+    case "long_day":
+      return "Long day";
+    default:
+      return label;
+  }
+};
+
 export default function Personal() {
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [activeTab, setActiveTab] = useState<"roster" | "weekly" | "vacation">(
+    "roster",
+  );
   const [, setLocation] = useLocation();
   const { token, user, employee: currentEmployee, isAdmin, isTechnicalAdmin } =
     useAuth();
@@ -324,6 +345,15 @@ export default function Personal() {
   const [pageStickyHeaderHeight, setPageStickyHeaderHeight] = useState(0);
   const [unassignedDebug, setUnassignedDebug] =
     useState<OpenShiftDebugDetail | null>(null);
+  const [rosterSummary, setRosterSummary] = useState<{
+    shifts: number;
+    absenceReasonCounts: Array<{ reason: string; days: number }>;
+  } | null>(null);
+  const [weeklySummary, setWeeklySummary] = useState<{
+    plannedDays: number;
+    absenceReasonCounts: Array<{ reason: string; days: number }>;
+  } | null>(null);
+  const [vacationSummary, setVacationSummary] = useState<string | null>(null);
   const {
     calendarToken,
     refreshCalendarToken,
@@ -438,6 +468,116 @@ export default function Personal() {
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    const loadVacationSummary = async () => {
+      if (!currentEmployee?.id) {
+        setVacationSummary(null);
+        return;
+      }
+
+      const today = startOfDay(new Date());
+      const from = format(subMonths(today, 1), "yyyy-MM-dd");
+      const to = format(addMonths(today, 12), "yyyy-MM-dd");
+
+      try {
+        const absences = await plannedAbsencesAdminApi.getRange({ from, to });
+        if (!active) return;
+
+        const personalAbsences = absences
+          .filter(
+            (absence) =>
+              absence.employeeId === currentEmployee.id &&
+              absence.status !== "Abgelehnt",
+          )
+          .sort((a, b) => a.startDate.localeCompare(b.startDate));
+
+        const currentAbsence = personalAbsences.find((absence) => {
+          const start = parseISO(absence.startDate);
+          const end = parseISO(absence.endDate);
+          return today >= startOfDay(start) && today <= startOfDay(end);
+        });
+
+        if (currentAbsence) {
+          const reason = currentAbsence.reason ?? "Abwesenheit";
+          const endLabel =
+            currentAbsence.startDate === currentAbsence.endDate
+              ? format(parseISO(currentAbsence.endDate), "dd.MM.", {
+                  locale: de,
+                })
+              : `${format(parseISO(currentAbsence.startDate), "dd.MM.", {
+                  locale: de,
+                })} - ${format(parseISO(currentAbsence.endDate), "dd.MM.", {
+                  locale: de,
+                })}`;
+          setVacationSummary(`${reason} aktuell · ${endLabel}`);
+          return;
+        }
+
+        const nextAbsence = personalAbsences.find(
+          (absence) => parseISO(absence.startDate) >= today,
+        );
+        if (!nextAbsence) {
+          setVacationSummary("Keine geplante Abwesenheit");
+          return;
+        }
+
+        const startLabel = format(parseISO(nextAbsence.startDate), "dd.MM.", {
+          locale: de,
+        });
+        const endLabel = format(parseISO(nextAbsence.endDate), "dd.MM.", {
+          locale: de,
+        });
+        const rangeLabel =
+          nextAbsence.startDate === nextAbsence.endDate
+            ? `am ${startLabel}`
+            : `von ${startLabel} bis ${endLabel}`;
+        setVacationSummary(`${nextAbsence.reason} ${rangeLabel}`);
+      } catch {
+        if (active) {
+          setVacationSummary(null);
+        }
+      }
+    };
+
+    loadVacationSummary();
+    return () => {
+      active = false;
+    };
+  }, [currentEmployee?.id]);
+
+  const activeSummaryText = useMemo(() => {
+    if (activeTab === "roster") {
+      if (!rosterSummary) return "Monatsdienstplan";
+      const parts = [`${rosterSummary.shifts} Dienste`];
+      rosterSummary.absenceReasonCounts.forEach(({ reason, days }) => {
+        const suffix =
+          reason === "Urlaub"
+            ? "Urlaubstage"
+            : reason === "Krankenstand"
+              ? "Krankenstand"
+              : reason;
+        parts.push(`${days} ${suffix}`);
+      });
+      return parts.join(" · ");
+    }
+    if (activeTab === "weekly") {
+      if (!weeklySummary) return "Wochenplan";
+      const parts = [`${weeklySummary.plannedDays} Tage geplant`];
+      weeklySummary.absenceReasonCounts.forEach(({ reason, days }) => {
+        const suffix =
+          reason === "Urlaub"
+            ? "Urlaubstage"
+            : reason === "Krankenstand"
+              ? "Krankenstand"
+              : reason;
+        parts.push(`${days} ${suffix}`);
+      });
+      return parts.join(" · ");
+    }
+    return vacationSummary ?? "Urlaubsplanung";
+  }, [activeTab, rosterSummary, vacationSummary, weeklySummary]);
+
   const handleSubscribe = async () => {
     if (!token) {
       toast({
@@ -546,68 +686,107 @@ export default function Personal() {
   return (
     <Layout title="Dienstpläne">
       <div className="space-y-6">
-        <Tabs defaultValue="roster" className="space-y-6">
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) =>
+            setActiveTab(value as "roster" | "weekly" | "vacation")
+          }
+          className="space-y-6"
+        >
           <div
             ref={pageStickyHeaderRef}
-            className="sticky top-0 z-50 space-y-4 bg-background pb-3"
+            className="sticky top-0 z-50 bg-background pb-3"
           >
-            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-              <div>
-                <h1 className="text-2xl font-bold text-foreground">Dienstpläne</h1>
-                <p className="text-muted-foreground">
-                  Monatsdienstplan, Wochenplan und Urlaubsplanung.
-                </p>
+            <div className="space-y-4 rounded-3xl border-none bg-gradient-to-br from-slate-950 via-[#113f72] to-[#0f5ba7] p-5 text-white shadow-xl shadow-primary/15">
+              <div className="flex flex-col items-start justify-between gap-4 lg:flex-row lg:items-center">
+                <div>
+                  <h1 className="text-3xl font-bold text-white">Dienstpläne</h1>
+                  <p className="text-sm text-primary-foreground/80">
+                    Monatsdienstplan, Wochenplan und Urlaubsplanung.
+                  </p>
+                </div>
+
+                <div className="flex w-full flex-col items-start gap-3 lg:w-auto lg:items-end">
+                  <p className="text-sm font-medium text-primary-foreground/95 lg:text-right">
+                    {activeSummaryText}
+                  </p>
+                  <div className="flex flex-wrap gap-2 lg:justify-end">
+                    <Button
+                      variant="ghost"
+                      className="gap-2 border-white/20 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
+                      onClick={() =>
+                        {
+                          setSwapDialogInitialTab("new");
+                          setSwapDialogOpen(true);
+                        }
+                      }
+                      data-testid="button-swap"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                      Diensttausch
+                      {pendingSwapRequestCount > 0 && (
+                        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-xs font-semibold text-white">
+                          !
+                        </span>
+                      )}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      className="gap-2 border-white/20 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
+                      onClick={() => setLocation("/dienstwuensche")}
+                      data-testid="button-shift-wishes"
+                    >
+                      <CalendarDays className="w-4 h-4" />
+                      Dienstwünsche
+                    </Button>
+                    {showTakeShiftButton && (
+                      <Button
+                        variant="ghost"
+                        className="gap-2 border-white/20 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
+                        onClick={() =>
+                          window.dispatchEvent(new Event("mycliniq:openUnassigned"))
+                        }
+                        data-testid="button-unassigned-shifts-top"
+                      >
+                        Dienst übernehmen
+                        {unassignedCount > 0 && (
+                          <Badge className="h-5 border-white/20 bg-white/15 px-1.5 text-primary-foreground">
+                            {unassignedCount}
+                          </Badge>
+                        )}
+                      </Button>
+                    )}
+                  </div>
+                </div>
               </div>
 
-              <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                className="gap-2"
-                onClick={() => {
-                  setSwapDialogInitialTab("new");
-                  setSwapDialogOpen(true);
-                }}
-                data-testid="button-swap"
-              >
-                <RefreshCw className="w-4 h-4" />
-                Diensttausch
-                {pendingSwapRequestCount > 0 && (
-                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-xs font-semibold text-white">
-                    !
-                  </span>
-                )}
-              </Button>
-              <Button
-                variant="outline"
-                className="gap-2"
-                onClick={() => setLocation("/dienstwuensche")}
-                data-testid="button-shift-wishes"
-              >
-                <CalendarDays className="w-4 h-4" />
-                Dienstwünsche
-              </Button>
-              {showTakeShiftButton && (
-                <Button
-                  variant="outline"
-                  className="gap-2"
-                  onClick={() =>
-                    window.dispatchEvent(new Event("mycliniq:openUnassigned"))
-                  }
-                  data-testid="button-unassigned-shifts-top"
+              <TabsList className="h-12 rounded-2xl border border-white/10 bg-white/10 p-1 text-primary-foreground/80 shadow-none">
+                <TabsTrigger
+                  value="roster"
+                  className="h-10 rounded-xl px-6 text-base data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-none"
+                  data-testid="tab-roster"
                 >
-                  Dienst übernehmen
-                  {unassignedCount > 0 && (
-                    <Badge variant="outline" className="h-5 px-1.5">
-                      {unassignedCount}
-                    </Badge>
-                  )}
-                </Button>
-              )}
-              </div>
+                  Dienstplan
+                </TabsTrigger>
+                <TabsTrigger
+                  value="weekly"
+                  className="h-10 rounded-xl px-6 text-base data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-none"
+                  data-testid="tab-weekly"
+                >
+                  Wochenplan
+                </TabsTrigger>
+                <TabsTrigger
+                  value="vacation"
+                  className="h-10 rounded-xl px-6 text-base data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-none"
+                  data-testid="tab-vacation"
+                >
+                  Urlaubsplanung
+                </TabsTrigger>
+              </TabsList>
             </div>
 
             {debugEnabled && token && (
-              <div className="rounded-lg border border-border bg-slate-50/60 p-3 text-xs text-muted-foreground space-y-2">
+              <div className="mt-4 rounded-lg border border-border bg-slate-50/60 p-3 text-xs text-muted-foreground space-y-2">
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
                   Unbesetzte Dienste Debug
                 </div>
@@ -655,30 +834,6 @@ export default function Personal() {
                 </div>
               </div>
             )}
-
-            <TabsList className="bg-background border border-border p-1 h-12 rounded-xl shadow-sm">
-              <TabsTrigger
-                value="roster"
-                className="rounded-lg px-6 h-10"
-                data-testid="tab-roster"
-              >
-                Dienstplan
-              </TabsTrigger>
-              <TabsTrigger
-                value="weekly"
-                className="rounded-lg px-6 h-10"
-                data-testid="tab-weekly"
-              >
-                Wochenplan
-              </TabsTrigger>
-              <TabsTrigger
-                value="vacation"
-                className="rounded-lg px-6 h-10"
-                data-testid="tab-vacation"
-              >
-                Urlaubsplanung
-              </TabsTrigger>
-            </TabsList>
           </div>
 
           <TabsContent
@@ -691,6 +846,7 @@ export default function Personal() {
               onSubscribe={handleSubscribe}
               onExport={handleExport}
               exporting={exporting}
+              onSummaryChange={setRosterSummary}
             />
           </TabsContent>
 
@@ -701,6 +857,7 @@ export default function Personal() {
             <WeeklyView
               calendarToken={resolvedCalendarToken}
               stickyTopOffset={pageStickyHeaderHeight}
+              onSummaryChange={setWeeklySummary}
             />
           </TabsContent>
 
@@ -730,12 +887,17 @@ function RosterView({
   onSubscribe,
   onExport,
   exporting,
+  onSummaryChange,
 }: {
   currentDate: Date;
   setCurrentDate: (d: Date) => void;
   onSubscribe: () => void | Promise<void>;
   onExport: () => void | Promise<void>;
   exporting: boolean;
+  onSummaryChange?: (summary: {
+    shifts: number;
+    absenceReasonCounts: Array<{ reason: string; days: number }>;
+  }) => void;
 }) {
   const { employee: currentUser, user, token } = useAuth();
   const { toast } = useToast();
@@ -1318,12 +1480,64 @@ function RosterView({
     longTermAbsences,
     employeesById,
   ]);
+  const myAbsenceReasonCounts = useMemo(() => {
+    if (!currentUser) return [] as Array<{ reason: string; days: number }>;
+
+    const counts = new Map<string, number>();
+    dayStrings.forEach((dateStr) => {
+      const plannedReason = activePlannedAbsences.find(
+        (absence) =>
+          absence.employeeId === currentUser.id &&
+          absence.startDate <= dateStr &&
+          absence.endDate >= dateStr,
+      )?.reason;
+
+      const longTermReason = longTermAbsences.find(
+        (absence) =>
+          absence.employeeId === currentUser.id &&
+          absence.status === "Genehmigt" &&
+          absence.startDate <= dateStr &&
+          absence.endDate >= dateStr,
+      )?.reason;
+
+      const reason =
+        plannedReason ||
+        longTermReason ||
+        (isLegacyInactiveOnDate(
+          employeesById.get(currentUser.id) ?? currentUser,
+          dateStr,
+        )
+          ? "Abwesenheit"
+          : null);
+
+      if (!reason) return;
+      counts.set(reason, (counts.get(reason) ?? 0) + 1);
+    });
+
+    return [...counts.entries()]
+      .map(([reason, days]) => ({ reason, days }))
+      .sort((a, b) => b.days - a.days || a.reason.localeCompare(b.reason, "de"));
+  }, [
+    activePlannedAbsences,
+    currentUser,
+    dayStrings,
+    employeesById,
+    longTermAbsences,
+  ]);
+
+  useEffect(() => {
+    onSummaryChange?.({
+      shifts: myShifts.length,
+      absenceReasonCounts: myAbsenceReasonCounts,
+    });
+  }, [myAbsenceReasonCounts, myShifts.length, onSummaryChange]);
 
   return (
     <div className="space-y-6">
       <Card className="border-none kabeg-shadow overflow-visible">
-        <div className="p-4 border-b border-border flex items-center justify-between bg-card">
-          <div className="flex items-center gap-4">
+        <div className="border-b border-border bg-card p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-3">
             <h3 className="text-lg font-semibold flex items-center gap-2">
               <CalendarIcon className="w-5 h-5 text-primary" />
               {format(currentDate, "MMMM yyyy", { locale: de })}
@@ -1350,68 +1564,202 @@ function RosterView({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Badge
-              variant="outline"
-              className={
-                planStatus === "Freigegeben"
-                  ? "bg-green-50 text-green-700 border-green-200"
-                  : planStatus === "Vorläufig"
-                    ? "bg-blue-50 text-blue-700 border-blue-200"
-                    : "bg-amber-50 text-amber-700 border-amber-200"
-              }
-            >
-              {planLoading
-                ? "Status wird geladen..."
-                : `Status: ${statusLabel}`}
-            </Badge>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-2"
-              onClick={onSubscribe}
-              data-testid="button-subscribe"
-            >
-              <Rss className="w-4 h-4" />
-              Abonnieren
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-2"
-              onClick={onExport}
-              disabled={exporting}
-              data-testid="button-export"
-            >
-              <Download className="w-4 h-4" />
-              {exporting ? "Export läuft..." : "Export"}
-            </Button>
-            <Select defaultValue="all">
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Bereich" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Alle Bereiche</SelectItem>
-                <SelectItem value="geb">Geburtshilfe</SelectItem>
-                <SelectItem value="gyn">Gynäkologie</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge
+                variant="outline"
+                className={
+                  planStatus === "Freigegeben"
+                    ? "bg-green-50 text-green-700 border-green-200"
+                    : planStatus === "Vorläufig"
+                      ? "bg-blue-50 text-blue-700 border-blue-200"
+                      : "bg-amber-50 text-amber-700 border-amber-200"
+                }
+              >
+                {planLoading
+                  ? "Status wird geladen..."
+                  : `Status: ${statusLabel}`}
+              </Badge>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={onSubscribe}
+                data-testid="button-subscribe"
+              >
+                <Rss className="w-4 h-4" />
+                <span className="hidden sm:inline">Abonnieren</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={onExport}
+                disabled={exporting}
+                data-testid="button-export"
+              >
+                <Download className="w-4 h-4" />
+                <span className="hidden sm:inline">
+                  {exporting ? "Export läuft..." : "Export"}
+                </span>
+              </Button>
+              <Select defaultValue="all">
+                <SelectTrigger className="h-9 w-full min-w-[160px] sm:w-[180px]">
+                  <SelectValue placeholder="Bereich" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Alle Bereiche</SelectItem>
+                  <SelectItem value="geb">Geburtshilfe</SelectItem>
+                  <SelectItem value="gyn">Gynäkologie</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="space-y-3 p-4 md:hidden">
+          {rosterLoading ? (
+            <div className="rounded-xl border border-border bg-background px-4 py-8 text-center text-sm text-muted-foreground">
+              Dienstplan wird geladen...
+            </div>
+          ) : (
+            days.map((day, i) => {
+              const weekNumber = getWeek(day, {
+                weekStartsOn: 1,
+                firstWeekContainsDate: 4,
+              });
+              const prevWeekNumber =
+                i > 0
+                  ? getWeek(days[i - 1], {
+                      weekStartsOn: 1,
+                      firstWeekContainsDate: 4,
+                    })
+                  : null;
+              const showKW = i === 0 || weekNumber !== prevWeekNumber;
+              const dateKey = format(day, "yyyy-MM-dd");
+              const dayLabel = format(day, "EEE", { locale: de }).replace(".", "");
+              const dateLabel = format(day, "dd.MM", { locale: de });
+              const holiday = getAustrianHoliday(day);
+              const isHoliday = Boolean(holiday);
+              const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+              const highlightRow = isWeekend || isHoliday;
+              const dayShifts = shiftsByDate[dateKey] || {};
+              const dayAbsences = getAbsencesForDate(day);
+
+              return (
+                <div
+                  key={`mobile-${dateKey}`}
+                  className={cn(
+                    "rounded-xl border border-border bg-background p-4 shadow-sm",
+                    highlightRow && "border-amber-200 bg-amber-50/50",
+                  )}
+                >
+                  <div className="mb-3 flex items-start justify-between gap-3">
+                    <div>
+                      <div
+                        className={cn(
+                          "text-base font-semibold",
+                          highlightRow && "text-rose-600",
+                        )}
+                      >
+                        {dayLabel}, {dateLabel}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        KW {weekNumber}
+                        {showKW ? " • Wochenstart" : ""}
+                        {holiday ? ` • ${holiday.name}` : ""}
+                      </div>
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className="shrink-0 border-slate-200 bg-slate-50 text-slate-600"
+                    >
+                      {statusLabel}
+                    </Badge>
+                  </div>
+
+                  <div className="space-y-2">
+                    {serviceLineDisplay.map((line) => {
+                      const shift = dayShifts[line.key];
+                      const label = getShiftDisplay(shift);
+                      return (
+                        <div
+                          key={`${dateKey}-${line.key}`}
+                          className="flex items-start justify-between gap-3 text-sm"
+                        >
+                          <span className="min-w-0 text-muted-foreground">
+                            {line.label}
+                          </span>
+                          <span
+                            className={cn(
+                              "text-right font-medium",
+                              label === "-" && "text-muted-foreground",
+                              label !== "-" && isMyShift(shift) && "text-primary",
+                            )}
+                          >
+                            {label}
+                          </span>
+                        </div>
+                      );
+                    })}
+
+                    {showAbsenceColumn && (
+                      <div className="border-t border-border pt-2 text-sm">
+                        <div className="mb-1 text-muted-foreground">
+                          Abwesenheiten
+                        </div>
+                        {dayAbsences.length === 0 ? (
+                          <span className="text-muted-foreground">-</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1">
+                            {dayAbsences.map((absence) => (
+                              <span
+                                key={`mobile-absence-${absence.source}-${absence.employeeId}-${absence.absenceId ?? absence.reason}`}
+                                className="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600"
+                              >
+                                {absence.name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        <div className="hidden max-h-[70vh] overflow-auto md:block">
           <table className="w-full min-w-[800px] text-sm">
             <thead>
               <tr className="bg-primary text-white">
-                <th className="px-2 py-2 text-left font-medium w-16">KW</th>
-                <th className="px-2 py-2 text-left font-medium w-12">Tag</th>
-                <th className="px-2 py-2 text-left font-medium w-24">Datum</th>
+                <th
+                  className="sticky left-0 top-0 z-40 w-16 bg-primary px-2 py-2 text-left font-medium"
+                >
+                  KW
+                </th>
+                <th
+                  className="sticky top-0 z-30 w-12 bg-primary px-2 py-2 text-left font-medium"
+                >
+                  Tag
+                </th>
+                <th
+                  className="sticky top-0 z-30 w-24 bg-primary px-2 py-2 text-left font-medium"
+                >
+                  Datum
+                </th>
                 {serviceLineDisplay.map((line) => (
-                  <th key={line.key} className="px-2 py-2 text-left font-medium">
-                    {line.label}
+                  <th
+                    key={line.key}
+                    className="sticky top-0 z-30 bg-primary px-2 py-2 text-left font-medium"
+                  >
+                    {getRosterHeaderShortLabel(line.label, line.key)}
                   </th>
                 ))}
-                <th className="px-2 py-2 text-left font-medium">
+                <th
+                  className="sticky top-0 z-30 bg-primary px-2 py-2 text-left font-medium"
+                >
                   <button
                     type="button"
                     onClick={() =>
@@ -1479,7 +1827,12 @@ function RosterView({
                       )}
                       data-testid={`roster-row-${dateKey}`}
                     >
-                      <td className="px-2 py-1.5 font-medium text-primary">
+                      <td
+                        className={cn(
+                          "sticky left-0 z-20 px-2 py-1.5 font-medium text-primary shadow-[4px_0_12px_-10px_rgba(15,23,42,0.25)]",
+                          highlightRow ? "bg-amber-50/60" : "bg-background",
+                        )}
+                      >
                         {showKW ? weekNumber : ""}
                       </td>
                       <td
@@ -2254,9 +2607,14 @@ function ShiftSwapRosterDialog({
 function WeeklyView({
   calendarToken,
   stickyTopOffset,
+  onSummaryChange,
 }: {
   calendarToken: string | null;
   stickyTopOffset: number;
+  onSummaryChange?: (summary: {
+    plannedDays: number;
+    absenceReasonCounts: Array<{ reason: string; days: number }>;
+  }) => void;
 }) {
   const { employee: currentUser } = useAuth();
   const { toast } = useToast();
@@ -2406,6 +2764,50 @@ function WeeklyView({
       employeesById,
     );
   }, [employeesById, rosterShifts, visibleRooms, weekDays, weeklyPlan]);
+  const plannedDayCount = useMemo(() => {
+    if (!currentUser?.id) return 0;
+    const weekdaySet = new Set<number>();
+    (weeklyPlan?.assignments ?? []).forEach((assignment) => {
+      if (
+        assignment.employeeId === currentUser.id &&
+        assignment.assignmentType === "Plan"
+      ) {
+        weekdaySet.add(assignment.weekday);
+      }
+    });
+    return weekdaySet.size;
+  }, [currentUser?.id, weeklyPlan?.assignments]);
+  const weeklyAbsenceReasonCounts = useMemo(() => {
+    if (!currentUser?.id) return [] as Array<{ reason: string; days: number }>;
+    const counts = new Map<string, number>();
+
+    weekDays.forEach((day) => {
+      const dateStr = format(day, "yyyy-MM-dd");
+      const plannedReason = plannedAbsences.find(
+        (absence) =>
+          absence.employeeId === currentUser.id &&
+          absence.status !== "Abgelehnt" &&
+          absence.startDate <= dateStr &&
+          absence.endDate >= dateStr,
+      )?.reason;
+
+      const longTermReason = longTermAbsences.find(
+        (absence) =>
+          absence.employeeId === currentUser.id &&
+          absence.status === "Genehmigt" &&
+          absence.startDate <= dateStr &&
+          absence.endDate >= dateStr,
+      )?.reason;
+
+      const reason = plannedReason || longTermReason;
+      if (!reason) return;
+      counts.set(reason, (counts.get(reason) ?? 0) + 1);
+    });
+
+    return [...counts.entries()]
+      .map(([reason, days]) => ({ reason, days }))
+      .sort((a, b) => b.days - a.days || a.reason.localeCompare(b.reason, "de"));
+  }, [currentUser?.id, longTermAbsences, plannedAbsences, weekDays]);
 
   const syncHorizontalScroll = useCallback((source: "header" | "body") => {
     const header = headerScrollRef.current;
@@ -2439,6 +2841,13 @@ function WeeklyView({
       });
     return map;
   }, [plannedAbsences]);
+
+  useEffect(() => {
+    onSummaryChange?.({
+      plannedDays: plannedDayCount,
+      absenceReasonCounts: weeklyAbsenceReasonCounts,
+    });
+  }, [onSummaryChange, plannedDayCount, weeklyAbsenceReasonCounts]);
 
   useEffect(() => {
     let active = true;

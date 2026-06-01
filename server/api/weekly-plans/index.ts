@@ -1213,6 +1213,8 @@ export function registerWeeklyPlanRoutes(router: Router) {
           roleLabel: null,
           note: null,
           isBlocked: false,
+          createdById: req.user?.employeeId ?? null,
+          updatedById: req.user?.employeeId ?? null,
         }));
 
       if (rowsToInsert.length > 0) {
@@ -1341,6 +1343,8 @@ export function registerWeeklyPlanRoutes(router: Router) {
           assignmentType: assignmentType || "Plan",
           note: note?.trim() || null,
           isBlocked: Boolean(isBlocked),
+          createdById: req.user?.employeeId ?? null,
+          updatedById: req.user?.employeeId ?? null,
         })
         .returning();
 
@@ -1409,6 +1413,7 @@ export function registerWeeklyPlanRoutes(router: Router) {
           assignmentType: assignmentType ?? existing.assignmentType,
           note: nextNote,
           isBlocked: nextIsBlocked,
+          updatedById: req.user?.employeeId ?? null,
           updatedAt: new Date(),
         })
         .where(eq(weeklyPlanAssignments.id, assignmentIdNum))
