@@ -2441,11 +2441,31 @@ export const notificationsApi = {
     return handleResponse<Notification[]>(response);
   },
 
-  markRead: async (id: number): Promise<Notification> => {
+  markRead: async (
+    id: number,
+    data?: {
+      actionType?: string;
+      actionLabel?: string;
+      actionDetails?: string | null;
+    },
+  ): Promise<Notification> => {
     const response = await apiFetch(`${API_BASE}/notifications/${id}/read`, {
       method: "POST",
+      body: data ? JSON.stringify(data) : undefined,
     });
     return handleResponse<Notification>(response);
+  },
+
+  broadcast: async (data: {
+    title: string;
+    message: string;
+    link?: string;
+  }): Promise<{ count: number }> => {
+    const response = await apiFetch(`${API_BASE}/notifications/broadcast`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return handleResponse<{ count: number }>(response);
   },
 
   delete: async (id: number): Promise<void> => {

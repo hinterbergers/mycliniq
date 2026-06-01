@@ -158,11 +158,21 @@ export function registerMessageRoutes(router: Router) {
         }
       });
 
-      const response = baseThreads.map((thread) => ({
-        ...thread,
-        members: membersByThread.get(thread.id) || [],
-        lastMessage: lastMessageByThread.get(thread.id) || null,
-      }));
+      const response = baseThreads
+        .map((thread) => ({
+          ...thread,
+          members: membersByThread.get(thread.id) || [],
+          lastMessage: lastMessageByThread.get(thread.id) || null,
+        }))
+        .sort((a, b) => {
+          const aTime = new Date(
+            a.lastMessage?.createdAt ?? a.createdAt,
+          ).getTime();
+          const bTime = new Date(
+            b.lastMessage?.createdAt ?? b.createdAt,
+          ).getTime();
+          return bTime - aTime;
+        });
 
       return ok(res, response);
     }),
