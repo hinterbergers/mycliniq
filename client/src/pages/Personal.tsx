@@ -347,7 +347,7 @@ export default function Personal() {
     useState<OpenShiftDebugDetail | null>(null);
   const [rosterSummary, setRosterSummary] = useState<{
     shifts: number;
-    freeDays: number;
+    absenceReasonCounts: Array<{ reason: string; days: number }>;
   } | null>(null);
   const [weeklySummary, setWeeklySummary] = useState<{
     plannedDays: number;
@@ -549,7 +549,17 @@ export default function Personal() {
   const activeSummaryText = useMemo(() => {
     if (activeTab === "roster") {
       if (!rosterSummary) return "Monatsdienstplan";
-      return `${rosterSummary.shifts} Dienste · ${rosterSummary.freeDays} Tage frei`;
+      const parts = [`${rosterSummary.shifts} Dienste`];
+      rosterSummary.absenceReasonCounts.forEach(({ reason, days }) => {
+        const suffix =
+          reason === "Urlaub"
+            ? "Urlaubstage"
+            : reason === "Krankenstand"
+              ? "Krankenstand"
+              : reason;
+        parts.push(`${days} ${suffix}`);
+      });
+      return parts.join(" · ");
     }
     if (activeTab === "weekly") {
       if (!weeklySummary) return "Wochenplan";
@@ -684,55 +694,59 @@ export default function Personal() {
                   <p className="text-sm text-primary-foreground/80">
                     Monatsdienstplan, Wochenplan und Urlaubsplanung.
                   </p>
-                  <p className="mt-2 text-sm font-medium text-primary-foreground/95">
-                    {activeSummaryText}
-                  </p>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="ghost"
-                    className="gap-2 border-white/20 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
-                    onClick={() => {
-                      setSwapDialogInitialTab("new");
-                      setSwapDialogOpen(true);
-                    }}
-                    data-testid="button-swap"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    Diensttausch
-                    {pendingSwapRequestCount > 0 && (
-                      <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-xs font-semibold text-white">
-                        !
-                      </span>
-                    )}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    className="gap-2 border-white/20 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
-                    onClick={() => setLocation("/dienstwuensche")}
-                    data-testid="button-shift-wishes"
-                  >
-                    <CalendarDays className="w-4 h-4" />
-                    Dienstwünsche
-                  </Button>
-                  {showTakeShiftButton && (
+                <div className="flex w-full flex-col items-start gap-3 lg:w-auto lg:items-end">
+                  <p className="text-sm font-medium text-primary-foreground/95 lg:text-right">
+                    {activeSummaryText}
+                  </p>
+                  <div className="flex flex-wrap gap-2 lg:justify-end">
                     <Button
                       variant="ghost"
                       className="gap-2 border-white/20 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
                       onClick={() =>
-                        window.dispatchEvent(new Event("mycliniq:openUnassigned"))
+                        {
+                          setSwapDialogInitialTab("new");
+                          setSwapDialogOpen(true);
+                        }
                       }
-                      data-testid="button-unassigned-shifts-top"
+                      data-testid="button-swap"
                     >
-                      Dienst übernehmen
-                      {unassignedCount > 0 && (
-                        <Badge className="h-5 border-white/20 bg-white/15 px-1.5 text-primary-foreground">
-                          {unassignedCount}
-                        </Badge>
+                      <RefreshCw className="w-4 h-4" />
+                      Diensttausch
+                      {pendingSwapRequestCount > 0 && (
+                        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-xs font-semibold text-white">
+                          !
+                        </span>
                       )}
                     </Button>
-                  )}
+                    <Button
+                      variant="ghost"
+                      className="gap-2 border-white/20 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
+                      onClick={() => setLocation("/dienstwuensche")}
+                      data-testid="button-shift-wishes"
+                    >
+                      <CalendarDays className="w-4 h-4" />
+                      Dienstwünsche
+                    </Button>
+                    {showTakeShiftButton && (
+                      <Button
+                        variant="ghost"
+                        className="gap-2 border-white/20 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
+                        onClick={() =>
+                          window.dispatchEvent(new Event("mycliniq:openUnassigned"))
+                        }
+                        data-testid="button-unassigned-shifts-top"
+                      >
+                        Dienst übernehmen
+                        {unassignedCount > 0 && (
+                          <Badge className="h-5 border-white/20 bg-white/15 px-1.5 text-primary-foreground">
+                            {unassignedCount}
+                          </Badge>
+                        )}
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -872,7 +886,10 @@ function RosterView({
   onSubscribe: () => void | Promise<void>;
   onExport: () => void | Promise<void>;
   exporting: boolean;
-  onSummaryChange?: (summary: { shifts: number; freeDays: number }) => void;
+  onSummaryChange?: (summary: {
+    shifts: number;
+    absenceReasonCounts: Array<{ reason: string; days: number }>;
+  }) => void;
   stickyTopOffset: number;
 }) {
   const { employee: currentUser, user, token } = useAuth();
@@ -1421,7 +1438,6 @@ function RosterView({
   const myShifts = currentUser
     ? shifts.filter((shift) => shift.employeeId === currentUser.id)
     : [];
-  const freeDayCount = Math.max(0, days.length - myDutyDates.size);
   const weekendCount = myShifts.filter((shift) => {
     const date = new Date(`${shift.date}T00:00:00`);
     const day = date.getDay();
@@ -1457,13 +1473,57 @@ function RosterView({
     longTermAbsences,
     employeesById,
   ]);
+  const myAbsenceReasonCounts = useMemo(() => {
+    if (!currentUser) return [] as Array<{ reason: string; days: number }>;
+
+    const counts = new Map<string, number>();
+    dayStrings.forEach((dateStr) => {
+      const plannedReason = activePlannedAbsences.find(
+        (absence) =>
+          absence.employeeId === currentUser.id &&
+          absence.startDate <= dateStr &&
+          absence.endDate >= dateStr,
+      )?.reason;
+
+      const longTermReason = longTermAbsences.find(
+        (absence) =>
+          absence.employeeId === currentUser.id &&
+          absence.status === "Genehmigt" &&
+          absence.startDate <= dateStr &&
+          absence.endDate >= dateStr,
+      )?.reason;
+
+      const reason =
+        plannedReason ||
+        longTermReason ||
+        (isLegacyInactiveOnDate(
+          employeesById.get(currentUser.id) ?? currentUser,
+          dateStr,
+        )
+          ? "Abwesenheit"
+          : null);
+
+      if (!reason) return;
+      counts.set(reason, (counts.get(reason) ?? 0) + 1);
+    });
+
+    return [...counts.entries()]
+      .map(([reason, days]) => ({ reason, days }))
+      .sort((a, b) => b.days - a.days || a.reason.localeCompare(b.reason, "de"));
+  }, [
+    activePlannedAbsences,
+    currentUser,
+    dayStrings,
+    employeesById,
+    longTermAbsences,
+  ]);
 
   useEffect(() => {
     onSummaryChange?.({
       shifts: myShifts.length,
-      freeDays: freeDayCount,
+      absenceReasonCounts: myAbsenceReasonCounts,
     });
-  }, [freeDayCount, myShifts.length, onSummaryChange]);
+  }, [myAbsenceReasonCounts, myShifts.length, onSummaryChange]);
 
   return (
     <div className="space-y-6">
