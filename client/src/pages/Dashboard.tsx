@@ -592,39 +592,6 @@ export default function Dashboard() {
     [persistSeenRecentChangeIds],
   );
 
-  const handleMarkAllNotificationsRead = useCallback(async () => {
-    const unreadIds = notificationsData
-      .filter((item) => !item.isRead)
-      .map((item) => item.id);
-    const unseenRecentIds = recentChanges
-      .map((item) => item.id)
-      .filter((id) => !seenRecentChangeIds.includes(id));
-
-    if (unreadIds.length === 0 && unseenRecentIds.length === 0) return;
-
-    try {
-      if (unreadIds.length > 0) {
-        const updatedItems = await Promise.all(
-          unreadIds.map((notificationId) => notificationsApi.markRead(notificationId)),
-        );
-        const updatedMap = new Map(updatedItems.map((item) => [item.id, item]));
-        setNotificationsData((current) =>
-          current.map((item) => updatedMap.get(item.id) ?? item),
-        );
-      }
-      if (unseenRecentIds.length > 0) {
-        persistSeenRecentChangeIds((current) => [...current, ...unseenRecentIds]);
-      }
-    } catch (error: any) {
-      toast({
-        title: "Benachrichtigungen konnten nicht aktualisiert werden",
-        description:
-          error?.message || "Der Gelesen-Status konnte nicht vollständig gespeichert werden.",
-        variant: "destructive",
-      });
-    }
-  }, [notificationsData, recentChanges, seenRecentChangeIds, persistSeenRecentChangeIds, toast]);
-
   useEffect(() => {
     if (!heroAbsenceDialogOpen || !canCreateAbsence || heroAbsenceEmployees.length > 0) {
       return;
@@ -907,6 +874,38 @@ export default function Dashboard() {
     () => recentChanges.filter((item) => !seenRecentChangeIds.includes(item.id)),
     [recentChanges, seenRecentChangeIds],
   );
+  const handleMarkAllNotificationsRead = useCallback(async () => {
+    const unreadIds = notificationsData
+      .filter((item) => !item.isRead)
+      .map((item) => item.id);
+    const unseenRecentIds = recentChanges
+      .map((item) => item.id)
+      .filter((id) => !seenRecentChangeIds.includes(id));
+
+    if (unreadIds.length === 0 && unseenRecentIds.length === 0) return;
+
+    try {
+      if (unreadIds.length > 0) {
+        const updatedItems = await Promise.all(
+          unreadIds.map((notificationId) => notificationsApi.markRead(notificationId)),
+        );
+        const updatedMap = new Map(updatedItems.map((item) => [item.id, item]));
+        setNotificationsData((current) =>
+          current.map((item) => updatedMap.get(item.id) ?? item),
+        );
+      }
+      if (unseenRecentIds.length > 0) {
+        persistSeenRecentChangeIds((current) => [...current, ...unseenRecentIds]);
+      }
+    } catch (error: any) {
+      toast({
+        title: "Benachrichtigungen konnten nicht aktualisiert werden",
+        description:
+          error?.message || "Der Gelesen-Status konnte nicht vollständig gespeichert werden.",
+        variant: "destructive",
+      });
+    }
+  }, [notificationsData, recentChanges, seenRecentChangeIds, persistSeenRecentChangeIds, toast]);
   const workplaceGroupCountToday = useMemo(() => {
     const keys = new Set<string>();
     presentToday.forEach((member) => {
