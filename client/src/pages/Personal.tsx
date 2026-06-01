@@ -308,6 +308,9 @@ const withExcelTopPadding = (value: string): string => {
 
 export default function Personal() {
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [activeTab, setActiveTab] = useState<"roster" | "weekly" | "vacation">(
+    "roster",
+  );
   const [, setLocation] = useLocation();
   const { token, user, employee: currentEmployee, isAdmin, isTechnicalAdmin } =
     useAuth();
@@ -324,6 +327,15 @@ export default function Personal() {
   const [pageStickyHeaderHeight, setPageStickyHeaderHeight] = useState(0);
   const [unassignedDebug, setUnassignedDebug] =
     useState<OpenShiftDebugDetail | null>(null);
+  const [rosterSummary, setRosterSummary] = useState<{
+    shifts: number;
+    freeDays: number;
+  } | null>(null);
+  const [weeklySummary, setWeeklySummary] = useState<{
+    plannedDays: number;
+    freeDays: number;
+  } | null>(null);
+  const [vacationSummary, setVacationSummary] = useState<string | null>(null);
   const {
     calendarToken,
     refreshCalendarToken,
@@ -438,6 +450,96 @@ export default function Personal() {
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    const loadVacationSummary = async () => {
+      if (!currentEmployee?.id) {
+        setVacationSummary(null);
+        return;
+      }
+
+      const today = startOfDay(new Date());
+      const from = format(subMonths(today, 1), "yyyy-MM-dd");
+      const to = format(addMonths(today, 12), "yyyy-MM-dd");
+
+      try {
+        const absences = await plannedAbsencesAdminApi.getRange({ from, to });
+        if (!active) return;
+
+        const personalAbsences = absences
+          .filter(
+            (absence) =>
+              absence.employeeId === currentEmployee.id &&
+              absence.status !== "Abgelehnt",
+          )
+          .sort((a, b) => a.startDate.localeCompare(b.startDate));
+
+        const currentAbsence = personalAbsences.find((absence) => {
+          const start = parseISO(absence.startDate);
+          const end = parseISO(absence.endDate);
+          return today >= startOfDay(start) && today <= startOfDay(end);
+        });
+
+        if (currentAbsence) {
+          const reason = currentAbsence.reason ?? "Abwesenheit";
+          const endLabel =
+            currentAbsence.startDate === currentAbsence.endDate
+              ? format(parseISO(currentAbsence.endDate), "dd.MM.", {
+                  locale: de,
+                })
+              : `${format(parseISO(currentAbsence.startDate), "dd.MM.", {
+                  locale: de,
+                })} - ${format(parseISO(currentAbsence.endDate), "dd.MM.", {
+                  locale: de,
+                })}`;
+          setVacationSummary(`${reason} aktuell · ${endLabel}`);
+          return;
+        }
+
+        const nextAbsence = personalAbsences.find(
+          (absence) => parseISO(absence.startDate) >= today,
+        );
+        if (!nextAbsence) {
+          setVacationSummary("Keine geplante Abwesenheit");
+          return;
+        }
+
+        const startLabel = format(parseISO(nextAbsence.startDate), "dd.MM.", {
+          locale: de,
+        });
+        const endLabel = format(parseISO(nextAbsence.endDate), "dd.MM.", {
+          locale: de,
+        });
+        const rangeLabel =
+          nextAbsence.startDate === nextAbsence.endDate
+            ? `am ${startLabel}`
+            : `von ${startLabel} bis ${endLabel}`;
+        setVacationSummary(`${nextAbsence.reason} ${rangeLabel}`);
+      } catch {
+        if (active) {
+          setVacationSummary(null);
+        }
+      }
+    };
+
+    loadVacationSummary();
+    return () => {
+      active = false;
+    };
+  }, [currentEmployee?.id]);
+
+  const activeSummaryText = useMemo(() => {
+    if (activeTab === "roster") {
+      if (!rosterSummary) return "Monatsdienstplan";
+      return `${rosterSummary.shifts} Dienste · ${rosterSummary.freeDays} Tage frei`;
+    }
+    if (activeTab === "weekly") {
+      if (!weeklySummary) return "Wochenplan";
+      return `${weeklySummary.plannedDays} Tage geplant · ${weeklySummary.freeDays} Tage frei`;
+    }
+    return vacationSummary ?? "Urlaubsplanung";
+  }, [activeTab, rosterSummary, vacationSummary, weeklySummary]);
+
   const handleSubscribe = async () => {
     if (!token) {
       toast({
@@ -546,7 +648,13 @@ export default function Personal() {
   return (
     <Layout title="Dienstpläne">
       <div className="space-y-6">
-        <Tabs defaultValue="roster" className="space-y-6">
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) =>
+            setActiveTab(value as "roster" | "weekly" | "vacation")
+          }
+          className="space-y-6"
+        >
           <div
             ref={pageStickyHeaderRef}
             className="sticky top-0 z-50 bg-background pb-3"
@@ -557,6 +665,9 @@ export default function Personal() {
                   <h1 className="text-3xl font-bold text-white">Dienstpläne</h1>
                   <p className="text-sm text-primary-foreground/80">
                     Monatsdienstplan, Wochenplan und Urlaubsplanung.
+                  </p>
+                  <p className="mt-2 text-sm font-medium text-primary-foreground/95">
+                    {activeSummaryText}
                   </p>
                 </div>
 
@@ -693,6 +804,7 @@ export default function Personal() {
               onSubscribe={handleSubscribe}
               onExport={handleExport}
               exporting={exporting}
+              onSummaryChange={setRosterSummary}
             />
           </TabsContent>
 
@@ -703,6 +815,7 @@ export default function Personal() {
             <WeeklyView
               calendarToken={resolvedCalendarToken}
               stickyTopOffset={pageStickyHeaderHeight}
+              onSummaryChange={setWeeklySummary}
             />
           </TabsContent>
 
@@ -732,12 +845,14 @@ function RosterView({
   onSubscribe,
   onExport,
   exporting,
+  onSummaryChange,
 }: {
   currentDate: Date;
   setCurrentDate: (d: Date) => void;
   onSubscribe: () => void | Promise<void>;
   onExport: () => void | Promise<void>;
   exporting: boolean;
+  onSummaryChange?: (summary: { shifts: number; freeDays: number }) => void;
 }) {
   const { employee: currentUser, user, token } = useAuth();
   const { toast } = useToast();
@@ -1285,6 +1400,7 @@ function RosterView({
   const myShifts = currentUser
     ? shifts.filter((shift) => shift.employeeId === currentUser.id)
     : [];
+  const freeDayCount = Math.max(0, days.length - myDutyDates.size);
   const weekendCount = myShifts.filter((shift) => {
     const date = new Date(`${shift.date}T00:00:00`);
     const day = date.getDay();
@@ -1320,6 +1436,13 @@ function RosterView({
     longTermAbsences,
     employeesById,
   ]);
+
+  useEffect(() => {
+    onSummaryChange?.({
+      shifts: myShifts.length,
+      freeDays: freeDayCount,
+    });
+  }, [freeDayCount, myShifts.length, onSummaryChange]);
 
   return (
     <div className="space-y-6">
@@ -2374,9 +2497,14 @@ function ShiftSwapRosterDialog({
 function WeeklyView({
   calendarToken,
   stickyTopOffset,
+  onSummaryChange,
 }: {
   calendarToken: string | null;
   stickyTopOffset: number;
+  onSummaryChange?: (summary: {
+    plannedDays: number;
+    freeDays: number;
+  }) => void;
 }) {
   const { employee: currentUser } = useAuth();
   const { toast } = useToast();
@@ -2526,6 +2654,20 @@ function WeeklyView({
       employeesById,
     );
   }, [employeesById, rosterShifts, visibleRooms, weekDays, weeklyPlan]);
+  const plannedDayCount = useMemo(() => {
+    if (!currentUser?.id) return 0;
+    const weekdaySet = new Set<number>();
+    (weeklyPlan?.assignments ?? []).forEach((assignment) => {
+      if (
+        assignment.employeeId === currentUser.id &&
+        assignment.assignmentType === "Plan"
+      ) {
+        weekdaySet.add(assignment.weekday);
+      }
+    });
+    return weekdaySet.size;
+  }, [currentUser?.id, weeklyPlan?.assignments]);
+  const weeklyFreeDayCount = Math.max(0, weekDays.length - plannedDayCount);
 
   const syncHorizontalScroll = useCallback((source: "header" | "body") => {
     const header = headerScrollRef.current;
@@ -2559,6 +2701,13 @@ function WeeklyView({
       });
     return map;
   }, [plannedAbsences]);
+
+  useEffect(() => {
+    onSummaryChange?.({
+      plannedDays: plannedDayCount,
+      freeDays: weeklyFreeDayCount,
+    });
+  }, [onSummaryChange, plannedDayCount, weeklyFreeDayCount]);
 
   useEffect(() => {
     let active = true;
