@@ -2,6 +2,7 @@
 
 ## Project Summary
 - Name: mycliniq (Vite + React + wouter frontend, Express backend)
+- Local project path: /Volumes/LaCie/Projects/mycliniq
 - Deploy path: /opt/mycliniq on Hetzner Ubuntu
 - Reverse proxy: Nginx -> Node/Express on localhost
 - Process manager: pm2 (app name: mycliniq)
