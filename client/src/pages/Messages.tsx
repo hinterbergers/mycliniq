@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Clock3,
   ExternalLink,
+  Forward,
   Inbox,
   MailPlus,
   Megaphone,
@@ -50,6 +51,7 @@ import { useAuth } from "@/lib/auth";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
   employeeApi,
+  type ForwardMessagePayload,
   messagesApi,
   notificationsApi,
   plannedAbsencesAdminApi,
@@ -298,6 +300,8 @@ export default function Messages() {
   const [pinCreatedGroup, setPinCreatedGroup] = useState(false);
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
   const [deletingThreadId, setDeletingThreadId] = useState<number | null>(null);
+  const [deletingMessageId, setDeletingMessageId] = useState<number | null>(null);
+  const [forwardingMessageId, setForwardingMessageId] = useState<number | null>(null);
 
   const [groupEditOpen, setGroupEditOpen] = useState(false);
   const [groupTitle, setGroupTitle] = useState("");
@@ -309,6 +313,21 @@ export default function Messages() {
   const [favoriteGroupThreadId, setFavoriteGroupThreadId] = useState<
     number | null
   >(null);
+  const [forwardDialogOpen, setForwardDialogOpen] = useState(false);
+  const [messageToForward, setMessageToForward] = useState<ThreadMessageItem | null>(
+    null,
+  );
+  const [forwardMode, setForwardMode] = useState<"direct" | "group" | "system">(
+    "direct",
+  );
+  const [forwardRecipientSearch, setForwardRecipientSearch] = useState("");
+  const [forwardRecipientId, setForwardRecipientId] = useState<number | null>(null);
+  const [forwardTargetThreadId, setForwardTargetThreadId] = useState<number | null>(
+    null,
+  );
+  const [forwardSystemTitle, setForwardSystemTitle] = useState("");
+  const [forwardLink, setForwardLink] = useState("");
+  const [forwardComment, setForwardComment] = useState("");
 
   const currentEmployeeId = employee?.id ?? null;
   const canBroadcastSystemMessage = isAdmin || isTechnicalAdmin;
@@ -328,6 +347,17 @@ export default function Messages() {
     setSystemMessage("");
     setSystemLink("");
     setComposeMode("direct");
+  };
+
+  const resetForwardDialog = () => {
+    setMessageToForward(null);
+    setForwardMode("direct");
+    setForwardRecipientSearch("");
+    setForwardRecipientId(null);
+    setForwardTargetThreadId(null);
+    setForwardSystemTitle("");
+    setForwardLink("");
+    setForwardComment("");
   };
 
   useEffect(() => {
@@ -534,6 +564,14 @@ export default function Messages() {
     });
   }, [allReachableEmployees, groupSearch]);
 
+  const filteredForwardRecipients = useMemo(() => {
+    const term = forwardRecipientSearch.trim().toLowerCase();
+    return allReachableEmployees.filter((emp) => {
+      if (!term) return true;
+      return getEmployeeName(emp).toLowerCase().includes(term);
+    });
+  }, [allReachableEmployees, forwardRecipientSearch]);
+
   const selectedThread = useMemo(
     () => portalThreads.find((thread) => thread.id === selectedThreadId) || null,
     [portalThreads, selectedThreadId],
@@ -552,6 +590,14 @@ export default function Messages() {
         (thread) => thread.type === "group" && thread.id !== SYSTEM_THREAD_ID,
       ),
     [portalThreads],
+  );
+
+  const availableForwardGroupThreads = useMemo(
+    () =>
+      groupThreads.filter(
+        (thread) => selectedThreadId == null || thread.id !== selectedThreadId,
+      ),
+    [groupThreads, selectedThreadId],
   );
 
   const favoriteGroupThread = useMemo(
@@ -889,6 +935,133 @@ export default function Messages() {
       });
     } finally {
       setDeletingThreadId(null);
+    }
+  };
+
+  const handleDeleteMessage = async (msg: ThreadMessageItem) => {
+    if (msg.kind === "system") {
+      if (msg.notificationId == null) return;
+      const confirmed = window.confirm(
+        "Diese Systemnachricht fuer alle Empfaenger entfernen?",
+      );
+      if (!confirmed) return;
+      setDeletingMessageId(msg.id);
+      try {
+        await notificationsApi.delete(msg.notificationId);
+        await loadNotifications();
+        toast({
+          title: "Nachricht geloescht",
+          description: "Die Systemnachricht wurde entfernt.",
+        });
+      } catch (error) {
+        toast({
+          title: "Fehler",
+          description: "Nachricht konnte nicht geloescht werden",
+          variant: "destructive",
+        });
+      } finally {
+        setDeletingMessageId(null);
+      }
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Diese Nachricht fuer alle Teilnehmer dauerhaft loeschen?",
+    );
+    if (!confirmed) return;
+
+    setDeletingMessageId(msg.id);
+    try {
+      await messagesApi.deleteMessage(msg.id);
+      if (selectedThreadId && selectedThreadId !== SYSTEM_THREAD_ID) {
+        await Promise.all([loadMessages(selectedThreadId), loadThreads()]);
+      }
+      toast({
+        title: "Nachricht geloescht",
+        description: "Die Nachricht wurde aus dem Thread entfernt.",
+      });
+    } catch (error) {
+      toast({
+        title: "Fehler",
+        description: "Nachricht konnte nicht geloescht werden",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingMessageId(null);
+    }
+  };
+
+  const openForwardDialog = (msg: ThreadMessageItem) => {
+    setMessageToForward(msg);
+    setForwardMode("direct");
+    setForwardRecipientSearch("");
+    setForwardRecipientId(null);
+    setForwardTargetThreadId(availableForwardGroupThreads[0]?.id ?? null);
+    setForwardSystemTitle(msg.kind === "system" ? msg.systemTitle || "" : "");
+    setForwardLink(msg.kind === "system" ? msg.link || "" : "");
+    setForwardComment("");
+    setForwardDialogOpen(true);
+  };
+
+  const handleForwardMessage = async () => {
+    if (!messageToForward) return;
+
+    const payload: ForwardMessagePayload = {
+      mode: forwardMode,
+      comment: forwardComment.trim() || undefined,
+    };
+
+    if (forwardMode === "direct") {
+      if (!forwardRecipientId) {
+        toast({
+          title: "Fehlende Angaben",
+          description: "Bitte einen Empfaenger waehlen.",
+          variant: "destructive",
+        });
+        return;
+      }
+      payload.recipientEmployeeId = forwardRecipientId;
+    } else if (forwardMode === "group") {
+      if (!forwardTargetThreadId) {
+        toast({
+          title: "Fehlende Angaben",
+          description: "Bitte einen Gruppenchat waehlen.",
+          variant: "destructive",
+        });
+        return;
+      }
+      payload.targetThreadId = forwardTargetThreadId;
+    } else {
+      if (!forwardSystemTitle.trim()) {
+        toast({
+          title: "Fehlende Angaben",
+          description: "Bitte einen Titel fuer die Systemnachricht eingeben.",
+          variant: "destructive",
+        });
+        return;
+      }
+      payload.systemTitle = forwardSystemTitle.trim();
+      payload.link = forwardLink.trim() || undefined;
+    }
+
+    setForwardingMessageId(messageToForward.id);
+    try {
+      await messagesApi.forwardMessage(messageToForward.id, payload);
+      setForwardDialogOpen(false);
+      resetForwardDialog();
+      await Promise.all([loadThreads(), loadNotifications()]);
+      toast({
+        title: "Nachricht weitergeleitet",
+        description: "Die Nachricht wurde an das gewaehlte Ziel gesendet.",
+      });
+    } catch (error) {
+      toast({
+        title: "Fehler",
+        description: "Nachricht konnte nicht weitergeleitet werden",
+        variant: "destructive",
+      });
+    } finally {
+      setForwardingMessageId(null);
     }
   };
 
@@ -1672,11 +1845,15 @@ export default function Messages() {
                         <div className="space-y-3">
                           {activeMessages.map((msg) => {
                             const isOwn = msg.senderId === currentEmployeeId;
+                            const canDeleteMessage =
+                              msg.kind === "system"
+                                ? canBroadcastSystemMessage
+                                : selectedThreadId !== SYSTEM_THREAD_ID;
                             return (
                               <div
                                 key={msg.id}
                                 className={cn(
-                                  "flex",
+                                  "flex flex-col gap-2",
                                   isOwn ? "justify-end" : "justify-start",
                                 )}
                               >
@@ -1738,6 +1915,37 @@ export default function Messages() {
                                         Link oeffnen
                                       </Button>
                                     </div>
+                                  )}
+                                </div>
+                                <div
+                                  className={cn(
+                                    "flex gap-2 px-1",
+                                    isOwn ? "justify-end" : "justify-start",
+                                  )}
+                                >
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-8 rounded-full px-3 text-xs text-slate-500 hover:text-blue-700"
+                                    disabled={forwardingMessageId === msg.id}
+                                    onClick={() => openForwardDialog(msg)}
+                                  >
+                                    <Forward className="mr-1 h-3.5 w-3.5" />
+                                    Weiterleiten
+                                  </Button>
+                                  {canDeleteMessage && (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-8 rounded-full px-3 text-xs text-slate-500 hover:text-red-600"
+                                      disabled={deletingMessageId === msg.id}
+                                      onClick={() => void handleDeleteMessage(msg)}
+                                    >
+                                      <Trash2 className="mr-1 h-3.5 w-3.5" />
+                                      Loeschen
+                                    </Button>
                                   )}
                                 </div>
                               </div>
@@ -2102,6 +2310,193 @@ export default function Messages() {
             </Button>
             <Button type="button" onClick={() => void handleSaveGroup()}>
               Speichern
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={forwardDialogOpen}
+        onOpenChange={(open) => {
+          setForwardDialogOpen(open);
+          if (!open) resetForwardDialog();
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Nachricht weiterleiten</DialogTitle>
+            <DialogDescription>
+              Ziel waehlen und die Nachricht mit optionalem Kommentar weiterleiten.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-5">
+            {messageToForward && (
+              <div className="rounded-2xl border bg-slate-50/80 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Vorschau
+                </p>
+                {messageToForward.kind === "system" && messageToForward.systemTitle && (
+                  <p className="mt-2 text-sm font-semibold text-slate-900">
+                    {messageToForward.systemTitle}
+                  </p>
+                )}
+                <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
+                  {messageToForward.content}
+                </p>
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant={forwardMode === "direct" ? "default" : "outline"}
+                onClick={() => setForwardMode("direct")}
+              >
+                <MailPlus className="mr-2 h-4 w-4" />
+                Privat
+              </Button>
+              <Button
+                type="button"
+                variant={forwardMode === "group" ? "default" : "outline"}
+                onClick={() => setForwardMode("group")}
+              >
+                <Users className="mr-2 h-4 w-4" />
+                Gruppe
+              </Button>
+              {canBroadcastSystemMessage && (
+                <Button
+                  type="button"
+                  variant={forwardMode === "system" ? "default" : "outline"}
+                  onClick={() => setForwardMode("system")}
+                >
+                  <Megaphone className="mr-2 h-4 w-4" />
+                  System
+                </Button>
+              )}
+            </div>
+
+            {forwardMode === "direct" && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="forward-recipient-search">Empfaenger suchen</Label>
+                  <Input
+                    id="forward-recipient-search"
+                    placeholder="Name eingeben..."
+                    value={forwardRecipientSearch}
+                    onChange={(event) =>
+                      setForwardRecipientSearch(event.target.value)
+                    }
+                  />
+                </div>
+                <ScrollArea className="h-52 rounded-2xl border bg-slate-50/60 p-2">
+                  <div className="space-y-1">
+                    {filteredForwardRecipients.map((entry) => {
+                      const isSelected = entry.id === forwardRecipientId;
+                      return (
+                        <button
+                          key={entry.id}
+                          type="button"
+                          className={cn(
+                            "flex w-full items-center justify-between rounded-2xl px-3 py-2 text-left text-sm transition-colors",
+                            isSelected ? "bg-blue-600 text-white" : "hover:bg-white",
+                          )}
+                          onClick={() => setForwardRecipientId(entry.id)}
+                        >
+                          <span className="font-medium">{getEmployeeName(entry)}</span>
+                          {isSelected && <CheckCircle2 className="h-4 w-4" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
+              </div>
+            )}
+
+            {forwardMode === "group" && (
+              <div className="space-y-2">
+                <Label>Zielgruppe</Label>
+                <div className="space-y-2">
+                  {availableForwardGroupThreads.length === 0 && (
+                    <p className="text-sm text-muted-foreground">
+                      Keine Gruppen verfuegbar.
+                    </p>
+                  )}
+                  {availableForwardGroupThreads.map((thread) => (
+                    <button
+                      key={thread.id}
+                      type="button"
+                      className={cn(
+                        "flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left text-sm transition-colors",
+                        forwardTargetThreadId === thread.id
+                          ? "border-blue-200 bg-blue-50"
+                          : "hover:border-slate-300 hover:bg-slate-50",
+                      )}
+                      onClick={() => setForwardTargetThreadId(thread.id)}
+                    >
+                      <span className="font-medium text-slate-900">
+                        {getThreadTitle(thread)}
+                      </span>
+                      {forwardTargetThreadId === thread.id && (
+                        <CheckCircle2 className="h-4 w-4 text-blue-600" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {forwardMode === "system" && canBroadcastSystemMessage && (
+              <div className="grid gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="forward-system-title">Titel</Label>
+                  <Input
+                    id="forward-system-title"
+                    placeholder="Titel der Systemnachricht..."
+                    value={forwardSystemTitle}
+                    onChange={(event) => setForwardSystemTitle(event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="forward-system-link">Optionaler Link</Label>
+                  <Input
+                    id="forward-system-link"
+                    placeholder="/nachrichten?thread=12"
+                    value={forwardLink}
+                    onChange={(event) => setForwardLink(event.target.value)}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="forward-comment">Kommentar optional</Label>
+              <Textarea
+                id="forward-comment"
+                placeholder="Optionaler Einleitungstext..."
+                value={forwardComment}
+                onChange={(event) => setForwardComment(event.target.value)}
+                className="min-h-[96px]"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setForwardDialogOpen(false);
+                resetForwardDialog();
+              }}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              type="button"
+              disabled={!messageToForward || forwardingMessageId === messageToForward?.id}
+              onClick={() => void handleForwardMessage()}
+            >
+              <Forward className="mr-2 h-4 w-4" />
+              Weiterleiten
             </Button>
           </DialogFooter>
         </DialogContent>

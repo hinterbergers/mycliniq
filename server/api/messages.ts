@@ -35,6 +35,39 @@ const createMessageSchema = z.object({
   content: z.string().min(1, "Nachricht erforderlich"),
 });
 
+const forwardMessageSchema = z
+  .object({
+    mode: z.enum(["direct", "group", "system"]),
+    recipientEmployeeId: z.number().positive().optional(),
+    targetThreadId: z.number().positive().optional(),
+    systemTitle: z.string().min(1).optional(),
+    link: z.string().trim().optional(),
+    comment: z.string().trim().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.mode === "direct" && !value.recipientEmployeeId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["recipientEmployeeId"],
+        message: "Empfaenger erforderlich",
+      });
+    }
+    if (value.mode === "group" && !value.targetThreadId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["targetThreadId"],
+        message: "Gruppenchat erforderlich",
+      });
+    }
+    if (value.mode === "system" && !value.systemTitle?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["systemTitle"],
+        message: "Titel erforderlich",
+      });
+    }
+  });
+
 async function isThreadMember(threadId: number, employeeId: number) {
   const [member] = await db
     .select({ threadId: messageThreadMembers.threadId })
@@ -76,6 +109,90 @@ async function getThreadById(threadId: number) {
     .where(eq(messageThreads.id, threadId))
     .limit(1);
   return thread ?? null;
+}
+
+async function getMessageById(messageId: number) {
+  const [message] = await db
+    .select({
+      id: messageMessages.id,
+      threadId: messageMessages.threadId,
+      senderId: messageMessages.senderId,
+      content: messageMessages.content,
+      createdAt: messageMessages.createdAt,
+    })
+    .from(messageMessages)
+    .where(eq(messageMessages.id, messageId))
+    .limit(1);
+  return message ?? null;
+}
+
+async function findExistingDirectThread(
+  employeeId: number,
+  counterpartId: number,
+) {
+  const [existingThread] = await db
+    .select({
+      id: messageThreads.id,
+      type: messageThreads.type,
+      title: messageThreads.title,
+      createdById: messageThreads.createdById,
+      createdAt: messageThreads.createdAt,
+    })
+    .from(messageThreads)
+    .innerJoin(
+      messageThreadMembers,
+      eq(messageThreadMembers.threadId, messageThreads.id),
+    )
+    .where(eq(messageThreads.type, "direct"))
+    .groupBy(
+      messageThreads.id,
+      messageThreads.type,
+      messageThreads.title,
+      messageThreads.createdById,
+      messageThreads.createdAt,
+    )
+    .having(
+      sql`
+        count(*) = 2
+        and sum(case when ${messageThreadMembers.employeeId} = ${employeeId} then 1 else 0 end) = 1
+        and sum(case when ${messageThreadMembers.employeeId} = ${counterpartId} then 1 else 0 end) = 1
+      `,
+    )
+    .limit(1);
+
+  return existingThread ?? null;
+}
+
+async function createDirectThreadIfMissing(
+  employeeId: number,
+  counterpartId: number,
+) {
+  const existingThread = await findExistingDirectThread(employeeId, counterpartId);
+  if (existingThread) return existingThread;
+
+  const [thread] = await db
+    .insert(messageThreads)
+    .values({
+      type: "direct",
+      title: null,
+      createdById: employeeId,
+    })
+    .returning();
+
+  await db.insert(messageThreadMembers).values([
+    {
+      threadId: thread.id,
+      employeeId,
+      role: "owner",
+    },
+    {
+      threadId: thread.id,
+      employeeId: counterpartId,
+      role: "member",
+    },
+  ]);
+
+  return thread;
 }
 
 async function createMessageNotifications(
@@ -222,35 +339,10 @@ export function registerMessageRoutes(router: Router) {
 
       if (type === "direct" && uniqueMembers.length === 1) {
         const counterpartId = uniqueMembers[0];
-        const [existingThread] = await db
-          .select({
-            id: messageThreads.id,
-            type: messageThreads.type,
-            title: messageThreads.title,
-            createdById: messageThreads.createdById,
-            createdAt: messageThreads.createdAt,
-          })
-          .from(messageThreads)
-          .innerJoin(
-            messageThreadMembers,
-            eq(messageThreadMembers.threadId, messageThreads.id),
-          )
-          .where(eq(messageThreads.type, "direct"))
-          .groupBy(
-            messageThreads.id,
-            messageThreads.type,
-            messageThreads.title,
-            messageThreads.createdById,
-            messageThreads.createdAt,
-          )
-          .having(
-            sql`
-            count(*) = 2
-            and sum(case when ${messageThreadMembers.employeeId} = ${req.user.employeeId} then 1 else 0 end) = 1
-            and sum(case when ${messageThreadMembers.employeeId} = ${counterpartId} then 1 else 0 end) = 1
-          `,
-          )
-          .limit(1);
+        const existingThread = await findExistingDirectThread(
+          req.user.employeeId,
+          counterpartId,
+        );
 
         if (existingThread) {
           return ok(res, existingThread);
@@ -355,6 +447,160 @@ export function registerMessageRoutes(router: Router) {
         req.body.content,
       );
       return created(res, message);
+    }),
+  );
+
+  router.delete(
+    "/messages/:id",
+    validateParams(idParamSchema),
+    asyncHandler(async (req, res) => {
+      if (!req.user) {
+        return res
+          .status(401)
+          .json({ success: false, error: "Nicht authentifiziert" });
+      }
+      const messageId = Number(req.params.id);
+      const message = await getMessageById(messageId);
+      if (!message) return notFound(res, "Nachricht");
+
+      const member = await isThreadMember(message.threadId, req.user.employeeId);
+      if (!member) {
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
+      }
+
+      await db.delete(messageMessages).where(eq(messageMessages.id, messageId));
+      return ok(res, { success: true });
+    }),
+  );
+
+  router.post(
+    "/messages/:id/forward",
+    validateParams(idParamSchema),
+    validateBody(forwardMessageSchema),
+    asyncHandler(async (req, res) => {
+      if (!req.user) {
+        return res
+          .status(401)
+          .json({ success: false, error: "Nicht authentifiziert" });
+      }
+      const messageId = Number(req.params.id);
+      const sourceMessage = await getMessageById(messageId);
+      if (!sourceMessage) return notFound(res, "Nachricht");
+
+      const member = await isThreadMember(
+        sourceMessage.threadId,
+        req.user.employeeId,
+      );
+      if (!member) {
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
+      }
+
+      const payload = req.body as z.infer<typeof forwardMessageSchema>;
+      const forwardedContent = [
+        payload.comment?.trim() || "",
+        `Weitergeleitet am ${new Date().toLocaleString("de-AT")}`,
+        sourceMessage.content,
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+
+      if (payload.mode === "system") {
+        const isElevatedAdmin =
+          req.user.isAdmin || req.user.systemRole !== "employee";
+        if (!isElevatedAdmin) {
+          return res
+            .status(403)
+            .json({ success: false, error: "Keine Berechtigung" });
+        }
+
+        const recipients = await db
+          .select({ employeeId: employees.id })
+          .from(employees)
+          .where(eq(employees.isActive, true));
+        const rows = recipients
+          .filter((entry) => entry.employeeId !== req.user.employeeId)
+          .map((entry) => ({
+            recipientId: entry.employeeId,
+            type: "system" as const,
+            title: payload.systemTitle!.trim(),
+            message: forwardedContent,
+            link: payload.link?.trim() || null,
+            metadata: {
+              kind: "forwarded_system_message",
+              createdByEmployeeId: req.user.employeeId,
+              createdByName: req.user.name,
+            },
+          }));
+
+        if (rows.length) {
+          await db.insert(notifications).values(rows);
+        }
+        return ok(res, { success: true });
+      }
+
+      if (payload.mode === "group") {
+        const targetThreadId = Number(payload.targetThreadId);
+        const thread = await getThreadById(targetThreadId);
+        if (!thread) return notFound(res, "Thread");
+        if (thread.type !== "group") {
+          return res.status(400).json({
+            success: false,
+            error: "Ziel muss ein Gruppenchat sein",
+          });
+        }
+        const targetMember = await isThreadMember(targetThreadId, req.user.employeeId);
+        if (!targetMember) {
+          return res
+            .status(403)
+            .json({ success: false, error: "Keine Berechtigung" });
+        }
+
+        const [forwarded] = await db
+          .insert(messageMessages)
+          .values({
+            threadId: targetThreadId,
+            senderId: req.user.employeeId,
+            content: forwardedContent,
+          })
+          .returning();
+        await createMessageNotifications(
+          targetThreadId,
+          req.user.employeeId,
+          forwardedContent,
+        );
+        return created(res, forwarded);
+      }
+
+      const counterpartId = Number(payload.recipientEmployeeId);
+      if (counterpartId === req.user.employeeId) {
+        return res.status(400).json({
+          success: false,
+          error: "Bitte einen anderen Empfaenger waehlen",
+        });
+      }
+
+      const thread = await createDirectThreadIfMissing(
+        req.user.employeeId,
+        counterpartId,
+      );
+      const [forwarded] = await db
+        .insert(messageMessages)
+        .values({
+          threadId: thread.id,
+          senderId: req.user.employeeId,
+          content: forwardedContent,
+        })
+        .returning();
+      await createMessageNotifications(
+        thread.id,
+        req.user.employeeId,
+        forwardedContent,
+      );
+      return created(res, forwarded);
     }),
   );
 

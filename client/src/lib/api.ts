@@ -2514,6 +2514,15 @@ export type MessageWithSender = Message & {
   senderLastName?: string | null;
 };
 
+export type ForwardMessagePayload = {
+  mode: "direct" | "group" | "system";
+  recipientEmployeeId?: number;
+  targetThreadId?: number;
+  systemTitle?: string;
+  link?: string;
+  comment?: string;
+};
+
 // Messaging API
 export const messagesApi = {
   getThreads: async (): Promise<MessageThreadListItem[]> => {
@@ -2555,6 +2564,27 @@ export const messagesApi = {
     const response = await apiFetch(`${API_BASE}/messages/threads/${threadId}`, {
       method: "DELETE",
     });
+    return handleResponse<void>(response);
+  },
+
+  deleteMessage: async (messageId: number): Promise<void> => {
+    const response = await apiFetch(`${API_BASE}/messages/messages/${messageId}`, {
+      method: "DELETE",
+    });
+    return handleResponse<void>(response);
+  },
+
+  forwardMessage: async (
+    messageId: number,
+    data: ForwardMessagePayload,
+  ): Promise<void> => {
+    const response = await apiFetch(
+      `${API_BASE}/messages/messages/${messageId}/forward`,
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      },
+    );
     return handleResponse<void>(response);
   },
 
