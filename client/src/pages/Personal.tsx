@@ -351,7 +351,7 @@ export default function Personal() {
   } | null>(null);
   const [weeklySummary, setWeeklySummary] = useState<{
     plannedDays: number;
-    freeDays: number;
+    absenceReasonCounts: Array<{ reason: string; days: number }>;
   } | null>(null);
   const [vacationSummary, setVacationSummary] = useState<string | null>(null);
   const {
@@ -563,7 +563,17 @@ export default function Personal() {
     }
     if (activeTab === "weekly") {
       if (!weeklySummary) return "Wochenplan";
-      return `${weeklySummary.plannedDays} Tage geplant · ${weeklySummary.freeDays} Tage frei`;
+      const parts = [`${weeklySummary.plannedDays} Tage geplant`];
+      weeklySummary.absenceReasonCounts.forEach(({ reason, days }) => {
+        const suffix =
+          reason === "Urlaub"
+            ? "Urlaubstage"
+            : reason === "Krankenstand"
+              ? "Krankenstand"
+              : reason;
+        parts.push(`${days} ${suffix}`);
+      });
+      return parts.join(" · ");
     }
     return vacationSummary ?? "Urlaubsplanung";
   }, [activeTab, rosterSummary, vacationSummary, weeklySummary]);
@@ -2611,7 +2621,7 @@ function WeeklyView({
   stickyTopOffset: number;
   onSummaryChange?: (summary: {
     plannedDays: number;
-    freeDays: number;
+    absenceReasonCounts: Array<{ reason: string; days: number }>;
   }) => void;
 }) {
   const { employee: currentUser } = useAuth();
@@ -2775,7 +2785,37 @@ function WeeklyView({
     });
     return weekdaySet.size;
   }, [currentUser?.id, weeklyPlan?.assignments]);
-  const weeklyFreeDayCount = Math.max(0, weekDays.length - plannedDayCount);
+  const weeklyAbsenceReasonCounts = useMemo(() => {
+    if (!currentUser?.id) return [] as Array<{ reason: string; days: number }>;
+    const counts = new Map<string, number>();
+
+    weekDays.forEach((day) => {
+      const dateStr = format(day, "yyyy-MM-dd");
+      const plannedReason = plannedAbsences.find(
+        (absence) =>
+          absence.employeeId === currentUser.id &&
+          absence.status !== "Abgelehnt" &&
+          absence.startDate <= dateStr &&
+          absence.endDate >= dateStr,
+      )?.reason;
+
+      const longTermReason = longTermAbsences.find(
+        (absence) =>
+          absence.employeeId === currentUser.id &&
+          absence.status === "Genehmigt" &&
+          absence.startDate <= dateStr &&
+          absence.endDate >= dateStr,
+      )?.reason;
+
+      const reason = plannedReason || longTermReason;
+      if (!reason) return;
+      counts.set(reason, (counts.get(reason) ?? 0) + 1);
+    });
+
+    return [...counts.entries()]
+      .map(([reason, days]) => ({ reason, days }))
+      .sort((a, b) => b.days - a.days || a.reason.localeCompare(b.reason, "de"));
+  }, [currentUser?.id, longTermAbsences, plannedAbsences, weekDays]);
 
   const syncHorizontalScroll = useCallback((source: "header" | "body") => {
     const header = headerScrollRef.current;
@@ -2813,9 +2853,9 @@ function WeeklyView({
   useEffect(() => {
     onSummaryChange?.({
       plannedDays: plannedDayCount,
-      freeDays: weeklyFreeDayCount,
+      absenceReasonCounts: weeklyAbsenceReasonCounts,
     });
-  }, [onSummaryChange, plannedDayCount, weeklyFreeDayCount]);
+  }, [onSummaryChange, plannedDayCount, weeklyAbsenceReasonCounts]);
 
   useEffect(() => {
     let active = true;
