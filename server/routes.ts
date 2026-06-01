@@ -4698,6 +4698,105 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
   });
 
   app.get(
+    "/public-api/roster/month/:year/:month",
+    async (req: Request, res: Response) => {
+      try {
+        const year = Number(req.params.year);
+        const month = Number(req.params.month);
+        if (
+          !Number.isInteger(year) ||
+          !Number.isInteger(month) ||
+          month < 1 ||
+          month > 12
+        ) {
+          return res.status(400).json({
+            success: false,
+            error: "Ungültiger Monat",
+          });
+        }
+
+        const monthStart = `${year}-${padTwo(month)}-01`;
+        const monthEnd = `${year}-${padTwo(month)}-${padTwo(
+          new Date(year, month, 0).getDate(),
+        )}`;
+
+        const [plan] = await db
+          .select()
+          .from(dutyPlans)
+          .where(and(eq(dutyPlans.year, year), eq(dutyPlans.month, month)))
+          .limit(1);
+
+        const [publicRosterShifts, publicPlannedAbsences, publicLongTermAbsences, publicEmployees, publicServiceLines] =
+          await Promise.all([
+            db
+              .select()
+              .from(rosterShifts)
+              .where(
+                and(
+                  gte(rosterShifts.date, monthStart),
+                  lte(rosterShifts.date, monthEnd),
+                  eq(rosterShifts.isDraft, false),
+                ),
+              ),
+            db
+              .select({
+                id: plannedAbsences.id,
+                employeeId: plannedAbsences.employeeId,
+                employeeName: employees.name,
+                employeeLastName: employees.lastName,
+                startDate: plannedAbsences.startDate,
+                endDate: plannedAbsences.endDate,
+                reason: plannedAbsences.reason,
+                status: plannedAbsences.status,
+                notes: plannedAbsences.notes,
+              })
+              .from(plannedAbsences)
+              .leftJoin(employees, eq(plannedAbsences.employeeId, employees.id))
+              .where(
+                and(
+                  ne(plannedAbsences.status, "Abgelehnt"),
+                  lte(plannedAbsences.startDate, monthEnd),
+                  gte(plannedAbsences.endDate, monthStart),
+                ),
+              ),
+            db
+              .select()
+              .from(longTermAbsences)
+              .where(eq(longTermAbsences.status, "Genehmigt")),
+            db.select().from(employees).where(eq(employees.isActive, true)),
+            db
+              .select()
+              .from(serviceLines)
+              .where(eq(serviceLines.isActive, true))
+              .orderBy(asc(serviceLines.sortOrder), asc(serviceLines.label)),
+          ]);
+
+        return res.json({
+          success: true,
+          data: {
+            year,
+            month,
+            from: monthStart,
+            to: monthEnd,
+            planStatus: plan?.status ?? null,
+            employees: publicEmployees,
+            serviceLines: publicServiceLines,
+            rosterShifts: publicRosterShifts,
+            plannedAbsences: publicPlannedAbsences,
+            longTermAbsences: publicLongTermAbsences,
+          },
+        });
+      } catch (error: any) {
+        console.error("Public roster month error:", error);
+        return res.status(500).json({
+          success: false,
+          error: "Öffentlicher Monatsdienstplan konnte nicht geladen werden",
+        });
+      }
+    },
+  );
+
+  app.get(
     "/public-api/weekly-plan/week/:year/:week",
     async (req: Request, res: Response) => {
       try {

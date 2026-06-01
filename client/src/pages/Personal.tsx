@@ -1324,8 +1324,9 @@ function RosterView({
   return (
     <div className="space-y-6">
       <Card className="border-none kabeg-shadow overflow-visible">
-        <div className="p-4 border-b border-border flex items-center justify-between bg-card">
-          <div className="flex items-center gap-4">
+        <div className="border-b border-border bg-card p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-3">
             <h3 className="text-lg font-semibold flex items-center gap-2">
               <CalendarIcon className="w-5 h-5 text-primary" />
               {format(currentDate, "MMMM yyyy", { locale: de })}
@@ -1352,56 +1353,173 @@ function RosterView({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Badge
-              variant="outline"
-              className={
-                planStatus === "Freigegeben"
-                  ? "bg-green-50 text-green-700 border-green-200"
-                  : planStatus === "Vorläufig"
-                    ? "bg-blue-50 text-blue-700 border-blue-200"
-                    : "bg-amber-50 text-amber-700 border-amber-200"
-              }
-            >
-              {planLoading
-                ? "Status wird geladen..."
-                : `Status: ${statusLabel}`}
-            </Badge>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-2"
-              onClick={onSubscribe}
-              data-testid="button-subscribe"
-            >
-              <Rss className="w-4 h-4" />
-              Abonnieren
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-2"
-              onClick={onExport}
-              disabled={exporting}
-              data-testid="button-export"
-            >
-              <Download className="w-4 h-4" />
-              {exporting ? "Export läuft..." : "Export"}
-            </Button>
-            <Select defaultValue="all">
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Bereich" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Alle Bereiche</SelectItem>
-                <SelectItem value="geb">Geburtshilfe</SelectItem>
-                <SelectItem value="gyn">Gynäkologie</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge
+                variant="outline"
+                className={
+                  planStatus === "Freigegeben"
+                    ? "bg-green-50 text-green-700 border-green-200"
+                    : planStatus === "Vorläufig"
+                      ? "bg-blue-50 text-blue-700 border-blue-200"
+                      : "bg-amber-50 text-amber-700 border-amber-200"
+                }
+              >
+                {planLoading
+                  ? "Status wird geladen..."
+                  : `Status: ${statusLabel}`}
+              </Badge>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={onSubscribe}
+                data-testid="button-subscribe"
+              >
+                <Rss className="w-4 h-4" />
+                <span className="hidden sm:inline">Abonnieren</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={onExport}
+                disabled={exporting}
+                data-testid="button-export"
+              >
+                <Download className="w-4 h-4" />
+                <span className="hidden sm:inline">
+                  {exporting ? "Export läuft..." : "Export"}
+                </span>
+              </Button>
+              <Select defaultValue="all">
+                <SelectTrigger className="h-9 w-full min-w-[160px] sm:w-[180px]">
+                  <SelectValue placeholder="Bereich" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Alle Bereiche</SelectItem>
+                  <SelectItem value="geb">Geburtshilfe</SelectItem>
+                  <SelectItem value="gyn">Gynäkologie</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="space-y-3 p-4 md:hidden">
+          {rosterLoading ? (
+            <div className="rounded-xl border border-border bg-background px-4 py-8 text-center text-sm text-muted-foreground">
+              Dienstplan wird geladen...
+            </div>
+          ) : (
+            days.map((day, i) => {
+              const weekNumber = getWeek(day, {
+                weekStartsOn: 1,
+                firstWeekContainsDate: 4,
+              });
+              const prevWeekNumber =
+                i > 0
+                  ? getWeek(days[i - 1], {
+                      weekStartsOn: 1,
+                      firstWeekContainsDate: 4,
+                    })
+                  : null;
+              const showKW = i === 0 || weekNumber !== prevWeekNumber;
+              const dateKey = format(day, "yyyy-MM-dd");
+              const dayLabel = format(day, "EEE", { locale: de }).replace(".", "");
+              const dateLabel = format(day, "dd.MM", { locale: de });
+              const holiday = getAustrianHoliday(day);
+              const isHoliday = Boolean(holiday);
+              const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+              const highlightRow = isWeekend || isHoliday;
+              const dayShifts = shiftsByDate[dateKey] || {};
+              const dayAbsences = getAbsencesForDate(day);
+
+              return (
+                <div
+                  key={`mobile-${dateKey}`}
+                  className={cn(
+                    "rounded-xl border border-border bg-background p-4 shadow-sm",
+                    highlightRow && "border-amber-200 bg-amber-50/50",
+                  )}
+                >
+                  <div className="mb-3 flex items-start justify-between gap-3">
+                    <div>
+                      <div
+                        className={cn(
+                          "text-base font-semibold",
+                          highlightRow && "text-rose-600",
+                        )}
+                      >
+                        {dayLabel}, {dateLabel}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        KW {weekNumber}
+                        {showKW ? " • Wochenstart" : ""}
+                        {holiday ? ` • ${holiday.name}` : ""}
+                      </div>
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className="shrink-0 border-slate-200 bg-slate-50 text-slate-600"
+                    >
+                      {statusLabel}
+                    </Badge>
+                  </div>
+
+                  <div className="space-y-2">
+                    {serviceLineDisplay.map((line) => {
+                      const shift = dayShifts[line.key];
+                      const label = getShiftDisplay(shift);
+                      return (
+                        <div
+                          key={`${dateKey}-${line.key}`}
+                          className="flex items-start justify-between gap-3 text-sm"
+                        >
+                          <span className="min-w-0 text-muted-foreground">
+                            {line.label}
+                          </span>
+                          <span
+                            className={cn(
+                              "text-right font-medium",
+                              label === "-" && "text-muted-foreground",
+                              label !== "-" && isMyShift(shift) && "text-primary",
+                            )}
+                          >
+                            {label}
+                          </span>
+                        </div>
+                      );
+                    })}
+
+                    {showAbsenceColumn && (
+                      <div className="border-t border-border pt-2 text-sm">
+                        <div className="mb-1 text-muted-foreground">
+                          Abwesenheiten
+                        </div>
+                        {dayAbsences.length === 0 ? (
+                          <span className="text-muted-foreground">-</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1">
+                            {dayAbsences.map((absence) => (
+                              <span
+                                key={`mobile-absence-${absence.source}-${absence.employeeId}-${absence.absenceId ?? absence.reason}`}
+                                className="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600"
+                              >
+                                {absence.name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[800px] text-sm">
             <thead>
               <tr className="bg-primary text-white">

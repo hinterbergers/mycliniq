@@ -28,6 +28,7 @@ import PersonCard from "@/pages/PersonCard";
 import TrainingVideos from "@/pages/training/TrainingVideos";
 import TrainingPresentations from "@/pages/training/TrainingPresentations";
 import PublicWeeklyPlan from "@/pages/PublicWeeklyPlan";
+import PublicRosterPlan from "@/pages/PublicRosterPlan";
 import { Loader2 } from "lucide-react";
 import { TrainingRoute } from "@/components/training/TrainingRoute";
 
@@ -61,6 +62,7 @@ function Router() {
     <Switch>
       <Route path="/login" component={Login} />
       <Route path="/wochenplan-public" component={PublicWeeklyPlan} />
+      <Route path="/dienstplan-public" component={PublicRosterPlan} />
 
       <Route path="/">{() => <ProtectedRoute component={Dashboard} />}</Route>
 
