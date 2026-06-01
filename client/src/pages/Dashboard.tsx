@@ -1060,19 +1060,6 @@ export default function Dashboard() {
 
     return (
       <div className="space-y-2">
-        {unreadNotifications.length > 0 ? (
-          <div className="flex justify-end">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-[11px]"
-              onClick={handleMarkAllNotificationsRead}
-            >
-              Alle gelesen
-            </Button>
-          </div>
-        ) : null}
         {dashboardNoticeItems.map((item) => {
           const clickable = Boolean(item.targetUrl);
           return (
@@ -1146,6 +1133,7 @@ export default function Dashboard() {
     title,
     summary,
     rightSummary,
+    headerAction,
     icon: Icon,
     content,
     accent = false,
@@ -1154,6 +1142,7 @@ export default function Dashboard() {
     title: string;
     summary: string;
     rightSummary?: string | null;
+    headerAction?: ReactNode;
     icon: typeof Bell;
     content: ReactNode;
     accent?: boolean;
@@ -1197,6 +1186,15 @@ export default function Dashboard() {
                 </div>
               </div>
               <div className="flex shrink-0 items-start gap-3">
+                {headerAction ? (
+                  <div
+                    className="mt-0.5"
+                    onClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => event.stopPropagation()}
+                  >
+                    {headerAction}
+                  </div>
+                ) : null}
                 {rightSummary ? (
                   <span
                     className={`mt-0.5 text-right text-[11px] leading-snug ${
@@ -1746,6 +1744,18 @@ export default function Dashboard() {
               tileKey: "notifications",
               title: "Notifications",
               summary: notificationsSummary,
+              headerAction:
+                unreadNotifications.length > 0 ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-[11px] text-white/80 hover:bg-white/10 hover:text-white"
+                    onClick={handleMarkAllNotificationsRead}
+                  >
+                    Alles gelesen
+                  </Button>
+                ) : null,
               rightSummary: birthdaySummary,
               icon: Bell,
               content: renderNotificationsCardContent(),
