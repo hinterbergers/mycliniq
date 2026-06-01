@@ -847,7 +847,6 @@ export default function Personal() {
               onExport={handleExport}
               exporting={exporting}
               onSummaryChange={setRosterSummary}
-              stickyTopOffset={pageStickyHeaderHeight}
             />
           </TabsContent>
 
@@ -889,7 +888,6 @@ function RosterView({
   onExport,
   exporting,
   onSummaryChange,
-  stickyTopOffset,
 }: {
   currentDate: Date;
   setCurrentDate: (d: Date) => void;
@@ -900,7 +898,6 @@ function RosterView({
     shifts: number;
     absenceReasonCounts: Array<{ reason: string; days: number }>;
   }) => void;
-  stickyTopOffset: number;
 }) {
   const { employee: currentUser, user, token } = useAuth();
   const { toast } = useToast();
@@ -1733,40 +1730,35 @@ function RosterView({
           )}
         </div>
 
-        <div className="hidden overflow-x-auto md:block">
+        <div className="hidden max-h-[70vh] overflow-auto md:block">
           <table className="w-full min-w-[800px] text-sm">
             <thead>
               <tr className="bg-primary text-white">
                 <th
-                  className="sticky left-0 z-40 w-16 px-2 py-2 text-left font-medium"
-                  style={{ top: `${stickyTopOffset}px` }}
+                  className="sticky left-0 top-0 z-40 w-16 bg-primary px-2 py-2 text-left font-medium"
                 >
                   KW
                 </th>
                 <th
-                  className="sticky z-30 w-12 px-2 py-2 text-left font-medium"
-                  style={{ top: `${stickyTopOffset}px` }}
+                  className="sticky top-0 z-30 w-12 bg-primary px-2 py-2 text-left font-medium"
                 >
                   Tag
                 </th>
                 <th
-                  className="sticky z-30 w-24 px-2 py-2 text-left font-medium"
-                  style={{ top: `${stickyTopOffset}px` }}
+                  className="sticky top-0 z-30 w-24 bg-primary px-2 py-2 text-left font-medium"
                 >
                   Datum
                 </th>
                 {serviceLineDisplay.map((line) => (
                   <th
                     key={line.key}
-                    className="sticky z-30 px-2 py-2 text-left font-medium"
-                    style={{ top: `${stickyTopOffset}px` }}
+                    className="sticky top-0 z-30 bg-primary px-2 py-2 text-left font-medium"
                   >
                     {getRosterHeaderShortLabel(line.label, line.key)}
                   </th>
                 ))}
                 <th
-                  className="sticky z-30 px-2 py-2 text-left font-medium"
-                  style={{ top: `${stickyTopOffset}px` }}
+                  className="sticky top-0 z-30 bg-primary px-2 py-2 text-left font-medium"
                 >
                   <button
                     type="button"
