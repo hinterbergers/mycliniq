@@ -3,10 +3,12 @@
 ## Project Summary
 - Name: mycliniq (Vite + React + wouter frontend, Express backend)
 - Local project path: /Volumes/LaCie/Projects/mycliniq
+- GitHub publish target: github.com:hinterbergers/mycliniq.git (`origin/main`)
 - Deploy path: /opt/mycliniq on Hetzner Ubuntu
 - Reverse proxy: Nginx -> Node/Express on localhost
 - Process manager: pm2 (app name: mycliniq)
 - Build: `npm run build` runs `script/build.ts` (vite build + esbuild to dist/index.cjs)
+- App distribution path: local Mac build -> Xcode Archive -> App Store Connect / TestFlight
 
 ## Runtime / Infra
 - Nginx proxy_pass: http://127.0.0.1:3000
@@ -16,6 +18,24 @@
 - Production serves static assets via server/static in `dist`
 - Online users API: `GET /api/online-users` (admin-only; uses sessions lastSeen within 5 min)
 - Local dev script `npm run dev` starts `tsx server/index.ts` without watch mode; backend route changes require a manual restart to become active.
+
+## Release / Sync Paths
+- Standard release flow (web/server): local changes -> commit/push to GitHub `main` -> pull on Hetzner `/opt/mycliniq` -> build -> pm2 restart
+- Standard release flow (iPhone app): local changes -> commit/push to GitHub `main` -> local `git pull origin main` on Mac workspace -> `npm install` -> `npm run build` -> `npm run mobile:sync:ios` -> Xcode / TestFlight
+- Hetzner update commands:
+  1. `cd /opt/mycliniq`
+  2. `git pull origin main`
+  3. `npm install`
+  4. `npm run build`
+  5. `pm2 restart mycliniq --update-env`
+  6. `curl -I http://127.0.0.1:3000/`
+- iPhone app nachziehen commands:
+  1. `cd /Volumes/LaCie/Projects/mycliniq`
+  2. `git pull origin main`
+  3. `npm install`
+  4. `npm run build`
+  5. `npm run mobile:sync:ios`
+  6. `npm run mobile:open:ios`
 
 ## Auth
 - Token-based auth in localStorage key: `cliniq_auth_token`
