@@ -805,6 +805,7 @@ export default function Personal() {
               onExport={handleExport}
               exporting={exporting}
               onSummaryChange={setRosterSummary}
+              stickyTopOffset={pageStickyHeaderHeight}
             />
           </TabsContent>
 
@@ -846,6 +847,7 @@ function RosterView({
   onExport,
   exporting,
   onSummaryChange,
+  stickyTopOffset,
 }: {
   currentDate: Date;
   setCurrentDate: (d: Date) => void;
@@ -853,6 +855,7 @@ function RosterView({
   onExport: () => void | Promise<void>;
   exporting: boolean;
   onSummaryChange?: (summary: { shifts: number; freeDays: number }) => void;
+  stickyTopOffset: number;
 }) {
   const { employee: currentUser, user, token } = useAuth();
   const { toast } = useToast();
@@ -1646,15 +1649,37 @@ function RosterView({
           <table className="w-full min-w-[800px] text-sm">
             <thead>
               <tr className="bg-primary text-white">
-                <th className="px-2 py-2 text-left font-medium w-16">KW</th>
-                <th className="px-2 py-2 text-left font-medium w-12">Tag</th>
-                <th className="px-2 py-2 text-left font-medium w-24">Datum</th>
+                <th
+                  className="sticky z-30 w-16 px-2 py-2 text-left font-medium"
+                  style={{ top: `${stickyTopOffset}px` }}
+                >
+                  KW
+                </th>
+                <th
+                  className="sticky z-30 w-12 px-2 py-2 text-left font-medium"
+                  style={{ top: `${stickyTopOffset}px` }}
+                >
+                  Tag
+                </th>
+                <th
+                  className="sticky z-30 w-24 px-2 py-2 text-left font-medium"
+                  style={{ top: `${stickyTopOffset}px` }}
+                >
+                  Datum
+                </th>
                 {serviceLineDisplay.map((line) => (
-                  <th key={line.key} className="px-2 py-2 text-left font-medium">
+                  <th
+                    key={line.key}
+                    className="sticky z-30 px-2 py-2 text-left font-medium"
+                    style={{ top: `${stickyTopOffset}px` }}
+                  >
                     {line.label}
                   </th>
                 ))}
-                <th className="px-2 py-2 text-left font-medium">
+                <th
+                  className="sticky z-30 px-2 py-2 text-left font-medium"
+                  style={{ top: `${stickyTopOffset}px` }}
+                >
                   <button
                     type="button"
                     onClick={() =>
