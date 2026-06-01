@@ -63,6 +63,7 @@ import {
   type DashboardRecentChange,
   type DashboardResponse,
   type NextPlanningMonth,
+  type PlannedAbsenceAdmin,
 } from "@/lib/api";
 import { getAuthToken, useAuth } from "@/lib/auth";
 import type { Employee, Notification } from "@shared/schema";
@@ -158,6 +159,22 @@ const DUMMY_POPULAR_SOPS = [
 
 const buildFullName = (firstName?: string | null, lastName?: string | null) =>
   [firstName, lastName].filter(Boolean).join(" ").trim();
+
+const buildAbsenceEmployeeName = (absence: PlannedAbsenceAdmin) => {
+  const combined = [absence.employeeName, absence.employeeLastName]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  if (!combined) return "Unbekannt";
+  const tokens = combined.split(/\s+/);
+  if (tokens.length >= 2) return combined;
+  const first = (absence.employeeName ?? "").trim();
+  const last = (absence.employeeLastName ?? "").trim();
+  if (first && last && first.toLowerCase() != last.toLowerCase()) {
+    return `${first} ${last}`.trim();
+  }
+  return combined;
+};
 
 type PreviewCard = {
   date: string;
@@ -334,6 +351,13 @@ type DashboardNoticeItem = {
   isSeen?: boolean;
 };
 
+type PendingAbsenceNotice = {
+  id: number;
+  title: string;
+  subtitle: string;
+  targetUrl: string;
+};
+
 export default function Dashboard() {
   const { employee, user, can, token, isAdmin, viewAsUser } = useAuth();
   const [, setLocation] = useLocation();
@@ -356,7 +380,7 @@ export default function Dashboard() {
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationsError, setNotificationsError] = useState<string | null>(null);
   const [seenRecentChangeIds, setSeenRecentChangeIds] = useState<string[]>([]);
-  const [pendingAbsenceApprovalCount, setPendingAbsenceApprovalCount] = useState(0);
+  const [pendingAbsenceApprovalNotices, setPendingAbsenceApprovalNotices] = useState<PendingAbsenceNotice[]>([]);
   const [heroAbsenceDialogOpen, setHeroAbsenceDialogOpen] = useState(false);
   const [heroAbsenceEmployees, setHeroAbsenceEmployees] = useState<Employee[]>([]);
   const [heroAbsenceEmployeesLoading, setHeroAbsenceEmployeesLoading] = useState(false);
@@ -880,21 +904,49 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!canApproveVacation) {
-      setPendingAbsenceApprovalCount(0);
+      setPendingAbsenceApprovalNotices([]);
       return;
     }
     let cancelled = false;
     const today = format(new Date(), "yyyy-MM-dd");
     const to = format(new Date(new Date().getFullYear() + 1, 11, 31), "yyyy-MM-dd");
-    void plannedAbsencesAdminApi
-      .getRange({ from: today, to, status: "Geplant" })
-      .then((rows) => {
+    void Promise.all([
+      plannedAbsencesAdminApi.getRange({ from: today, to, status: "Geplant" }),
+      plannedAbsencesAdminApi.getRange({ from: today, to }),
+    ])
+      .then(([pendingRows, allRows]) => {
         if (cancelled) return;
-        setPendingAbsenceApprovalCount(rows.length);
+        const notices = pendingRows
+          .slice()
+          .sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)))
+          .map((absence) => {
+            const name = buildAbsenceEmployeeName(absence);
+            const start = format(new Date(`${absence.startDate}T00:00:00`), "dd.MM.", { locale: de });
+            const end = format(new Date(`${absence.endDate}T00:00:00`), "dd.MM.", { locale: de });
+            const period = absence.startDate === absence.endDate ? start : `${start}-${end}`;
+            const overlaps = allRows.filter((row) => {
+              if (row.id === absence.id) return false;
+              if (row.employeeId === absence.employeeId) return false;
+              return String(row.startDate) <= String(absence.endDate) && String(row.endDate) >= String(absence.startDate);
+            });
+            const overlapSummary = overlaps.length
+              ? overlaps
+                  .slice(0, 3)
+                  .map((row) => `${buildAbsenceEmployeeName(row)} (${row.reason}${row.status ? `, ${row.status}` : ""})`)
+                  .join(" • ")
+              : "Keine weiteren Einträge im Zeitraum";
+            return {
+              id: absence.id,
+              title: `${name} | ${period} | ${absence.reason}`,
+              subtitle: overlapSummary,
+              targetUrl: `/admin/urlaubsplan?absenceId=${absence.id}`,
+            };
+          });
+        setPendingAbsenceApprovalNotices(notices);
       })
       .catch(() => {
         if (cancelled) return;
-        setPendingAbsenceApprovalCount(0);
+        setPendingAbsenceApprovalNotices([]);
       });
     return () => {
       cancelled = true;
@@ -973,15 +1025,15 @@ export default function Dashboard() {
       });
     });
 
-    if (pendingAbsenceApprovalCount > 0) {
+    pendingAbsenceApprovalNotices.forEach((notice) => {
       items.push({
-        id: "pending-absences",
-        title: "Abwesenheiten zur Freigabe",
-        subtitle: `${pendingAbsenceApprovalCount} offene Anträge warten auf Freigabe`,
-        targetUrl: "/admin/urlaubsplan",
+        id: `pending-absence-${notice.id}`,
+        title: notice.title,
+        subtitle: notice.subtitle,
+        targetUrl: notice.targetUrl,
         tone: "danger",
       });
-    }
+    });
 
     if (wishMonthLabel) {
       items.push({
@@ -1020,7 +1072,7 @@ export default function Dashboard() {
     return items.slice(0, 10);
   }, [
     canSeeRecentChanges,
-    pendingAbsenceApprovalCount,
+    pendingAbsenceApprovalNotices,
     unreadRecentChanges,
     showZeBadge,
     unreadNotifications,
