@@ -1650,7 +1650,7 @@ function RosterView({
             <thead>
               <tr className="bg-primary text-white">
                 <th
-                  className="sticky z-30 w-16 px-2 py-2 text-left font-medium"
+                  className="sticky left-0 z-40 w-16 px-2 py-2 text-left font-medium"
                   style={{ top: `${stickyTopOffset}px` }}
                 >
                   KW
@@ -1747,7 +1747,12 @@ function RosterView({
                       )}
                       data-testid={`roster-row-${dateKey}`}
                     >
-                      <td className="px-2 py-1.5 font-medium text-primary">
+                      <td
+                        className={cn(
+                          "sticky left-0 z-20 px-2 py-1.5 font-medium text-primary shadow-[4px_0_12px_-10px_rgba(15,23,42,0.25)]",
+                          highlightRow ? "bg-amber-50/60" : "bg-background",
+                        )}
+                      >
                         {showKW ? weekNumber : ""}
                       </td>
                       <td
