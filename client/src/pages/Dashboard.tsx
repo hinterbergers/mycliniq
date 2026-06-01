@@ -349,6 +349,7 @@ type DashboardNoticeItem = {
   isRead?: boolean;
   sourceChangeId?: string | null;
   isSeen?: boolean;
+  absenceId?: number;
 };
 
 type PendingAbsenceNotice = {
@@ -381,6 +382,7 @@ export default function Dashboard() {
   const [notificationsError, setNotificationsError] = useState<string | null>(null);
   const [seenRecentChangeIds, setSeenRecentChangeIds] = useState<string[]>([]);
   const [pendingAbsenceApprovalNotices, setPendingAbsenceApprovalNotices] = useState<PendingAbsenceNotice[]>([]);
+  const [approvingAbsenceIds, setApprovingAbsenceIds] = useState<number[]>([]);
   const [heroAbsenceDialogOpen, setHeroAbsenceDialogOpen] = useState(false);
   const [heroAbsenceEmployees, setHeroAbsenceEmployees] = useState<Employee[]>([]);
   const [heroAbsenceEmployeesLoading, setHeroAbsenceEmployeesLoading] = useState(false);
@@ -1032,6 +1034,7 @@ export default function Dashboard() {
         subtitle: notice.subtitle,
         targetUrl: notice.targetUrl,
         tone: "danger",
+        absenceId: notice.id,
       });
     });
 
@@ -1266,7 +1269,21 @@ export default function Dashboard() {
                   ) : null}
                 </div>
                 <div className="flex shrink-0 items-start gap-2">
-                  {item.notificationId && item.isRead === false ? (
+                  {item.absenceId ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-6 border-emerald-300 px-1.5 text-[10px] text-emerald-700 hover:bg-emerald-50"
+                      disabled={approvingAbsenceIds.includes(item.absenceId)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void handleApprovePendingAbsence(item.absenceId as number);
+                      }}
+                    >
+                      Freigeben
+                    </Button>
+                  ) : item.notificationId && item.isRead === false ? (
                     <Button
                       type="button"
                       variant="ghost"
