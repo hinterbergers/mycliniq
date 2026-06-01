@@ -549,65 +549,91 @@ export default function Personal() {
         <Tabs defaultValue="roster" className="space-y-6">
           <div
             ref={pageStickyHeaderRef}
-            className="sticky top-0 z-50 space-y-4 bg-background pb-3"
+            className="sticky top-0 z-50 bg-background pb-3"
           >
-            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-              <div>
-                <h1 className="text-2xl font-bold text-foreground">Dienstpläne</h1>
-                <p className="text-muted-foreground">
-                  Monatsdienstplan, Wochenplan und Urlaubsplanung.
-                </p>
+            <div className="space-y-4 rounded-3xl border-none bg-gradient-to-br from-slate-950 via-[#113f72] to-[#0f5ba7] p-5 text-white shadow-xl shadow-primary/15">
+              <div className="flex flex-col items-start justify-between gap-4 lg:flex-row lg:items-center">
+                <div>
+                  <h1 className="text-3xl font-bold text-white">Dienstpläne</h1>
+                  <p className="text-sm text-primary-foreground/80">
+                    Monatsdienstplan, Wochenplan und Urlaubsplanung.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="ghost"
+                    className="gap-2 border-white/20 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
+                    onClick={() => {
+                      setSwapDialogInitialTab("new");
+                      setSwapDialogOpen(true);
+                    }}
+                    data-testid="button-swap"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    Diensttausch
+                    {pendingSwapRequestCount > 0 && (
+                      <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-xs font-semibold text-white">
+                        !
+                      </span>
+                    )}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="gap-2 border-white/20 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
+                    onClick={() => setLocation("/dienstwuensche")}
+                    data-testid="button-shift-wishes"
+                  >
+                    <CalendarDays className="w-4 h-4" />
+                    Dienstwünsche
+                  </Button>
+                  {showTakeShiftButton && (
+                    <Button
+                      variant="ghost"
+                      className="gap-2 border-white/20 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
+                      onClick={() =>
+                        window.dispatchEvent(new Event("mycliniq:openUnassigned"))
+                      }
+                      data-testid="button-unassigned-shifts-top"
+                    >
+                      Dienst übernehmen
+                      {unassignedCount > 0 && (
+                        <Badge className="h-5 border-white/20 bg-white/15 px-1.5 text-primary-foreground">
+                          {unassignedCount}
+                        </Badge>
+                      )}
+                    </Button>
+                  )}
+                </div>
               </div>
 
-              <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                className="gap-2"
-                onClick={() => {
-                  setSwapDialogInitialTab("new");
-                  setSwapDialogOpen(true);
-                }}
-                data-testid="button-swap"
-              >
-                <RefreshCw className="w-4 h-4" />
-                Diensttausch
-                {pendingSwapRequestCount > 0 && (
-                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-xs font-semibold text-white">
-                    !
-                  </span>
-                )}
-              </Button>
-              <Button
-                variant="outline"
-                className="gap-2"
-                onClick={() => setLocation("/dienstwuensche")}
-                data-testid="button-shift-wishes"
-              >
-                <CalendarDays className="w-4 h-4" />
-                Dienstwünsche
-              </Button>
-              {showTakeShiftButton && (
-                <Button
-                  variant="outline"
-                  className="gap-2"
-                  onClick={() =>
-                    window.dispatchEvent(new Event("mycliniq:openUnassigned"))
-                  }
-                  data-testid="button-unassigned-shifts-top"
+              <TabsList className="h-12 rounded-2xl border border-white/10 bg-white/10 p-1 text-primary-foreground/80 shadow-none">
+                <TabsTrigger
+                  value="roster"
+                  className="h-10 rounded-xl px-6 text-base data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-none"
+                  data-testid="tab-roster"
                 >
-                  Dienst übernehmen
-                  {unassignedCount > 0 && (
-                    <Badge variant="outline" className="h-5 px-1.5">
-                      {unassignedCount}
-                    </Badge>
-                  )}
-                </Button>
-              )}
-              </div>
+                  Dienstplan
+                </TabsTrigger>
+                <TabsTrigger
+                  value="weekly"
+                  className="h-10 rounded-xl px-6 text-base data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-none"
+                  data-testid="tab-weekly"
+                >
+                  Wochenplan
+                </TabsTrigger>
+                <TabsTrigger
+                  value="vacation"
+                  className="h-10 rounded-xl px-6 text-base data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-none"
+                  data-testid="tab-vacation"
+                >
+                  Urlaubsplanung
+                </TabsTrigger>
+              </TabsList>
             </div>
 
             {debugEnabled && token && (
-              <div className="rounded-lg border border-border bg-slate-50/60 p-3 text-xs text-muted-foreground space-y-2">
+              <div className="mt-4 rounded-lg border border-border bg-slate-50/60 p-3 text-xs text-muted-foreground space-y-2">
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
                   Unbesetzte Dienste Debug
                 </div>
@@ -655,30 +681,6 @@ export default function Personal() {
                 </div>
               </div>
             )}
-
-            <TabsList className="bg-background border border-border p-1 h-12 rounded-xl shadow-sm">
-              <TabsTrigger
-                value="roster"
-                className="rounded-lg px-6 h-10"
-                data-testid="tab-roster"
-              >
-                Dienstplan
-              </TabsTrigger>
-              <TabsTrigger
-                value="weekly"
-                className="rounded-lg px-6 h-10"
-                data-testid="tab-weekly"
-              >
-                Wochenplan
-              </TabsTrigger>
-              <TabsTrigger
-                value="vacation"
-                className="rounded-lg px-6 h-10"
-                data-testid="tab-vacation"
-              >
-                Urlaubsplanung
-              </TabsTrigger>
-            </TabsList>
           </div>
 
           <TabsContent
