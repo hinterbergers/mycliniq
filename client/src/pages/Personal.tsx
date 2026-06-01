@@ -306,6 +306,24 @@ const withExcelTopPadding = (value: string): string => {
   return `\n${value}`;
 };
 
+const getRosterHeaderShortLabel = (label: string, key: string) => {
+  const normalizedKey = normalizeServiceLineKey(key);
+  switch (normalizedKey) {
+    case "kreiszimmer":
+      return "Geb";
+    case "gyn":
+      return "Gyn";
+    case "turnus":
+      return "TA";
+    case "overduty":
+      return "Ü";
+    case "long_day":
+      return "Long day";
+    default:
+      return label;
+  }
+};
+
 export default function Personal() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [activeTab, setActiveTab] = useState<"roster" | "weekly" | "vacation">(
@@ -1673,7 +1691,7 @@ function RosterView({
                     className="sticky z-30 px-2 py-2 text-left font-medium"
                     style={{ top: `${stickyTopOffset}px` }}
                   >
-                    {line.label}
+                    {getRosterHeaderShortLabel(line.label, line.key)}
                   </th>
                 ))}
                 <th
