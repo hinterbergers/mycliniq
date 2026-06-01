@@ -1734,12 +1734,12 @@ export default function Dashboard() {
   return (
     <Layout title="Dashboard">
       <div className="space-y-4 px-3 md:px-0">
-        <div className="md:grid md:grid-cols-12 md:gap-4 space-y-4 md:space-y-0">
-          <div className="md:col-span-12">
+        <div className="space-y-4">
+          <div>
             {renderTodayTileContent()}
           </div>
 
-          <div className="md:col-span-12">
+          <div>
             {renderDashboardTile({
               tileKey: "notifications",
               title: "Notifications",
@@ -1763,67 +1763,69 @@ export default function Dashboard() {
             })}
           </div>
 
-          {weekPreviewEnabled ? (
-            <div className="md:col-span-6 lg:col-span-4">
-              {renderDashboardTile({
-                tileKey: "week",
-                title: "Meine Woche",
-                summary: weekSummary,
-                icon: CalendarDays,
-                content: renderWeekPreviewCardContent(),
-              })}
-            </div>
-          ) : null}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {weekPreviewEnabled ? (
+              <div>
+                {renderDashboardTile({
+                  tileKey: "week",
+                  title: "Meine Woche",
+                  summary: weekSummary,
+                  icon: CalendarDays,
+                  content: renderWeekPreviewCardContent(),
+                })}
+              </div>
+            ) : null}
 
-          {absencesEnabled ? (
-            <div className="md:col-span-6 lg:col-span-4">
-              {renderDashboardTile({
-                tileKey: "absences",
-                title: "Abwesenheiten",
-                summary: absencesSummary,
-                icon: CalendarClock,
-                content: (
-                  <div className="space-y-3">
-                    {canCreateAbsence ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 text-xs"
-                        onClick={() => setLocation("/admin/urlaubsplan")}
-                      >
-                        Abwesenheit eintragen
-                      </Button>
-                    ) : null}
-                    {renderAbsencesCardContent()}
-                  </div>
-                ),
-              })}
-            </div>
-          ) : null}
+            {absencesEnabled ? (
+              <div>
+                {renderDashboardTile({
+                  tileKey: "absences",
+                  title: "Abwesenheiten",
+                  summary: absencesSummary,
+                  icon: CalendarClock,
+                  content: (
+                    <div className="space-y-3">
+                      {canCreateAbsence ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs"
+                          onClick={() => setLocation("/admin/urlaubsplan")}
+                        >
+                          Abwesenheit eintragen
+                        </Button>
+                      ) : null}
+                      {renderAbsencesCardContent()}
+                    </div>
+                  ),
+                })}
+              </div>
+            ) : null}
 
-          {attendanceEnabled ? (
-            <div className="md:col-span-6 lg:col-span-6">
-              {renderDashboardTile({
-                tileKey: "people",
-                title: "Personen heute / morgen",
-                summary: peopleSummary,
-                icon: Users,
-                content: renderPeopleCardContent(),
-              })}
-            </div>
-          ) : null}
+            {attendanceEnabled ? (
+              <div>
+                {renderDashboardTile({
+                  tileKey: "people",
+                  title: "Personen heute / morgen",
+                  summary: peopleSummary,
+                  icon: Users,
+                  content: renderPeopleCardContent(),
+                })}
+              </div>
+            ) : null}
 
-          {attendanceEnabled ? (
-            <div className="md:col-span-6 lg:col-span-6">
-              {renderDashboardTile({
-                tileKey: "workplaces",
-                title: "Arbeitsplätze heute / morgen",
-                summary: workplacesSummary,
-                icon: BriefcaseBusiness,
-                content: renderWorkplacesCardContent(),
-              })}
-            </div>
-          ) : null}
+            {attendanceEnabled ? (
+              <div>
+                {renderDashboardTile({
+                  tileKey: "workplaces",
+                  title: "Arbeitsplätze heute / morgen",
+                  summary: workplacesSummary,
+                  icon: BriefcaseBusiness,
+                  content: renderWorkplacesCardContent(),
+                })}
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
       <Dialog open={heroAbsenceDialogOpen} onOpenChange={setHeroAbsenceDialogOpen}>
