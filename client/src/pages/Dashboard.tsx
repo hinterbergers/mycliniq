@@ -18,6 +18,24 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
@@ -30,7 +48,6 @@ import {
   Cake,
   Users,
   Clock,
-  MessageSquare,
   BriefcaseBusiness,
   Stethoscope,
   Hand,
@@ -38,7 +55,9 @@ import {
 } from "lucide-react";
 import {
   dashboardApi,
+  employeeApi,
   notificationsApi,
+  plannedAbsencesAdminApi,
   rosterSettingsApi,
   type DashboardAbsencesResponse,
   type DashboardAttendanceMember,
@@ -47,7 +66,7 @@ import {
   type NextPlanningMonth,
 } from "@/lib/api";
 import { getAuthToken, useAuth } from "@/lib/auth";
-import type { Notification } from "@shared/schema";
+import type { Employee, Notification } from "@shared/schema";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
@@ -284,6 +303,13 @@ const MONTH_NAMES = [
   "Dezember",
 ];
 const DASHBOARD_TILES_OPEN_KEY = "dashboard_tiles_open_v1";
+const HERO_ABSENCE_REASONS = [
+  "Urlaub",
+  "Fortbildung",
+  "Krankenstand",
+  "Zeitausgleich",
+  "Pflegeurlaub",
+] as const;
 
 type DashboardTileKey =
   | "notifications"
@@ -306,6 +332,7 @@ type DashboardNoticeItem = {
 export default function Dashboard() {
   const { employee, user, can, token, isAdmin, viewAsUser } = useAuth();
   const [, setLocation] = useLocation();
+  const canCreateAbsence = can("absence.create");
 
   const firstName =
     employee?.firstName ||
@@ -323,6 +350,18 @@ export default function Dashboard() {
   const [notificationsData, setNotificationsData] = useState<Notification[]>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationsError, setNotificationsError] = useState<string | null>(null);
+  const [heroAbsenceDialogOpen, setHeroAbsenceDialogOpen] = useState(false);
+  const [heroAbsenceEmployees, setHeroAbsenceEmployees] = useState<Employee[]>([]);
+  const [heroAbsenceEmployeesLoading, setHeroAbsenceEmployeesLoading] = useState(false);
+  const [isSavingHeroAbsence, setIsSavingHeroAbsence] = useState(false);
+  const [heroAbsenceForm, setHeroAbsenceForm] = useState({
+    employeeId: "",
+    startDate: "",
+    endDate: "",
+    reason: "Urlaub",
+    notes: "",
+    status: "Geplant" as "Geplant" | "Genehmigt" | "Abgelehnt",
+  });
   const [openTiles, setOpenTiles] = useState<DashboardTileKey[]>(() => {
     try {
       const stored = localStorage.getItem(DASHBOARD_TILES_OPEN_KEY);
@@ -488,6 +527,41 @@ export default function Dashboard() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!heroAbsenceDialogOpen || !canCreateAbsence || heroAbsenceEmployees.length > 0) {
+      return;
+    }
+    let cancelled = false;
+    setHeroAbsenceEmployeesLoading(true);
+    void employeeApi
+      .getAll()
+      .then((rows) => {
+        if (cancelled) return;
+        setHeroAbsenceEmployees(rows);
+      })
+      .catch((error: Error) => {
+        if (cancelled) return;
+        toast({
+          title: "Mitarbeiter konnten nicht geladen werden",
+          description: error.message || "Bitte erneut versuchen.",
+          variant: "destructive",
+        });
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setHeroAbsenceEmployeesLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    canCreateAbsence,
+    heroAbsenceDialogOpen,
+    heroAbsenceEmployees.length,
+    toast,
+  ]);
+
   const todayEntry = dashboardData?.today ?? null;
   const birthdayEntry = dashboardData?.birthday ?? null;
 
@@ -590,6 +664,60 @@ export default function Dashboard() {
       });
     } finally {
       setIsAcceptingZe(false);
+    }
+  };
+
+  const handleCreateHeroAbsence = async () => {
+    if (
+      !heroAbsenceForm.employeeId ||
+      !heroAbsenceForm.startDate ||
+      !heroAbsenceForm.endDate
+    ) {
+      toast({
+        title: "Unvollständige Angaben",
+        description: "Bitte Mitarbeiter:in und Zeitraum wählen.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSavingHeroAbsence(true);
+    try {
+      await plannedAbsencesAdminApi.create({
+        employeeId: Number(heroAbsenceForm.employeeId),
+        startDate: heroAbsenceForm.startDate,
+        endDate: heroAbsenceForm.endDate,
+        reason: heroAbsenceForm.reason,
+        notes: heroAbsenceForm.notes.trim() || null,
+        status: heroAbsenceForm.status,
+      });
+      toast({
+        title: "Abwesenheit gespeichert",
+        description: "Der Eintrag wurde angelegt.",
+      });
+      setHeroAbsenceDialogOpen(false);
+      setHeroAbsenceForm({
+        employeeId: "",
+        startDate: "",
+        endDate: "",
+        reason: "Urlaub",
+        notes: "",
+        status: "Geplant",
+      });
+      await Promise.all([
+        refreshDashboard(),
+        absencesEnabled
+          ? dashboardApi.getAbsences().then(setAbsencesData).catch(() => undefined)
+          : Promise.resolve(),
+      ]);
+    } catch (error: any) {
+      toast({
+        title: "Abwesenheit konnte nicht gespeichert werden",
+        description: error?.message || "Bitte erneut versuchen.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingHeroAbsence(false);
     }
   };
 
@@ -852,6 +980,15 @@ export default function Dashboard() {
         >
           Dienstwünsche{wishMonthLabel ? ` ${wishMonthLabel}` : ""}
         </Button>
+        {canCreateAbsence ? (
+          <Button
+            variant="outline"
+            className="h-8 border-primary-foreground/20 bg-transparent px-3 text-xs text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"
+            onClick={() => setHeroAbsenceDialogOpen(true)}
+          >
+            Abwesenheit eintragen
+          </Button>
+        ) : null}
         {showZeBadge ? (
           <button
             type="button"
@@ -1357,8 +1494,6 @@ export default function Dashboard() {
       )}
     </div>
   );
-
-  const canCreateAbsence = can("absence.create");
   const renderAbsencesCard = () => (
     <Card className="border-none kabeg-shadow flex flex-col">
       <CardHeader className="flex items-start justify-between gap-4">
@@ -1626,6 +1761,148 @@ export default function Dashboard() {
           ) : null}
         </div>
       </div>
+      <Dialog open={heroAbsenceDialogOpen} onOpenChange={setHeroAbsenceDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Abwesenheit eintragen</DialogTitle>
+            <DialogDescription>
+              Schnellzugriff fuer Admins direkt aus dem Dashboard.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <div className="grid gap-1.5">
+              <Label htmlFor="hero-absence-employee">Mitarbeiter:in</Label>
+              <Select
+                value={heroAbsenceForm.employeeId}
+                onValueChange={(value) =>
+                  setHeroAbsenceForm((current) => ({
+                    ...current,
+                    employeeId: value,
+                  }))
+                }
+              >
+                <SelectTrigger id="hero-absence-employee">
+                  <SelectValue
+                    placeholder={
+                      heroAbsenceEmployeesLoading
+                        ? "Mitarbeiter werden geladen…"
+                        : "Mitarbeiter:in wählen"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {heroAbsenceEmployees.map((entry) => (
+                    <SelectItem key={entry.id} value={String(entry.id)}>
+                      {buildFullName(entry.firstName, entry.lastName) || entry.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label htmlFor="hero-absence-start">Von</Label>
+                <Input
+                  id="hero-absence-start"
+                  type="date"
+                  value={heroAbsenceForm.startDate}
+                  onChange={(event) =>
+                    setHeroAbsenceForm((current) => ({
+                      ...current,
+                      startDate: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="hero-absence-end">Bis</Label>
+                <Input
+                  id="hero-absence-end"
+                  type="date"
+                  value={heroAbsenceForm.endDate}
+                  onChange={(event) =>
+                    setHeroAbsenceForm((current) => ({
+                      ...current,
+                      endDate: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label htmlFor="hero-absence-reason">Grund</Label>
+                <Select
+                  value={heroAbsenceForm.reason}
+                  onValueChange={(value) =>
+                    setHeroAbsenceForm((current) => ({
+                      ...current,
+                      reason: value,
+                    }))
+                  }
+                >
+                  <SelectTrigger id="hero-absence-reason">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {HERO_ABSENCE_REASONS.map((reason) => (
+                      <SelectItem key={reason} value={reason}>
+                        {reason}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="hero-absence-status">Status</Label>
+                <Select
+                  value={heroAbsenceForm.status}
+                  onValueChange={(value: "Geplant" | "Genehmigt" | "Abgelehnt") =>
+                    setHeroAbsenceForm((current) => ({
+                      ...current,
+                      status: value,
+                    }))
+                  }
+                >
+                  <SelectTrigger id="hero-absence-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Geplant">Geplant</SelectItem>
+                    <SelectItem value="Genehmigt">Genehmigt</SelectItem>
+                    <SelectItem value="Abgelehnt">Abgelehnt</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="hero-absence-notes">Notiz</Label>
+              <Textarea
+                id="hero-absence-notes"
+                value={heroAbsenceForm.notes}
+                onChange={(event) =>
+                  setHeroAbsenceForm((current) => ({
+                    ...current,
+                    notes: event.target.value,
+                  }))
+                }
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setHeroAbsenceDialogOpen(false)}
+            >
+              Abbrechen
+            </Button>
+            <Button onClick={handleCreateHeroAbsence} disabled={isSavingHeroAbsence}>
+              {isSavingHeroAbsence ? "Speichert…" : "Speichern"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }
