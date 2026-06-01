@@ -3521,6 +3521,46 @@ const buildAttendanceMembers = (
             7: "So",
           };
 
+          const employeeIdsForLookup = new Set<number>();
+          dutyChangeRows.forEach((row) => {
+            if (row.beforeEmployeeId) employeeIdsForLookup.add(row.beforeEmployeeId);
+            if (row.afterEmployeeId) employeeIdsForLookup.add(row.afterEmployeeId);
+            if (row.actorEmployeeId) employeeIdsForLookup.add(row.actorEmployeeId);
+          });
+          plannedChangeRows.forEach((row) => {
+            if (row.createdById) employeeIdsForLookup.add(row.createdById);
+            if (row.approvedById) employeeIdsForLookup.add(row.approvedById);
+            if (row.acceptedById) employeeIdsForLookup.add(row.acceptedById);
+          });
+          weeklyOverrideRows.forEach((row) => {
+            if (row.createdById) employeeIdsForLookup.add(row.createdById);
+          });
+          weeklyAssignmentRows.forEach((row) => {
+            if (row.createdById) employeeIdsForLookup.add(row.createdById);
+            if (row.updatedById) employeeIdsForLookup.add(row.updatedById);
+          });
+
+          const employeeNameRows = employeeIdsForLookup.size
+            ? await db
+                .select({
+                  id: employees.id,
+                  firstName: employees.firstName,
+                  lastName: employees.lastName,
+                  name: employees.name,
+                })
+                .from(employees)
+                .where(inArray(employees.id, [...employeeIdsForLookup]))
+            : [];
+
+          const employeeNameById = new Map<number, string>();
+          employeeNameRows.forEach((row) => {
+            const displayName =
+              formatDisplayName(row.firstName, row.lastName) || normalize(row.name) || null;
+            if (displayName) {
+              employeeNameById.set(row.id, displayName);
+            }
+          });
+
           const ignoredDutyAuditContexts = [
             "syncDraftFromFinal.",
             "syncFinalFromDraft.replaceFinalMonth.clearFinal",
@@ -3565,9 +3605,19 @@ const buildAttendanceMembers = (
               dutyActionLabel = "Dienst neu eingeteilt";
             }
 
+            const actorName =
+              normalize(row.actorName) ||
+              (row.actorEmployeeId ? employeeNameById.get(row.actorEmployeeId) ?? null : null);
+            const affectedName =
+              row.afterEmployeeId
+                ? employeeNameById.get(row.afterEmployeeId) ?? null
+                : row.afterAssigneeFreeText ??
+                  (row.beforeEmployeeId
+                    ? employeeNameById.get(row.beforeEmployeeId) ?? null
+                    : row.beforeAssigneeFreeText ?? null);
             const subtitleParts = [
               String(row.date),
-              serviceLabel,
+              affectedName ? `${serviceLabel} (${affectedName})` : serviceLabel,
             ].filter((part): part is string => Boolean(part));
 
             return {
@@ -3575,9 +3625,9 @@ const buildAttendanceMembers = (
               source: "dutyplan_shift" as const,
               changedAt: row.createdAt,
               action: "updated" as const,
-              title: `${planLabel}: ${dutyActionLabel}`,
+              title: affectedName ? `${planLabel}: ${dutyActionLabel} – ${affectedName}` : `${planLabel}: ${dutyActionLabel}`,
               subtitle: subtitleParts.join(" • "),
-              actorName: normalize(row.actorName) || null,
+              actorName,
               targetUrl: `/admin/weekly?day=${encodeURIComponent(String(row.date))}`,
             };
           });
@@ -3606,6 +3656,11 @@ const buildAttendanceMembers = (
               row.startDate === row.endDate
                 ? String(row.startDate)
                 : `${row.startDate} bis ${row.endDate}`;
+            const actorName =
+              (row.acceptedById ? employeeNameById.get(row.acceptedById) : null) ??
+              (row.approvedById ? employeeNameById.get(row.approvedById) : null) ??
+              (row.createdById ? employeeNameById.get(row.createdById) : null) ??
+              null;
             return {
               id: `planned-${row.id}`,
               source: "dutyplan_absence" as const,
@@ -3613,7 +3668,7 @@ const buildAttendanceMembers = (
               action,
               title: `Abwesenheit: ${employeeName} (${row.reason})`,
               subtitle: `${dateRange}${row.status ? ` • ${row.status}` : ""}`,
-              actorName: null,
+              actorName,
               targetUrl: `/admin/weekly?day=${encodeURIComponent(String(row.startDate))}`,
             };
           });
@@ -3630,7 +3685,7 @@ const buildAttendanceMembers = (
               action: "created" as const,
               title: `Wochenplan: ${String(row.date)} • ${roomName}`,
               subtitle: normalize(row.reason) || "Tages-Override angelegt",
-              actorName: null,
+              actorName: row.createdById ? employeeNameById.get(row.createdById) ?? null : null,
               targetUrl: weeklyTargetUrl,
             };
           });
@@ -3660,6 +3715,10 @@ const buildAttendanceMembers = (
                 ? `KW ${String(row.weekNumber).padStart(2, "0")}/${row.weekYear}`
                 : "KW ?";
 
+            const actorName =
+              (row.updatedById ? employeeNameById.get(row.updatedById) : null) ??
+              (row.createdById ? employeeNameById.get(row.createdById) : null) ??
+              null;
             return {
               id: `weekly-assignment-${row.id}`,
               source: "weeklyplan_override" as const,
@@ -3671,7 +3730,7 @@ const buildAttendanceMembers = (
               subtitle: [weekLabel, weekdayLabel, roomName, normalize(row.roleLabel) || null]
                 .filter((part): part is string => Boolean(part))
                 .join(" • "),
-              actorName: null,
+              actorName,
               targetUrl:
                 row.weekYear && row.weekNumber
                   ? `/admin/weekly?year=${row.weekYear}&week=${row.weekNumber}&weekday=${row.weekday}`

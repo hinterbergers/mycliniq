@@ -327,6 +327,8 @@ type DashboardNoticeItem = {
   tone?: "default" | "danger";
   meta?: string | null;
   notificationId?: number;
+  actorName?: string | null;
+  isRead?: boolean;
 };
 
 export default function Dashboard() {
@@ -886,6 +888,7 @@ export default function Dashboard() {
         meta: item.createdAt
           ? format(new Date(item.createdAt), "dd.MM. HH:mm", { locale: de })
           : null,
+        isRead: item.isRead,
       });
     });
 
@@ -916,6 +919,7 @@ export default function Dashboard() {
           targetUrl: item.targetUrl ?? null,
           tone: item.source === "dutyplan_shift" ? "danger" : "default",
           meta: format(new Date(item.changedAt), "dd.MM. HH:mm", { locale: de }),
+          actorName: item.actorName ?? null,
         });
       });
     }
@@ -1062,6 +1066,14 @@ export default function Dashboard() {
       <div className="space-y-2">
         {dashboardNoticeItems.map((item) => {
           const clickable = Boolean(item.targetUrl);
+          const handleItemOpen = async () => {
+            if (item.notificationId && item.isRead === false) {
+              await handleMarkNotificationRead(item.notificationId);
+            }
+            if (item.targetUrl) {
+              setLocation(item.targetUrl);
+            }
+          };
           return (
             <div
               key={item.id}
@@ -1070,7 +1082,7 @@ export default function Dashboard() {
                   ? "border-rose-200 bg-rose-50/70"
                   : "border-slate-200 bg-slate-50/70"
               } ${clickable ? "cursor-pointer hover:bg-slate-100/80" : ""}`}
-              onClick={clickable ? () => setLocation(item.targetUrl as string) : undefined}
+              onClick={clickable ? () => { void handleItemOpen(); } : undefined}
               role={clickable ? "button" : undefined}
               tabIndex={clickable ? 0 : undefined}
               onKeyDown={
@@ -1078,7 +1090,7 @@ export default function Dashboard() {
                   ? (event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        setLocation(item.targetUrl as string);
+                        void handleItemOpen();
                       }
                     }
                   : undefined
@@ -1098,17 +1110,22 @@ export default function Dashboard() {
                       {item.subtitle}
                     </p>
                   ) : null}
+                  {item.actorName ? (
+                    <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                      von {item.actorName}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="flex shrink-0 items-start gap-2">
-                  {item.notificationId ? (
+                  {item.notificationId && item.isRead === false ? (
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="h-6 px-1.5 text-[10px] text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                      className="h-6 px-1.5 text-[10px] text-muted-foreground transition-opacity hover:text-foreground sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
                       onClick={(event) => {
                         event.stopPropagation();
-                        handleMarkNotificationRead(item.notificationId as number);
+                        void handleMarkNotificationRead(item.notificationId as number);
                       }}
                     >
                       Gelesen
