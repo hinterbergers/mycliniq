@@ -302,6 +302,7 @@ const MONTH_NAMES = [
   "Dezember",
 ];
 const DASHBOARD_TILES_OPEN_KEY = "dashboard_tiles_open_v1";
+const DASHBOARD_SEEN_CHANGE_IDS_KEY = "dashboard_seen_change_ids_v1";
 const HERO_ABSENCE_REASONS = [
   "Urlaub",
   "Fortbildung",
@@ -329,6 +330,8 @@ type DashboardNoticeItem = {
   notificationId?: number;
   actorName?: string | null;
   isRead?: boolean;
+  sourceChangeId?: string | null;
+  isSeen?: boolean;
 };
 
 export default function Dashboard() {
@@ -352,6 +355,7 @@ export default function Dashboard() {
   const [notificationsData, setNotificationsData] = useState<Notification[]>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationsError, setNotificationsError] = useState<string | null>(null);
+  const [seenRecentChangeIds, setSeenRecentChangeIds] = useState<string[]>([]);
   const [heroAbsenceDialogOpen, setHeroAbsenceDialogOpen] = useState(false);
   const [heroAbsenceEmployees, setHeroAbsenceEmployees] = useState<Employee[]>([]);
   const [heroAbsenceEmployeesLoading, setHeroAbsenceEmployeesLoading] = useState(false);
@@ -503,6 +507,39 @@ export default function Dashboard() {
   }, [fetchDashboard]);
 
   useEffect(() => {
+    const employeeId = employee?.id;
+    if (!employeeId || typeof window === "undefined") {
+      setSeenRecentChangeIds([]);
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem(`${DASHBOARD_SEEN_CHANGE_IDS_KEY}_${employeeId}`);
+      if (!raw) {
+        setSeenRecentChangeIds([]);
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      setSeenRecentChangeIds(Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : []);
+    } catch {
+      setSeenRecentChangeIds([]);
+    }
+  }, [employee?.id]);
+
+  const persistSeenRecentChangeIds = useCallback((updater: (current: string[]) => string[]) => {
+    setSeenRecentChangeIds((current) => {
+      const next = updater(current);
+      const deduped = Array.from(new Set(next));
+      if (typeof window !== "undefined" && employee?.id) {
+        window.localStorage.setItem(
+          `${DASHBOARD_SEEN_CHANGE_IDS_KEY}_${employee.id}`,
+          JSON.stringify(deduped),
+        );
+      }
+      return deduped;
+    });
+  }, [employee?.id]);
+
+  useEffect(() => {
     let cancelled = false;
     setNotificationsLoading(true);
     setNotificationsError(null);
@@ -548,21 +585,36 @@ export default function Dashboard() {
     [toast],
   );
 
+  const handleMarkRecentChangeSeen = useCallback(
+    (changeId: string) => {
+      persistSeenRecentChangeIds((current) => [...current, changeId]);
+    },
+    [persistSeenRecentChangeIds],
+  );
+
   const handleMarkAllNotificationsRead = useCallback(async () => {
     const unreadIds = notificationsData
       .filter((item) => !item.isRead)
       .map((item) => item.id);
+    const unseenRecentIds = recentChanges
+      .map((item) => item.id)
+      .filter((id) => !seenRecentChangeIds.includes(id));
 
-    if (unreadIds.length === 0) return;
+    if (unreadIds.length === 0 && unseenRecentIds.length === 0) return;
 
     try {
-      const updatedItems = await Promise.all(
-        unreadIds.map((notificationId) => notificationsApi.markRead(notificationId)),
-      );
-      const updatedMap = new Map(updatedItems.map((item) => [item.id, item]));
-      setNotificationsData((current) =>
-        current.map((item) => updatedMap.get(item.id) ?? item),
-      );
+      if (unreadIds.length > 0) {
+        const updatedItems = await Promise.all(
+          unreadIds.map((notificationId) => notificationsApi.markRead(notificationId)),
+        );
+        const updatedMap = new Map(updatedItems.map((item) => [item.id, item]));
+        setNotificationsData((current) =>
+          current.map((item) => updatedMap.get(item.id) ?? item),
+        );
+      }
+      if (unseenRecentIds.length > 0) {
+        persistSeenRecentChangeIds((current) => [...current, ...unseenRecentIds]);
+      }
     } catch (error: any) {
       toast({
         title: "Benachrichtigungen konnten nicht aktualisiert werden",
@@ -571,7 +623,7 @@ export default function Dashboard() {
         variant: "destructive",
       });
     }
-  }, [notificationsData, toast]);
+  }, [notificationsData, recentChanges, seenRecentChangeIds, persistSeenRecentChangeIds, toast]);
 
   useEffect(() => {
     if (!heroAbsenceDialogOpen || !canCreateAbsence || heroAbsenceEmployees.length > 0) {
@@ -851,6 +903,10 @@ export default function Dashboard() {
     () => notificationsData.filter((item) => !item.isRead),
     [notificationsData],
   );
+  const unreadRecentChanges = useMemo(
+    () => recentChanges.filter((item) => !seenRecentChangeIds.includes(item.id)),
+    [recentChanges, seenRecentChangeIds],
+  );
   const workplaceGroupCountToday = useMemo(() => {
     const keys = new Set<string>();
     presentToday.forEach((member) => {
@@ -911,7 +967,7 @@ export default function Dashboard() {
     }
 
     if (canSeeRecentChanges) {
-      recentChanges.slice(0, 5).forEach((item) => {
+      unreadRecentChanges.slice(0, 5).forEach((item) => {
         items.push({
           id: `change-${item.id}`,
           title: item.title,
@@ -920,6 +976,8 @@ export default function Dashboard() {
           tone: item.source === "dutyplan_shift" ? "danger" : "default",
           meta: format(new Date(item.changedAt), "dd.MM. HH:mm", { locale: de }),
           actorName: item.actorName ?? null,
+          sourceChangeId: item.id,
+          isSeen: false,
         });
       });
     }
@@ -927,7 +985,7 @@ export default function Dashboard() {
     return items.slice(0, 10);
   }, [
     canSeeRecentChanges,
-    recentChanges,
+    unreadRecentChanges,
     showZeBadge,
     unreadNotifications,
     wishMonthLabel,
@@ -1070,6 +1128,9 @@ export default function Dashboard() {
             if (item.notificationId && item.isRead === false) {
               await handleMarkNotificationRead(item.notificationId);
             }
+            if (item.sourceChangeId && item.isSeen === false) {
+              handleMarkRecentChangeSeen(item.sourceChangeId);
+            }
             if (item.targetUrl) {
               setLocation(item.targetUrl);
             }
@@ -1126,6 +1187,19 @@ export default function Dashboard() {
                       onClick={(event) => {
                         event.stopPropagation();
                         void handleMarkNotificationRead(item.notificationId as number);
+                      }}
+                    >
+                      Gelesen
+                    </Button>
+                  ) : item.sourceChangeId && item.isSeen === false ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-1.5 text-[10px] text-muted-foreground transition-opacity hover:text-foreground sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleMarkRecentChangeSeen(item.sourceChangeId as string);
                       }}
                     >
                       Gelesen
@@ -1735,7 +1809,7 @@ export default function Dashboard() {
     ? "Benachrichtigungen werden geladen"
     : dashboardNoticeItems.length > 0
       ? `${unreadNotifications.length} neue Hinweise${
-          canSeeRecentChanges ? ` · ${recentChanges.length} Änderungen` : ""
+          canSeeRecentChanges ? ` · ${unreadRecentChanges.length} Änderungen` : ""
         }`
       : "Keine neuen Hinweise";
   const todaySummary =
@@ -1770,7 +1844,7 @@ export default function Dashboard() {
               title: "Notifications",
               summary: notificationsSummary,
               headerAction:
-                unreadNotifications.length > 0 ? (
+                unreadNotifications.length > 0 || unreadRecentChanges.length > 0 ? (
                   <Button
                     type="button"
                     variant="ghost"

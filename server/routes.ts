@@ -3576,6 +3576,9 @@ const buildAttendanceMembers = (
               ) {
                 return false;
               }
+              if (!row.afterEmployeeId && !row.afterAssigneeFreeText && !row.beforeEmployeeId && !row.beforeAssigneeFreeText) {
+                return false;
+              }
               return !ignoredDutyAuditContexts.some((prefix) =>
                 context.startsWith(prefix),
               );
@@ -3606,8 +3609,9 @@ const buildAttendanceMembers = (
             }
 
             const actorName =
+              (row.actorEmployeeId ? employeeNameById.get(row.actorEmployeeId) ?? null : null) ||
               normalize(row.actorName) ||
-              (row.actorEmployeeId ? employeeNameById.get(row.actorEmployeeId) ?? null : null);
+              null;
             const affectedName =
               row.afterEmployeeId
                 ? employeeNameById.get(row.afterEmployeeId) ?? null
