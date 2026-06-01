@@ -3,9 +3,8 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
-  type TouchEvent,
+  type ReactNode,
 } from "react";
 import { Layout } from "@/components/layout/Layout";
 import {
@@ -18,21 +17,28 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  Bell,
   CalendarDays,
   CalendarClock,
-  FileText,
-  ArrowRight,
-  Star,
+  ChevronDown,
   Cake,
   Users,
   Clock,
-  BookOpen,
-  TrendingUp,
+  MessageSquare,
+  BriefcaseBusiness,
+  Stethoscope,
+  Hand,
+  AlertTriangle,
 } from "lucide-react";
 import {
   dashboardApi,
+  notificationsApi,
   rosterSettingsApi,
   type DashboardAbsencesResponse,
   type DashboardAttendanceMember,
@@ -41,6 +47,7 @@ import {
   type NextPlanningMonth,
 } from "@/lib/api";
 import { getAuthToken, useAuth } from "@/lib/auth";
+import type { Notification } from "@shared/schema";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
@@ -276,7 +283,25 @@ const MONTH_NAMES = [
   "November",
   "Dezember",
 ];
-const DASHBOARD_ATTENDANCE_VIEW_MODE_KEY = "dashboard_attendance_view_mode";
+const DASHBOARD_TILES_OPEN_KEY = "dashboard_tiles_open_v1";
+
+type DashboardTileKey =
+  | "notifications"
+  | "today"
+  | "week"
+  | "people"
+  | "workplaces"
+  | "absences"
+  | "birthday";
+
+type DashboardNoticeItem = {
+  id: string;
+  title: string;
+  subtitle?: string | null;
+  targetUrl?: string | null;
+  tone?: "default" | "danger";
+  meta?: string | null;
+};
 
 export default function Dashboard() {
   const { employee, user, can, token, isAdmin, viewAsUser } = useAuth();
@@ -295,16 +320,30 @@ export default function Dashboard() {
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(true);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [isAcceptingZe, setIsAcceptingZe] = useState(false);
-  const [mobilePanel, setMobilePanel] = useState<"week" | "team">("week");
-  const [attendanceViewMode, setAttendanceViewMode] = useState<"people" | "workplaces">(() => {
+  const [notificationsData, setNotificationsData] = useState<Notification[]>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notificationsError, setNotificationsError] = useState<string | null>(null);
+  const [openTiles, setOpenTiles] = useState<DashboardTileKey[]>(() => {
     try {
-      const stored = localStorage.getItem(DASHBOARD_ATTENDANCE_VIEW_MODE_KEY);
-      return stored === "workplaces" ? "workplaces" : "people";
+      const stored = localStorage.getItem(DASHBOARD_TILES_OPEN_KEY);
+      if (!stored) return ["notifications", "today"];
+      const parsed = JSON.parse(stored);
+      if (!Array.isArray(parsed)) return ["notifications", "today"];
+      return parsed.filter((value): value is DashboardTileKey =>
+        [
+          "notifications",
+          "today",
+          "week",
+          "people",
+          "workplaces",
+          "absences",
+          "birthday",
+        ].includes(String(value)),
+      );
     } catch {
-      return "people";
+      return ["notifications", "today"];
     }
   });
-  const touchStart = useRef<{ x: number; y: number } | null>(null);
   const { toast } = useToast();
   const [absencesData, setAbsencesData] =
     useState<DashboardAbsencesResponse | null>(null);
@@ -347,11 +386,11 @@ export default function Dashboard() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(DASHBOARD_ATTENDANCE_VIEW_MODE_KEY, attendanceViewMode);
+      localStorage.setItem(DASHBOARD_TILES_OPEN_KEY, JSON.stringify(openTiles));
     } catch {
       // ignore localStorage issues
     }
-  }, [attendanceViewMode]);
+  }, [openTiles]);
 
   useEffect(() => {
     let cancelled = false;
@@ -378,6 +417,13 @@ export default function Dashboard() {
   }, [wishMonthInfo]);
 
   const fetchDashboard = useCallback(() => dashboardApi.get(), []);
+  const toggleTile = useCallback((tile: DashboardTileKey) => {
+    setOpenTiles((current) =>
+      current.includes(tile)
+        ? current.filter((item) => item !== tile)
+        : [...current, tile],
+    );
+  }, []);
   const refreshDashboard = useCallback(async () => {
     setIsLoadingDashboard(true);
     setDashboardError(null);
@@ -390,23 +436,6 @@ export default function Dashboard() {
       setIsLoadingDashboard(false);
     }
   }, [fetchDashboard]);
-
-  const handleTouchStart = (event: TouchEvent<HTMLDivElement>) => {
-    const touch = event.touches[0];
-    if (!touch) return;
-    touchStart.current = { x: touch.clientX, y: touch.clientY };
-  };
-
-  const handleTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
-    const touch = event.changedTouches[0];
-    if (!touchStart.current || !touch) return;
-    const dx = touch.clientX - touchStart.current.x;
-    const dy = touch.clientY - touchStart.current.y;
-    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
-      setMobilePanel(dx < 0 ? "team" : "week");
-    }
-    touchStart.current = null;
-  };
 
   useEffect(() => {
     let cancelled = false;
@@ -432,10 +461,41 @@ export default function Dashboard() {
     };
   }, [fetchDashboard]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setNotificationsLoading(true);
+    setNotificationsError(null);
+
+    notificationsApi
+      .getAll()
+      .then((data) => {
+        if (cancelled) return;
+        setNotificationsData(data);
+      })
+      .catch((error: Error) => {
+        if (cancelled) return;
+        setNotificationsError(
+          error.message || "Fehler beim Laden der Benachrichtigungen",
+        );
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setNotificationsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const todayEntry = dashboardData?.today ?? null;
   const birthdayEntry = dashboardData?.birthday ?? null;
 
-  const heroEmoji = dashboardError ? "⚠️" : todayEntry?.statusLabel ? "🩺" : "👋";
+  const HeroIcon = dashboardError
+    ? AlertTriangle
+    : todayEntry?.statusLabel
+      ? Stethoscope
+      : Hand;
   const normalizedTodayStatusLabel = todayEntry?.duty?.serviceType
     ? getServiceLineDisplayLabel(todayEntry.duty.serviceType, todayEntry.statusLabel) ??
       todayEntry.statusLabel
@@ -614,17 +674,88 @@ export default function Dashboard() {
   const recentChanges = canSeeRecentChanges
     ? (dashboardData?.recentChanges ?? [])
     : [];
+  const unreadNotifications = useMemo(
+    () => notificationsData.filter((item) => !item.isRead),
+    [notificationsData],
+  );
+  const workplaceGroupCountToday = useMemo(() => {
+    const keys = new Set<string>();
+    presentToday.forEach((member) => {
+      const workplace = normalizeWorkplace(member.workplace) ?? "Ohne Arbeitsplatz";
+      const key =
+        member.workplaceRoomId != null
+          ? `room-${member.workplaceRoomId}`
+          : `label-${workplace}`;
+      keys.add(key);
+    });
+    return keys.size;
+  }, [presentToday]);
+  const workplaceGroupCountTomorrow = useMemo(() => {
+    const keys = new Set<string>();
+    presentTomorrow.forEach((member) => {
+      const workplace = normalizeWorkplace(member.workplace) ?? "Ohne Arbeitsplatz";
+      const key =
+        member.workplaceRoomId != null
+          ? `room-${member.workplaceRoomId}`
+          : `label-${workplace}`;
+      keys.add(key);
+    });
+    return keys.size;
+  }, [presentTomorrow]);
+  const dashboardNoticeItems = useMemo<DashboardNoticeItem[]>(() => {
+    const items: DashboardNoticeItem[] = [];
 
-  const mobilePanelEnabled = weekPreviewEnabled || attendanceEnabled;
+    unreadNotifications.slice(0, 5).forEach((item) => {
+      items.push({
+        id: `notification-${item.id}`,
+        title: item.title,
+        subtitle: item.message ?? null,
+        targetUrl: item.link ?? "/nachrichten",
+        meta: item.createdAt
+          ? format(new Date(item.createdAt), "dd.MM. HH:mm", { locale: de })
+          : null,
+      });
+    });
 
-  useEffect(() => {
-    // Keep mobile panel in a valid state if one tab is disabled
-    if (!weekPreviewEnabled && attendanceEnabled) {
-      setMobilePanel("team");
-    } else if (weekPreviewEnabled && !attendanceEnabled) {
-      setMobilePanel("week");
+    if (wishMonthLabel) {
+      items.push({
+        id: "wish-month",
+        title: `Dienstwünsche ${wishMonthLabel}`,
+        subtitle: "Eingaben und Freigaben prüfen",
+        targetUrl: "/dienstwuensche",
+      });
     }
-  }, [weekPreviewEnabled, attendanceEnabled]);
+
+    if (showZeBadge) {
+      items.push({
+        id: "ze",
+        title: "Zeitausgleich möglich",
+        subtitle: "Im Heute-Bereich direkt bestätigbar",
+        tone: "danger",
+      });
+    }
+
+    if (canSeeRecentChanges) {
+      recentChanges.slice(0, 5).forEach((item) => {
+        items.push({
+          id: `change-${item.id}`,
+          title: item.title,
+          subtitle: item.subtitle,
+          targetUrl: item.targetUrl ?? null,
+          tone: item.source === "dutyplan_shift" ? "danger" : "default",
+          meta: format(new Date(item.changedAt), "dd.MM. HH:mm", { locale: de }),
+        });
+      });
+    }
+
+    return items.slice(0, 10);
+  }, [
+    canSeeRecentChanges,
+    recentChanges,
+    showZeBadge,
+    unreadNotifications,
+    wishMonthLabel,
+  ]);
 
   useEffect(() => {
     if (!absencesEnabled) {
@@ -668,41 +799,46 @@ export default function Dashboard() {
     () => absenceDays.some((day) => day.types.length > 0),
     [absenceDays],
   );
+  const absenceTypeCount = useMemo(
+    () =>
+      absenceDays.reduce((total, day) => {
+        return total + day.types.reduce((inner, type) => inner + type.names.length, 0);
+      }, 0),
+    [absenceDays],
+  );
 
-  const renderHeroCard = () => (
-    <div className="kabeg-deep-gradient rounded-2xl px-8 py-6 text-primary-foreground shadow-lg shadow-primary/15">
-      <div className="flex items-center justify-between mb-1.5">
-        <h2
-          className="text-xl font-bold text-white"
-          data-testid="text-greeting"
-        >
-          {greeting} {firstName}
-        </h2>
+  const renderTodayTileContent = () => (
+    <div className="kabeg-deep-gradient rounded-xl px-4 py-4 text-primary-foreground shadow-lg shadow-primary/15">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1">
+          <p
+            className="text-lg font-bold text-white sm:text-xl"
+            data-testid="text-greeting"
+          >
+            {greeting} {firstName}
+          </p>
+          <div className="flex items-center gap-2 text-sm text-primary-foreground/90">
+            <HeroIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>{heroMessage}</span>
+          </div>
+          {todayTeamLine ? (
+            <p className="text-xs text-primary-foreground/75">{todayTeamLine}</p>
+          ) : null}
+          {todayDutyLine ? (
+            <p className="text-xs text-primary-foreground/75">{todayDutyLine}</p>
+          ) : null}
+        </div>
         <Badge
           variant="outline"
-          className="text-primary-foreground border-primary-foreground/30 bg-primary-foreground/10"
+          className="shrink-0 border-primary-foreground/30 bg-primary-foreground/10 text-[10px] text-primary-foreground"
         >
           KABEG Klinikum Klagenfurt
         </Badge>
       </div>
-      <p className="text-primary-foreground/80 max-w-xl text-sm flex items-center gap-1.5">
-        <span className="text-2xl">{heroEmoji}</span>
-        <span>{heroMessage}</span>
-      </p>
-      {todayTeamLine && (
-        <p className="text-xs text-primary-foreground/70 mt-0.5">
-          {todayTeamLine}
-        </p>
-      )}
-      {todayDutyLine && (
-        <p className="text-xs text-primary-foreground/70 mt-0.5">
-          {todayDutyLine}
-        </p>
-      )}
-      <div className="mt-4 flex gap-2">
+      <div className="mt-3 flex flex-wrap gap-2">
         <Button
           variant="secondary"
-          className="h-9 px-3.5 text-sm text-primary font-medium shadow-none border-0"
+          className="h-8 px-3 text-xs text-primary shadow-none"
           onClick={() => setLocation("/dienstplaene")}
           data-testid="button-to-roster"
         >
@@ -710,34 +846,160 @@ export default function Dashboard() {
         </Button>
         <Button
           variant="outline"
-          className="h-9 px-3.5 bg-transparent border-primary-foreground/20 text-primary-foreground text-sm hover:bg-primary-foreground/10 hover:text-primary-foreground"
+          className="h-8 border-primary-foreground/20 bg-transparent px-3 text-xs text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"
           onClick={() => setLocation("/dienstwuensche")}
           data-testid="button-request-vacation"
         >
-          <span className="flex flex-col leading-tight text-left">
-            <span>Dienstwünsche</span>
-            {wishMonthLabel ? (
-              <span className="text-[10px] text-primary-foreground/80">
-                {wishMonthLabel}
-              </span>
-            ) : null}
-          </span>
+          Dienstwünsche{wishMonthLabel ? ` ${wishMonthLabel}` : ""}
         </Button>
-      </div>
-      {showZeBadge && (
-        <div className="mt-3">
+        {showZeBadge ? (
           <button
             type="button"
-            className="inline-flex items-center justify-center rounded-full bg-rose-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-rose-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-200 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-8 items-center justify-center rounded-full bg-rose-600 px-3 text-xs font-semibold text-white transition hover:bg-rose-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-200 disabled:cursor-not-allowed disabled:opacity-60"
             onClick={handleAcceptZe}
             disabled={isAcceptingZe}
           >
             Zeitausgleich möglich
           </button>
-        </div>
-      )}
+        ) : null}
+      </div>
     </div>
   );
+
+  const renderNotificationsCardContent = () => {
+    if (notificationsLoading || isLoadingDashboard) {
+      return <p className="text-xs text-muted-foreground">Benachrichtigungen werden geladen…</p>;
+    }
+    if (notificationsError && dashboardError) {
+      return <p className="text-xs text-destructive">{notificationsError}</p>;
+    }
+    if (dashboardNoticeItems.length === 0) {
+      return <p className="text-xs text-muted-foreground">Keine neuen Hinweise.</p>;
+    }
+
+    return (
+      <div className="space-y-2">
+        {dashboardNoticeItems.map((item) => {
+          const clickable = Boolean(item.targetUrl);
+          return (
+            <div
+              key={item.id}
+              className={`rounded-lg border px-3 py-2 text-left ${
+                item.tone === "danger"
+                  ? "border-rose-200 bg-rose-50/70"
+                  : "border-slate-200 bg-slate-50/70"
+              } ${clickable ? "cursor-pointer hover:bg-slate-100/80" : ""}`}
+              onClick={clickable ? () => setLocation(item.targetUrl as string) : undefined}
+              role={clickable ? "button" : undefined}
+              tabIndex={clickable ? 0 : undefined}
+              onKeyDown={
+                clickable
+                  ? (event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setLocation(item.targetUrl as string);
+                      }
+                    }
+                  : undefined
+              }
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p
+                    className={`text-xs font-semibold leading-snug ${
+                      item.tone === "danger" ? "text-rose-700" : "text-foreground"
+                    }`}
+                  >
+                    {item.title}
+                  </p>
+                  {item.subtitle ? (
+                    <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                      {item.subtitle}
+                    </p>
+                  ) : null}
+                </div>
+                {item.meta ? (
+                  <span className="shrink-0 text-[10px] text-muted-foreground">
+                    {item.meta}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderDashboardTile = ({
+    tileKey,
+    title,
+    summary,
+    icon: Icon,
+    content,
+    accent = false,
+  }: {
+    tileKey: DashboardTileKey;
+    title: string;
+    summary: string;
+    icon: typeof Bell;
+    content: ReactNode;
+    accent?: boolean;
+  }) => {
+    const isOpen = openTiles.includes(tileKey);
+    return (
+      <Collapsible open={isOpen} onOpenChange={() => toggleTile(tileKey)}>
+        <Card
+          className={`border-none kabeg-shadow overflow-hidden ${
+            accent ? "bg-slate-950 text-white" : ""
+          }`}
+        >
+          <CollapsibleTrigger asChild>
+            <button
+              type="button"
+              className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left"
+            >
+              <div className="flex min-w-0 items-start gap-3">
+                <div
+                  className={`mt-0.5 rounded-lg p-2 ${
+                    accent ? "bg-white/10 text-white" : "bg-primary/10 text-primary"
+                  }`}
+                >
+                  <Icon className="h-4 w-4" aria-hidden="true" />
+                </div>
+                <div className="min-w-0">
+                  <p
+                    className={`text-sm font-semibold leading-tight ${
+                      accent ? "text-white" : "text-foreground"
+                    }`}
+                  >
+                    {title}
+                  </p>
+                  <p
+                    className={`mt-1 text-[11px] leading-snug ${
+                      accent ? "text-white/70" : "text-muted-foreground"
+                    }`}
+                  >
+                    {summary}
+                  </p>
+                </div>
+              </div>
+              <ChevronDown
+                className={`mt-0.5 h-4 w-4 shrink-0 transition-transform ${
+                  isOpen ? "rotate-180" : ""
+                } ${accent ? "text-white/70" : "text-muted-foreground"}`}
+              />
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className={`px-4 pb-4 pt-0 ${accent ? "text-white" : ""}`}>
+              {content}
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
+    );
+  };
 
   const renderAttendanceBadges = (
     members: DashboardAttendanceMember[],
@@ -772,7 +1034,7 @@ export default function Dashboard() {
           );
         })
       ) : (
-        <p className="text-sm text-muted-foreground">Keine Daten verfuegbar.</p>
+        <p className="text-xs text-muted-foreground sm:text-sm">Keine Daten verfuegbar.</p>
       )}
     </div>
   );
@@ -782,7 +1044,7 @@ export default function Dashboard() {
     testPrefix: string,
   ) => {
     if (members.length === 0) {
-      return <p className="text-sm text-muted-foreground">Keine Daten verfuegbar.</p>;
+      return <p className="text-xs text-muted-foreground sm:text-sm">Keine Daten verfuegbar.</p>;
     }
 
     const groups = new Map<
@@ -879,7 +1141,7 @@ export default function Dashboard() {
                       <Badge
                         key={`${testPrefix}-${group.label}-${person.employeeId}-${personIndex}`}
                         variant="secondary"
-                        className={`px-2.5 py-1 text-[13px] sm:text-sm font-medium ${
+                        className={`px-2 py-1 text-xs sm:text-sm font-medium ${
                           person.isDuty ? STAFF_BADGE_DUTY : STAFF_BADGE_NORMAL
                         }`}
                         data-testid={`${testPrefix}-${groupIndex}-${personIndex}`}
@@ -897,25 +1159,21 @@ export default function Dashboard() {
     );
   };
 
-  const renderAttendanceCardContent = () => (
-    <div className="space-y-3 md:px-4 md:pb-4">
-      <Tabs
-        value={attendanceViewMode}
-        onValueChange={(value) =>
-          setAttendanceViewMode(value === "workplaces" ? "workplaces" : "people")
-        }
-      >
-        <TabsList className="grid h-11 w-full max-w-[28rem] grid-cols-2">
-          <TabsTrigger className="text-sm" value="people">Personen</TabsTrigger>
-          <TabsTrigger className="text-sm" value="workplaces">Arbeitsplätze</TabsTrigger>
-        </TabsList>
-      </Tabs>
+  const renderPeopleCardContent = () => (
+    <div className="space-y-3">
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Heute
+          </p>
+          <span className="text-[11px] text-muted-foreground">
+            {presentToday.length} Personen
+          </span>
+        </div>
+        {renderAttendanceBadges(presentToday, "staff-present")}
+      </div>
 
-      {attendanceViewMode === "workplaces"
-        ? renderAttendanceByWorkplaces(presentToday, "staff-workplace-present")
-        : renderAttendanceBadges(presentToday, "staff-present")}
-
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
         <Clock className="h-3.5 w-3.5" />
         <span>
           {typeof absentCountToday === "number"
@@ -926,52 +1184,67 @@ export default function Dashboard() {
 
       <Separator className="my-0.5" />
 
-      <div className="space-y-1.5">
-        <div className="flex items-center gap-1.5">
-          <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
-          <p className="text-xs font-medium">Team morgen</p>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Morgen
+          </p>
+          <span className="text-[11px] text-muted-foreground">
+            {presentTomorrow.length} Personen
+          </span>
         </div>
-        {attendanceViewMode === "workplaces"
-          ? renderAttendanceByWorkplaces(
-              presentTomorrow,
-              "staff-workplace-tomorrow",
-            )
-          : renderAttendanceBadges(presentTomorrow, "staff-tomorrow")}
+        {renderAttendanceBadges(presentTomorrow, "staff-tomorrow")}
       </div>
     </div>
   );
 
-  const renderAttendanceCard = () => {
-    if (!attendanceEnabled) return null;
-    return (
-      <Card className="border-none kabeg-shadow">
-        <CardHeader className="px-4 pb-1 pt-4 md:px-4">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Users className="h-5 w-5" />
-            Heute anwesend
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-4 pb-4 pt-0 md:px-4 md:pb-4">
-          {renderAttendanceCardContent()}
-        </CardContent>
-      </Card>
-    );
-  };
+  const renderWorkplacesCardContent = () => (
+    <div className="space-y-3">
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Heute
+          </p>
+          <span className="text-[11px] text-muted-foreground">
+            {workplaceGroupCountToday} Arbeitsplätze
+          </span>
+        </div>
+        {renderAttendanceByWorkplaces(presentToday, "staff-workplace-present")}
+      </div>
+
+      <Separator className="my-0.5" />
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Morgen
+          </p>
+          <span className="text-[11px] text-muted-foreground">
+            {workplaceGroupCountTomorrow} Arbeitsplätze
+          </span>
+        </div>
+        {renderAttendanceByWorkplaces(
+          presentTomorrow,
+          "staff-workplace-tomorrow",
+        )}
+      </div>
+    </div>
+  );
 
   const renderAbsencesCardContent = () => {
     if (absencesLoading) {
       return (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-xs text-muted-foreground sm:text-sm">
           Abwesenheiten werden geladen…
         </p>
       );
     }
     if (absencesError) {
-      return <p className="text-sm text-destructive">{absencesError}</p>;
+      return <p className="text-xs text-destructive sm:text-sm">{absencesError}</p>;
     }
     if (!hasAbsenceEntries) {
       return (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-xs text-muted-foreground sm:text-sm">
           Keine Abwesenheiten im Zeitraum.
         </p>
       );
@@ -990,7 +1263,7 @@ export default function Dashboard() {
 
             return (
               <div key={day.date} className="space-y-2">
-                <p className="text-sm font-semibold text-foreground">
+                <p className="text-xs font-semibold text-foreground sm:text-sm">
                   {dateLabel}
                 </p>
                 <div className="space-y-2">
@@ -1015,13 +1288,13 @@ export default function Dashboard() {
   const renderWeekPreviewCardContent = () => (
     <div className="space-y-4">
       {isLoadingDashboard ? (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-xs text-muted-foreground sm:text-sm">
           Wochenvorschau wird geladen…
         </p>
       ) : dashboardError ? (
-        <p className="text-sm text-destructive">Fehler: {dashboardError}</p>
+        <p className="text-xs text-destructive sm:text-sm">Fehler: {dashboardError}</p>
       ) : previewCards.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-xs text-muted-foreground sm:text-sm">
           Keine Einsätze für die Vorschau verfügbar.
         </p>
       ) : (
@@ -1059,7 +1332,7 @@ export default function Dashboard() {
               data-testid={`schedule-day-${i}`}
             >
               <div className="flex items-center justify-between mb-1">
-                <span className="font-medium text-sm">
+                <span className="text-xs font-medium sm:text-sm">
                   {item.dayLabel}{" "}
                   <span className="text-muted-foreground">
                     – {item.dateLabel}
@@ -1214,112 +1487,150 @@ export default function Dashboard() {
     );
   };
 
-  const renderMiscWidgets = () => null;
+  const notificationsSummary = notificationsLoading
+    ? "Benachrichtigungen werden geladen"
+    : dashboardNoticeItems.length > 0
+      ? `${unreadNotifications.length} neue Hinweise${
+          canSeeRecentChanges ? ` · ${recentChanges.length} Änderungen` : ""
+        }`
+      : "Keine neuen Hinweise";
+  const todaySummary =
+    normalizedTodayStatusLabel ??
+    todayEntry?.workplace ??
+    todayDutyLine ??
+    "Kein aktueller Eintrag";
+  const weekSummary =
+    previewCards.length > 0
+      ? `${previewCards.length} Tage · ${previewCards[0]?.dayLabel} ${previewCards[0]?.dateLabel}`
+      : "Keine Einsätze";
+  const peopleSummary = `Heute ${presentToday.length} · morgen ${presentTomorrow.length}`;
+  const workplacesSummary = `Heute ${workplaceGroupCountToday} · morgen ${workplaceGroupCountTomorrow}`;
+  const absencesSummary = absencesLoading
+    ? "Lädt…"
+    : `${typeof absentCountToday === "number" ? absentCountToday : 0} heute · ${absenceTypeCount} Einträge`;
+  const birthdaySummary = birthdayName
+    ? `Heute Geburtstag: ${birthdayName}`
+    : "Heute kein Geburtstag";
 
-  const renderBirthdayCard = () => {
-    if (!birthdayEnabled) return null;
-    return birthdayName ? (
-      <Card className="border-none kabeg-shadow bg-gradient-to-br from-pink-50 to-orange-50">
-        <CardContent className="p-4 flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-pink-100 flex items-center justify-center">
-            <Cake className="w-6 h-6 text-pink-600" />
-          </div>
-          <div>
-            <p className="text-sm font-medium text-foreground">
-              Heute hat Geburtstag:
-            </p>
-            <p
-              className="text-base font-bold text-pink-700"
-              data-testid="text-birthday"
-            >
-              {birthdayName}
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-    ) : null;
-  };
+  const renderBirthdayTileContent = () =>
+    birthdayName ? (
+      <div className="flex items-center gap-3 rounded-lg bg-pink-50 px-3 py-3">
+        <div className="rounded-xl bg-pink-100 p-2 text-pink-600">
+          <Cake className="h-5 w-5" />
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">Heute hat Geburtstag</p>
+          <p
+            className="text-sm font-semibold text-pink-700"
+            data-testid="text-birthday"
+          >
+            {birthdayName}
+          </p>
+        </div>
+      </div>
+    ) : (
+      <p className="text-xs text-muted-foreground">Heute kein Geburtstag.</p>
+    );
 
   return (
     <Layout title="Dashboard">
-      <div className="hidden md:grid grid-cols-1 md:grid-cols-12 gap-6">
-        <div className="md:col-span-12">
-          {renderHeroCard()}
-        </div>
-        <div className="md:col-span-12 grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-6">{renderAttendanceCard()}</div>
-          <div className="lg:col-span-3 space-y-6">
-            {renderRecentChangesCard()}
-            {weekPreviewEnabled && (
-              <Card className="border-none kabeg-shadow flex flex-col">
-                <CardHeader>
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <CalendarDays className="w-5 h-5" />
-                    Wochenvorschau
-                  </CardTitle>
-                  <CardDescription>Deine nächsten Einsätze</CardDescription>
-                </CardHeader>
-                <CardContent className="flex-1">
-                  {renderWeekPreviewCardContent()}
-                </CardContent>
-              </Card>
-            )}
+      <div className="space-y-4 px-3 md:px-0">
+        <div className="md:grid md:grid-cols-12 md:gap-4 space-y-4 md:space-y-0">
+          <div className="md:col-span-12">
+            {renderDashboardTile({
+              tileKey: "notifications",
+              title: "Notifications",
+              summary: notificationsSummary,
+              icon: Bell,
+              content: renderNotificationsCardContent(),
+              accent: true,
+            })}
           </div>
-          <div className="lg:col-span-3 space-y-6">
-            {absencesEnabled && renderAbsencesCard()}
-            {renderBirthdayCard()}
-          </div>
-        </div>
-        <div className="md:col-span-12">
-          {renderMiscWidgets()}
-        </div>
-      </div>
 
-      <div className="md:hidden space-y-6 px-4">
-        {renderHeroCard()}
-        {mobilePanelEnabled && (
-          <Card
-            className="border-none kabeg-shadow"
-            onTouchStart={handleTouchStart}
-            onTouchEnd={handleTouchEnd}
-          >
-            <CardContent className="pb-2">
-              <div className="flex gap-2">
-                {weekPreviewEnabled && (
-                  <Button
-                    variant={mobilePanel === "week" ? "secondary" : "ghost"}
-                    size="sm"
-                    className="px-3 py-1 text-xs"
-                    onClick={() => setMobilePanel("week")}
-                    aria-pressed={mobilePanel === "week"}
-                  >
-                    Woche
-                  </Button>
-                )}
-                {attendanceEnabled && (
-                  <Button
-                    variant={mobilePanel === "team" ? "secondary" : "ghost"}
-                    size="sm"
-                    className="px-3 py-1 text-xs"
-                    onClick={() => setMobilePanel("team")}
-                    aria-pressed={mobilePanel === "team"}
-                  >
-                    Heute/Morgen
-                  </Button>
-                )}
-              </div>
-            </CardContent>
-            <CardContent className="pt-0">
-              {(weekPreviewEnabled && mobilePanel === "week"
-                ? renderWeekPreviewCardContent()
-                : renderAttendanceCardContent())}
-            </CardContent>
-          </Card>
-        )}
-        {renderRecentChangesCard()}
-        {renderBirthdayCard()}
-        {absencesEnabled && renderAbsencesCard()}
-        {renderMiscWidgets()}
+          <div className="md:col-span-12 lg:col-span-6">
+            {renderDashboardTile({
+              tileKey: "today",
+              title: "Heute",
+              summary: todaySummary,
+              icon: Stethoscope,
+              content: renderTodayTileContent(),
+            })}
+          </div>
+
+          {weekPreviewEnabled ? (
+            <div className="md:col-span-6 lg:col-span-3">
+              {renderDashboardTile({
+                tileKey: "week",
+                title: "Meine Woche",
+                summary: weekSummary,
+                icon: CalendarDays,
+                content: renderWeekPreviewCardContent(),
+              })}
+            </div>
+          ) : null}
+
+          {absencesEnabled ? (
+            <div className="md:col-span-6 lg:col-span-3">
+              {renderDashboardTile({
+                tileKey: "absences",
+                title: "Abwesenheiten",
+                summary: absencesSummary,
+                icon: CalendarClock,
+                content: (
+                  <div className="space-y-3">
+                    {canCreateAbsence ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs"
+                        onClick={() => setLocation("/admin/urlaubsplan")}
+                      >
+                        Abwesenheit eintragen
+                      </Button>
+                    ) : null}
+                    {renderAbsencesCardContent()}
+                  </div>
+                ),
+              })}
+            </div>
+          ) : null}
+
+          {attendanceEnabled ? (
+            <div className="md:col-span-6">
+              {renderDashboardTile({
+                tileKey: "people",
+                title: "Personen heute / morgen",
+                summary: peopleSummary,
+                icon: Users,
+                content: renderPeopleCardContent(),
+              })}
+            </div>
+          ) : null}
+
+          {attendanceEnabled ? (
+            <div className="md:col-span-6">
+              {renderDashboardTile({
+                tileKey: "workplaces",
+                title: "Arbeitsplätze heute / morgen",
+                summary: workplacesSummary,
+                icon: BriefcaseBusiness,
+                content: renderWorkplacesCardContent(),
+              })}
+            </div>
+          ) : null}
+
+          {birthdayEnabled ? (
+            <div className="md:col-span-12 lg:col-span-4">
+              {renderDashboardTile({
+                tileKey: "birthday",
+                title: "Geburtstag",
+                summary: birthdaySummary,
+                icon: Cake,
+                content: renderBirthdayTileContent(),
+              })}
+            </div>
+          ) : null}
+        </div>
       </div>
     </Layout>
   );
