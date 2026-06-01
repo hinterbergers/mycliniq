@@ -103,6 +103,26 @@ const ALLOWED_UNASSIGNED_STATUSES = new Set<DutyPlan["status"]>([
 
 const padTwo = (value: number) => String(value).padStart(2, "0");
 
+const syncUserRosterChangeIntoDraft = async (year: number, month: number) => {
+  const [plan] = await db
+    .select()
+    .from(dutyPlans)
+    .where(and(eq(dutyPlans.year, year), eq(dutyPlans.month, month)))
+    .limit(1);
+
+  if (!plan) return;
+  if (!ALLOWED_CLAIM_STATUSES.has(plan.status)) return;
+
+  await syncDraftFromFinal(year, month);
+
+  if (plan.status === "Freigegeben") {
+    await db
+      .update(dutyPlans)
+      .set({ status: "Vorläufig" })
+      .where(eq(dutyPlans.id, plan.id));
+  }
+};
+
 type OpenShiftSlotSource = "final" | "draft";
 
 type OpenShiftSlot = {
@@ -2063,6 +2083,7 @@ export async function registerRoutes(
           ...getAuditActorFromRequest(req),
           context: "api.roster.claim",
         });
+        await syncUserRosterChangeIntoDraft(year, month);
         res.json(updated);
       } catch (error) {
         console.error("Claim shift error:", error);
@@ -2351,6 +2372,10 @@ export async function registerRoutes(
         ...getAuditActorFromRequest(req),
         context: "api.roster.open-shifts.claim.assign",
       });
+
+      if (!targetIsDraft) {
+        await syncUserRosterChangeIntoDraft(planYear, planMonth);
+      }
 
       res.status(201).json(updated);
     } catch (error) {
@@ -5344,6 +5369,27 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
                 context: "api.shift-swap.accept.target-shift",
               },
             );
+
+            const affectedMonths = new Set<string>();
+            const maybeAddMonth = (dateValue?: string | null, isDraft?: boolean | null) => {
+              if (!dateValue || isDraft) return;
+              const parsed = parseISO(dateValue);
+              if (Number.isNaN(parsed.getTime())) return;
+              affectedMonths.add(
+                `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}`,
+              );
+            };
+
+            maybeAddMonth(requesterShift.date, requesterShift.isDraft);
+            maybeAddMonth(targetShift.date, targetShift.isDraft);
+
+            for (const monthKey of affectedMonths) {
+              const [yearText, monthText] = monthKey.split("-");
+              const year = Number(yearText);
+              const month = Number(monthText);
+              if (!Number.isFinite(year) || !Number.isFinite(month)) continue;
+              await syncUserRosterChangeIntoDraft(year, month);
+            }
           }
         }
 
