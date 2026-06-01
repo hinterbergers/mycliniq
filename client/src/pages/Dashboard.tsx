@@ -2075,7 +2075,11 @@ export default function Dashboard() {
               icon: Bell,
               content: renderNotificationsCardContent(),
               accent: true,
-              accentVariant: unreadNotifications.length > 0 ? "alert" : "neutral",
+              accentVariant:
+                unreadNotifications.length > 0 ||
+                pendingAbsenceApprovalNotices.length > 0
+                  ? "alert"
+                  : "neutral",
             })}
           </div>
 
