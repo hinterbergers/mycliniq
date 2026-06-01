@@ -173,6 +173,19 @@ const getNotificationTypeLabel = (type: Notification["type"]) => {
   }
 };
 
+const getUnreadInboxCardTone = (type: Notification["type"]) => {
+  switch (type) {
+    case "project":
+      return "border-amber-200 bg-[linear-gradient(180deg,_rgba(255,247,237,1),_rgba(255,255,255,1))]";
+    case "sop":
+      return "border-violet-200 bg-[linear-gradient(180deg,_rgba(245,243,255,1),_rgba(255,255,255,1))]";
+    case "system":
+      return "border-cyan-200 bg-[linear-gradient(180deg,_rgba(236,254,255,1),_rgba(255,255,255,1))]";
+    default:
+      return "border-blue-200 bg-[linear-gradient(180deg,_rgba(239,246,255,1),_rgba(255,255,255,1))]";
+  }
+};
+
 type NotificationActionInfo = {
   label: string;
   details: string | null;
@@ -653,11 +666,23 @@ export default function Messages() {
     (isGroupOwner || canManageGroups);
 
   const unreadNotifications = useMemo(
-    () => portalNotifications.filter((note) => !note.isRead),
+    () =>
+      portalNotifications
+        .filter((note) => !note.isRead)
+        .sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        ),
     [portalNotifications],
   );
   const processedNotifications = useMemo(
-    () => portalNotifications.filter((note) => note.isRead),
+    () =>
+      portalNotifications
+        .filter((note) => note.isRead)
+        .sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        ),
     [portalNotifications],
   );
   const filteredPortalNotifications = useMemo(() => {
@@ -1405,27 +1430,35 @@ export default function Messages() {
 
         <div className="order-3 space-y-6">
             <Card className="border-blue-100/80 shadow-sm" id="new-inbox">
-              <CardHeader className="flex flex-row items-start justify-between gap-3">
+              <CardHeader className="flex flex-row items-start justify-between gap-3 border-b border-blue-100/80 bg-slate-50/80">
                 <div>
                   <CardTitle className="flex items-center gap-2 text-xl">
                     <Inbox className="h-5 w-5 text-blue-600" />
                     Neue Nachrichten
                   </CardTitle>
                   <CardDescription>
-                    Alles, was noch offen ist und auch in der Dashboard-Kachel sichtbar bleibt.
+                    Offene Hinweise bleiben hier als farbige Eingangskacheln, bis sie gelesen sind.
                   </CardDescription>
                 </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void loadNotifications()}
-                >
-                  <RefreshCcw className="mr-2 h-4 w-4" />
-                  Aktualisieren
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant="secondary"
+                    className="bg-blue-100 text-blue-700 hover:bg-blue-100"
+                  >
+                    {loadingNotifications ? "..." : unreadNotifications.length} offen
+                  </Badge>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void loadNotifications()}
+                  >
+                    <RefreshCcw className="mr-2 h-4 w-4" />
+                    Aktualisieren
+                  </Button>
+                </div>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="space-y-4 pt-5">
                 {loadingNotifications && (
                   <p className="text-sm text-muted-foreground">
                     Lade neue Nachrichten...
@@ -1437,7 +1470,7 @@ export default function Messages() {
                   </div>
                 )}
                 {!loadingNotifications &&
-                  unreadNotifications.map((note) => {
+                  unreadNotifications.map((note, index) => {
                     const shiftSwapMeta = getShiftSwapMetadata(note);
                     const zeitausgleichMeta = getZeitausgleichMetadata(note);
                     const isProcessing = processingNotificationIds.includes(
@@ -1449,6 +1482,13 @@ export default function Messages() {
                         key={note.id}
                         className="rounded-3xl border border-blue-100 bg-[linear-gradient(180deg,_rgba(239,246,255,0.9),_rgba(255,255,255,1))] p-4 shadow-sm"
                       >
+                        <div
+                          className={cn(
+                            "rounded-3xl border p-4 shadow-sm transition-colors",
+                            getUnreadInboxCardTone(note.type),
+                            index === 0 && "ring-2 ring-blue-200/70",
+                          )}
+                        >
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div className="space-y-2">
                             <div className="flex flex-wrap items-center gap-2">
@@ -1458,6 +1498,11 @@ export default function Messages() {
                               >
                                 {getNotificationTypeLabel(note.type)}
                               </Badge>
+                              {index === 0 && (
+                                <Badge className="bg-blue-600 text-white hover:bg-blue-600">
+                                  Neueste
+                                </Badge>
+                              )}
                               <span className="text-xs text-muted-foreground">
                                 {formatTimestamp(note.createdAt)}
                               </span>
@@ -1563,6 +1608,7 @@ export default function Messages() {
                             </Button>
                           </div>
                         )}
+                        </div>
                       </div>
                     );
                   })}
