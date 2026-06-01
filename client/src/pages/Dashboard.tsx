@@ -350,6 +350,7 @@ type DashboardNoticeItem = {
   sourceChangeId?: string | null;
   isSeen?: boolean;
   absenceId?: number;
+  zeId?: number;
 };
 
 type PendingAbsenceNotice = {
@@ -759,6 +760,27 @@ export default function Dashboard() {
     }
   };
 
+  const handleDeclineZe = async (zeId?: number | null) => {
+    if (!zeId) return;
+    setIsAcceptingZe(true);
+    try {
+      await dashboardApi.declineZeitausgleich(zeId);
+      toast({
+        title: "Zeitausgleich abgelehnt",
+        description: "Die Planung wurde informiert und kann dich neu einteilen.",
+      });
+      await refreshDashboard();
+    } catch (error: any) {
+      toast({
+        title: "Zeitausgleich konnte nicht abgelehnt werden",
+        description: error?.message || "Bitte versuche es erneut.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAcceptingZe(false);
+    }
+  };
+
   const handleCreateHeroAbsence = async () => {
     if (
       !heroAbsenceForm.employeeId ||
@@ -1051,8 +1073,9 @@ export default function Dashboard() {
       items.push({
         id: "ze",
         title: "Zeitausgleich möglich",
-        subtitle: "Im Heute-Bereich direkt bestätigbar",
+        subtitle: "Direkt hier annehmen oder ablehnen",
         tone: "danger",
+        zeId: todayEntry?.ze?.id ?? undefined,
       });
     }
 
@@ -1283,6 +1306,35 @@ export default function Dashboard() {
                     >
                       Freigeben
                     </Button>
+                  ) : item.zeId ? (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-6 border-emerald-300 px-1.5 text-[10px] text-emerald-700 hover:bg-emerald-50"
+                        disabled={isAcceptingZe}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handleAcceptZe();
+                        }}
+                      >
+                        Annehmen
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-6 border-rose-300 px-1.5 text-[10px] text-rose-700 hover:bg-rose-50"
+                        disabled={isAcceptingZe}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handleDeclineZe(item.zeId as number);
+                        }}
+                      >
+                        Ablehnen
+                      </Button>
+                    </>
                   ) : item.notificationId && item.isRead === false ? (
                     <Button
                       type="button"

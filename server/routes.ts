@@ -4080,9 +4080,12 @@ const buildAttendanceMembers = (
         const [updated] = await db
           .update(plannedAbsences)
           .set({
+            status: "Genehmigt",
+            isApproved: true,
             accepted: true,
             acceptedAt: new Date(),
             acceptedById: currentEmployeeId,
+            approvedById: currentEmployeeId,
             updatedAt: new Date(),
           })
           .where(eq(plannedAbsences.id, zeId))
@@ -4093,6 +4096,8 @@ const buildAttendanceMembers = (
           data: {
             id: updated.id,
             accepted: Boolean(updated.accepted),
+            status: updated.status,
+            isApproved: updated.isApproved,
             acceptedAt: updated.acceptedAt,
             acceptedById: updated.acceptedById,
           },
@@ -4102,6 +4107,152 @@ const buildAttendanceMembers = (
         res.status(500).json({
           success: false,
           error: "Zeitausgleich konnte nicht akzeptiert werden",
+        });
+      }
+    },
+  );
+
+  app.post(
+    "/api/zeitausgleich/:id/decline",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const zeId = Number(req.params.id);
+        if (Number.isNaN(zeId)) {
+          return res
+            .status(400)
+            .json({ success: false, error: "Ungültige Zeitausgleich-ID" });
+        }
+
+        const [entry] = await db
+          .select()
+          .from(plannedAbsences)
+          .where(eq(plannedAbsences.id, zeId));
+
+        if (!entry) {
+          return res
+            .status(404)
+            .json({ success: false, error: "Zeitausgleich nicht gefunden" });
+        }
+
+        if (entry.reason !== "Zeitausgleich") {
+          return res.status(400).json({
+            success: false,
+            error: "Nur Zeitausgleich-Einträge können abgelehnt werden",
+          });
+        }
+
+        const currentEmployeeId = req.user?.employeeId;
+        if (!currentEmployeeId || entry.employeeId !== currentEmployeeId) {
+          return res.status(403).json({
+            success: false,
+            error: "Keine Berechtigung für diesen Zeitausgleich",
+          });
+        }
+
+        if (entry.status === "Abgelehnt") {
+          return res.json({
+            success: true,
+            data: {
+              id: entry.id,
+              accepted: Boolean(entry.accepted),
+              status: entry.status,
+              isApproved: entry.isApproved,
+              acceptedAt: entry.acceptedAt,
+              acceptedById: entry.acceptedById,
+            },
+          });
+        }
+
+        const [employeeRow] = await db
+          .select({
+            departmentId: employees.departmentId,
+            firstName: employees.firstName,
+            lastName: employees.lastName,
+            name: employees.name,
+          })
+          .from(employees)
+          .where(eq(employees.id, currentEmployeeId));
+
+        const [updated] = await db
+          .update(plannedAbsences)
+          .set({
+            status: "Abgelehnt",
+            isApproved: false,
+            accepted: false,
+            acceptedAt: null,
+            acceptedById: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(plannedAbsences.id, zeId))
+          .returning();
+
+        const employeeName =
+          formatDisplayName(employeeRow?.firstName, employeeRow?.lastName) ??
+          normalize(employeeRow?.name) ??
+          "Mitarbeiter:in";
+        const weeklyEditorLink = `/admin/weekly?day=${encodeURIComponent(String(updated.startDate))}&employeeId=${currentEmployeeId}`;
+
+        const adminRecipients = await db
+          .select({
+            id: employees.id,
+            departmentId: employees.departmentId,
+            systemRole: employees.systemRole,
+            appRole: employees.appRole,
+            isAdmin: employees.isAdmin,
+          })
+          .from(employees)
+          .where(eq(employees.isActive, true));
+
+        const recipientIds = adminRecipients
+          .filter((row) => {
+            if (employeeRow?.departmentId != null && row.departmentId !== employeeRow.departmentId) {
+              return false;
+            }
+            return (
+              row.isAdmin ||
+              row.appRole === "Admin" ||
+              row.appRole === "Editor" ||
+              row.systemRole !== "employee"
+            );
+          })
+          .map((row) => row.id)
+          .filter((id) => id !== currentEmployeeId);
+
+        if (recipientIds.length > 0) {
+          const rows = recipientIds.map((recipientId) => ({
+            recipientId,
+            type: "system" as const,
+            title: `Zeitausgleich abgelehnt – ${employeeName}`,
+            message: `${String(updated.startDate)} neu im Wochenplan einteilen.`,
+            link: weeklyEditorLink,
+            metadata: {
+              kind: "zeitausgleich_declined",
+              absenceId: updated.id,
+              employeeId: currentEmployeeId,
+              startDate: updated.startDate,
+              endDate: updated.endDate,
+            },
+          }));
+          await db.insert(notifications).values(rows);
+        }
+
+        return res.json({
+          success: true,
+          data: {
+            id: updated.id,
+            accepted: Boolean(updated.accepted),
+            status: updated.status,
+            isApproved: updated.isApproved,
+            acceptedAt: updated.acceptedAt,
+            acceptedById: updated.acceptedById,
+          },
+        });
+      } catch (error) {
+        console.error("Zeitausgleich konnte nicht abgelehnt werden:", error);
+        return res.status(500).json({
+          success: false,
+          error: "Zeitausgleich konnte nicht abgelehnt werden",
         });
       }
     },

@@ -548,10 +548,27 @@ export const dashboardApi = {
   ): Promise<{
     id: number;
     accepted: boolean;
+    status?: string | null;
+    isApproved?: boolean | null;
     acceptedAt?: string | null;
     acceptedById?: number | null;
   }> => {
     const response = await apiFetch(`${API_BASE}/zeitausgleich/${id}/accept`, {
+      method: "POST",
+    });
+    return handleResponse(response);
+  },
+  declineZeitausgleich: async (
+    id: number,
+  ): Promise<{
+    id: number;
+    accepted: boolean;
+    status?: string | null;
+    isApproved?: boolean | null;
+    acceptedAt?: string | null;
+    acceptedById?: number | null;
+  }> => {
+    const response = await apiFetch(`${API_BASE}/zeitausgleich/${id}/decline`, {
       method: "POST",
     });
     return handleResponse(response);
