@@ -356,6 +356,7 @@ export default function Dashboard() {
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationsError, setNotificationsError] = useState<string | null>(null);
   const [seenRecentChangeIds, setSeenRecentChangeIds] = useState<string[]>([]);
+  const [pendingAbsenceApprovalCount, setPendingAbsenceApprovalCount] = useState(0);
   const [heroAbsenceDialogOpen, setHeroAbsenceDialogOpen] = useState(false);
   const [heroAbsenceEmployees, setHeroAbsenceEmployees] = useState<Employee[]>([]);
   const [heroAbsenceEmployeesLoading, setHeroAbsenceEmployeesLoading] = useState(false);
@@ -855,6 +856,8 @@ export default function Dashboard() {
   const weekPreviewEnabled = isWidgetEnabled("week_preview");
   const absencesEnabled = isWidgetEnabled("absences");
   const attendanceEnabled = isWidgetEnabled("attendance");
+  const canApproveVacation =
+    !viewAsUser && (isAdmin || user?.appRole === "Admin" || can("vacation.approve"));
   const canSeeRecentChanges =
     !viewAsUser &&
     (isAdmin ||
@@ -874,6 +877,29 @@ export default function Dashboard() {
     () => recentChanges.filter((item) => !seenRecentChangeIds.includes(item.id)),
     [recentChanges, seenRecentChangeIds],
   );
+
+  useEffect(() => {
+    if (!canApproveVacation) {
+      setPendingAbsenceApprovalCount(0);
+      return;
+    }
+    let cancelled = false;
+    const today = format(new Date(), "yyyy-MM-dd");
+    const to = format(new Date(new Date().getFullYear() + 1, 11, 31), "yyyy-MM-dd");
+    void plannedAbsencesAdminApi
+      .getRange({ from: today, to, status: "Geplant" })
+      .then((rows) => {
+        if (cancelled) return;
+        setPendingAbsenceApprovalCount(rows.length);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPendingAbsenceApprovalCount(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canApproveVacation]);
   const handleMarkAllNotificationsRead = useCallback(async () => {
     const unreadIds = notificationsData
       .filter((item) => !item.isRead)
@@ -947,6 +973,16 @@ export default function Dashboard() {
       });
     });
 
+    if (pendingAbsenceApprovalCount > 0) {
+      items.push({
+        id: "pending-absences",
+        title: "Abwesenheiten zur Freigabe",
+        subtitle: `${pendingAbsenceApprovalCount} offene Anträge warten auf Freigabe`,
+        targetUrl: "/admin/urlaubsplan",
+        tone: "danger",
+      });
+    }
+
     if (wishMonthLabel) {
       items.push({
         id: "wish-month",
@@ -984,6 +1020,7 @@ export default function Dashboard() {
     return items.slice(0, 10);
   }, [
     canSeeRecentChanges,
+    pendingAbsenceApprovalCount,
     unreadRecentChanges,
     showZeBadge,
     unreadNotifications,

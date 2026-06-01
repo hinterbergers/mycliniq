@@ -34,6 +34,7 @@ import {
   notificationsApi,
   onlineUsersApi,
   searchApi,
+  plannedAbsencesAdminApi,
   type NextPlanningMonth,
   type GlobalSearchPersonPreview,
   type GlobalSearchResponse,
@@ -102,6 +103,7 @@ export function Header({
   );
   const [serviceLines, setServiceLines] = useState<ServiceLine[]>([]);
   const [pendingSwapCount, setPendingSwapCount] = useState(0);
+  const [pendingAbsenceApprovalCount, setPendingAbsenceApprovalCount] = useState(0);
   const [systemNotifications, setSystemNotifications] = useState<
     Notification[]
   >([]);
@@ -341,6 +343,30 @@ export function Header({
     }
   };
 
+  const canApproveVacation =
+    !viewAsUser && (isAdmin || user?.appRole === "Admin" || capabilities.includes("vacation.approve"));
+
+  useEffect(() => {
+    if (!canApproveVacation) {
+      setPendingAbsenceApprovalCount(0);
+      return;
+    }
+    let active = true;
+    const from = format(new Date(), "yyyy-MM-dd");
+    const to = format(new Date(new Date().getFullYear() + 1, 11, 31), "yyyy-MM-dd");
+    void plannedAbsencesAdminApi
+      .getRange({ from, to, status: "Geplant" })
+      .then((rows) => {
+        if (active) setPendingAbsenceApprovalCount(rows.length);
+      })
+      .catch(() => {
+        if (active) setPendingAbsenceApprovalCount(0);
+      });
+    return () => {
+      active = false;
+    };
+  }, [canApproveVacation]);
+
   useEffect(() => {
     if (!planningMonth) {
       setNotifications([]);
@@ -382,6 +408,15 @@ export function Header({
       });
     }
 
+    if (pendingAbsenceApprovalCount > 0) {
+      nextNotifications.push({
+        id: "pending-absences",
+        tone: "warning",
+        title: "Abwesenheiten zur Freigabe",
+        description: `${pendingAbsenceApprovalCount} offene Anträge warten auf Freigabe.`,
+      });
+    }
+
     if (doesShifts) {
       const monthStart = new Date(
         planningMonth.year,
@@ -407,6 +442,7 @@ export function Header({
     canEditPlan,
     canPublishPlan,
     doesShifts,
+    pendingAbsenceApprovalCount,
     pendingSwapCount,
   ]);
 
