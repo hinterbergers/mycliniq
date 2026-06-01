@@ -1537,6 +1537,10 @@ export default function Dashboard() {
       <div className="space-y-4 px-3 md:px-0">
         <div className="md:grid md:grid-cols-12 md:gap-4 space-y-4 md:space-y-0">
           <div className="md:col-span-12">
+            {renderTodayTileContent()}
+          </div>
+
+          <div className="md:col-span-12">
             {renderDashboardTile({
               tileKey: "notifications",
               title: "Notifications",
@@ -1547,18 +1551,8 @@ export default function Dashboard() {
             })}
           </div>
 
-          <div className="md:col-span-12 lg:col-span-6">
-            {renderDashboardTile({
-              tileKey: "today",
-              title: "Heute",
-              summary: todaySummary,
-              icon: Stethoscope,
-              content: renderTodayTileContent(),
-            })}
-          </div>
-
           {weekPreviewEnabled ? (
-            <div className="md:col-span-6 lg:col-span-3">
+            <div className="md:col-span-6 lg:col-span-4">
               {renderDashboardTile({
                 tileKey: "week",
                 title: "Meine Woche",
@@ -1570,7 +1564,7 @@ export default function Dashboard() {
           ) : null}
 
           {absencesEnabled ? (
-            <div className="md:col-span-6 lg:col-span-3">
+            <div className="md:col-span-6 lg:col-span-4">
               {renderDashboardTile({
                 tileKey: "absences",
                 title: "Abwesenheiten",
@@ -1596,7 +1590,7 @@ export default function Dashboard() {
           ) : null}
 
           {attendanceEnabled ? (
-            <div className="md:col-span-6">
+            <div className="md:col-span-6 lg:col-span-6">
               {renderDashboardTile({
                 tileKey: "people",
                 title: "Personen heute / morgen",
@@ -1608,7 +1602,7 @@ export default function Dashboard() {
           ) : null}
 
           {attendanceEnabled ? (
-            <div className="md:col-span-6">
+            <div className="md:col-span-6 lg:col-span-6">
               {renderDashboardTile({
                 tileKey: "workplaces",
                 title: "Arbeitsplätze heute / morgen",
