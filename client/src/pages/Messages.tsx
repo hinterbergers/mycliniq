@@ -35,6 +35,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -59,6 +60,22 @@ import {
 import { cn } from "@/lib/utils";
 
 const FAVORITE_GROUP_KEY_PREFIX = "cliniq_messages_favorite_group";
+const SYSTEM_THREAD_ID = -1;
+
+type ThreadMessageItem = MessageWithSender & {
+  kind?: "system";
+  notificationId?: number;
+  systemTitle?: string | null;
+  link?: string | null;
+  isRead?: boolean;
+};
+
+type PortalThread = MessageThreadListItem & {
+  kind?: "system";
+  unreadCount?: number;
+};
+
+type ComposeMode = "direct" | "group" | "system";
 
 function formatTimestamp(value?: string | Date | null) {
   if (!value) return "";
@@ -111,7 +128,7 @@ const getEmployeeName = (employee: Employee) =>
     lastName: employee.lastName,
   });
 
-const getThreadPreview = (thread: MessageThreadListItem) =>
+const getThreadPreview = (thread: PortalThread) =>
   thread.lastMessage?.content?.trim() || "Noch keine Nachricht";
 
 const getNotificationTone = (type: Notification["type"]) => {
@@ -252,7 +269,7 @@ export default function Messages() {
   const [loadingMessages, setLoadingMessages] = useState(false);
 
   const [selectedThreadId, setSelectedThreadId] = useState<number | null>(null);
-  const [messages, setMessages] = useState<MessageWithSender[]>([]);
+  const [messages, setMessages] = useState<ThreadMessageItem[]>([]);
   const [messageDraft, setMessageDraft] = useState("");
   const [threadSearch, setThreadSearch] = useState("");
   const [processingNotificationIds, setProcessingNotificationIds] = useState<
@@ -264,12 +281,15 @@ export default function Messages() {
     null,
   );
   const [privateMessageDraft, setPrivateMessageDraft] = useState("");
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [composeMode, setComposeMode] = useState<ComposeMode>("direct");
   const [isStartingDirectMessage, setIsStartingDirectMessage] = useState(false);
 
   const [systemTitle, setSystemTitle] = useState("");
   const [systemMessage, setSystemMessage] = useState("");
   const [systemLink, setSystemLink] = useState("");
   const [isSendingSystemMessage, setIsSendingSystemMessage] = useState(false);
+  const [systemThreadTitleDraft, setSystemThreadTitleDraft] = useState("");
 
   const [groupTitleDraft, setGroupTitleDraft] = useState("");
   const [groupMemberIds, setGroupMemberIds] = useState<number[]>([]);
@@ -277,6 +297,7 @@ export default function Messages() {
   const [groupInitialMessage, setGroupInitialMessage] = useState("");
   const [pinCreatedGroup, setPinCreatedGroup] = useState(false);
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
+  const [deletingThreadId, setDeletingThreadId] = useState<number | null>(null);
 
   const [groupEditOpen, setGroupEditOpen] = useState(false);
   const [groupTitle, setGroupTitle] = useState("");
@@ -293,6 +314,21 @@ export default function Messages() {
   const canBroadcastSystemMessage = isAdmin || isTechnicalAdmin;
   const canManageGroups =
     isAdmin || isTechnicalAdmin || can("message_group.manage");
+
+  const resetComposeDialog = () => {
+    setPrivateRecipientSearch("");
+    setPrivateRecipientId(null);
+    setPrivateMessageDraft("");
+    setGroupTitleDraft("");
+    setGroupMemberIds([]);
+    setGroupMemberSearch("");
+    setGroupInitialMessage("");
+    setPinCreatedGroup(false);
+    setSystemTitle("");
+    setSystemMessage("");
+    setSystemLink("");
+    setComposeMode("direct");
+  };
 
   useEffect(() => {
     void loadNotifications();
@@ -313,7 +349,10 @@ export default function Messages() {
   }, [location]);
 
   useEffect(() => {
-    if (selectedThreadId) {
+    if (selectedThreadId === SYSTEM_THREAD_ID) {
+      setMessages([]);
+      setLoadingMessages(false);
+    } else if (selectedThreadId) {
       void loadMessages(selectedThreadId);
     } else {
       setMessages([]);
@@ -402,6 +441,9 @@ export default function Messages() {
   };
 
   const getThreadTitle = (thread: MessageThreadListItem) => {
+    if ((thread as PortalThread).kind === "system") {
+      return thread.title || "Systemnachrichten";
+    }
     if (thread.type === "group") return thread.title || "Gruppe";
     const members =
       thread.members?.filter(
@@ -413,15 +455,55 @@ export default function Messages() {
     return thread.title || "Direktnachricht";
   };
 
+  const systemNotifications = useMemo(
+    () => notifications.filter((note) => note.type === "system"),
+    [notifications],
+  );
+
+  const systemThread = useMemo<PortalThread>(() => {
+    const latest = systemNotifications[0] ?? null;
+    const preview = latest
+      ? [latest.title, latest.message].filter(Boolean).join(" - ")
+      : "";
+    return {
+      id: SYSTEM_THREAD_ID,
+      kind: "system",
+      type: "group",
+      title: "Systemnachrichten",
+      createdById: latest
+        ? (((latest.metadata as Record<string, unknown> | null)?.createdByEmployeeId as number | null) ?? null)
+        : null,
+      createdAt: latest?.createdAt ?? new Date().toISOString(),
+      members: [],
+      unreadCount: systemNotifications.filter((note) => !note.isRead).length,
+      lastMessage: latest
+        ? ({
+            id: latest.id,
+            threadId: SYSTEM_THREAD_ID,
+            senderId:
+              (((latest.metadata as Record<string, unknown> | null)
+                ?.createdByEmployeeId as number | null) ?? 0),
+            content: preview || latest.title || "Neue Systemnachricht",
+            createdAt: latest.createdAt,
+          } as MessageThreadListItem["lastMessage"])
+        : null,
+    };
+  }, [systemNotifications]);
+
+  const portalThreads = useMemo<PortalThread[]>(
+    () => [systemThread, ...threads],
+    [systemThread, threads],
+  );
+
   const filteredThreads = useMemo(() => {
     const term = threadSearch.trim().toLowerCase();
-    if (!term) return threads;
-    return threads.filter((thread) => {
+    if (!term) return portalThreads;
+    return portalThreads.filter((thread) => {
       const title = getThreadTitle(thread).toLowerCase();
       const preview = getThreadPreview(thread).toLowerCase();
       return title.includes(term) || preview.includes(term);
     });
-  }, [threadSearch, threads]);
+  }, [portalThreads, threadSearch]);
 
   const allReachableEmployees = useMemo(
     () => employees.filter((entry) => entry.id !== currentEmployeeId),
@@ -453,8 +535,8 @@ export default function Messages() {
   }, [allReachableEmployees, groupSearch]);
 
   const selectedThread = useMemo(
-    () => threads.find((thread) => thread.id === selectedThreadId) || null,
-    [selectedThreadId, threads],
+    () => portalThreads.find((thread) => thread.id === selectedThreadId) || null,
+    [portalThreads, selectedThreadId],
   );
 
   const selectedPrivateRecipient = useMemo(
@@ -465,8 +547,11 @@ export default function Messages() {
   );
 
   const groupThreads = useMemo(
-    () => threads.filter((thread) => thread.type === "group"),
-    [threads],
+    () =>
+      portalThreads.filter(
+        (thread) => thread.type === "group" && thread.id !== SYSTEM_THREAD_ID,
+      ),
+    [portalThreads],
   );
 
   const favoriteGroupThread = useMemo(
@@ -487,7 +572,9 @@ export default function Messages() {
   }, [currentEmployeeId, selectedThread]);
 
   const canEditGroup =
-    selectedThread?.type === "group" && (isGroupOwner || canManageGroups);
+    selectedThread?.type === "group" &&
+    selectedThread.id !== SYSTEM_THREAD_ID &&
+    (isGroupOwner || canManageGroups);
 
   const unreadNotifications = useMemo(
     () => notifications.filter((note) => !note.isRead),
@@ -496,6 +583,48 @@ export default function Messages() {
   const processedNotifications = useMemo(
     () => notifications.filter((note) => note.isRead),
     [notifications],
+  );
+  const systemThreadMessages = useMemo<ThreadMessageItem[]>(
+    () =>
+      [...systemNotifications]
+        .reverse()
+        .map((note) => {
+          const metadata =
+            note.metadata && typeof note.metadata === "object"
+              ? (note.metadata as Record<string, unknown>)
+              : null;
+          return {
+            id: note.id,
+            threadId: SYSTEM_THREAD_ID,
+            senderId:
+              typeof metadata?.createdByEmployeeId === "number"
+                ? metadata.createdByEmployeeId
+                : 0,
+            senderName:
+              typeof metadata?.createdByName === "string" &&
+              metadata.createdByName.trim()
+                ? metadata.createdByName
+                : "System",
+            senderLastName: null,
+            content: note.message ?? "",
+            createdAt: note.createdAt,
+            kind: "system",
+            notificationId: note.id,
+            systemTitle: note.title,
+            link: note.link,
+            isRead: note.isRead,
+          };
+        }),
+    [systemNotifications],
+  );
+  const activeMessages =
+    selectedThreadId === SYSTEM_THREAD_ID ? systemThreadMessages : messages;
+  const isSubmittingCompose =
+    isStartingDirectMessage || isCreatingGroup || isSendingSystemMessage;
+  const canDeleteSelectedDirectThread = Boolean(
+    selectedThread &&
+      selectedThread.id !== SYSTEM_THREAD_ID &&
+      selectedThread.type === "direct",
   );
 
   const storeFavoriteGroup = (threadId: number | null) => {
@@ -539,17 +668,57 @@ export default function Messages() {
   const openThread = (threadId: number) => {
     setSelectedThreadId(threadId);
     setLocation(`/nachrichten?thread=${threadId}`);
+    if (threadId === SYSTEM_THREAD_ID) {
+      const unreadSystem = systemNotifications.filter((note) => !note.isRead);
+      if (unreadSystem.length) {
+        void Promise.all(
+          unreadSystem.map((note) =>
+            markNotificationRead(note, {
+              actionType: "thread_read",
+              actionLabel: "Im Thread gelesen",
+            }),
+          ),
+        );
+      }
+    }
     const workspace = document.getElementById("chat-workspace");
     workspace?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  const jumpToSection = (id: string) => {
-    const target = document.getElementById(id);
-    target?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-
   const handleSendMessage = async () => {
     if (!selectedThreadId || !messageDraft.trim()) return;
+    if (selectedThreadId === SYSTEM_THREAD_ID) {
+      if (!canBroadcastSystemMessage) return;
+      if (!systemThreadTitleDraft.trim()) {
+        toast({
+          title: "Fehlende Angaben",
+          description: "Bitte einen Titel fuer die Systemnachricht eingeben.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setIsSendingSystemMessage(true);
+      try {
+        await notificationsApi.broadcast({
+          title: systemThreadTitleDraft.trim(),
+          message: messageDraft.trim(),
+          link: systemLink.trim() || undefined,
+        });
+        setSystemThreadTitleDraft("");
+        setMessageDraft("");
+        setSystemLink("");
+        await loadNotifications();
+      } catch (error) {
+        toast({
+          title: "Fehler",
+          description: "Systemnachricht konnte nicht versendet werden",
+          variant: "destructive",
+        });
+      } finally {
+        setIsSendingSystemMessage(false);
+      }
+      return;
+    }
     try {
       await messagesApi.sendMessage(selectedThreadId, messageDraft.trim());
       setMessageDraft("");
@@ -592,8 +761,8 @@ export default function Messages() {
         memberIds: [privateRecipientId],
       });
       await messagesApi.sendMessage(thread.id, privateMessageDraft.trim());
-      setPrivateMessageDraft("");
-      setPrivateRecipientSearch("");
+      setComposeOpen(false);
+      resetComposeDialog();
       await loadThreads();
       openThread(thread.id);
     } catch (error) {
@@ -608,10 +777,14 @@ export default function Messages() {
   };
 
   const handleCreateGroup = async () => {
-    if (!groupTitleDraft.trim() || groupMemberIds.length === 0) {
+    if (
+      !groupTitleDraft.trim() ||
+      groupMemberIds.length === 0 ||
+      !groupInitialMessage.trim()
+    ) {
       toast({
         title: "Fehlende Angaben",
-        description: "Bitte Gruppenname und Mitglieder auswaehlen.",
+        description: "Bitte Gruppenname, Mitglieder und erste Nachricht eingeben.",
         variant: "destructive",
       });
       return;
@@ -624,18 +797,13 @@ export default function Messages() {
         title: groupTitleDraft.trim(),
         memberIds: groupMemberIds,
       });
-      if (groupInitialMessage.trim()) {
-        await messagesApi.sendMessage(thread.id, groupInitialMessage.trim());
-      }
+      await messagesApi.sendMessage(thread.id, groupInitialMessage.trim());
       if (pinCreatedGroup) {
         storeFavoriteGroup(thread.id);
       }
-      setGroupTitleDraft("");
-      setGroupMemberIds([]);
-      setGroupMemberSearch("");
-      setGroupInitialMessage("");
-      setPinCreatedGroup(false);
+      resetComposeDialog();
       await loadThreads();
+      setComposeOpen(false);
       openThread(thread.id);
     } catch (error) {
       toast({
@@ -648,7 +816,7 @@ export default function Messages() {
     }
   };
 
-  const handleSendSystemMessage = async () => {
+  const handleCreateSystemThreadMessage = async () => {
     if (!systemTitle.trim() || !systemMessage.trim()) {
       toast({
         title: "Fehlende Angaben",
@@ -660,19 +828,15 @@ export default function Messages() {
 
     setIsSendingSystemMessage(true);
     try {
-      const result = await notificationsApi.broadcast({
+      await notificationsApi.broadcast({
         title: systemTitle.trim(),
         message: systemMessage.trim(),
         link: systemLink.trim() || undefined,
       });
-      setSystemTitle("");
-      setSystemMessage("");
-      setSystemLink("");
-      toast({
-        title: "Systemnachricht versendet",
-        description: `${result.count} Benutzer wurden informiert.`,
-      });
+      setComposeOpen(false);
+      resetComposeDialog();
       await loadNotifications();
+      openThread(SYSTEM_THREAD_ID);
     } catch (error) {
       toast({
         title: "Fehler",
@@ -681,6 +845,50 @@ export default function Messages() {
       });
     } finally {
       setIsSendingSystemMessage(false);
+    }
+  };
+
+  const handleSubmitCompose = async () => {
+    if (composeMode === "direct") {
+      await handleCreateDirectMessage();
+      return;
+    }
+    if (composeMode === "group") {
+      await handleCreateGroup();
+      return;
+    }
+    await handleCreateSystemThreadMessage();
+  };
+
+  const handleDeleteDirectThread = async (thread: PortalThread) => {
+    if (thread.id === SYSTEM_THREAD_ID || thread.type !== "direct") return;
+    const confirmed = window.confirm(
+      "Private Nachricht fuer beide Benutzer dauerhaft loeschen?",
+    );
+    if (!confirmed) return;
+
+    setDeletingThreadId(thread.id);
+    try {
+      await messagesApi.deleteThread(thread.id);
+      if (selectedThreadId === thread.id) {
+        setSelectedThreadId(null);
+        setLocation("/nachrichten");
+        setMessages([]);
+      }
+      await loadThreads();
+      await loadNotifications();
+      toast({
+        title: "Private Nachricht geloescht",
+        description: "Der Verlauf wurde fuer beide Benutzer entfernt.",
+      });
+    } catch (error) {
+      toast({
+        title: "Fehler",
+        description: "Private Nachricht konnte nicht geloescht werden",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingThreadId(null);
     }
   };
 
@@ -865,57 +1073,37 @@ export default function Messages() {
 
   return (
     <Layout title="Nachrichten">
-      <div className="mx-auto max-w-7xl space-y-6 pb-8">
-        <section className="overflow-hidden rounded-[30px] border border-blue-200/70 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.28),_transparent_35%),linear-gradient(135deg,_#155EEF_0%,_#1D4ED8_40%,_#153EAD_100%)] text-white shadow-[0_24px_80px_-32px_rgba(21,94,239,0.8)]">
-          <div className="grid gap-6 px-6 py-7 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)] lg:px-8">
-            <div className="space-y-4">
-              <Badge className="border-white/20 bg-white/10 text-white hover:bg-white/10">
+      <div className="mx-auto flex max-w-7xl flex-col gap-6 pb-8">
+        <Card className="overflow-hidden border-none bg-gradient-to-br from-slate-950 via-[#113f72] to-[#0f5ba7] text-white shadow-xl">
+          <CardContent className="grid gap-8 p-8 lg:grid-cols-[minmax(0,1.1fr)_360px] lg:p-10">
+            <div className="space-y-5">
+              <Badge className="w-fit border-white/20 bg-white/10 text-white hover:bg-white/10">
                 Nachrichtenportal
               </Badge>
-              <div className="space-y-2">
-                <h2 className="text-3xl font-semibold tracking-tight">
-                  Ein Posteingang fuer Hinweise, Chats und Gruppen
+              <div className="space-y-3">
+                <h2 className="max-w-3xl text-xl font-bold leading-tight text-white">
+                  Ein Posteingang fuer Hinweise, Chats und Gruppen.
                 </h2>
-                <p className="max-w-2xl text-sm text-blue-50/90 md:text-base">
-                  Mobile zuerst gedacht: oben die wichtigsten Aktionen, darunter neue
-                  Nachrichten, bearbeitete Vorgaeenge und ein Chat-Bereich wie bei
-                  Messenger- und Mail-Clients.
+                <p className="max-w-xl text-sm text-primary-foreground/80">
+                  Die Startseite fokussiert auf offene Hinweise, bearbeitete
+                  Vorgaenge und schnelle Kommunikation. Chats, Gruppen und
+                  Systemmeldungen liegen in einer mobilen Portalstruktur.
                 </p>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-3">
                 <Button
                   type="button"
                   className="border-white/20 bg-white text-blue-700 hover:bg-blue-50"
-                  onClick={() => jumpToSection("private-compose")}
+                  onClick={() => setComposeOpen(true)}
                 >
                   <MailPlus className="mr-2 h-4 w-4" />
-                  Privat schreiben
+                  Neue Nachricht
                 </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="border-white/25 bg-white/10 text-white hover:bg-white/20"
-                  onClick={() => jumpToSection("group-compose")}
-                >
-                  <Users className="mr-2 h-4 w-4" />
-                  Gruppe anlegen
-                </Button>
-                {canBroadcastSystemMessage && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="border-white/25 bg-white/10 text-white hover:bg-white/20"
-                    onClick={() => jumpToSection("system-compose")}
-                  >
-                    <Megaphone className="mr-2 h-4 w-4" />
-                    Systemnachricht
-                  </Button>
-                )}
                 {favoriteGroupThread && (
                   <Button
                     type="button"
                     variant="outline"
-                    className="border-white/25 bg-white/10 text-white hover:bg-white/20"
+                    className="border-white/20 text-white hover:bg-white/10"
                     onClick={() => openThread(favoriteGroupThread.id)}
                   >
                     <Pin className="mr-2 h-4 w-4" />
@@ -925,46 +1113,54 @@ export default function Messages() {
               </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
-              <div className="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur">
-                <p className="text-xs uppercase tracking-[0.18em] text-blue-100/90">
-                  Neu
-                </p>
-                <p className="mt-2 text-3xl font-semibold">
-                  {loadingNotifications ? "..." : unreadNotifications.length}
-                </p>
-                <p className="mt-1 text-xs text-blue-100/85">
-                  offene Hinweise und Eingaenge
-                </p>
+            <div className="rounded-3xl border border-white/10 bg-white/10 p-5 backdrop-blur">
+              <div className="rounded-xl border border-white/15 bg-white/10 px-4 py-3 text-sm text-white/70">
+                Portalstatus und Schnellzugriffe
               </div>
-              <div className="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur">
-                <p className="text-xs uppercase tracking-[0.18em] text-blue-100/90">
-                  Chats
-                </p>
-                <p className="mt-2 text-3xl font-semibold">
-                  {loadingThreads ? "..." : threads.length}
-                </p>
-                <p className="mt-1 text-xs text-blue-100/85">
-                  direkte Dialoge und Gruppen
-                </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Badge variant="secondary" className="bg-white text-blue-700 hover:bg-white">
+                  Neu {loadingNotifications ? "..." : unreadNotifications.length}
+                </Badge>
+                <Badge variant="outline" className="border-white/20 text-white">
+                  Chats {loadingThreads ? "..." : threads.length}
+                </Badge>
+                <Badge variant="outline" className="border-white/20 text-white">
+                  Gruppen {groupThreads.length}
+                </Badge>
               </div>
-              <div className="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur">
-                <p className="text-xs uppercase tracking-[0.18em] text-blue-100/90">
-                  Favorit
-                </p>
-                <p className="mt-2 line-clamp-2 text-base font-semibold">
-                  {favoriteGroupThread ? getThreadTitle(favoriteGroupThread) : "Keine Gruppe fixiert"}
-                </p>
-                <p className="mt-1 text-xs text-blue-100/85">
-                  oben als Schnellzugriff ablegbar
-                </p>
+              <div className="mt-5 space-y-3 text-sm text-white/90">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">
+                    Favorit
+                  </p>
+                  <p className="mt-2 font-medium text-white">
+                    {favoriteGroupThread
+                      ? getThreadTitle(favoriteGroupThread)
+                      : "Keine Gruppe fixiert"}
+                  </p>
+                  <p className="mt-1 text-xs text-white/65">
+                    Als persoenlicher Header-Shortcut hinterlegbar
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">
+                    Fokus
+                  </p>
+                  <p className="mt-2 font-medium text-white">
+                    {unreadNotifications.length > 0
+                      ? "Offene Hinweise zuerst bearbeiten"
+                      : "Eingang ist leer, Chats bleiben aktiv"}
+                  </p>
+                  <p className="mt-1 text-xs text-white/65">
+                    Dashboard und Nachrichten nutzen dieselbe Eingangslogik
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
-        </section>
+          </CardContent>
+        </Card>
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
-          <div className="space-y-6">
+        <div className="order-3 space-y-6">
             <Card className="border-blue-100/80 shadow-sm" id="new-inbox">
               <CardHeader className="flex flex-row items-start justify-between gap-3">
                 <div>
@@ -1212,235 +1408,9 @@ export default function Messages() {
                 })}
               </CardContent>
             </Card>
-          </div>
-
-          <div className="space-y-6">
-            <Card className="shadow-sm" id="private-compose">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-xl">
-                  <MailPlus className="h-5 w-5 text-blue-600" />
-                  Private Nachricht
-                </CardTitle>
-                <CardDescription>
-                  Direkt an eine Person schreiben und den Thread sofort im Workspace oeffnen.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="private-recipient-search">Empfaenger suchen</Label>
-                  <Input
-                    id="private-recipient-search"
-                    placeholder="Name eingeben..."
-                    value={privateRecipientSearch}
-                    onChange={(event) =>
-                      setPrivateRecipientSearch(event.target.value)
-                    }
-                  />
-                </div>
-
-                <ScrollArea className="h-52 rounded-2xl border bg-slate-50/60 p-2">
-                  <div className="space-y-1">
-                    {filteredPrivateRecipients.map((entry) => {
-                      const isSelected = entry.id === privateRecipientId;
-                      return (
-                        <button
-                          key={entry.id}
-                          type="button"
-                          className={cn(
-                            "flex w-full items-center justify-between rounded-2xl px-3 py-2 text-left text-sm transition-colors",
-                            isSelected
-                              ? "bg-blue-600 text-white"
-                              : "hover:bg-white",
-                          )}
-                          onClick={() => setPrivateRecipientId(entry.id)}
-                        >
-                          <span className="font-medium">{getEmployeeName(entry)}</span>
-                          {isSelected && <CheckCircle2 className="h-4 w-4" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </ScrollArea>
-
-                <div className="rounded-2xl border border-dashed bg-slate-50/70 p-3 text-sm">
-                  <span className="text-muted-foreground">Ausgewaehlt: </span>
-                  <span className="font-medium text-slate-900">
-                    {selectedPrivateRecipient
-                      ? getEmployeeName(selectedPrivateRecipient)
-                      : "noch niemand"}
-                  </span>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="private-message">Nachricht</Label>
-                  <Textarea
-                    id="private-message"
-                    placeholder="Kurz und direkt wie in einem Messenger..."
-                    value={privateMessageDraft}
-                    onChange={(event) =>
-                      setPrivateMessageDraft(event.target.value)
-                    }
-                    className="min-h-[120px]"
-                  />
-                </div>
-
-                <Button
-                  type="button"
-                  className="w-full"
-                  disabled={isStartingDirectMessage}
-                  onClick={() => void handleCreateDirectMessage()}
-                >
-                  <Send className="mr-2 h-4 w-4" />
-                  Direktnachricht starten
-                </Button>
-              </CardContent>
-            </Card>
-
-            {canBroadcastSystemMessage && (
-              <Card className="shadow-sm" id="system-compose">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-xl">
-                    <Megaphone className="h-5 w-5 text-blue-600" />
-                    Systemnachricht an alle
-                  </CardTitle>
-                  <CardDescription>
-                    Nur fuer Admins. Die Nachricht landet bei allen Benutzern im Eingang.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="system-title">Titel</Label>
-                    <Input
-                      id="system-title"
-                      placeholder="z.B. Wichtige Information fuer heute"
-                      value={systemTitle}
-                      onChange={(event) => setSystemTitle(event.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="system-message">Nachricht</Label>
-                    <Textarea
-                      id="system-message"
-                      placeholder="Klar, kurz und mit Handlungsbezug..."
-                      value={systemMessage}
-                      onChange={(event) => setSystemMessage(event.target.value)}
-                      className="min-h-[140px]"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="system-link">Optionaler Link</Label>
-                    <Input
-                      id="system-link"
-                      placeholder="/admin/urlaubsplan oder /nachrichten?thread=12"
-                      value={systemLink}
-                      onChange={(event) => setSystemLink(event.target.value)}
-                    />
-                  </div>
-                  <Button
-                    type="button"
-                    className="w-full"
-                    disabled={isSendingSystemMessage}
-                    onClick={() => void handleSendSystemMessage()}
-                  >
-                    <Megaphone className="mr-2 h-4 w-4" />
-                    An alle senden
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
-
-            <Card className="shadow-sm" id="group-compose">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-xl">
-                  <Users className="h-5 w-5 text-blue-600" />
-                  Gruppe erstellen
-                </CardTitle>
-                <CardDescription>
-                  Fuer Teams, Projekte oder Bereitschaften. Jede Person darf Gruppen anlegen.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="group-title">Gruppenname</Label>
-                  <Input
-                    id="group-title"
-                    placeholder="z.B. OP Team Mittwoch"
-                    value={groupTitleDraft}
-                    onChange={(event) => setGroupTitleDraft(event.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="group-member-search">Mitglieder suchen</Label>
-                  <Input
-                    id="group-member-search"
-                    placeholder="Name filtern..."
-                    value={groupMemberSearch}
-                    onChange={(event) =>
-                      setGroupMemberSearch(event.target.value)
-                    }
-                  />
-                </div>
-                <ScrollArea className="h-52 rounded-2xl border bg-slate-50/60 p-2">
-                  <div className="space-y-2">
-                    {filteredGroupCandidates.map((entry) => (
-                      <label
-                        key={entry.id}
-                        className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-2 text-sm"
-                      >
-                        <span className="font-medium">{getEmployeeName(entry)}</span>
-                        <Checkbox
-                          checked={groupMemberIds.includes(entry.id)}
-                          onCheckedChange={() =>
-                            toggleMemberSelection(
-                              groupMemberIds,
-                              setGroupMemberIds,
-                              entry.id,
-                            )
-                          }
-                        />
-                      </label>
-                    ))}
-                  </div>
-                </ScrollArea>
-
-                <div className="space-y-2">
-                  <Label htmlFor="group-message">Erste Nachricht</Label>
-                  <Textarea
-                    id="group-message"
-                    placeholder="Optional: Begruessung oder Anlass der Gruppe..."
-                    value={groupInitialMessage}
-                    onChange={(event) =>
-                      setGroupInitialMessage(event.target.value)
-                    }
-                    className="min-h-[100px]"
-                  />
-                </div>
-
-                <label className="flex items-center gap-3 rounded-2xl border bg-slate-50/70 px-3 py-3 text-sm">
-                  <Checkbox
-                    checked={pinCreatedGroup}
-                    onCheckedChange={(checked) => setPinCreatedGroup(Boolean(checked))}
-                  />
-                  <span>
-                    Als persoenlichen Header-Button "Nachricht an Gruppe" hinterlegen
-                  </span>
-                </label>
-
-                <Button
-                  type="button"
-                  className="w-full"
-                  disabled={isCreatingGroup}
-                  onClick={() => void handleCreateGroup()}
-                >
-                  <MessageSquarePlus className="mr-2 h-4 w-4" />
-                  Gruppe erstellen
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
         </div>
 
-        <Card className="shadow-sm" id="chat-workspace">
+        <Card className="order-2 shadow-sm" id="chat-workspace">
           <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <CardTitle className="flex items-center gap-2 text-xl">
@@ -1485,6 +1455,28 @@ export default function Messages() {
                   )}
                 </Button>
               )}
+              {selectedThread?.id === SYSTEM_THREAD_ID && (
+                <Badge
+                  variant="outline"
+                  className="border-blue-200 bg-blue-50 text-blue-700"
+                >
+                  Broadcast-Thread
+                </Badge>
+              )}
+              {canDeleteSelectedDirectThread && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={deletingThreadId === selectedThread?.id}
+                  onClick={() =>
+                    selectedThread && void handleDeleteDirectThread(selectedThread)
+                  }
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Privatnachricht loeschen
+                </Button>
+              )}
               {selectedThread && canEditGroup && (
                 <Button
                   type="button"
@@ -1526,49 +1518,88 @@ export default function Messages() {
                         const isActive = selectedThreadId === thread.id;
                         const isFavoriteGroup =
                           thread.type === "group" &&
-                          favoriteGroupThreadId === thread.id;
+                          favoriteGroupThreadId === thread.id &&
+                          thread.id !== SYSTEM_THREAD_ID;
+                        const canDeleteThread =
+                          thread.id !== SYSTEM_THREAD_ID && thread.type === "direct";
                         return (
-                          <button
+                          <div
                             key={thread.id}
-                            type="button"
-                            onClick={() => openThread(thread.id)}
                             className={cn(
-                              "w-full rounded-3xl border px-4 py-3 text-left transition-all",
+                              "rounded-3xl border transition-all",
                               isActive
                                 ? "border-blue-200 bg-blue-50 shadow-sm"
                                 : "bg-white hover:border-blue-100 hover:bg-slate-50",
                             )}
                           >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <p className="truncate text-sm font-semibold text-slate-900">
-                                    {getThreadTitle(thread)}
-                                  </p>
-                                  {thread.type === "group" && (
-                                    <Badge variant="secondary">Gruppe</Badge>
-                                  )}
-                                  {isFavoriteGroup && (
-                                    <Badge
-                                      variant="outline"
-                                      className="border-blue-200 text-blue-700"
-                                    >
-                                      <Pin className="mr-1 h-3 w-3" />
-                                      Favorit
-                                    </Badge>
-                                  )}
+                            <div className="flex items-start gap-2 p-1">
+                              <button
+                                type="button"
+                                onClick={() => openThread(thread.id)}
+                                className="min-w-0 flex-1 rounded-[22px] px-3 py-2 text-left"
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <p className="truncate text-sm font-semibold text-slate-900">
+                                        {getThreadTitle(thread)}
+                                      </p>
+                                      {thread.id === SYSTEM_THREAD_ID && (
+                                        <Badge
+                                          variant="outline"
+                                          className="border-blue-200 text-blue-700"
+                                        >
+                                          <Megaphone className="mr-1 h-3 w-3" />
+                                          System
+                                        </Badge>
+                                      )}
+                                      {thread.type === "group" &&
+                                        thread.id !== SYSTEM_THREAD_ID && (
+                                        <Badge variant="secondary">Gruppe</Badge>
+                                      )}
+                                      {isFavoriteGroup && (
+                                        <Badge
+                                          variant="outline"
+                                          className="border-blue-200 text-blue-700"
+                                        >
+                                          <Pin className="mr-1 h-3 w-3" />
+                                          Favorit
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                                      {getThreadPreview(thread)}
+                                    </p>
+                                  </div>
+                                  <div className="flex shrink-0 flex-col items-end gap-1">
+                                    <span className="text-[11px] text-muted-foreground">
+                                      {formatTimestamp(
+                                        thread.lastMessage?.createdAt || thread.createdAt,
+                                      )}
+                                    </span>
+                                    {thread.id === SYSTEM_THREAD_ID &&
+                                      (thread.unreadCount ?? 0) > 0 && (
+                                        <Badge className="bg-blue-600 text-white hover:bg-blue-600">
+                                          {thread.unreadCount}
+                                        </Badge>
+                                      )}
+                                  </div>
                                 </div>
-                                <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                                  {getThreadPreview(thread)}
-                                </p>
-                              </div>
-                              <span className="shrink-0 text-[11px] text-muted-foreground">
-                                {formatTimestamp(
-                                  thread.lastMessage?.createdAt || thread.createdAt,
-                                )}
-                              </span>
+                              </button>
+                              {canDeleteThread && (
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="ghost"
+                                  className="mt-1 shrink-0 text-slate-500 hover:text-red-600"
+                                  disabled={deletingThreadId === thread.id}
+                                  onClick={() => void handleDeleteDirectThread(thread)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
                             </div>
-                          </button>
+                          </div>
                         );
                       })}
                     </div>
@@ -1602,19 +1633,22 @@ export default function Messages() {
                             {getThreadTitle(selectedThread)}
                           </p>
                           <p className="mt-1 text-xs text-muted-foreground">
-                            {selectedThread.type === "group"
+                            {selectedThread.id === SYSTEM_THREAD_ID
+                              ? "Von Admins an alle Benutzer gesendet"
+                              : selectedThread.type === "group"
                               ? `${selectedThread.members?.length || 0} Mitglieder`
                               : "Direktnachricht"}
                           </p>
                         </div>
-                        {selectedThread.type === "group" && (
+                        {selectedThread.type === "group" &&
+                          selectedThread.id !== SYSTEM_THREAD_ID && (
                           <Badge
                             variant="outline"
                             className="border-blue-200 bg-blue-50 text-blue-700"
                           >
                             Gruppenchat
                           </Badge>
-                        )}
+                          )}
                       </div>
                     </div>
 
@@ -1629,14 +1663,14 @@ export default function Messages() {
                           Lade Verlauf...
                         </p>
                       )}
-                      {!loadingMessages && messages.length === 0 && (
+                      {!loadingMessages && activeMessages.length === 0 && (
                         <p className="text-sm text-muted-foreground">
                           Noch keine Nachrichten in diesem Thread.
                         </p>
                       )}
-                      {!loadingMessages && messages.length > 0 && (
+                      {!loadingMessages && activeMessages.length > 0 && (
                         <div className="space-y-3">
-                          {messages.map((msg) => {
+                          {activeMessages.map((msg) => {
                             const isOwn = msg.senderId === currentEmployeeId;
                             return (
                               <div
@@ -1677,14 +1711,34 @@ export default function Messages() {
                                       {formatTimestamp(msg.createdAt)}
                                     </span>
                                   </div>
+                                  {msg.kind === "system" && msg.systemTitle && (
+                                    <p className="mt-1 text-sm font-semibold text-slate-900">
+                                      {msg.systemTitle}
+                                    </p>
+                                  )}
                                   <p
                                     className={cn(
                                       "mt-1 whitespace-pre-wrap text-sm",
-                                      isOwn ? "text-white" : "text-slate-700",
+                                      isOwn && msg.kind !== "system"
+                                        ? "text-white"
+                                        : "text-slate-700",
                                     )}
                                   >
                                     {msg.content}
                                   </p>
+                                  {msg.kind === "system" && msg.link && (
+                                    <div className="mt-3">
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => setLocation(msg.link || "/nachrichten")}
+                                      >
+                                        <ExternalLink className="mr-2 h-4 w-4" />
+                                        Link oeffnen
+                                      </Button>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             );
@@ -1696,23 +1750,62 @@ export default function Messages() {
                     <Separator />
 
                     <div className="space-y-3 p-4">
+                      {selectedThread.id === SYSTEM_THREAD_ID &&
+                        canBroadcastSystemMessage && (
+                          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px]">
+                            <Input
+                              placeholder="Titel der Systemnachricht..."
+                              value={systemThreadTitleDraft}
+                              onChange={(event) =>
+                                setSystemThreadTitleDraft(event.target.value)
+                              }
+                            />
+                            <Input
+                              placeholder="Optionaler Link"
+                              value={systemLink}
+                              onChange={(event) => setSystemLink(event.target.value)}
+                            />
+                          </div>
+                        )}
                       <Textarea
-                        placeholder="Antwort schreiben..."
+                        placeholder={
+                          selectedThread.id === SYSTEM_THREAD_ID
+                            ? canBroadcastSystemMessage
+                              ? "Systemnachricht an alle schreiben..."
+                              : "Systemnachrichten koennen nur von Admins geschrieben werden."
+                            : "Antwort schreiben..."
+                        }
                         value={messageDraft}
                         onChange={(event) => setMessageDraft(event.target.value)}
                         className="min-h-[96px] rounded-2xl border-slate-200 bg-white"
+                        disabled={
+                          selectedThread.id === SYSTEM_THREAD_ID &&
+                          !canBroadcastSystemMessage
+                        }
                       />
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <p className="text-xs text-muted-foreground">
-                          Kurz, klar und mobil gut lesbar.
+                          {selectedThread.id === SYSTEM_THREAD_ID
+                            ? canBroadcastSystemMessage
+                              ? "Diese Nachricht wird als System-Thread an alle Benutzer verteilt."
+                              : "Lesbar fuer alle, schreibbar nur fuer Admins."
+                            : "Kurz, klar und mobil gut lesbar."}
                         </p>
                         <Button
                           type="button"
-                          disabled={!messageDraft.trim()}
+                          disabled={
+                            !messageDraft.trim() ||
+                            (selectedThread.id === SYSTEM_THREAD_ID &&
+                              (!canBroadcastSystemMessage ||
+                                !systemThreadTitleDraft.trim())) ||
+                            isSendingSystemMessage
+                          }
                           onClick={() => void handleSendMessage()}
                         >
                           <Send className="mr-2 h-4 w-4" />
-                          Senden
+                          {selectedThread.id === SYSTEM_THREAD_ID
+                            ? "An alle senden"
+                            : "Senden"}
                         </Button>
                       </div>
                     </div>
@@ -1723,6 +1816,235 @@ export default function Messages() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog
+        open={composeOpen}
+        onOpenChange={(open) => {
+          setComposeOpen(open);
+          if (!open) resetComposeDialog();
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Neue Nachricht</DialogTitle>
+            <DialogDescription>
+              Nachrichtentyp waehlen, Empfaenger festlegen und erste Nachricht senden.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-5">
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant={composeMode === "direct" ? "default" : "outline"}
+                onClick={() => setComposeMode("direct")}
+              >
+                <MailPlus className="mr-2 h-4 w-4" />
+                Private Nachricht
+              </Button>
+              <Button
+                type="button"
+                variant={composeMode === "group" ? "default" : "outline"}
+                onClick={() => setComposeMode("group")}
+              >
+                <Users className="mr-2 h-4 w-4" />
+                Gruppennachricht
+              </Button>
+              {canBroadcastSystemMessage && (
+                <Button
+                  type="button"
+                  variant={composeMode === "system" ? "default" : "outline"}
+                  onClick={() => setComposeMode("system")}
+                >
+                  <Megaphone className="mr-2 h-4 w-4" />
+                  Systemnachricht
+                </Button>
+              )}
+            </div>
+
+            {composeMode === "direct" && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="compose-private-recipient-search">
+                    Empfaenger suchen
+                  </Label>
+                  <Input
+                    id="compose-private-recipient-search"
+                    placeholder="Name eingeben..."
+                    value={privateRecipientSearch}
+                    onChange={(event) =>
+                      setPrivateRecipientSearch(event.target.value)
+                    }
+                  />
+                </div>
+                <ScrollArea className="h-52 rounded-2xl border bg-slate-50/60 p-2">
+                  <div className="space-y-1">
+                    {filteredPrivateRecipients.map((entry) => {
+                      const isSelected = entry.id === privateRecipientId;
+                      return (
+                        <button
+                          key={entry.id}
+                          type="button"
+                          className={cn(
+                            "flex w-full items-center justify-between rounded-2xl px-3 py-2 text-left text-sm transition-colors",
+                            isSelected
+                              ? "bg-blue-600 text-white"
+                              : "hover:bg-white",
+                          )}
+                          onClick={() => setPrivateRecipientId(entry.id)}
+                        >
+                          <span className="font-medium">{getEmployeeName(entry)}</span>
+                          {isSelected && <CheckCircle2 className="h-4 w-4" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
+                <div className="rounded-2xl border border-dashed bg-slate-50/70 p-3 text-sm">
+                  <span className="text-muted-foreground">Ausgewaehlt: </span>
+                  <span className="font-medium text-slate-900">
+                    {selectedPrivateRecipient
+                      ? getEmployeeName(selectedPrivateRecipient)
+                      : "noch niemand"}
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="compose-private-message">Nachricht</Label>
+                  <Textarea
+                    id="compose-private-message"
+                    placeholder="Erste Nachricht schreiben..."
+                    value={privateMessageDraft}
+                    onChange={(event) =>
+                      setPrivateMessageDraft(event.target.value)
+                    }
+                    className="min-h-[120px]"
+                  />
+                </div>
+              </div>
+            )}
+
+            {composeMode === "group" && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="compose-group-title">Gruppenname</Label>
+                  <Input
+                    id="compose-group-title"
+                    placeholder="z.B. OP Team Mittwoch"
+                    value={groupTitleDraft}
+                    onChange={(event) => setGroupTitleDraft(event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="compose-group-member-search">
+                    Mitglieder suchen
+                  </Label>
+                  <Input
+                    id="compose-group-member-search"
+                    placeholder="Name filtern..."
+                    value={groupMemberSearch}
+                    onChange={(event) => setGroupMemberSearch(event.target.value)}
+                  />
+                </div>
+                <ScrollArea className="h-52 rounded-2xl border bg-slate-50/60 p-2">
+                  <div className="space-y-2">
+                    {filteredGroupCandidates.map((entry) => (
+                      <label
+                        key={entry.id}
+                        className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-2 text-sm"
+                      >
+                        <span className="font-medium">{getEmployeeName(entry)}</span>
+                        <Checkbox
+                          checked={groupMemberIds.includes(entry.id)}
+                          onCheckedChange={() =>
+                            toggleMemberSelection(
+                              groupMemberIds,
+                              setGroupMemberIds,
+                              entry.id,
+                            )
+                          }
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </ScrollArea>
+                <div className="space-y-2">
+                  <Label htmlFor="compose-group-message">Erste Nachricht</Label>
+                  <Textarea
+                    id="compose-group-message"
+                    placeholder="Erste Nachricht an die Gruppe..."
+                    value={groupInitialMessage}
+                    onChange={(event) =>
+                      setGroupInitialMessage(event.target.value)
+                    }
+                    className="min-h-[110px]"
+                  />
+                </div>
+                <label className="flex items-center gap-3 rounded-2xl border bg-slate-50/70 px-3 py-3 text-sm">
+                  <Checkbox
+                    checked={pinCreatedGroup}
+                    onCheckedChange={(checked) => setPinCreatedGroup(Boolean(checked))}
+                  />
+                  <span>
+                    Als persoenlichen Header-Button "Nachricht an Gruppe" hinterlegen
+                  </span>
+                </label>
+              </div>
+            )}
+
+            {composeMode === "system" && canBroadcastSystemMessage && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="compose-system-title">Titel</Label>
+                  <Input
+                    id="compose-system-title"
+                    placeholder="z.B. Wichtige Information fuer heute"
+                    value={systemTitle}
+                    onChange={(event) => setSystemTitle(event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="compose-system-message">Nachricht</Label>
+                  <Textarea
+                    id="compose-system-message"
+                    placeholder="Systemnachricht an alle Benutzer..."
+                    value={systemMessage}
+                    onChange={(event) => setSystemMessage(event.target.value)}
+                    className="min-h-[140px]"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="compose-system-link">Optionaler Link</Label>
+                  <Input
+                    id="compose-system-link"
+                    placeholder="/admin/urlaubsplan oder /nachrichten?thread=12"
+                    value={systemLink}
+                    onChange={(event) => setSystemLink(event.target.value)}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setComposeOpen(false);
+                resetComposeDialog();
+              }}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              type="button"
+              disabled={isSubmittingCompose}
+              onClick={() => void handleSubmitCompose()}
+            >
+              <Send className="mr-2 h-4 w-4" />
+              Nachricht anlegen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={groupEditOpen} onOpenChange={setGroupEditOpen}>
         <DialogContent className="sm:max-w-xl">

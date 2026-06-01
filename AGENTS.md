@@ -14,6 +14,7 @@
 - PM2 config: `ecosystem.config.js` uses `dist/index.cjs`
 - Production serves static assets via server/static in `dist`
 - Online users API: `GET /api/online-users` (admin-only; uses sessions lastSeen within 5 min)
+- Local dev script `npm run dev` starts `tsx server/index.ts` without watch mode; backend route changes require a manual restart to become active.
 
 ## Auth
 - Token-based auth in localStorage key: `cliniq_auth_token`

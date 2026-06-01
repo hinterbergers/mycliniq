@@ -467,6 +467,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
     return {} as T;
   }
 
+  const contentType = response.headers.get("content-type") || "";
   const body = await response.json().catch(() => null);
 
   if (!response.ok) {
@@ -487,6 +488,12 @@ async function handleResponse<T>(response: Response): Promise<T> {
     if (typeof envelope.data !== "undefined") {
       return envelope.data;
     }
+  }
+
+  if (contentType.includes("text/html")) {
+    const error = new Error("API returned HTML instead of JSON");
+    (error as any).status = response.status;
+    throw error;
   }
 
   return body as T;
@@ -2542,6 +2549,13 @@ export const messagesApi = {
       },
     );
     return handleResponse<Message>(response);
+  },
+
+  deleteThread: async (threadId: number): Promise<void> => {
+    const response = await apiFetch(`${API_BASE}/messages/threads/${threadId}`, {
+      method: "DELETE",
+    });
+    return handleResponse<void>(response);
   },
 
   renameThread: async (

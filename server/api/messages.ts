@@ -63,6 +63,21 @@ async function isThreadOwner(threadId: number, employeeId: number) {
   return member?.role === "owner";
 }
 
+async function getThreadById(threadId: number) {
+  const [thread] = await db
+    .select({
+      id: messageThreads.id,
+      type: messageThreads.type,
+      title: messageThreads.title,
+      createdById: messageThreads.createdById,
+      createdAt: messageThreads.createdAt,
+    })
+    .from(messageThreads)
+    .where(eq(messageThreads.id, threadId))
+    .limit(1);
+  return thread ?? null;
+}
+
 async function createMessageNotifications(
   threadId: number,
   senderId: number,
@@ -340,6 +355,40 @@ export function registerMessageRoutes(router: Router) {
         req.body.content,
       );
       return created(res, message);
+    }),
+  );
+
+  router.delete(
+    "/threads/:id",
+    validateParams(idParamSchema),
+    asyncHandler(async (req, res) => {
+      if (!req.user) {
+        return res
+          .status(401)
+          .json({ success: false, error: "Nicht authentifiziert" });
+      }
+      const threadId = Number(req.params.id);
+      const member = await isThreadMember(threadId, req.user.employeeId);
+      if (!member) {
+        return res
+          .status(403)
+          .json({ success: false, error: "Keine Berechtigung" });
+      }
+
+      const thread = await getThreadById(threadId);
+      if (!thread) return notFound(res, "Thread");
+      if (thread.type !== "direct") {
+        return res.status(400).json({
+          success: false,
+          error: "Nur private Nachrichten koennen vollstaendig geloescht werden",
+        });
+      }
+
+      const threadLink = `/nachrichten?thread=${threadId}`;
+      await db.delete(notifications).where(eq(notifications.link, threadLink));
+      await db.delete(messageThreads).where(eq(messageThreads.id, threadId));
+
+      return ok(res, { success: true });
     }),
   );
 
