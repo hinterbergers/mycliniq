@@ -1137,6 +1137,7 @@ export default function Dashboard() {
     icon: Icon,
     content,
     accent = false,
+    accentVariant = "blue",
   }: {
     tileKey: DashboardTileKey;
     title: string;
@@ -1146,14 +1147,25 @@ export default function Dashboard() {
     icon: typeof Bell;
     content: ReactNode;
     accent?: boolean;
+    accentVariant?: "blue" | "neutral" | "alert";
   }) => {
     const isOpen = openTiles.includes(tileKey);
+    const accentCardClass = accent
+      ? accentVariant === "alert"
+        ? "bg-gradient-to-r from-slate-950 via-slate-900 to-red-900 text-white"
+        : accentVariant === "neutral"
+          ? "bg-gradient-to-r from-slate-950 via-slate-900 to-slate-700 text-white"
+          : "bg-gradient-to-r from-slate-950 via-slate-900 to-blue-900 text-white"
+      : "";
+    const accentIconClass = accent
+      ? accentVariant === "alert"
+        ? "bg-red-500/15 text-red-300"
+        : "bg-white/10 text-white"
+      : "bg-primary/10 text-primary";
     return (
       <Collapsible open={isOpen} onOpenChange={() => toggleTile(tileKey)}>
         <Card
-          className={`border-none kabeg-shadow overflow-hidden ${
-            accent ? "bg-slate-950 text-white" : ""
-          }`}
+          className={`border-none kabeg-shadow overflow-hidden ${accentCardClass}`}
         >
           <CollapsibleTrigger asChild>
             <button
@@ -1161,11 +1173,7 @@ export default function Dashboard() {
               className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left"
             >
               <div className="flex min-w-0 items-start gap-3">
-                <div
-                  className={`mt-0.5 rounded-lg p-2 ${
-                    accent ? "bg-white/10 text-white" : "bg-primary/10 text-primary"
-                  }`}
-                >
+                <div className={`mt-0.5 rounded-lg p-2 ${accentIconClass}`}>
                   <Icon className="h-4 w-4" aria-hidden="true" />
                 </div>
                 <div className="min-w-0">
@@ -1760,6 +1768,7 @@ export default function Dashboard() {
               icon: Bell,
               content: renderNotificationsCardContent(),
               accent: true,
+              accentVariant: unreadNotifications.length > 0 ? "alert" : "neutral",
             })}
           </div>
 
