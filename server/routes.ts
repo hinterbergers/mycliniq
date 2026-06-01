@@ -3423,6 +3423,7 @@ const buildAttendanceMembers = (
                 afterEmployeeId: rosterShiftChangeLogs.afterEmployeeId,
                 beforeAssigneeFreeText: rosterShiftChangeLogs.beforeAssigneeFreeText,
                 afterAssigneeFreeText: rosterShiftChangeLogs.afterAssigneeFreeText,
+                actorEmployeeId: rosterShiftChangeLogs.actorEmployeeId,
                 actorName: rosterShiftChangeLogs.actorName,
                 context: rosterShiftChangeLogs.context,
                 createdAt: rosterShiftChangeLogs.createdAt,
@@ -3437,6 +3438,9 @@ const buildAttendanceMembers = (
                 endDate: plannedAbsences.endDate,
                 reason: plannedAbsences.reason,
                 status: plannedAbsences.status,
+                createdById: plannedAbsences.createdById,
+                approvedById: plannedAbsences.approvedById,
+                acceptedById: plannedAbsences.acceptedById,
                 createdAt: plannedAbsences.createdAt,
                 updatedAt: plannedAbsences.updatedAt,
                 firstName: employees.firstName,
@@ -3450,6 +3454,7 @@ const buildAttendanceMembers = (
               .select({
                 id: dailyOverrides.id,
                 date: dailyOverrides.date,
+                createdById: dailyOverrides.createdById,
                 createdAt: dailyOverrides.createdAt,
                 roomName: rooms.name,
                 reason: dailyOverrides.reason,
@@ -3498,6 +3503,12 @@ const buildAttendanceMembers = (
           const dutyItems = dutyChangeRows
             .filter((row) => {
               const context = row.context ?? "";
+              if (
+                row.actorEmployeeId &&
+                row.actorEmployeeId === req.user?.employeeId
+              ) {
+                return false;
+              }
               return !ignoredDutyAuditContexts.some((prefix) =>
                 context.startsWith(prefix),
               );
@@ -3508,8 +3519,11 @@ const buildAttendanceMembers = (
             const planLabel = row.isDraft ? "Dienstplan (Entwurf)" : "Dienstplan";
             const beforeAssigned = Boolean(row.beforeEmployeeId || row.beforeAssigneeFreeText);
             const afterAssigned = Boolean(row.afterEmployeeId || row.afterAssigneeFreeText);
+            const isShiftSwap = (row.context ?? "").startsWith("api.shift-swap.accept.");
             let dutyActionLabel = "Dienst geändert";
-            if (row.action === "insert") {
+            if (isShiftSwap) {
+              dutyActionLabel = "Diensttausch durchgeführt";
+            } else if (row.action === "insert") {
               dutyActionLabel = afterAssigned ? "Dienst eingetragen" : "Dienst-Slot angelegt";
             } else if (row.action === "delete") {
               dutyActionLabel = beforeAssigned ? "Dienst gelöscht" : "Dienst-Slot gelöscht";
@@ -3541,7 +3555,13 @@ const buildAttendanceMembers = (
             };
           });
 
-          const plannedItems = plannedChangeRows.map((row) => {
+          const plannedItems = plannedChangeRows
+            .filter((row) => {
+              const changedById =
+                row.acceptedById ?? row.approvedById ?? row.createdById ?? null;
+              return changedById !== req.user?.employeeId;
+            })
+            .map((row) => {
             const changedAt = row.updatedAt ?? row.createdAt;
             const createdMs =
               row.createdAt instanceof Date
@@ -3571,7 +3591,9 @@ const buildAttendanceMembers = (
             };
           });
 
-          const weeklyItems = weeklyOverrideRows.map((row) => {
+          const weeklyItems = weeklyOverrideRows
+            .filter((row) => row.createdById !== req.user?.employeeId)
+            .map((row) => {
             const roomName = normalize(row.roomName) || "Raum";
             const weeklyTargetUrl = `/admin/weekly?day=${encodeURIComponent(String(row.date))}`;
             return {
