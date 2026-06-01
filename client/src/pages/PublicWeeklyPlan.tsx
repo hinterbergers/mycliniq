@@ -83,6 +83,12 @@ const getQueryWeekDate = (search: string) => {
     : resolved;
 };
 
+const isStandaloneWebApp = () => {
+  if (typeof window === "undefined") return false;
+  const navigatorStandalone = Boolean((window.navigator as { standalone?: boolean }).standalone);
+  return navigatorStandalone || window.matchMedia("(display-mode: standalone)").matches;
+};
+
 const setWeekSearch = (date: Date) => {
   const weekStart = startOfWeek(date, { weekStartsOn: 1 });
   const year = getYear(weekStart);
@@ -159,6 +165,7 @@ export default function PublicWeeklyPlan() {
   }, []);
 
   useEffect(() => {
+    if (isStandaloneWebApp()) return;
     if (hasValidWeekParams(search)) return;
     const next = setWeekSearch(new Date());
     setSearch(next.split("?")[1] ? `?${next.split("?")[1]}` : "");
@@ -166,6 +173,9 @@ export default function PublicWeeklyPlan() {
   }, [search, setLocation]);
 
   const currentDate = useMemo(() => {
+    if (isStandaloneWebApp()) {
+      return startOfWeek(new Date(), { weekStartsOn: 1 });
+    }
     return getQueryWeekDate(search);
   }, [search]);
 

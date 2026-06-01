@@ -124,6 +124,12 @@ const getQueryMonthDate = (search: string) => {
   return Number.isNaN(resolved.getTime()) ? startOfMonth(new Date()) : resolved;
 };
 
+const isStandaloneWebApp = () => {
+  if (typeof window === "undefined") return false;
+  const navigatorStandalone = Boolean((window.navigator as { standalone?: boolean }).standalone);
+  return navigatorStandalone || window.matchMedia("(display-mode: standalone)").matches;
+};
+
 const setMonthSearch = (date: Date) => {
   const monthStart = startOfMonth(date);
   return `/dienstplan-public?year=${monthStart.getFullYear()}&month=${monthStart.getMonth() + 1}`;
@@ -173,13 +179,17 @@ export default function PublicRosterPlan() {
   }, []);
 
   useEffect(() => {
+    if (isStandaloneWebApp()) return;
     if (hasValidMonthParams(search)) return;
     const next = setMonthSearch(new Date());
     setSearch(next.split("?")[1] ? `?${next.split("?")[1]}` : "");
     setLocation(next);
   }, [search, setLocation]);
 
-  const currentDate = useMemo(() => getQueryMonthDate(search), [search]);
+  const currentDate = useMemo(() => {
+    if (isStandaloneWebApp()) return startOfMonth(new Date());
+    return getQueryMonthDate(search);
+  }, [search]);
   const monthStart = useMemo(() => startOfMonth(currentDate), [currentDate]);
   const monthEnd = useMemo(() => endOfMonth(currentDate), [currentDate]);
   const year = monthStart.getFullYear();
