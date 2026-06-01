@@ -1893,12 +1893,29 @@ export default function Dashboard() {
     );
   };
 
+  const notificationCategorySummary = useMemo(() => {
+    const categories: string[] = [];
+    if (unreadNotifications.length > 0) categories.push("Hinweise");
+    if (pendingAbsenceApprovalNotices.length > 0) categories.push("Abwesenheiten");
+    if (wishMonthLabel) categories.push("Dienstwünsche");
+    if (showZeBadge) categories.push("Zeitausgleich");
+    if (canSeeRecentChanges && unreadRecentChanges.length > 0) categories.push("Änderungen");
+    return categories;
+  }, [
+    unreadNotifications.length,
+    pendingAbsenceApprovalNotices.length,
+    wishMonthLabel,
+    showZeBadge,
+    canSeeRecentChanges,
+    unreadRecentChanges.length,
+  ]);
+
   const notificationsSummary = notificationsLoading
     ? "Benachrichtigungen werden geladen"
     : dashboardNoticeItems.length > 0
-      ? `${unreadNotifications.length} neue Hinweise${
-          canSeeRecentChanges ? ` · ${unreadRecentChanges.length} Änderungen` : ""
-        }`
+      ? notificationCategorySummary.length > 0
+        ? notificationCategorySummary.join(" · ")
+        : `${dashboardNoticeItems.length} Einträge`
       : "Keine neuen Hinweise";
   const todaySummary =
     normalizedTodayStatusLabel ??
