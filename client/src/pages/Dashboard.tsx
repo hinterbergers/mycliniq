@@ -1912,11 +1912,15 @@ export default function Dashboard() {
 
   const notificationCategorySummary = useMemo(() => {
     const categories: string[] = [];
-    if (unreadNotifications.length > 0) categories.push("Hinweise");
-    if (pendingAbsenceApprovalNotices.length > 0) categories.push("Abwesenheiten");
-    if (wishMonthLabel) categories.push("Dienstwünsche");
-    if (showZeBadge) categories.push("Zeitausgleich");
-    if (canSeeRecentChanges && unreadRecentChanges.length > 0) categories.push("Änderungen");
+    if (unreadNotifications.length > 0) categories.push(`Hinweise ${unreadNotifications.length}`);
+    if (pendingAbsenceApprovalNotices.length > 0) {
+      categories.push(`Abwesenheiten ${pendingAbsenceApprovalNotices.length}`);
+    }
+    if (wishMonthLabel) categories.push("Dienstwünsche 1");
+    if (showZeBadge) categories.push("Zeitausgleich 1");
+    if (canSeeRecentChanges && unreadRecentChanges.length > 0) {
+      categories.push(`Änderungen ${unreadRecentChanges.length}`);
+    }
     return categories;
   }, [
     unreadNotifications.length,
