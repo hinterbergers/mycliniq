@@ -3468,6 +3468,8 @@ const buildAttendanceMembers = (
                 id: weeklyPlanAssignments.id,
                 weekday: weeklyPlanAssignments.weekday,
                 roleLabel: weeklyPlanAssignments.roleLabel,
+                createdById: weeklyPlanAssignments.createdById,
+                updatedById: weeklyPlanAssignments.updatedById,
                 createdAt: weeklyPlanAssignments.createdAt,
                 updatedAt: weeklyPlanAssignments.updatedAt,
                 roomName: rooms.name,
@@ -3608,7 +3610,12 @@ const buildAttendanceMembers = (
             };
           });
 
-          const weeklyAssignmentItems = weeklyAssignmentRows.map((row) => {
+          const weeklyAssignmentItems = weeklyAssignmentRows
+            .filter((row) => {
+              const changedById = row.updatedById ?? row.createdById ?? null;
+              return changedById !== req.user?.employeeId;
+            })
+            .map((row) => {
             const changedAt = row.updatedAt ?? row.createdAt;
             const createdMs =
               row.createdAt instanceof Date
