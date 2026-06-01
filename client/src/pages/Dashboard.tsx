@@ -45,7 +45,6 @@ import {
   CalendarDays,
   CalendarClock,
   ChevronDown,
-  Cake,
   Users,
   Clock,
   BriefcaseBusiness,
@@ -790,7 +789,6 @@ export default function Dashboard() {
   const weekPreviewEnabled = isWidgetEnabled("week_preview");
   const absencesEnabled = isWidgetEnabled("absences");
   const attendanceEnabled = isWidgetEnabled("attendance");
-  const birthdayEnabled = isWidgetEnabled("birthday");
   const canSeeRecentChanges =
     !viewAsUser &&
     (isAdmin ||
@@ -1072,6 +1070,7 @@ export default function Dashboard() {
     tileKey,
     title,
     summary,
+    rightSummary,
     icon: Icon,
     content,
     accent = false,
@@ -1079,6 +1078,7 @@ export default function Dashboard() {
     tileKey: DashboardTileKey;
     title: string;
     summary: string;
+    rightSummary?: string | null;
     icon: typeof Bell;
     content: ReactNode;
     accent?: boolean;
@@ -1121,11 +1121,22 @@ export default function Dashboard() {
                   </p>
                 </div>
               </div>
-              <ChevronDown
-                className={`mt-0.5 h-4 w-4 shrink-0 transition-transform ${
-                  isOpen ? "rotate-180" : ""
-                } ${accent ? "text-white/70" : "text-muted-foreground"}`}
-              />
+              <div className="flex shrink-0 items-start gap-3">
+                {rightSummary ? (
+                  <span
+                    className={`mt-0.5 text-right text-[11px] leading-snug ${
+                      accent ? "text-white/70" : "text-muted-foreground"
+                    }`}
+                  >
+                    {rightSummary}
+                  </span>
+                ) : null}
+                <ChevronDown
+                  className={`mt-0.5 h-4 w-4 shrink-0 transition-transform ${
+                    isOpen ? "rotate-180" : ""
+                  } ${accent ? "text-white/70" : "text-muted-foreground"}`}
+                />
+              </div>
             </button>
           </CollapsibleTrigger>
           <CollapsibleContent>
@@ -1647,26 +1658,6 @@ export default function Dashboard() {
     ? `Heute Geburtstag: ${birthdayName}`
     : "Heute kein Geburtstag";
 
-  const renderBirthdayTileContent = () =>
-    birthdayName ? (
-      <div className="flex items-center gap-3 rounded-lg bg-pink-50 px-3 py-3">
-        <div className="rounded-xl bg-pink-100 p-2 text-pink-600">
-          <Cake className="h-5 w-5" />
-        </div>
-        <div>
-          <p className="text-xs text-muted-foreground">Heute hat Geburtstag</p>
-          <p
-            className="text-sm font-semibold text-pink-700"
-            data-testid="text-birthday"
-          >
-            {birthdayName}
-          </p>
-        </div>
-      </div>
-    ) : (
-      <p className="text-xs text-muted-foreground">Heute kein Geburtstag.</p>
-    );
-
   return (
     <Layout title="Dashboard">
       <div className="space-y-4 px-3 md:px-0">
@@ -1680,6 +1671,7 @@ export default function Dashboard() {
               tileKey: "notifications",
               title: "Notifications",
               summary: notificationsSummary,
+              rightSummary: birthdaySummary,
               icon: Bell,
               content: renderNotificationsCardContent(),
               accent: true,
@@ -1744,18 +1736,6 @@ export default function Dashboard() {
                 summary: workplacesSummary,
                 icon: BriefcaseBusiness,
                 content: renderWorkplacesCardContent(),
-              })}
-            </div>
-          ) : null}
-
-          {birthdayEnabled ? (
-            <div className="md:col-span-12 lg:col-span-4">
-              {renderDashboardTile({
-                tileKey: "birthday",
-                title: "Geburtstag",
-                summary: birthdaySummary,
-                icon: Cake,
-                content: renderBirthdayTileContent(),
               })}
             </div>
           ) : null}
