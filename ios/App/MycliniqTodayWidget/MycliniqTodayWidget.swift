@@ -10,9 +10,16 @@ private let shellBlueMid = Color(red: 0.07, green: 0.27, blue: 0.50)
 private let shellBlueBottom = Color(red: 0.06, green: 0.36, blue: 0.65)
 private let shellHighlight = Color(red: 0.45, green: 0.68, blue: 0.96).opacity(0.24)
 private let shellStroke = Color.white.opacity(0.12)
+private let shellAlertTop = Color(red: 0.19, green: 0.08, blue: 0.20)
+private let shellAlertMid = Color(red: 0.37, green: 0.10, blue: 0.24)
+private let shellAlertBottom = Color(red: 0.61, green: 0.17, blue: 0.29)
+private let shellAlertHighlight = Color(red: 1.00, green: 0.63, blue: 0.63).opacity(0.28)
 private let chipBlue = Color.white.opacity(0.10)
 private let chipBlueStrong = Color.white.opacity(0.14)
 private let chipBorder = Color.white.opacity(0.14)
+private let chipAlert = Color(red: 1.00, green: 0.93, blue: 0.95).opacity(0.14)
+private let chipAlertStrong = Color(red: 1.00, green: 0.93, blue: 0.95).opacity(0.22)
+private let chipAlertBorder = Color(red: 1.00, green: 0.84, blue: 0.88).opacity(0.38)
 private let weeklyPlanURL = URL(string: "https://mycliniq.info/dienstplaene")
 private let messagesURL = URL(string: "https://mycliniq.info/nachrichten")
 private let toolsURL = URL(string: "https://mycliniq.info/tools")
@@ -46,6 +53,52 @@ struct WidgetShell<Content: View>: View {
 
             RadialGradient(
                 colors: [shellHighlight, .clear],
+                center: .topTrailing,
+                startRadius: 10,
+                endRadius: 240
+            )
+
+            LinearGradient(
+                colors: [Color.white.opacity(0.05), .clear],
+                startPoint: .topLeading,
+                endPoint: .center
+            )
+
+            content
+                .padding(16)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .stroke(shellStroke, lineWidth: 1)
+        )
+    }
+}
+
+struct NotificationShell<Content: View>: View {
+    let isAlert: Bool
+    let content: Content
+
+    init(isAlert: Bool, @ViewBuilder content: () -> Content) {
+        self.isAlert = isAlert
+        self.content = content()
+    }
+
+    private var topColor: Color { isAlert ? shellAlertTop : shellBlueTop }
+    private var midColor: Color { isAlert ? shellAlertMid : shellBlueMid }
+    private var bottomColor: Color { isAlert ? shellAlertBottom : shellBlueBottom }
+    private var highlightColor: Color { isAlert ? shellAlertHighlight : shellHighlight }
+
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [topColor, midColor, bottomColor],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            RadialGradient(
+                colors: [highlightColor, .clear],
                 center: .topTrailing,
                 startRadius: 10,
                 endRadius: 240
@@ -527,11 +580,27 @@ struct MycliniqNotificationsWidgetEntryView: View {
     @Environment(\.widgetFamily) private var family
 
     private func accentColor(for tone: String?) -> Color {
-        tone == "danger" ? Color.red.opacity(0.92) : Color.white.opacity(0.92)
+        tone == "danger" ? Color(red: 1.0, green: 0.89, blue: 0.91) : Color.white.opacity(0.92)
+    }
+
+    private func titleColor(for tone: String?) -> Color {
+        tone == "danger" ? Color.white : Color.white.opacity(0.96)
+    }
+
+    private func rowFill(for tone: String?) -> Color {
+        tone == "danger" ? chipAlert : chipBlue
+    }
+
+    private func rowBorder(for tone: String?) -> Color {
+        tone == "danger" ? chipAlertBorder : chipBorder
+    }
+
+    private var hasAlertItems: Bool {
+        (entry.snapshot?.notifications ?? []).contains { $0.tone == "danger" }
     }
 
     var body: some View {
-        WidgetShell {
+        NotificationShell(isAlert: hasAlertItems) {
             let items = entry.snapshot?.notifications ?? []
 
             if items.isEmpty {
@@ -552,14 +621,37 @@ struct MycliniqNotificationsWidgetEntryView: View {
                         .font(.caption2)
                         .foregroundColor(mutedWhite)
 
-                    Text("\(items.count)")
-                        .font(.system(size: 28, weight: .bold))
-                        .foregroundColor(.white)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("\(items.count)")
+                            .font(.system(size: 28, weight: .bold))
+                            .foregroundColor(.white)
+
+                        if hasAlertItems {
+                            Text("Neu")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(chipAlertStrong)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(chipAlertBorder, lineWidth: 1)
+                                )
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                    }
 
                     Text(items[0].title)
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(accentColor(for: items[0].tone))
+                        .foregroundColor(titleColor(for: items[0].tone))
                         .lineLimit(3)
+
+                    if let subtitle = items[0].subtitle, !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(.system(size: 10))
+                            .foregroundColor(mutedWhite)
+                            .lineLimit(2)
+                    }
                 }
             } else {
                 VStack(alignment: .leading, spacing: 8) {
@@ -573,8 +665,11 @@ struct MycliniqNotificationsWidgetEntryView: View {
                             .foregroundColor(.white)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)
-                            .background(chipBlueStrong)
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(chipBorder, lineWidth: 1))
+                            .background(hasAlertItems ? chipAlertStrong : chipBlueStrong)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(hasAlertItems ? chipAlertBorder : chipBorder, lineWidth: 1)
+                            )
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
 
@@ -586,7 +681,7 @@ struct MycliniqNotificationsWidgetEntryView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(item.title)
                                     .font(.system(size: 11, weight: .semibold))
-                                    .foregroundColor(accentColor(for: item.tone))
+                                    .foregroundColor(titleColor(for: item.tone))
                                     .lineLimit(1)
                                 if let subtitle = item.subtitle, !subtitle.isEmpty {
                                     Text(subtitle)
@@ -599,8 +694,11 @@ struct MycliniqNotificationsWidgetEntryView: View {
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 6)
-                        .background(chipBlue)
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(chipBorder, lineWidth: 1))
+                        .background(rowFill(for: item.tone))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(rowBorder(for: item.tone), lineWidth: 1)
+                        )
                         .clipShape(RoundedRectangle(cornerRadius: 10))
 
                         if let url = absoluteURL(item.targetUrl) {
