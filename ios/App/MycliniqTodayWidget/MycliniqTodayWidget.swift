@@ -4,17 +4,19 @@ import SwiftUI
 private let appGroupId = "group.at.mycliniq.shared"
 private let snapshotKey = "mycliniq_widget_today_v1"
 
-private let brandBlue = Color(red: 0.10, green: 0.39, blue: 0.74)
-private let brandBlueLight = Color(red: 0.16, green: 0.47, blue: 0.84)
 private let mutedWhite = Color.white.opacity(0.82)
-private let cardBlue = Color.white.opacity(0.12)
-private let cardBlueBorder = Color.white.opacity(0.20)
-private let shellBlue = Color(red: 0.08, green: 0.31, blue: 0.60)
-private let shellBlueLight = Color(red: 0.14, green: 0.42, blue: 0.77)
-private let shellStroke = Color(red: 0.28, green: 0.61, blue: 0.97)
+private let shellBlueTop = Color(red: 0.04, green: 0.14, blue: 0.27)
+private let shellBlueMid = Color(red: 0.07, green: 0.27, blue: 0.50)
+private let shellBlueBottom = Color(red: 0.06, green: 0.36, blue: 0.65)
+private let shellHighlight = Color(red: 0.45, green: 0.68, blue: 0.96).opacity(0.24)
+private let shellStroke = Color.white.opacity(0.12)
 private let chipBlue = Color.white.opacity(0.10)
-private let chipBorder = Color.white.opacity(0.16)
+private let chipBlueStrong = Color.white.opacity(0.14)
+private let chipBorder = Color.white.opacity(0.14)
 private let weeklyPlanURL = URL(string: "https://mycliniq.info/dienstplaene")
+private let messagesURL = URL(string: "https://mycliniq.info/nachrichten")
+private let toolsURL = URL(string: "https://mycliniq.info/tools")
+private let sopsURL = URL(string: "https://mycliniq.info/admin/sops-projects")
 
 extension View {
     @ViewBuilder
@@ -37,21 +39,43 @@ struct WidgetShell<Content: View>: View {
     var body: some View {
         ZStack {
             LinearGradient(
-                colors: [shellBlue, shellBlueLight],
+                colors: [shellBlueTop, shellBlueMid, shellBlueBottom],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
 
+            RadialGradient(
+                colors: [shellHighlight, .clear],
+                center: .topTrailing,
+                startRadius: 10,
+                endRadius: 240
+            )
+
+            LinearGradient(
+                colors: [Color.white.opacity(0.05), .clear],
+                startPoint: .topLeading,
+                endPoint: .center
+            )
+
             content
-                .padding(14)
+                .padding(16)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(shellStroke, lineWidth: 1.2)
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .stroke(shellStroke, lineWidth: 1)
         )
-        .padding(4)
     }
+}
+
+private func absoluteURL(_ path: String?) -> URL? {
+    guard let value = path?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+        return nil
+    }
+    if value.hasPrefix("http://") || value.hasPrefix("https://") {
+        return URL(string: value)
+    }
+    return URL(string: "https://mycliniq.info\(value)")
 }
 
 struct MycliniqNextDay: Decodable {
@@ -62,6 +86,29 @@ struct MycliniqNextDay: Decodable {
     let dutyLabel: String?
     let isDuty: Bool
     let teammates: [String]?
+}
+
+struct MycliniqNotificationItem: Decodable {
+    let id: String
+    let title: String
+    let subtitle: String?
+    let tone: String?
+    let targetUrl: String?
+    let meta: String?
+}
+
+struct MycliniqQuickTool: Decodable {
+    let key: String
+    let title: String
+    let shortLabel: String
+    let targetUrl: String
+}
+
+struct MycliniqSopFavorite: Decodable {
+    let id: Int
+    let title: String
+    let category: String?
+    let targetUrl: String
 }
 
 struct MycliniqAdminSummary: Decodable {
@@ -100,6 +147,9 @@ struct MycliniqSnapshot: Decodable {
     let nextDays: [MycliniqNextDay]?
     let adminSummary: MycliniqAdminSummary?
     let adminDailyPlan: MycliniqAdminDailyPlan?
+    let notifications: [MycliniqNotificationItem]?
+    let quickTools: [MycliniqQuickTool]?
+    let sopFavorites: [MycliniqSopFavorite]?
 }
 
 struct MycliniqEntry: TimelineEntry {
@@ -472,17 +522,234 @@ struct MycliniqAdminOverviewWidgetEntryView: View {
     }
 }
 
+struct MycliniqNotificationsWidgetEntryView: View {
+    var entry: MycliniqProvider.Entry
+    @Environment(\.widgetFamily) private var family
+
+    private func accentColor(for tone: String?) -> Color {
+        tone == "danger" ? Color.red.opacity(0.92) : Color.white.opacity(0.92)
+    }
+
+    var body: some View {
+        WidgetShell {
+            let items = entry.snapshot?.notifications ?? []
+
+            if items.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Notifications")
+                        .font(.caption2)
+                        .foregroundColor(mutedWhite)
+                    Text("Keine neuen Hinweise")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.white)
+                    Text("Inbox, Freigaben und Änderungen erscheinen hier")
+                        .font(.system(size: 11))
+                        .foregroundColor(mutedWhite)
+                }
+            } else if family == .systemSmall {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Notifications")
+                        .font(.caption2)
+                        .foregroundColor(mutedWhite)
+
+                    Text("\(items.count)")
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundColor(.white)
+
+                    Text(items[0].title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(accentColor(for: items[0].tone))
+                        .lineLimit(3)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Notifications")
+                            .font(.caption2)
+                            .foregroundColor(mutedWhite)
+                        Spacer()
+                        Text("\(items.count)")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(chipBlueStrong)
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(chipBorder, lineWidth: 1))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+
+                    ForEach(Array(items.prefix(family == .systemLarge ? 5 : 3).enumerated()), id: \.offset) { _, item in
+                        let row = HStack(alignment: .top, spacing: 8) {
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(accentColor(for: item.tone))
+                                .frame(width: 3)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.title)
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundColor(accentColor(for: item.tone))
+                                    .lineLimit(1)
+                                if let subtitle = item.subtitle, !subtitle.isEmpty {
+                                    Text(subtitle)
+                                        .font(.system(size: 10))
+                                        .foregroundColor(mutedWhite)
+                                        .lineLimit(2)
+                                }
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .background(chipBlue)
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(chipBorder, lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                        if let url = absoluteURL(item.targetUrl) {
+                            Link(destination: url) { row }
+                        } else {
+                            row
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct MycliniqToolsWidgetEntryView: View {
+    var entry: MycliniqProvider.Entry
+    @Environment(\.widgetFamily) private var family
+
+    private var tools: [MycliniqQuickTool] {
+        entry.snapshot?.quickTools ?? []
+    }
+
+    private var limit: Int {
+        switch family {
+        case .systemSmall:
+            return 4
+        case .systemLarge:
+            return 6
+        default:
+            return 4
+        }
+    }
+
+    var body: some View {
+        WidgetShell {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Quick Tools")
+                    .font(.caption2)
+                    .foregroundColor(mutedWhite)
+
+                if tools.isEmpty {
+                    Text("Keine Tools verfügbar")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(.white)
+                } else {
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                        ForEach(Array(tools.prefix(limit).enumerated()), id: \.offset) { _, tool in
+                            if let url = absoluteURL(tool.targetUrl) {
+                                Link(destination: url) {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(tool.shortLabel)
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundColor(.white)
+                                            .lineLimit(1)
+                                        Text(tool.title)
+                                            .font(.system(size: 10))
+                                            .foregroundColor(mutedWhite)
+                                            .lineLimit(2)
+                                    }
+                                    .frame(maxWidth: .infinity, minHeight: family == .systemLarge ? 58 : 48, alignment: .topLeading)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 8)
+                                    .background(chipBlue)
+                                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(chipBorder, lineWidth: 1))
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct MycliniqSopFavoritesWidgetEntryView: View {
+    var entry: MycliniqProvider.Entry
+    @Environment(\.widgetFamily) private var family
+
+    var body: some View {
+        WidgetShell {
+            let favorites = entry.snapshot?.sopFavorites ?? []
+
+            if favorites.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("SOP Favoriten")
+                        .font(.caption2)
+                        .foregroundColor(mutedWhite)
+                    Text("Keine Favoriten")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.white)
+                    Text("Favoriten in der App definieren")
+                        .font(.system(size: 11))
+                        .foregroundColor(mutedWhite)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("SOP Favoriten")
+                        .font(.caption2)
+                        .foregroundColor(mutedWhite)
+
+                    ForEach(Array(favorites.prefix(family == .systemSmall ? 1 : family == .systemLarge ? 4 : 2).enumerated()), id: \.offset) { _, sop in
+                        let row = VStack(alignment: .leading, spacing: 3) {
+                            Text(sop.title)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.white)
+                                .lineLimit(family == .systemSmall ? 4 : 2)
+                            if let category = sop.category, !category.isEmpty {
+                                Text(category)
+                                    .font(.system(size: 10))
+                                    .foregroundColor(mutedWhite)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 7)
+                        .background(chipBlue)
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(chipBorder, lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                        if let url = absoluteURL(sop.targetUrl) {
+                            Link(destination: url) { row }
+                        } else {
+                            row
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 struct MycliniqTodayWidget: Widget {
     let kind: String = "MycliniqTodayWidget"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: MycliniqProvider()) { entry in
+        let configuration = StaticConfiguration(kind: kind, provider: MycliniqProvider()) { entry in
             MycliniqTodayWidgetEntryView(entry: entry)
                 .widgetBackgroundCompat()
         }
         .configurationDisplayName("mycliniq Heute")
         .description("Zeigt den aktuellen Tagesstatus aus dem Dashboard.")
         .supportedFamilies([.systemSmall, .systemMedium])
+
+        if #available(iOSApplicationExtension 15.0, *) {
+            return configuration.contentMarginsDisabled()
+        }
+        return configuration
     }
 }
 
@@ -490,13 +757,18 @@ struct MycliniqNextDaysWidget: Widget {
     let kind: String = "MycliniqNextDaysWidget"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: MycliniqProvider()) { entry in
+        let configuration = StaticConfiguration(kind: kind, provider: MycliniqProvider()) { entry in
             MycliniqNextDaysWidgetEntryView(entry: entry)
                 .widgetBackgroundCompat()
         }
         .configurationDisplayName("mycliniq Nächste Tage")
         .description("Zeigt die nächsten geplanten Tage aus dem Dashboard.")
         .supportedFamilies([.systemMedium, .systemLarge])
+
+        if #available(iOSApplicationExtension 15.0, *) {
+            return configuration.contentMarginsDisabled()
+        }
+        return configuration
     }
 }
 
@@ -504,13 +776,78 @@ struct MycliniqAdminOverviewWidget: Widget {
     let kind: String = "MycliniqAdminOverviewWidget"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: MycliniqProvider()) { entry in
+        let configuration = StaticConfiguration(kind: kind, provider: MycliniqProvider()) { entry in
             MycliniqAdminOverviewWidgetEntryView(entry: entry)
                 .widgetBackgroundCompat()
                 .widgetURL(weeklyPlanURL)
         }
-        .configurationDisplayName("mycliniq Admin Übersicht")
-        .description("Zeigt Team-Anwesenheit und Dienstzahlen für Admins.")
+        .configurationDisplayName("mycliniq Tageseinsatz")
+        .description("Zeigt Bereichsbesetzung und Diensthabende für Admins.")
         .supportedFamilies([.systemMedium, .systemLarge])
+
+        if #available(iOSApplicationExtension 15.0, *) {
+            return configuration.contentMarginsDisabled()
+        }
+        return configuration
+    }
+}
+
+struct MycliniqNotificationsWidget: Widget {
+    let kind: String = "MycliniqNotificationsWidget"
+
+    var body: some WidgetConfiguration {
+        let configuration = StaticConfiguration(kind: kind, provider: MycliniqProvider()) { entry in
+            MycliniqNotificationsWidgetEntryView(entry: entry)
+                .widgetBackgroundCompat()
+                .widgetURL(messagesURL)
+        }
+        .configurationDisplayName("mycliniq Notifications")
+        .description("Zeigt Hinweise, Freigaben und offene Änderungen.")
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+
+        if #available(iOSApplicationExtension 15.0, *) {
+            return configuration.contentMarginsDisabled()
+        }
+        return configuration
+    }
+}
+
+struct MycliniqToolsWidget: Widget {
+    let kind: String = "MycliniqToolsWidget"
+
+    var body: some WidgetConfiguration {
+        let configuration = StaticConfiguration(kind: kind, provider: MycliniqProvider()) { entry in
+            MycliniqToolsWidgetEntryView(entry: entry)
+                .widgetBackgroundCompat()
+                .widgetURL(toolsURL)
+        }
+        .configurationDisplayName("mycliniq Quick Tools")
+        .description("Schnellzugriff auf die wichtigsten Funktionen.")
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+
+        if #available(iOSApplicationExtension 15.0, *) {
+            return configuration.contentMarginsDisabled()
+        }
+        return configuration
+    }
+}
+
+struct MycliniqSopFavoritesWidget: Widget {
+    let kind: String = "MycliniqSopFavoritesWidget"
+
+    var body: some WidgetConfiguration {
+        let configuration = StaticConfiguration(kind: kind, provider: MycliniqProvider()) { entry in
+            MycliniqSopFavoritesWidgetEntryView(entry: entry)
+                .widgetBackgroundCompat()
+                .widgetURL(sopsURL)
+        }
+        .configurationDisplayName("mycliniq SOP Favoriten")
+        .description("Zeigt bevorzugte Leitlinien für den Schnellzugriff.")
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+
+        if #available(iOSApplicationExtension 15.0, *) {
+            return configuration.contentMarginsDisabled()
+        }
+        return configuration
     }
 }

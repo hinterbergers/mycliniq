@@ -58,6 +58,7 @@ import {
   notificationsApi,
   plannedAbsencesAdminApi,
   rosterSettingsApi,
+  sopApi,
   type DashboardAbsencesResponse,
   type DashboardAttendanceMember,
   type DashboardRecentChange,
@@ -80,9 +81,23 @@ import {
 import {
   buildWidgetTodaySnapshot,
   syncWidgetTodaySnapshot,
+  type WidgetNotificationSnapshot,
+  type WidgetQuickToolSnapshot,
+  type WidgetSopSnapshot,
 } from "@/lib/mobileWidget";
 import { resolveApiUrl } from "@/lib/apiBase";
 import { getServiceLineDisplayLabel } from "@shared/shiftTypes";
+
+const WIDGET_SOP_FAVORITES_KEY = "cliniq_widget_sop_favorites";
+
+const WIDGET_QUICK_TOOLS: WidgetQuickToolSnapshot[] = [
+  { key: "dienstplan", title: "Wochenplan", shortLabel: "Plan", targetUrl: "/dienstplaene" },
+  { key: "diensttausch", title: "Diensttausch", shortLabel: "Tausch", targetUrl: "/dienstplaene" },
+  { key: "dienstwuensche", title: "Dienstwünsche", shortLabel: "Wünsche", targetUrl: "/dienstwuensche" },
+  { key: "urlaub", title: "Urlaubsplanung", shortLabel: "Urlaub", targetUrl: "/admin/urlaubsplan" },
+  { key: "nachrichten", title: "Nachrichten", shortLabel: "Inbox", targetUrl: "/nachrichten" },
+  { key: "tools", title: "Tools", shortLabel: "Tools", targetUrl: "/tools" },
+];
 
 const DUTY_ABBREVIATIONS: Record<string, string> = {
   "gynaekologie (oa)": "Gyn",
@@ -381,6 +396,7 @@ export default function Dashboard() {
   const [notificationsData, setNotificationsData] = useState<Notification[]>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationsError, setNotificationsError] = useState<string | null>(null);
+  const [widgetSopFavorites, setWidgetSopFavorites] = useState<WidgetSopSnapshot[]>([]);
   const [seenRecentChangeIds, setSeenRecentChangeIds] = useState<string[]>([]);
   const [pendingAbsenceApprovalNotices, setPendingAbsenceApprovalNotices] = useState<PendingAbsenceNotice[]>([]);
   const [approvingAbsenceIds, setApprovingAbsenceIds] = useState<number[]>([]);
@@ -594,6 +610,55 @@ export default function Dashboard() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    void sopApi
+      .getAll({ status: "published" })
+      .then((items) => {
+        if (cancelled) return;
+
+        let preferredIds: number[] = [];
+        try {
+          const raw = window.localStorage.getItem(WIDGET_SOP_FAVORITES_KEY);
+          const parsed = raw ? JSON.parse(raw) : [];
+          preferredIds = Array.isArray(parsed)
+            ? parsed
+                .map((value) => Number(value))
+                .filter((value) => Number.isFinite(value))
+            : [];
+        } catch {
+          preferredIds = [];
+        }
+
+        const published = items
+          .filter((item) => item.status === "published")
+          .map((item) => ({
+            id: item.id,
+            title: item.title,
+            category: item.category ?? null,
+            targetUrl: `/admin/sops-projects?sopId=${item.id}`,
+          }));
+
+        const ordered = [
+          ...preferredIds
+            .map((id) => published.find((item) => item.id === id) ?? null)
+            .filter((item): item is WidgetSopSnapshot => Boolean(item)),
+          ...published.filter((item) => !preferredIds.includes(item.id)),
+        ].slice(0, 6);
+
+        setWidgetSopFavorites(ordered);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setWidgetSopFavorites([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const handleMarkNotificationRead = useCallback(
     async (notificationId: number) => {
       try {
@@ -704,6 +769,9 @@ export default function Dashboard() {
       nextDays,
       attendanceWidget: dashboardData?.attendanceWidget ?? null,
       isAdmin,
+      notifications: widgetNotifications,
+      quickTools: widgetQuickTools,
+      sopFavorites: widgetSopFavorites,
     });
     void syncWidgetTodaySnapshot(snapshot);
   }, [
@@ -714,6 +782,9 @@ export default function Dashboard() {
     isAdmin,
     todayEntry,
     todayTeamNames,
+    widgetNotifications,
+    widgetQuickTools,
+    widgetSopFavorites,
   ]);
 
   const todayDutyLine = useMemo(() => {
@@ -1142,6 +1213,26 @@ export default function Dashboard() {
     unreadNotifications,
     wishMonthLabel,
   ]);
+
+  const widgetNotifications = useMemo<WidgetNotificationSnapshot[]>(
+    () =>
+      dashboardNoticeItems.slice(0, 6).map((item) => ({
+        id: item.id,
+        title: item.title,
+        subtitle: item.subtitle ?? null,
+        tone: item.tone === "danger" ? "danger" : "default",
+        targetUrl: item.targetUrl ?? null,
+        meta: item.meta ?? null,
+      })),
+    [dashboardNoticeItems],
+  );
+
+  const widgetQuickTools = useMemo<WidgetQuickToolSnapshot[]>(() => {
+    const base = canCreateAbsence
+      ? WIDGET_QUICK_TOOLS
+      : WIDGET_QUICK_TOOLS.filter((tool) => tool.key !== "urlaub");
+    return base;
+  }, [canCreateAbsence]);
 
   useEffect(() => {
     if (!absencesEnabled) {

@@ -14,5 +14,8 @@ struct MycliniqTodayWidgetBundle: WidgetBundle {
         MycliniqTodayWidget()
         MycliniqNextDaysWidget()
         MycliniqAdminOverviewWidget()
+        MycliniqNotificationsWidget()
+        MycliniqToolsWidget()
+        MycliniqSopFavoritesWidget()
     }
 }

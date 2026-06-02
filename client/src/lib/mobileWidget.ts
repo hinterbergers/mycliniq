@@ -22,6 +22,29 @@ export type WidgetNextDaySnapshot = {
   teammates: string[];
 };
 
+export type WidgetNotificationSnapshot = {
+  id: string;
+  title: string;
+  subtitle: string | null;
+  tone: "default" | "danger";
+  targetUrl: string | null;
+  meta: string | null;
+};
+
+export type WidgetQuickToolSnapshot = {
+  key: string;
+  title: string;
+  shortLabel: string;
+  targetUrl: string;
+};
+
+export type WidgetSopSnapshot = {
+  id: number;
+  title: string;
+  category: string | null;
+  targetUrl: string;
+};
+
 export type WidgetTodaySnapshotV2 = {
   version: number;
   generatedAt: string;
@@ -52,6 +75,9 @@ export type WidgetTodaySnapshotV2 = {
       dutyCount: number;
     }>;
   } | null;
+  notifications?: WidgetNotificationSnapshot[];
+  quickTools?: WidgetQuickToolSnapshot[];
+  sopFavorites?: WidgetSopSnapshot[];
 };
 
 function getIosBridge() {
@@ -91,6 +117,9 @@ export function buildWidgetTodaySnapshot(input: {
   nextDays: DashboardDay[];
   attendanceWidget?: DashboardAttendanceWidget | null;
   isAdmin?: boolean;
+  notifications?: WidgetNotificationSnapshot[];
+  quickTools?: WidgetQuickToolSnapshot[];
+  sopFavorites?: WidgetSopSnapshot[];
 }): WidgetTodaySnapshotV2 {
   const dutyLabel = input.today?.duty?.labelShort ?? input.today?.duty?.serviceType ?? null;
   const todayStatusLabel =
@@ -194,7 +223,7 @@ export function buildWidgetTodaySnapshot(input: {
       : null;
 
   return {
-    version: 4,
+    version: 5,
     generatedAt: new Date().toISOString(),
     date: input.today?.date ?? null,
     personName: input.personName,
@@ -207,6 +236,9 @@ export function buildWidgetTodaySnapshot(input: {
     nextDays,
     adminSummary,
     adminDailyPlan,
+    notifications: input.notifications ?? [],
+    quickTools: input.quickTools ?? [],
+    sopFavorites: input.sopFavorites ?? [],
   };
 }
 
