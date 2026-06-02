@@ -9,6 +9,11 @@ private let brandBlueLight = Color(red: 0.16, green: 0.47, blue: 0.84)
 private let mutedWhite = Color.white.opacity(0.82)
 private let cardBlue = Color.white.opacity(0.12)
 private let cardBlueBorder = Color.white.opacity(0.20)
+private let shellBlue = Color(red: 0.08, green: 0.31, blue: 0.60)
+private let shellBlueLight = Color(red: 0.14, green: 0.42, blue: 0.77)
+private let shellStroke = Color(red: 0.28, green: 0.61, blue: 0.97)
+private let chipBlue = Color.white.opacity(0.10)
+private let chipBorder = Color.white.opacity(0.16)
 private let weeklyPlanURL = URL(string: "https://mycliniq.info/dienstplaene")
 
 extension View {
@@ -19,6 +24,33 @@ extension View {
         } else {
             self
         }
+    }
+}
+
+struct WidgetShell<Content: View>: View {
+    let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [shellBlue, shellBlueLight],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            content
+                .padding(14)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(shellStroke, lineWidth: 1.2)
+        )
+        .padding(4)
     }
 }
 
@@ -123,77 +155,72 @@ struct MycliniqTodayWidgetEntryView: View {
     }
 
     var body: some View {
-        ZStack {
-            LinearGradient(
-                colors: [brandBlue, brandBlueLight],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-
+        WidgetShell {
             if let snapshot = entry.snapshot {
                 if family == .systemSmall {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 6) {
                         Text("Heute")
-                            .font(.caption)
+                            .font(.caption2)
                             .foregroundColor(mutedWhite)
 
                         Text(snapshot.statusLabel ?? "Kein Eintrag")
-                            .font(.title3)
+                            .font(.system(size: 15, weight: .bold))
                             .fontWeight(.bold)
                             .foregroundColor(isCalmStatus(status: snapshot.statusLabel, absenceReason: snapshot.absenceReason) ? .green : .white)
-                            .lineLimit(3)
+                            .lineLimit(4)
 
                         if snapshot.isDuty, let duty = snapshot.dutyLabel, !duty.isEmpty {
-                            Text("Dienst: \(duty)")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.red)
+                            Text(duty)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.white)
                                 .lineLimit(1)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.red.opacity(0.88))
+                                .clipShape(Capsule())
                         }
                     }
-                    .padding(14)
                 } else {
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Text("Heute")
-                                .font(.caption)
+                                .font(.caption2)
                                 .foregroundColor(mutedWhite)
 
                             Spacer()
 
                             if snapshot.isDuty, let duty = snapshot.dutyLabel, !duty.isEmpty {
                                 Text(duty)
-                                    .font(.caption)
+                                    .font(.system(size: 11, weight: .bold))
                                     .fontWeight(.bold)
                                     .foregroundColor(.white)
                                     .padding(.horizontal, 8)
-                                    .padding(.vertical, 3)
+                                    .padding(.vertical, 4)
                                     .background(Color.red.opacity(0.85))
                                     .clipShape(Capsule())
                             }
                         }
 
                         Text(snapshot.statusLabel ?? "Kein Eintrag")
-                            .font(.title3)
+                            .font(.system(size: 16, weight: .bold))
                             .fontWeight(.bold)
                             .foregroundColor(isCalmStatus(status: snapshot.statusLabel, absenceReason: snapshot.absenceReason) ? .green : .white)
                             .lineLimit(2)
 
                         if let workplace = snapshot.workplace, !workplace.isEmpty {
                             Text(workplace)
-                                .font(.caption)
+                                .font(.system(size: 11))
                                 .foregroundColor(mutedWhite)
                                 .lineLimit(1)
                         }
 
                         if let teamLine = teammateLine(snapshot.teammates) {
                             Text(teamLine)
-                                .font(.caption)
+                                .font(.system(size: 11))
                                 .foregroundColor(mutedWhite)
                                 .lineLimit(1)
                         }
                     }
-                    .padding(14)
                 }
             } else {
                 VStack(alignment: .leading, spacing: 6) {
@@ -207,7 +234,6 @@ struct MycliniqTodayWidgetEntryView: View {
                         .font(.caption2)
                         .foregroundColor(mutedWhite)
                 }
-                .padding(14)
             }
         }
     }
@@ -260,40 +286,34 @@ struct MycliniqNextDaysWidgetEntryView: View {
     }
 
     var body: some View {
-        ZStack {
-            LinearGradient(
-                colors: [brandBlue, brandBlueLight],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-
+        WidgetShell {
             if let snapshot = entry.snapshot, let nextDays = snapshot.nextDays, !nextDays.isEmpty {
-                VStack(alignment: .leading, spacing: 7) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text("Nächste Tage")
-                        .font(.caption)
+                        .font(.caption2)
                         .foregroundColor(mutedWhite)
 
                     let rowLimit = family == .systemLarge ? 7 : 4
                     let showDetailedTeam = family == .systemLarge
 
                     ForEach(Array(nextDays.prefix(rowLimit).enumerated()), id: \.offset) { _, day in
-                        VStack(alignment: .leading, spacing: 3) {
+                        VStack(alignment: .leading, spacing: 2) {
                             HStack(alignment: .firstTextBaseline, spacing: 6) {
                                 Text(formatDay(day.date))
-                                    .font(.caption2)
+                                    .font(.system(size: 10, weight: .medium))
                                     .foregroundColor(mutedWhite)
                                     .frame(width: 74, alignment: .leading)
 
                                 Text(day.statusLabel ?? day.workplace ?? "Kein Eintrag")
-                                    .font(.caption)
+                                    .font(.system(size: 11, weight: .medium))
                                     .foregroundColor(isCalmStatus(status: day.statusLabel, absenceReason: day.absenceReason) ? .green : .white)
                                     .lineLimit(1)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
-                                    .background(cardBlue)
+                                    .background(chipBlue)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 6)
-                                            .stroke(cardBlueBorder, lineWidth: 1)
+                                            .stroke(chipBorder, lineWidth: 1)
                                     )
                                     .clipShape(RoundedRectangle(cornerRadius: 6))
 
@@ -301,7 +321,7 @@ struct MycliniqNextDaysWidgetEntryView: View {
 
                                 if day.isDuty {
                                     Text(day.dutyLabel ?? "Dienst")
-                                        .font(.caption2)
+                                        .font(.system(size: 10, weight: .semibold))
                                         .fontWeight(.semibold)
                                         .foregroundColor(.red)
                                         .lineLimit(1)
@@ -310,7 +330,7 @@ struct MycliniqNextDaysWidgetEntryView: View {
 
                             if let teamLine = teammateLine(day.teammates ?? [], maxNames: showDetailedTeam ? 3 : 2) {
                                 Text(teamLine)
-                                    .font(.caption2)
+                                    .font(.system(size: 10))
                                     .foregroundColor(mutedWhite)
                                     .lineLimit(1)
                                     .padding(.leading, 80)
@@ -318,7 +338,6 @@ struct MycliniqNextDaysWidgetEntryView: View {
                         }
                     }
                 }
-                .padding(14)
             } else {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("mycliniq")
@@ -331,7 +350,6 @@ struct MycliniqNextDaysWidgetEntryView: View {
                         .font(.caption2)
                         .foregroundColor(mutedWhite)
                 }
-                .padding(14)
             }
         }
     }
@@ -351,39 +369,33 @@ struct MycliniqAdminOverviewWidgetEntryView: View {
     }
 
     var body: some View {
-        ZStack {
-            LinearGradient(
-                colors: [brandBlue, brandBlueLight],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-
+        WidgetShell {
             if let admin = entry.snapshot?.adminSummary,
                admin.enabled,
                let dailyPlan = entry.snapshot?.adminDailyPlan,
                dailyPlan.enabled {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 8) {
                     Text("Tageseinsatz")
-                        .font(.caption)
+                        .font(.caption2)
                         .foregroundColor(mutedWhite)
 
                     HStack(spacing: 12) {
                         Text("\(admin.presentToday) anwesend")
-                            .font(.caption2)
+                            .font(.system(size: 10, weight: .medium))
                             .foregroundColor(.white)
                         Text("\(admin.absentToday) abwesend")
-                            .font(.caption2)
+                            .font(.system(size: 10, weight: .medium))
                             .foregroundColor(.green)
                         Text("\(admin.dutyToday) Dienst")
-                            .font(.caption2)
+                            .font(.system(size: 10, weight: .medium))
                             .foregroundColor(.red)
                     }
                     .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(cardBlue)
+                    .padding(.vertical, 5)
+                    .background(chipBlue)
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)
-                            .stroke(cardBlueBorder, lineWidth: 1)
+                            .stroke(chipBorder, lineWidth: 1)
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 8))
 
@@ -392,36 +404,36 @@ struct MycliniqAdminOverviewWidgetEntryView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             HStack {
                                 Text(assignment.workplace)
-                                    .font(.caption)
+                                    .font(.system(size: 11, weight: .semibold))
                                     .fontWeight(.semibold)
                                     .foregroundColor(.white)
                                     .lineLimit(1)
                                 Spacer()
                                 if assignment.dutyCount > 0 {
                                     Text("\(assignment.dutyCount) D")
-                                        .font(.caption2)
+                                        .font(.system(size: 10, weight: .bold))
                                         .fontWeight(.bold)
                                         .foregroundColor(.red)
                                 }
                             }
                             Text(namesLine(assignment.names, maxNames: family == .systemLarge ? 3 : 2))
-                                .font(.caption2)
+                                .font(.system(size: 10))
                                 .foregroundColor(mutedWhite)
                                 .lineLimit(1)
 
                             if !assignment.dutyNames.isEmpty {
                                 Text("Dienst: \(namesLine(assignment.dutyNames, maxNames: family == .systemLarge ? 2 : 1))")
-                                    .font(.caption2)
+                                    .font(.system(size: 10, weight: .medium))
                                     .foregroundColor(.red)
                                     .lineLimit(1)
                             }
                         }
                         .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                        .background(cardBlue)
+                        .padding(.vertical, 5)
+                        .background(chipBlue)
                         .overlay(
                             RoundedRectangle(cornerRadius: 8)
-                                .stroke(cardBlueBorder, lineWidth: 1)
+                                .stroke(chipBorder, lineWidth: 1)
                         )
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
@@ -429,21 +441,20 @@ struct MycliniqAdminOverviewWidgetEntryView: View {
                     if let weeklyPlanURL {
                         Link(destination: weeklyPlanURL) {
                             Text("Zum Wochenplan")
-                                .font(.caption)
+                                .font(.system(size: 10, weight: .semibold))
                                 .fontWeight(.semibold)
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(cardBlue)
+                                .padding(.vertical, 5)
+                                .background(chipBlue)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 8)
-                                        .stroke(cardBlueBorder, lineWidth: 1)
+                                        .stroke(chipBorder, lineWidth: 1)
                                 )
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
                     }
                 }
-                .padding(14)
             } else {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Tageseinsatz")
@@ -456,7 +467,6 @@ struct MycliniqAdminOverviewWidgetEntryView: View {
                         .font(.caption2)
                         .foregroundColor(mutedWhite)
                 }
-                .padding(14)
             }
         }
     }
