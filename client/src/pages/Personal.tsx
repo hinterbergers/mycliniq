@@ -760,24 +760,24 @@ export default function Personal() {
                 </div>
               </div>
 
-              <TabsList className="h-12 rounded-2xl border border-white/10 bg-white/10 p-1 text-primary-foreground/80 shadow-none">
+              <TabsList className="flex h-auto w-full flex-wrap justify-start gap-2 rounded-2xl border border-white/10 bg-white/10 p-2 text-primary-foreground/80 shadow-none">
                 <TabsTrigger
                   value="roster"
-                  className="h-10 rounded-xl px-6 text-base data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-none"
+                  className="h-10 min-w-[calc(50%-0.25rem)] flex-1 rounded-xl px-4 text-sm data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-none sm:min-w-0 sm:px-6 sm:text-base"
                   data-testid="tab-roster"
                 >
                   Dienstplan
                 </TabsTrigger>
                 <TabsTrigger
                   value="weekly"
-                  className="h-10 rounded-xl px-6 text-base data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-none"
+                  className="h-10 min-w-[calc(50%-0.25rem)] flex-1 rounded-xl px-4 text-sm data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-none sm:min-w-0 sm:px-6 sm:text-base"
                   data-testid="tab-weekly"
                 >
                   Wochenplan
                 </TabsTrigger>
                 <TabsTrigger
                   value="vacation"
-                  className="h-10 rounded-xl px-6 text-base data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-none"
+                  className="h-10 min-w-[calc(50%-0.25rem)] flex-1 rounded-xl px-4 text-sm data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-none sm:min-w-0 sm:px-6 sm:text-base"
                   data-testid="tab-vacation"
                 >
                   Urlaubsplanung
