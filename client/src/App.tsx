@@ -31,6 +31,9 @@ import PublicWeeklyPlan from "@/pages/PublicWeeklyPlan";
 import PublicRosterPlan from "@/pages/PublicRosterPlan";
 import { Loader2 } from "lucide-react";
 import { TrainingRoute } from "@/components/training/TrainingRoute";
+import { useEffect } from "react";
+import { App as CapacitorApp } from "@capacitor/app";
+import { Capacitor } from "@capacitor/core";
 
 function ProtectedRoute({
   component: Component,
@@ -58,6 +61,60 @@ function ProtectedRoute({
 }
 
 function Router() {
+  const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    const routeFromUrl = (urlString: string | undefined | null) => {
+      if (!urlString) return null;
+
+      try {
+        const url = new URL(urlString);
+
+        if (url.protocol === "mycliniq:") {
+          const host = url.host ? `/${url.host}` : "";
+          const path = url.pathname === "/" ? "" : url.pathname;
+          return `${host}${path}${url.search}${url.hash}` || "/";
+        }
+
+        if (
+          (url.protocol === "https:" || url.protocol === "http:") &&
+          url.hostname === "mycliniq.info"
+        ) {
+          return `${url.pathname}${url.search}${url.hash}` || "/";
+        }
+      } catch {
+        return null;
+      }
+
+      return null;
+    };
+
+    let removed = false;
+
+    const handleUrl = (urlString: string | undefined | null) => {
+      if (removed) return;
+      const route = routeFromUrl(urlString);
+      if (route) {
+        setLocation(route);
+      }
+    };
+
+    void CapacitorApp.getLaunchUrl().then(({ url }) => {
+      handleUrl(url);
+    });
+
+    const listenerPromise = CapacitorApp.addListener("appUrlOpen", ({ url }) => {
+      handleUrl(url);
+    });
+
+    return () => {
+      removed = true;
+      void listenerPromise.then((listener) => listener.remove());
+    };
+  }, [setLocation]);
+
   return (
     <Switch>
       <Route path="/login" component={Login} />

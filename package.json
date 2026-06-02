@@ -19,6 +19,7 @@
     "format:check": "prettier --check \"server/**/*.ts\" \"client/**/*.{ts,tsx}\" \"shared/**/*.ts\" \"script/**/*.ts\""
   },
   "dependencies": {
+    "@capacitor/app": "^7.1.2",
     "@capacitor/core": "^7.4.3",
     "@hookform/resolvers": "^3.10.0",
     "@jridgewell/trace-mapping": "^0.3.25",

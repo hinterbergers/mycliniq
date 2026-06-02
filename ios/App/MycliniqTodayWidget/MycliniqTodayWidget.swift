@@ -20,10 +20,10 @@ private let chipBorder = Color.white.opacity(0.14)
 private let chipAlert = Color(red: 1.00, green: 0.93, blue: 0.95).opacity(0.14)
 private let chipAlertStrong = Color(red: 1.00, green: 0.93, blue: 0.95).opacity(0.22)
 private let chipAlertBorder = Color(red: 1.00, green: 0.84, blue: 0.88).opacity(0.38)
-private let weeklyPlanURL = URL(string: "https://mycliniq.info/dienstplaene")
-private let messagesURL = URL(string: "https://mycliniq.info/nachrichten")
-private let toolsURL = URL(string: "https://mycliniq.info/tools")
-private let sopsURL = URL(string: "https://mycliniq.info/admin/sops-projects")
+private let weeklyPlanURL = URL(string: "mycliniq://dienstplaene")
+private let messagesURL = URL(string: "mycliniq://nachrichten")
+private let toolsURL = URL(string: "mycliniq://tools")
+private let sopsURL = URL(string: "mycliniq://admin/sops-projects")
 
 extension View {
     @ViewBuilder
@@ -128,7 +128,8 @@ private func absoluteURL(_ path: String?) -> URL? {
     if value.hasPrefix("http://") || value.hasPrefix("https://") {
         return URL(string: value)
     }
-    return URL(string: "https://mycliniq.info\(value)")
+    let trimmed = value.hasPrefix("/") ? String(value.dropFirst()) : value
+    return URL(string: "mycliniq://\(trimmed)")
 }
 
 struct MycliniqNextDay: Decodable {
