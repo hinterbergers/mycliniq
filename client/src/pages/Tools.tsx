@@ -24,14 +24,9 @@ import { toolsApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Baby,
-  TestTube2,
   Sparkles,
-  Ruler,
-  Calculator,
   ArrowUp,
   ArrowDown,
-  Scale,
 } from "lucide-react";
 import {
   addDays,
@@ -40,79 +35,12 @@ import {
   format,
   startOfDay,
 } from "date-fns";
-
-type ToolKey =
-  | "pregnancy_weeks"
-  | "pul_calculator"
-  | "body_surface_area"
-  | "bishop_score"
-  | "bmi_calculator";
-
-const TOOL_CATALOG: Array<{
-  key: ToolKey;
-  title: string;
-  description: string;
-  icon: typeof Baby;
-  accent: string;
-  bg: string;
-}> = [
-  {
-    key: "pregnancy_weeks",
-    title: "Schwangerschaftswochen-Rechner",
-    description: "SSW und ET aus letzter Periode oder ET berechnen.",
-    icon: Baby,
-    accent: "text-rose-600",
-    bg: "bg-rose-50",
-  },
-  {
-    key: "pul_calculator",
-    title: "PUL-Rechner",
-    description: "hCG-Ratio und Verlaufstendenz berechnen.",
-    icon: TestTube2,
-    accent: "text-amber-600",
-    bg: "bg-amber-50",
-  },
-  {
-    key: "body_surface_area",
-    title: "Körperoberflächen-Rechner",
-    description: "Körperoberfläche (Mosteller) aus Größe und Gewicht.",
-    icon: Ruler,
-    accent: "text-sky-600",
-    bg: "bg-sky-50",
-  },
-  {
-    key: "bishop_score",
-    title: "Bishop-Score-Rechner",
-    description: "Zervixbefund strukturiert erfassen und Bishop-Score berechnen.",
-    icon: Calculator,
-    accent: "text-emerald-600",
-    bg: "bg-emerald-50",
-  },
-  {
-    key: "bmi_calculator",
-    title: "BMI-Rechner",
-    description: "Body-Mass-Index berechnen und nach WHO beurteilen.",
-    icon: Scale,
-    accent: "text-violet-600",
-    bg: "bg-violet-50",
-  },
-];
-
-const DEFAULT_VISIBILITY: Record<ToolKey, boolean> = {
-  pregnancy_weeks: true,
-  pul_calculator: true,
-  body_surface_area: true,
-  bishop_score: true,
-  bmi_calculator: true,
-};
-
-const DEFAULT_SORT_ORDER: Record<ToolKey, number> = {
-  pregnancy_weeks: 0,
-  pul_calculator: 1,
-  body_surface_area: 2,
-  bishop_score: 3,
-  bmi_calculator: 4,
-};
+import {
+  DEFAULT_TOOL_SORT_ORDER,
+  DEFAULT_TOOL_VISIBILITY,
+  TOOL_CATALOG,
+  type ToolKey,
+} from "@/lib/toolCatalog";
 
 function parseDateValue(value: string): Date | null {
   if (!value) return null;
@@ -857,9 +785,9 @@ export default function Tools() {
   const { isAdmin } = useAuth();
   const { toast } = useToast();
   const [visibility, setVisibility] =
-    useState<Record<ToolKey, boolean>>(DEFAULT_VISIBILITY);
+    useState<Record<ToolKey, boolean>>(DEFAULT_TOOL_VISIBILITY);
   const [sortOrder, setSortOrder] =
-    useState<Record<ToolKey, number>>(DEFAULT_SORT_ORDER);
+    useState<Record<ToolKey, number>>(DEFAULT_TOOL_SORT_ORDER);
   const [selectedTool, setSelectedTool] = useState<ToolKey | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingKey, setSavingKey] = useState<ToolKey | null>(null);
@@ -874,14 +802,14 @@ export default function Tools() {
             acc[setting.toolKey as ToolKey] = setting.isEnabled;
             return acc;
           },
-          { ...DEFAULT_VISIBILITY },
+          { ...DEFAULT_TOOL_VISIBILITY },
         );
         const orderMap = settings.reduce<Record<ToolKey, number>>(
           (acc, setting) => {
             acc[setting.toolKey as ToolKey] = setting.sortOrder;
             return acc;
           },
-          { ...DEFAULT_SORT_ORDER },
+          { ...DEFAULT_TOOL_SORT_ORDER },
         );
         setVisibility(map);
         setSortOrder(orderMap);
@@ -910,6 +838,19 @@ export default function Tools() {
   }, [isAdmin, sortOrder, visibility]);
 
   useEffect(() => {
+    const requestedTool =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("tool")
+        : null;
+    const requestedValid =
+      requestedTool &&
+      toolsToDisplay.some((tool) => tool.key === requestedTool);
+
+    if (requestedValid) {
+      setSelectedTool(requestedTool as ToolKey);
+      return;
+    }
+
     if (!selectedTool && toolsToDisplay.length) {
       setSelectedTool(toolsToDisplay[0].key);
     }
@@ -930,14 +871,14 @@ export default function Tools() {
           acc[setting.toolKey as ToolKey] = setting.isEnabled;
           return acc;
         },
-        { ...DEFAULT_VISIBILITY },
+        { ...DEFAULT_TOOL_VISIBILITY },
       );
       const nextSortOrder = updated.reduce<Record<ToolKey, number>>(
         (acc, setting) => {
           acc[setting.toolKey as ToolKey] = setting.sortOrder;
           return acc;
         },
-        { ...DEFAULT_SORT_ORDER },
+        { ...DEFAULT_TOOL_SORT_ORDER },
       );
       setVisibility(nextVisibility);
       setSortOrder(nextSortOrder);
@@ -979,7 +920,7 @@ export default function Tools() {
         acc[toolKey] = index;
         return acc;
       },
-      { ...DEFAULT_SORT_ORDER },
+      { ...DEFAULT_TOOL_SORT_ORDER },
     );
 
     setSavingKey(key);
@@ -998,14 +939,14 @@ export default function Tools() {
           acc[setting.toolKey as ToolKey] = setting.isEnabled;
           return acc;
         },
-        { ...DEFAULT_VISIBILITY },
+        { ...DEFAULT_TOOL_VISIBILITY },
       );
       const persistedSortOrder = updated.reduce<Record<ToolKey, number>>(
         (acc, setting) => {
           acc[setting.toolKey as ToolKey] = setting.sortOrder;
           return acc;
         },
-        { ...DEFAULT_SORT_ORDER },
+        { ...DEFAULT_TOOL_SORT_ORDER },
       );
       setVisibility(persistedVisibility);
       setSortOrder(persistedSortOrder);

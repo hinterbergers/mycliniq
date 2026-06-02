@@ -59,6 +59,7 @@ import {
   plannedAbsencesAdminApi,
   rosterSettingsApi,
   sopApi,
+  toolsApi,
   type DashboardAbsencesResponse,
   type DashboardAttendanceMember,
   type DashboardRecentChange,
@@ -86,18 +87,16 @@ import {
   type WidgetSopSnapshot,
 } from "@/lib/mobileWidget";
 import { resolveApiUrl } from "@/lib/apiBase";
+import {
+  DEFAULT_TOOL_SORT_ORDER,
+  DEFAULT_TOOL_VISIBILITY,
+  TOOL_CATALOG,
+  getToolTargetUrl,
+  type ToolKey,
+} from "@/lib/toolCatalog";
 import { getServiceLineDisplayLabel } from "@shared/shiftTypes";
 
 const WIDGET_SOP_FAVORITES_KEY = "cliniq_widget_sop_favorites";
-
-const WIDGET_QUICK_TOOLS: WidgetQuickToolSnapshot[] = [
-  { key: "dienstplan", title: "Wochenplan", shortLabel: "Plan", targetUrl: "/dienstplaene" },
-  { key: "diensttausch", title: "Diensttausch", shortLabel: "Tausch", targetUrl: "/dienstplaene" },
-  { key: "dienstwuensche", title: "Dienstwünsche", shortLabel: "Wünsche", targetUrl: "/dienstwuensche" },
-  { key: "urlaub", title: "Urlaubsplanung", shortLabel: "Urlaub", targetUrl: "/admin/urlaubsplan" },
-  { key: "nachrichten", title: "Nachrichten", shortLabel: "Inbox", targetUrl: "/nachrichten" },
-  { key: "tools", title: "Tools", shortLabel: "Tools", targetUrl: "/tools" },
-];
 
 const DUTY_ABBREVIATIONS: Record<string, string> = {
   "gynaekologie (oa)": "Gyn",
@@ -397,6 +396,12 @@ export default function Dashboard() {
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationsError, setNotificationsError] = useState<string | null>(null);
   const [widgetSopFavorites, setWidgetSopFavorites] = useState<WidgetSopSnapshot[]>([]);
+  const [toolVisibility, setToolVisibility] = useState<Record<ToolKey, boolean>>(
+    DEFAULT_TOOL_VISIBILITY,
+  );
+  const [toolSortOrder, setToolSortOrder] = useState<Record<ToolKey, number>>(
+    DEFAULT_TOOL_SORT_ORDER,
+  );
   const [seenRecentChangeIds, setSeenRecentChangeIds] = useState<string[]>([]);
   const [pendingAbsenceApprovalNotices, setPendingAbsenceApprovalNotices] = useState<PendingAbsenceNotice[]>([]);
   const [approvingAbsenceIds, setApprovingAbsenceIds] = useState<number[]>([]);
@@ -652,6 +657,43 @@ export default function Dashboard() {
       .catch(() => {
         if (cancelled) return;
         setWidgetSopFavorites([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void toolsApi
+      .getVisibility()
+      .then((settings) => {
+        if (cancelled) return;
+
+        const nextVisibility = settings.reduce<Record<ToolKey, boolean>>(
+          (acc, setting) => {
+            acc[setting.toolKey as ToolKey] = setting.isEnabled;
+            return acc;
+          },
+          { ...DEFAULT_TOOL_VISIBILITY },
+        );
+        const nextSortOrder = settings.reduce<Record<ToolKey, number>>(
+          (acc, setting) => {
+            acc[setting.toolKey as ToolKey] = setting.sortOrder;
+            return acc;
+          },
+          { ...DEFAULT_TOOL_SORT_ORDER },
+        );
+
+        setToolVisibility(nextVisibility);
+        setToolSortOrder(nextSortOrder);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setToolVisibility({ ...DEFAULT_TOOL_VISIBILITY });
+        setToolSortOrder({ ...DEFAULT_TOOL_SORT_ORDER });
       });
 
     return () => {
@@ -1199,11 +1241,18 @@ export default function Dashboard() {
   );
 
   const widgetQuickTools = useMemo<WidgetQuickToolSnapshot[]>(() => {
-    const base = canCreateAbsence
-      ? WIDGET_QUICK_TOOLS
-      : WIDGET_QUICK_TOOLS.filter((tool) => tool.key !== "urlaub");
-    return base;
-  }, [canCreateAbsence]);
+    const toolsToDisplay = [...TOOL_CATALOG]
+      .sort((a, b) => toolSortOrder[a.key] - toolSortOrder[b.key])
+      .filter((tool) => (isAdmin ? true : toolVisibility[tool.key] !== false))
+      .slice(0, 6);
+
+    return toolsToDisplay.map((tool) => ({
+      key: tool.key,
+      title: tool.title,
+      shortLabel: tool.shortLabel,
+      targetUrl: getToolTargetUrl(tool.key),
+    }));
+  }, [isAdmin, toolSortOrder, toolVisibility]);
 
   useEffect(() => {
     const nextDays = (dashboardData?.weekPreview ?? []).filter(
