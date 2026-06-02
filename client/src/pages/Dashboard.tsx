@@ -758,35 +758,6 @@ export default function Dashboard() {
     return `Mit: ${todayTeamNames.join(", ")}`;
   }, [todayEntry?.workplace, todayTeamNames]);
 
-  useEffect(() => {
-    const nextDays = (dashboardData?.weekPreview ?? []).filter(
-      (entry) => entry.date !== (todayEntry?.date ?? ""),
-    );
-    const snapshot = buildWidgetTodaySnapshot({
-      today: todayEntry,
-      personName: buildFullName(employee?.firstName, employee?.lastName) || null,
-      teammateNames: todayTeamNames,
-      nextDays,
-      attendanceWidget: dashboardData?.attendanceWidget ?? null,
-      isAdmin,
-      notifications: widgetNotifications,
-      quickTools: widgetQuickTools,
-      sopFavorites: widgetSopFavorites,
-    });
-    void syncWidgetTodaySnapshot(snapshot);
-  }, [
-    dashboardData?.attendanceWidget,
-    dashboardData?.weekPreview,
-    employee?.firstName,
-    employee?.lastName,
-    isAdmin,
-    todayEntry,
-    todayTeamNames,
-    widgetNotifications,
-    widgetQuickTools,
-    widgetSopFavorites,
-  ]);
-
   const todayDutyLine = useMemo(() => {
     const duty = todayEntry?.duty;
     if (!duty) return null;
@@ -1233,6 +1204,35 @@ export default function Dashboard() {
       : WIDGET_QUICK_TOOLS.filter((tool) => tool.key !== "urlaub");
     return base;
   }, [canCreateAbsence]);
+
+  useEffect(() => {
+    const nextDays = (dashboardData?.weekPreview ?? []).filter(
+      (entry) => entry.date !== (todayEntry?.date ?? ""),
+    );
+    const snapshot = buildWidgetTodaySnapshot({
+      today: todayEntry,
+      personName: buildFullName(employee?.firstName, employee?.lastName) || null,
+      teammateNames: todayTeamNames,
+      nextDays,
+      attendanceWidget: dashboardData?.attendanceWidget ?? null,
+      isAdmin,
+      notifications: widgetNotifications,
+      quickTools: widgetQuickTools,
+      sopFavorites: widgetSopFavorites,
+    });
+    void syncWidgetTodaySnapshot(snapshot);
+  }, [
+    dashboardData?.attendanceWidget,
+    dashboardData?.weekPreview,
+    employee?.firstName,
+    employee?.lastName,
+    isAdmin,
+    todayEntry,
+    todayTeamNames,
+    widgetNotifications,
+    widgetQuickTools,
+    widgetSopFavorites,
+  ]);
 
   useEffect(() => {
     if (!absencesEnabled) {
