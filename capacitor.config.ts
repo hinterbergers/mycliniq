@@ -1,3 +1,4 @@
+/// <reference types="@capawesome/capacitor-badge" />
 import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
@@ -8,6 +9,12 @@ const config: CapacitorConfig = {
   packageClassList: ["MycliniqWidgetBridge"],
   server: {
     cleartext: false,
+  },
+  plugins: {
+    Badge: {
+      persist: true,
+      autoClear: false,
+    },
   },
 };
 

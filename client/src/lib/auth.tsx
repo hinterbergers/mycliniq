@@ -17,6 +17,9 @@ import {
 } from "./authToken";
 import { getApiBase } from "./apiBase";
 import { syncWidgetTodaySnapshotFromApi } from "./mobileWidget";
+import { clearNativeNotificationBadge, syncNativeNotificationBadge } from "./nativeBadge";
+import { App as CapacitorApp } from "@capacitor/app";
+import { Capacitor } from "@capacitor/core";
 
 const AUTH_API_BASE = getApiBase();
 
@@ -327,6 +330,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             authToken,
             buildDisplayName(meData.user, meData.employee ?? null),
           );
+          void syncNativeNotificationBadge(authToken);
           return { success: true };
         }
 
@@ -355,6 +359,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               authToken,
               buildDisplayName(fbUser, fbEmployee ?? null),
             );
+            void syncNativeNotificationBadge(authToken);
             return { success: true };
           }
 
@@ -368,6 +373,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               authToken,
               buildDisplayName(null, fbEmployee),
             );
+            void syncNativeNotificationBadge(authToken);
             return { success: true };
           }
         } else if (fallback.data?.success === false || !fallback.ok) {
@@ -439,6 +445,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // ignore
     }
   }, [viewAsUser]);
+
+  useEffect(() => {
+    if (!token || !isAuthenticated || !Capacitor.isNativePlatform()) return;
+
+    let active = true;
+
+    const syncBadge = async () => {
+      if (!active) return;
+      await syncNativeNotificationBadge(token);
+    };
+
+    void syncBadge();
+    const intervalId = window.setInterval(() => {
+      void syncBadge();
+    }, 60000);
+
+    const listenerPromise = CapacitorApp.addListener("resume", () => {
+      void syncBadge();
+    });
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+      void listenerPromise.then((listener) => listener.remove());
+    };
+  }, [isAuthenticated, token]);
 
   const login = useCallback(
     async (identifier: string, password: string, rememberMe?: boolean) => {
@@ -522,6 +554,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // ignore
     } finally {
+      void clearNativeNotificationBadge();
       resetAuthState();
       setIsLoading(false);
     }

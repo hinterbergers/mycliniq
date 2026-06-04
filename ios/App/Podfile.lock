@@ -4,11 +4,14 @@ PODS:
   - CapacitorApp (7.1.2):
     - Capacitor
   - CapacitorCordova (7.6.0)
+  - CapawesomeCapacitorBadge (7.0.1):
+    - Capacitor
 
 DEPENDENCIES:
   - "Capacitor (from `../../node_modules/@capacitor/ios`)"
   - "CapacitorApp (from `../../node_modules/@capacitor/app`)"
   - "CapacitorCordova (from `../../node_modules/@capacitor/ios`)"
+  - "CapawesomeCapacitorBadge (from `../../node_modules/@capawesome/capacitor-badge`)"
 
 EXTERNAL SOURCES:
   Capacitor:
@@ -17,12 +20,15 @@ EXTERNAL SOURCES:
     :path: "../../node_modules/@capacitor/app"
   CapacitorCordova:
     :path: "../../node_modules/@capacitor/ios"
+  CapawesomeCapacitorBadge:
+    :path: "../../node_modules/@capawesome/capacitor-badge"
 
 SPEC CHECKSUMS:
   Capacitor: 6e644e9e3369368ac601c77a0fad57f34b78aaa6
   CapacitorApp: f01a913211780e0718dae9750442c3e23f96e106
   CapacitorCordova: f163aa2e84b79efc54d6a75b305bc7e05fb80c5d
+  CapawesomeCapacitorBadge: 7fc1fa00c920b88eabb8451ddc92bdc75da2cffa
 
-PODFILE CHECKSUM: 9015a2f0679eeed0c812073645ac24fee36589aa
+PODFILE CHECKSUM: 0362283493e0e104a262c1c419b4b14f93cc8fc7
 
 COCOAPODS: 1.16.2
