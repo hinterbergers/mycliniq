@@ -32,6 +32,7 @@ import {
   Calendar as CalendarIcon,
   CalendarDays,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ClipboardCopy,
@@ -341,6 +342,7 @@ export default function Personal() {
   const isExternalDuty = user?.accessScope === "external_duty";
   const [unassignedCount, setUnassignedCount] = useState(0);
   const [pendingSwapRequestCount, setPendingSwapRequestCount] = useState(0);
+  const [isMobileHeroExpanded, setIsMobileHeroExpanded] = useState(false);
   const pageStickyHeaderRef = useRef<HTMLDivElement | null>(null);
   const [pageStickyHeaderHeight, setPageStickyHeaderHeight] = useState(0);
   const [unassignedDebug, setUnassignedDebug] =
@@ -698,15 +700,38 @@ export default function Personal() {
             className="sticky top-0 z-50 bg-background pb-3"
           >
             <div className="space-y-4 rounded-3xl border-none bg-gradient-to-br from-slate-950 via-[#113f72] to-[#0f5ba7] p-5 text-white shadow-xl shadow-primary/15">
-              <div className="flex flex-col items-start justify-between gap-4 lg:flex-row lg:items-center">
-                <div>
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
                   <h1 className="text-3xl font-bold text-white">Dienstpläne</h1>
-                  <p className="text-sm text-primary-foreground/80">
+                  <p className="hidden text-sm text-primary-foreground/80 lg:block">
                     Monatsdienstplan, Wochenplan und Urlaubsplanung.
                   </p>
                 </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-10 w-10 shrink-0 rounded-full border border-white/15 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground lg:hidden"
+                  onClick={() => setIsMobileHeroExpanded((current) => !current)}
+                  aria-expanded={isMobileHeroExpanded}
+                  aria-label={isMobileHeroExpanded ? "Hero einklappen" : "Hero erweitern"}
+                  data-testid="button-mobile-hero-toggle"
+                >
+                  <ChevronDown
+                    className={cn(
+                      "h-5 w-5 transition-transform duration-200",
+                      isMobileHeroExpanded && "rotate-180",
+                    )}
+                  />
+                </Button>
+              </div>
 
-                <div className="flex w-full flex-col items-start gap-3 lg:w-auto lg:items-end">
+              <div className={cn("hidden lg:block", isMobileHeroExpanded && "block")}>
+                <p className="text-sm text-primary-foreground/80 lg:hidden">
+                  Monatsdienstplan, Wochenplan und Urlaubsplanung.
+                </p>
+
+                <div className="mt-4 flex w-full flex-col items-start gap-3 lg:mt-0 lg:items-end">
                   <p className="text-sm font-medium text-primary-foreground/95 lg:text-right">
                     {activeSummaryText}
                   </p>
@@ -760,29 +785,31 @@ export default function Personal() {
                 </div>
               </div>
 
-              <TabsList className="flex h-auto w-full flex-wrap justify-start gap-2 rounded-2xl border border-white/10 bg-white/10 p-2 text-primary-foreground/80 shadow-none">
-                <TabsTrigger
-                  value="roster"
-                  className="h-10 min-w-[calc(50%-0.25rem)] flex-1 rounded-xl px-4 text-sm data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-none sm:min-w-0 sm:px-6 sm:text-base"
-                  data-testid="tab-roster"
-                >
-                  Dienstplan
-                </TabsTrigger>
-                <TabsTrigger
-                  value="weekly"
-                  className="h-10 min-w-[calc(50%-0.25rem)] flex-1 rounded-xl px-4 text-sm data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-none sm:min-w-0 sm:px-6 sm:text-base"
-                  data-testid="tab-weekly"
-                >
-                  Wochenplan
-                </TabsTrigger>
-                <TabsTrigger
-                  value="vacation"
-                  className="h-10 min-w-[calc(50%-0.25rem)] flex-1 rounded-xl px-4 text-sm data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-none sm:min-w-0 sm:px-6 sm:text-base"
-                  data-testid="tab-vacation"
-                >
-                  Urlaubsplanung
-                </TabsTrigger>
-              </TabsList>
+              <div className={cn("hidden lg:block", isMobileHeroExpanded && "block")}>
+                <TabsList className="flex h-auto w-full flex-wrap justify-start gap-2 rounded-2xl border border-white/10 bg-white/10 p-2 text-primary-foreground/80 shadow-none">
+                  <TabsTrigger
+                    value="roster"
+                    className="h-10 min-w-[calc(50%-0.25rem)] flex-1 rounded-xl px-4 text-sm data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-none sm:min-w-0 sm:px-6 sm:text-base"
+                    data-testid="tab-roster"
+                  >
+                    Dienstplan
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="weekly"
+                    className="h-10 min-w-[calc(50%-0.25rem)] flex-1 rounded-xl px-4 text-sm data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-none sm:min-w-0 sm:px-6 sm:text-base"
+                    data-testid="tab-weekly"
+                  >
+                    Wochenplan
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="vacation"
+                    className="h-10 min-w-[calc(50%-0.25rem)] flex-1 rounded-xl px-4 text-sm data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-none sm:min-w-0 sm:px-6 sm:text-base"
+                    data-testid="tab-vacation"
+                  >
+                    Urlaubsplanung
+                  </TabsTrigger>
+                </TabsList>
+              </div>
             </div>
 
             {debugEnabled && token && (
