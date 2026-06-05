@@ -472,68 +472,54 @@ struct MycliniqAdminOverviewWidgetEntryView: View {
         return "\(visible) +\(names.count - maxNames)"
     }
 
+    private var areaTitleSize: CGFloat {
+        family == .systemLarge ? 11 : 10
+    }
+
+    private var detailSize: CGFloat {
+        family == .systemLarge ? 10 : 9
+    }
+
     var body: some View {
         WidgetShell {
-            if let admin = entry.snapshot?.adminSummary,
-               admin.enabled,
-               let dailyPlan = entry.snapshot?.adminDailyPlan,
+            if let dailyPlan = entry.snapshot?.adminDailyPlan,
                dailyPlan.enabled {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text("Tageseinsatz")
                         .font(.caption2)
                         .foregroundColor(mutedWhite)
 
-                    HStack(spacing: 12) {
-                        Text("\(admin.presentToday) anwesend")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.white)
-                        Text("\(admin.absentToday) abwesend")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.green)
-                        Text("\(admin.dutyToday) Dienst")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.red)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(chipBlue)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(chipBorder, lineWidth: 1)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                    let rowLimit = family == .systemLarge ? 6 : 3
+                    let rowLimit = family == .systemLarge ? 8 : 6
                     ForEach(Array(dailyPlan.assignments.prefix(rowLimit).enumerated()), id: \.offset) { _, assignment in
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack {
+                        VStack(alignment: .leading, spacing: 1.5) {
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
                                 Text(assignment.workplace)
-                                    .font(.system(size: 11, weight: .semibold))
+                                    .font(.system(size: areaTitleSize, weight: .semibold))
                                     .fontWeight(.semibold)
                                     .foregroundColor(.white)
                                     .lineLimit(1)
                                 Spacer()
                                 if assignment.dutyCount > 0 {
                                     Text("\(assignment.dutyCount) D")
-                                        .font(.system(size: 10, weight: .bold))
+                                        .font(.system(size: detailSize, weight: .bold))
                                         .fontWeight(.bold)
                                         .foregroundColor(.red)
                                 }
                             }
-                            Text(namesLine(assignment.names, maxNames: family == .systemLarge ? 3 : 2))
-                                .font(.system(size: 10))
+                            Text(namesLine(assignment.names, maxNames: family == .systemLarge ? 4 : 3))
+                                .font(.system(size: detailSize))
                                 .foregroundColor(mutedWhite)
                                 .lineLimit(1)
 
                             if !assignment.dutyNames.isEmpty {
-                                Text("Dienst: \(namesLine(assignment.dutyNames, maxNames: family == .systemLarge ? 2 : 1))")
-                                    .font(.system(size: 10, weight: .medium))
+                                Text(namesLine(assignment.dutyNames, maxNames: family == .systemLarge ? 3 : 2))
+                                    .font(.system(size: detailSize, weight: .medium))
                                     .foregroundColor(.red)
                                     .lineLimit(1)
                             }
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 4)
                         .background(chipBlue)
                         .overlay(
                             RoundedRectangle(cornerRadius: 8)
@@ -545,7 +531,7 @@ struct MycliniqAdminOverviewWidgetEntryView: View {
                     if let weeklyPlanURL {
                         Link(destination: weeklyPlanURL) {
                             Text("Zum Wochenplan")
-                                .font(.system(size: 10, weight: .semibold))
+                                .font(.system(size: detailSize, weight: .semibold))
                                 .fontWeight(.semibold)
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 10)
@@ -564,10 +550,10 @@ struct MycliniqAdminOverviewWidgetEntryView: View {
                     Text("Tageseinsatz")
                         .font(.caption)
                         .foregroundColor(mutedWhite)
-                    Text("Keine Admin-Daten")
+                    Text("Keine Einsatzdaten")
                         .font(.headline)
                         .foregroundColor(.white)
-                    Text("Nur für Admin/Editor mit Teamrechten")
+                    Text("App öffnen, um zu synchronisieren")
                         .font(.caption2)
                         .foregroundColor(mutedWhite)
                 }
@@ -881,7 +867,7 @@ struct MycliniqAdminOverviewWidget: Widget {
                 .widgetURL(weeklyPlanURL)
         }
         .configurationDisplayName("mycliniq Tageseinsatz")
-        .description("Zeigt Bereichsbesetzung und Diensthabende für Admins.")
+        .description("Zeigt Bereichsbesetzung und rot markierte Diensthabende.")
         .supportedFamilies([.systemMedium, .systemLarge])
 
         if #available(iOSApplicationExtension 15.0, *) {

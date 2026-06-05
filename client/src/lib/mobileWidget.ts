@@ -160,7 +160,7 @@ export function buildWidgetTodaySnapshot(input: {
   const todayMembers = input.attendanceWidget?.today?.members ?? [];
   const tomorrowMembers = input.attendanceWidget?.tomorrow?.members ?? [];
   const adminSummary =
-    input.isAdmin && input.attendanceWidget
+    input.attendanceWidget
       ? {
           enabled: true,
           presentToday: todayMembers.length,
@@ -174,7 +174,7 @@ export function buildWidgetTodaySnapshot(input: {
         }
       : null;
   const adminDailyPlan =
-    input.isAdmin && input.attendanceWidget
+    input.attendanceWidget
       ? {
           enabled: true,
           date: input.today?.date ?? null,
@@ -200,10 +200,9 @@ export function buildWidgetTodaySnapshot(input: {
                   dutyCount: 0,
                 };
               }
-              const name = [member.firstName, member.lastName]
-                .filter(Boolean)
-                .join(" ")
-                .trim();
+              const name =
+                (member.lastName ?? "").trim() ||
+                (member.firstName ?? "").trim();
               if (name) acc[workplace].names.push(name);
               if (member.isDuty) {
                 acc[workplace].dutyCount += 1;
@@ -217,8 +216,7 @@ export function buildWidgetTodaySnapshot(input: {
               if (a.names.length !== b.names.length)
                 return b.names.length - a.names.length;
               return a.workplace.localeCompare(b.workplace, "de");
-            })
-            .slice(0, 8),
+            }),
         }
       : null;
 
