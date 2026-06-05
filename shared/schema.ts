@@ -1818,6 +1818,32 @@ export const insertNotificationSchema = createInsertSchema(notifications).omit({
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type Notification = typeof notifications.$inferSelect;
 
+export const dashboardSeenItems = pgTable(
+  "dashboard_seen_items",
+  {
+    id: serial("id").primaryKey(),
+    employeeId: integer("employee_id")
+      .references(() => employees.id)
+      .notNull(),
+    itemType: text("item_type").notNull(),
+    itemId: text("item_id").notNull(),
+    seenAt: timestamp("seen_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("dashboard_seen_items_employee_type_idx").on(
+      table.employeeId,
+      table.itemType,
+    ),
+    uniqueIndex("dashboard_seen_items_employee_type_item_uidx").on(
+      table.employeeId,
+      table.itemType,
+      table.itemId,
+    ),
+  ],
+);
+
+export type DashboardSeenItem = typeof dashboardSeenItems.$inferSelect;
+
 // Messaging threads
 export const messageThreads = pgTable("message_threads", {
   id: serial("id").primaryKey(),

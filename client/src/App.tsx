@@ -101,8 +101,8 @@ function Router() {
       }
     };
 
-    void CapacitorApp.getLaunchUrl().then(({ url }) => {
-      handleUrl(url);
+    void CapacitorApp.getLaunchUrl().then((launch) => {
+      handleUrl(launch?.url);
     });
 
     const listenerPromise = CapacitorApp.addListener("appUrlOpen", ({ url }) => {

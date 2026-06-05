@@ -333,7 +333,6 @@ const MONTH_NAMES = [
   "Dezember",
 ];
 const DASHBOARD_TILES_OPEN_KEY = "dashboard_tiles_open_v1";
-const DASHBOARD_SEEN_CHANGE_IDS_KEY = "dashboard_seen_change_ids_v1";
 const HERO_ABSENCE_REASONS = [
   "Urlaub",
   "Fortbildung",
@@ -503,12 +502,13 @@ export default function Dashboard() {
     };
   }, []);
 
-  const wishMonthLabel = useMemo(() => {
+  const planningMonthLabel = useMemo(() => {
     if (!wishMonthInfo) return null;
     const idx = wishMonthInfo.month - 1;
     if (idx < 0 || idx >= MONTH_NAMES.length) return null;
     return MONTH_NAMES[idx];
   }, [wishMonthInfo]);
+  const wishMonthLabel = wishMonthInfo?.currentUserSubmitted ? null : planningMonthLabel;
 
   const fetchDashboard = useCallback(() => dashboardApi.get(), []);
   const toggleTile = useCallback((tile: DashboardTileKey) => {
@@ -530,6 +530,10 @@ export default function Dashboard() {
       setIsLoadingDashboard(false);
     }
   }, [fetchDashboard]);
+
+  useEffect(() => {
+    setSeenRecentChangeIds(dashboardData?.seenRecentChangeIds ?? []);
+  }, [dashboardData?.seenRecentChangeIds]);
 
   useEffect(() => {
     let cancelled = false;
@@ -555,38 +559,17 @@ export default function Dashboard() {
     };
   }, [fetchDashboard]);
 
-  useEffect(() => {
-    const employeeId = employee?.id;
-    if (!employeeId || typeof window === "undefined") {
-      setSeenRecentChangeIds([]);
-      return;
-    }
-    try {
-      const raw = window.localStorage.getItem(`${DASHBOARD_SEEN_CHANGE_IDS_KEY}_${employeeId}`);
-      if (!raw) {
-        setSeenRecentChangeIds([]);
-        return;
-      }
-      const parsed = JSON.parse(raw);
-      setSeenRecentChangeIds(Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : []);
-    } catch {
-      setSeenRecentChangeIds([]);
-    }
-  }, [employee?.id]);
-
-  const persistSeenRecentChangeIds = useCallback((updater: (current: string[]) => string[]) => {
-    setSeenRecentChangeIds((current) => {
-      const next = updater(current);
-      const deduped = Array.from(new Set(next));
-      if (typeof window !== "undefined" && employee?.id) {
-        window.localStorage.setItem(
-          `${DASHBOARD_SEEN_CHANGE_IDS_KEY}_${employee.id}`,
-          JSON.stringify(deduped),
-        );
-      }
-      return deduped;
-    });
-  }, [employee?.id]);
+  const persistSeenRecentChangeIds = useCallback(
+    async (ids: string[]) => {
+      const deduped = Array.from(new Set(ids.filter(Boolean)));
+      if (deduped.length === 0) return;
+      await dashboardApi.markRecentChangesSeen(deduped);
+      setSeenRecentChangeIds((current) =>
+        Array.from(new Set([...current, ...deduped])),
+      );
+    },
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -648,7 +631,7 @@ export default function Dashboard() {
         const ordered = [
           ...preferredIds
             .map((id) => published.find((item) => item.id === id) ?? null)
-            .filter((item): item is WidgetSopSnapshot => Boolean(item)),
+            .filter((item): item is NonNullable<typeof item> => item !== null),
           ...published.filter((item) => !preferredIds.includes(item.id)),
         ].slice(0, 6);
 
@@ -721,8 +704,8 @@ export default function Dashboard() {
   );
 
   const handleMarkRecentChangeSeen = useCallback(
-    (changeId: string) => {
-      persistSeenRecentChangeIds((current) => [...current, changeId]);
+    async (changeId: string) => {
+      await persistSeenRecentChangeIds([changeId]);
     },
     [persistSeenRecentChangeIds],
   );
@@ -1119,7 +1102,7 @@ export default function Dashboard() {
         );
       }
       if (unseenRecentIds.length > 0) {
-        persistSeenRecentChangeIds((current) => [...current, ...unseenRecentIds]);
+        await persistSeenRecentChangeIds(unseenRecentIds);
       }
     } catch (error: any) {
       toast({
@@ -1376,7 +1359,7 @@ export default function Dashboard() {
           onClick={() => setLocation("/dienstwuensche")}
           data-testid="button-request-vacation"
         >
-          Dienstwünsche{wishMonthLabel ? ` ${wishMonthLabel}` : ""}
+          Dienstwünsche{planningMonthLabel ? ` ${planningMonthLabel}` : ""}
         </Button>
         {canCreateAbsence ? (
           <Button

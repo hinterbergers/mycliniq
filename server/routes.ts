@@ -50,6 +50,8 @@ import {
   weeklyPlanAssignments,
   weeklyAssignments,
   dailyOverrides,
+  notifications,
+  dashboardSeenItems,
   rosterShiftChangeLogs,
   type RosterShift,
   type DutyPlan,
@@ -3433,6 +3435,7 @@ const buildAttendanceMembers = (
           actorName: string | null;
           targetUrl?: string | null;
         }> = [];
+        let seenRecentChangeIds: string[] = [];
 
         if (canSeeDashboardRecentChanges(req)) {
           const [dutyChangeRows, plannedChangeRows, weeklyOverrideRows, weeklyAssignmentRows] = await Promise.all([
@@ -3754,6 +3757,23 @@ const buildAttendanceMembers = (
               return bTime - aTime;
             })
             .slice(0, 10);
+
+          if (req.user?.employeeId && recentChanges.length > 0) {
+            const seenRows = await db
+              .select({ itemId: dashboardSeenItems.itemId })
+              .from(dashboardSeenItems)
+              .where(
+                and(
+                  eq(dashboardSeenItems.employeeId, req.user.employeeId),
+                  eq(dashboardSeenItems.itemType, "recent_change"),
+                  inArray(
+                    dashboardSeenItems.itemId,
+                    recentChanges.map((item) => item.id),
+                  ),
+                ),
+              );
+            seenRecentChangeIds = seenRows.map((row) => row.itemId);
+          }
         }
         // --- Attendance widget (Heute / Morgen) -----------------------------------
         const todayMeta = previewMeta[0];
@@ -3860,10 +3880,53 @@ const buildAttendanceMembers = (
           weekPreview,
           attendanceWidget,
           recentChanges,
+          seenRecentChangeIds,
         });
         } catch (error) {
           console.error("[Dashboard] Error:", error);
           res.status(500).json({ error: "Fehler beim Laden des Dashboards" });
+        }
+      },
+    );
+
+    app.post(
+      "/api/dashboard/recent-changes/seen",
+      requireAuth,
+      async (req: Request, res: Response) => {
+        try {
+          if (!req.user?.employeeId) {
+            return res.status(401).json({ error: "Nicht authentifiziert" });
+          }
+          const ids = Array.isArray(req.body?.ids)
+            ? req.body.ids.filter((value: unknown): value is string =>
+                typeof value === "string" && value.trim().length > 0,
+              )
+            : [];
+
+          if (ids.length === 0) {
+            return res.json({ success: true, seenIds: [] });
+          }
+
+          const uniqueIds: string[] = Array.from(new Set(ids));
+
+          await db
+            .insert(dashboardSeenItems)
+            .values(
+              uniqueIds.map((id) => ({
+                employeeId: req.user!.employeeId!,
+                itemType: "recent_change",
+                itemId: id,
+                seenAt: new Date(),
+              })),
+            )
+            .onConflictDoNothing();
+
+          return res.json({ success: true, seenIds: uniqueIds });
+        } catch (error) {
+          console.error("mark recent dashboard changes seen error", error);
+          return res
+            .status(500)
+            .json({ error: "Status konnte nicht gespeichert werden" });
         }
       },
     );
@@ -4189,8 +4252,7 @@ const buildAttendanceMembers = (
 
         const employeeName =
           formatDisplayName(employeeRow?.firstName, employeeRow?.lastName) ??
-          normalize(employeeRow?.name) ??
-          "Mitarbeiter:in";
+          ((employeeRow?.name ?? "").trim() || "Mitarbeiter:in");
         const weeklyEditorLink = `/admin/weekly?day=${encodeURIComponent(String(updated.startDate))}&employeeId=${currentEmployeeId}`;
 
         const adminRecipients = await db
@@ -6489,6 +6551,7 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
         let allSubmitted = false;
         let draftShiftCount = 0;
         let eligibleEmployeeIds: number[] = [];
+        let currentUserWishStatus: string | null = null;
         try {
           const employeeRows = await storage.getEmployees();
           const eligibleEmployees = employeeRows
@@ -6504,6 +6567,14 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
           totalEmployees = eligibleEmployees.length;
           allSubmitted = totalEmployees > 0 && submittedCount >= totalEmployees;
           eligibleEmployeeIds = eligibleEmployees.map((emp) => emp.id);
+          if (req.user.employeeId) {
+            const currentWish = await storage.getShiftWishByEmployeeAndMonth(
+              req.user.employeeId,
+              year,
+              month,
+            );
+            currentUserWishStatus = currentWish?.status ?? null;
+          }
         } catch (error) {
           console.error(
             "next planning month: failed to calculate wish submission stats",
@@ -6527,6 +6598,8 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
           draftShiftCount,
           hasDraft: draftShiftCount > 0,
           eligibleEmployeeIds,
+          currentUserWishStatus,
+          currentUserSubmitted: currentUserWishStatus === "Eingereicht",
         });
       } catch (error) {
         console.error("next planning month error", error);

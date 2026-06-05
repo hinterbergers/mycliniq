@@ -120,6 +120,7 @@ export type DashboardResponse = {
   weekPreview: DashboardDay[];
   attendanceWidget: DashboardAttendanceWidget | null;
   recentChanges?: DashboardRecentChange[];
+  seenRecentChangeIds?: string[];
   enabledWidgets?: DashboardWidgetKey[];
 };
 
@@ -549,6 +550,15 @@ export const dashboardApi = {
   getAbsences: async (): Promise<DashboardAbsencesResponse> => {
     const response = await apiFetch(`${API_BASE}/dashboard/absences`);
     return handleResponse<DashboardAbsencesResponse>(response);
+  },
+  markRecentChangesSeen: async (
+    ids: string[],
+  ): Promise<{ success: boolean; seenIds: string[] }> => {
+    const response = await apiFetch(`${API_BASE}/dashboard/recent-changes/seen`, {
+      method: "POST",
+      body: JSON.stringify({ ids }),
+    });
+    return handleResponse(response);
   },
   acceptZeitausgleich: async (
     id: number,
@@ -2731,6 +2741,8 @@ export interface NextPlanningMonth {
   draftShiftCount?: number;
   hasDraft?: boolean;
   eligibleEmployeeIds?: number[];
+  currentUserWishStatus?: string | null;
+  currentUserSubmitted?: boolean;
 }
 
 export type WeeklyRuleProfileResponse = {
