@@ -14,6 +14,13 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -39,6 +46,7 @@ import {
   DEFAULT_TOOL_SORT_ORDER,
   DEFAULT_TOOL_VISIBILITY,
   TOOL_CATALOG,
+  getToolTargetUrl,
   type ToolKey,
 } from "@/lib/toolCatalog";
 
@@ -48,6 +56,17 @@ function parseDateValue(value: string): Date | null {
   const date = new Date(safe);
   if (Number.isNaN(date.getTime())) return null;
   return date;
+}
+
+function parseRequestedTool(
+  tools: Array<{ key: ToolKey }>,
+  search: string,
+): ToolKey | null {
+  const requestedTool = new URLSearchParams(search).get("tool");
+  if (!requestedTool) return null;
+  return tools.some((tool) => tool.key === requestedTool)
+    ? (requestedTool as ToolKey)
+    : null;
 }
 
 function PregnancyWeeksCalculator() {
@@ -838,23 +857,48 @@ export default function Tools() {
   }, [isAdmin, sortOrder, visibility]);
 
   useEffect(() => {
-    const requestedTool =
-      typeof window !== "undefined"
-        ? new URLSearchParams(window.location.search).get("tool")
-        : null;
-    const requestedValid =
-      requestedTool &&
-      toolsToDisplay.some((tool) => tool.key === requestedTool);
+    if (typeof window === "undefined") return;
 
-    if (requestedValid) {
-      setSelectedTool(requestedTool as ToolKey);
-      return;
-    }
+    const syncSelectedToolFromUrl = () => {
+      const requestedTool = parseRequestedTool(
+        toolsToDisplay,
+        window.location.search,
+      );
+      setSelectedTool(requestedTool);
+    };
 
-    if (!selectedTool && toolsToDisplay.length) {
-      setSelectedTool(toolsToDisplay[0].key);
+    syncSelectedToolFromUrl();
+    window.addEventListener("popstate", syncSelectedToolFromUrl);
+    return () => {
+      window.removeEventListener("popstate", syncSelectedToolFromUrl);
+    };
+  }, [toolsToDisplay]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const requestedTool = parseRequestedTool(
+      toolsToDisplay,
+      window.location.search,
+    );
+    if (!requestedTool && selectedTool) {
+      setSelectedTool(null);
     }
   }, [selectedTool, toolsToDisplay]);
+
+  const openToolPopup = (toolKey: ToolKey) => {
+    setSelectedTool(toolKey);
+    if (typeof window !== "undefined") {
+      window.history.pushState({}, "", getToolTargetUrl(toolKey));
+    }
+  };
+
+  const closeToolPopup = () => {
+    setSelectedTool(null);
+    if (typeof window !== "undefined") {
+      window.history.pushState({}, "", "/tools");
+    }
+  };
 
   const handleToggle = async (key: ToolKey, nextValue: boolean) => {
     setSavingKey(key);
@@ -1002,7 +1046,7 @@ export default function Tools() {
                 className={`border-none kabeg-shadow transition-all cursor-pointer group ${
                   isActive ? "ring-2 ring-primary/40" : "hover:shadow-md"
                 } ${isDisabled && isAdmin ? "opacity-70" : ""}`}
-                onClick={() => setSelectedTool(tool.key)}
+                onClick={() => openToolPopup(tool.key)}
               >
                 <CardContent className="p-5 md:p-6 flex flex-col items-start gap-4">
                   <div
@@ -1037,23 +1081,6 @@ export default function Tools() {
             </Card>
           )}
         </div>
-
-        {selectedTool && (isAdmin || visibility[selectedTool]) && (
-          <Card className="border-none kabeg-shadow">
-            <CardHeader>
-              <CardTitle>
-                {TOOL_CATALOG.find((tool) => tool.key === selectedTool)?.title}
-              </CardTitle>
-              <CardDescription>
-                {
-                  TOOL_CATALOG.find((tool) => tool.key === selectedTool)
-                    ?.description
-                }
-              </CardDescription>
-            </CardHeader>
-            <CardContent>{renderToolContent()}</CardContent>
-          </Card>
-        )}
 
         {isAdmin && (
           <Card className="border-none shadow-sm bg-secondary/20">
@@ -1116,6 +1143,30 @@ export default function Tools() {
             </CardContent>
           </Card>
         )}
+
+        <Dialog
+          open={Boolean(selectedTool && (isAdmin || visibility[selectedTool]))}
+          onOpenChange={(open) => {
+            if (!open) {
+              closeToolPopup();
+            }
+          }}
+        >
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
+            <DialogHeader>
+              <DialogTitle>
+                {TOOL_CATALOG.find((tool) => tool.key === selectedTool)?.title}
+              </DialogTitle>
+              <DialogDescription>
+                {
+                  TOOL_CATALOG.find((tool) => tool.key === selectedTool)
+                    ?.description
+                }
+              </DialogDescription>
+            </DialogHeader>
+            {renderToolContent()}
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );
