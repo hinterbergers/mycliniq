@@ -1152,19 +1152,21 @@ export default function Tools() {
             }
           }}
         >
-          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
-            <DialogHeader>
-              <DialogTitle>
+          <DialogContent className="max-h-[92vh] w-[calc(100vw-0.75rem)] max-w-[calc(100vw-0.75rem)] overflow-y-auto rounded-xl p-3 gap-3 sm:max-w-4xl sm:p-6 sm:gap-4">
+            <DialogHeader className="pr-8 space-y-1 text-left">
+              <DialogTitle className="text-sm leading-tight sm:text-lg">
                 {TOOL_CATALOG.find((tool) => tool.key === selectedTool)?.title}
               </DialogTitle>
-              <DialogDescription>
+              <DialogDescription className="text-[11px] leading-snug sm:text-sm">
                 {
                   TOOL_CATALOG.find((tool) => tool.key === selectedTool)
                     ?.description
                 }
               </DialogDescription>
             </DialogHeader>
-            {renderToolContent()}
+            <div className="space-y-3 text-xs sm:text-sm [&_label]:text-[11px] [&_label]:sm:text-sm [&_.tabs-list]:h-9 [&_.tabs-trigger]:px-2 [&_.tabs-trigger]:py-1 [&_.tabs-trigger]:text-[11px] [&_.tabs-trigger]:sm:text-sm [&_input]:h-9 [&_input]:text-sm [&_[data-slot='card-content']]:p-3 [&_[data-slot='card-content']]:sm:p-6 [&_[data-slot='card-header']]:px-3 [&_[data-slot='card-header']]:pt-3 [&_[data-slot='card-header']]:pb-0 [&_[data-slot='card-header']]:sm:px-6 [&_[data-slot='card-header']]:sm:pt-6 [&_[data-slot='card-title']]:text-sm [&_[data-slot='card-title']]:sm:text-lg [&_[data-slot='card-description']]:text-[11px] [&_[data-slot='card-description']]:sm:text-sm [&_p.text-2xl]:text-xl [&_p.text-base]:text-sm">
+              {renderToolContent()}
+            </div>
           </DialogContent>
         </Dialog>
       </div>
