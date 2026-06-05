@@ -1027,6 +1027,10 @@ export default function Tools() {
     return <BodyMassIndexCalculator />;
   };
 
+  const selectedToolEntry = selectedTool
+    ? TOOL_CATALOG.find((tool) => tool.key === selectedTool) ?? null
+    : null;
+
   return (
     <Layout title="Tools">
       <div className="space-y-8">
@@ -1152,20 +1156,32 @@ export default function Tools() {
             }
           }}
         >
-          <DialogContent className="max-h-[92vh] w-[calc(100vw-0.75rem)] max-w-[calc(100vw-0.75rem)] overflow-y-auto rounded-xl p-3 gap-3 sm:max-w-4xl sm:p-6 sm:gap-4">
-            <DialogHeader className="pr-8 space-y-1 text-left">
-              <DialogTitle className="text-sm leading-tight sm:text-lg">
-                {TOOL_CATALOG.find((tool) => tool.key === selectedTool)?.title}
-              </DialogTitle>
-              <DialogDescription className="text-[11px] leading-snug sm:text-sm">
-                {
-                  TOOL_CATALOG.find((tool) => tool.key === selectedTool)
-                    ?.description
-                }
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-3 text-xs sm:text-sm [&_label]:text-[11px] [&_label]:sm:text-sm [&_.tabs-list]:h-9 [&_.tabs-trigger]:px-2 [&_.tabs-trigger]:py-1 [&_.tabs-trigger]:text-[11px] [&_.tabs-trigger]:sm:text-sm [&_input]:h-9 [&_input]:text-sm [&_[data-slot='card-content']]:p-3 [&_[data-slot='card-content']]:sm:p-6 [&_[data-slot='card-header']]:px-3 [&_[data-slot='card-header']]:pt-3 [&_[data-slot='card-header']]:pb-0 [&_[data-slot='card-header']]:sm:px-6 [&_[data-slot='card-header']]:sm:pt-6 [&_[data-slot='card-title']]:text-sm [&_[data-slot='card-title']]:sm:text-lg [&_[data-slot='card-description']]:text-[11px] [&_[data-slot='card-description']]:sm:text-sm [&_p.text-2xl]:text-xl [&_p.text-base]:text-sm">
-              {renderToolContent()}
+          <DialogContent className="max-h-[94vh] w-[calc(100vw-0.5rem)] max-w-[calc(100vw-0.5rem)] overflow-y-auto rounded-[1.25rem] border-none bg-transparent p-0 shadow-none sm:max-w-3xl">
+            <div className="overflow-hidden rounded-[1.25rem] border border-white/10 bg-background shadow-2xl shadow-slate-950/20">
+              <DialogHeader className="kabeg-deep-gradient relative gap-2 px-3 py-3 pr-12 text-left sm:px-5 sm:py-4">
+                <div className="flex items-start gap-3">
+                  {selectedToolEntry ? (
+                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/12 ring-1 ring-white/15 ${selectedToolEntry.accent}`}>
+                      <selectedToolEntry.icon className="h-4 w-4 text-white" />
+                    </div>
+                  ) : null}
+                  <div className="min-w-0 space-y-1">
+                    <DialogTitle className="text-sm font-semibold leading-tight text-white sm:text-base">
+                      {selectedToolEntry?.title}
+                    </DialogTitle>
+                    <DialogDescription className="text-[11px] leading-snug text-primary-foreground/80 sm:text-xs">
+                      {selectedToolEntry?.description}
+                    </DialogDescription>
+                  </div>
+                </div>
+              </DialogHeader>
+              <div className="bg-slate-50/80 p-2 sm:p-3">
+                <div className="rounded-2xl border border-slate-200/80 bg-white p-2 shadow-sm sm:p-3">
+                  <div className="space-y-2 text-xs sm:text-sm [&_label]:text-[10px] [&_label]:font-medium [&_label]:tracking-wide [&_label]:text-slate-600 [&_label]:sm:text-xs [&_.tabs-list]:h-8 [&_.tabs-list]:w-full [&_.tabs-list]:justify-start [&_.tabs-list]:overflow-x-auto [&_.tabs-list]:rounded-xl [&_.tabs-list]:bg-slate-100 [&_.tabs-list]:p-1 [&_.tabs-trigger]:h-6 [&_.tabs-trigger]:shrink-0 [&_.tabs-trigger]:rounded-lg [&_.tabs-trigger]:px-2 [&_.tabs-trigger]:py-0 [&_.tabs-trigger]:text-[10px] [&_.tabs-trigger]:sm:text-xs [&_input]:h-8 [&_input]:text-xs [&_[data-slot='card']]:border-slate-200 [&_[data-slot='card-content']]:p-2 [&_[data-slot='card-content']]:sm:p-3 [&_[data-slot='card-header']]:px-2 [&_[data-slot='card-header']]:pt-2 [&_[data-slot='card-header']]:pb-0 [&_[data-slot='card-header']]:sm:px-3 [&_[data-slot='card-header']]:sm:pt-3 [&_[data-slot='card-title']]:text-xs [&_[data-slot='card-title']]:font-semibold [&_[data-slot='card-title']]:uppercase [&_[data-slot='card-title']]:tracking-[0.12em] [&_[data-slot='card-description']]:text-[10px] [&_[data-slot='card-description']]:sm:text-xs [&_p.text-2xl]:text-lg [&_p.text-base]:text-xs [&_button[role='combobox']]:h-8 [&_button[role='combobox']]:text-xs">
+                    {renderToolContent()}
+                  </div>
+                </div>
+              </div>
             </div>
           </DialogContent>
         </Dialog>
