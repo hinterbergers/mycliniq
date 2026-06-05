@@ -9,6 +9,16 @@
 - Process manager: pm2 (app name: mycliniq)
 - Build: `npm run build` runs `script/build.ts` (vite build + esbuild to dist/index.cjs)
 - App distribution path: local Mac build -> Xcode Archive -> App Store Connect / TestFlight
+- Web and app share the same React codebase and routes by default. UI, navigation, dialog behavior, and feature changes implemented for the web app must also be treated as app changes unless a platform-specific exception is explicitly documented.
+
+## Cross-Platform Rule
+- The iPhone app is not a separate product UI; it should mirror the web app views and flows as closely as possible.
+- Any frontend change to shared pages/components must be assumed to affect both web and app.
+- New interactions on shared routes (for example tool popups, dialogs, detail views, navigation flows, or embedded calculators) must work in both browser and Capacitor app contexts.
+- Platform-specific divergence is only allowed when there is a technical reason, and that reason should be documented in the affected file or in this AGENTS.md.
+- After changes to shared frontend behavior, validate both:
+  - web build/deploy path
+  - app sync path via `npm run mobile:sync:ios`
 
 ## Runtime / Infra
 - Nginx proxy_pass: http://127.0.0.1:3000
@@ -22,6 +32,7 @@
 ## Release / Sync Paths
 - Standard release flow (web/server): local changes -> commit/push to GitHub `main` -> pull on Hetzner `/opt/mycliniq` -> build -> pm2 restart
 - Standard release flow (iPhone app): local changes -> commit/push to GitHub `main` -> local `git pull origin main` on Mac workspace -> `npm install` -> `npm run build` -> `npm run mobile:sync:ios` -> Xcode / TestFlight
+- Shared frontend change policy: when a web UI change affects shared routes/components, treat `npm run mobile:sync:ios` as part of the release follow-up, not as an optional later task.
 - Hetzner update commands:
   1. `cd /opt/mycliniq`
   2. `git pull origin main`
