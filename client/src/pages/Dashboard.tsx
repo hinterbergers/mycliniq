@@ -748,22 +748,26 @@ export default function Dashboard() {
   const todayEntry = dashboardData?.today ?? null;
   const birthdayEntry = dashboardData?.birthday ?? null;
 
-  const HeroIcon = dashboardError
-    ? AlertTriangle
-    : todayEntry?.statusLabel
-      ? Stethoscope
+  const HeroIcon = todayEntry?.statusLabel
+    ? Stethoscope
+    : dashboardError
+      ? AlertTriangle
       : Hand;
   const normalizedTodayStatusLabel = todayEntry?.duty?.serviceType
     ? getServiceLineDisplayLabel(todayEntry.duty.serviceType, todayEntry.statusLabel) ??
       todayEntry.statusLabel
     : todayEntry?.statusLabel ?? null;
-  const heroMessage = dashboardError
-    ? dashboardError.startsWith("Fehler")
-      ? dashboardError
-      : `Fehler: ${dashboardError}`
-    : normalizedTodayStatusLabel
+  const heroMessage = normalizedTodayStatusLabel
       ? `Heute: ${normalizedTodayStatusLabel}`
+    : dashboardError
+      ? dashboardError.startsWith("Fehler")
+        ? dashboardError
+        : `Fehler: ${dashboardError}`
       : "Willkommen zurück.";
+  const heroSyncNote =
+    dashboardError && normalizedTodayStatusLabel
+      ? "Aktualisierung derzeit nicht vollständig."
+      : null;
   const todayTeamNames = useMemo(
     () =>
       (todayEntry?.teammates ?? [])
@@ -1330,6 +1334,9 @@ export default function Dashboard() {
             <HeroIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
             <span>{heroMessage}</span>
           </div>
+          {heroSyncNote ? (
+            <p className="text-[11px] text-primary-foreground/75">{heroSyncNote}</p>
+          ) : null}
           {todayTeamLine ? (
             <p className="text-xs text-primary-foreground/75">{todayTeamLine}</p>
           ) : null}
