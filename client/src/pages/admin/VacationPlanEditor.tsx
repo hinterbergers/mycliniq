@@ -1,20 +1,35 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  addDays,
   addMonths,
+  addWeeks,
+  addYears,
+  eachMonthOfInterval,
   differenceInCalendarDays,
   eachDayOfInterval,
+  endOfWeek,
+  endOfYear,
   endOfMonth,
   format,
+  isSameDay,
+  isSameMonth,
+  isToday,
+  startOfDay,
   startOfMonth,
+  startOfWeek,
+  startOfYear,
+  endOfDay,
 } from "date-fns";
 import { de } from "date-fns/locale";
 import {
   AlertTriangle,
+  CalendarDays,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Filter,
   Loader2,
+  Lock,
   Pencil,
   Plus,
   RotateCcw,
@@ -63,6 +78,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
@@ -157,7 +178,30 @@ const VISIBILITY_GROUP_LABELS: Record<VacationVisibilityGroup, string> = {
   SEK: "Sekretariat",
 };
 
-const COMPACT_DAY_CELL_PX = 28;
+const LOCKED_DAY_OVERLAY_STYLE = {
+  backgroundImage:
+    "linear-gradient(135deg, transparent 0 34%, rgba(100,116,139,0.28) 34% 66%, transparent 66% 100%)",
+} as const;
+
+const ROLE_BUBBLE_STYLES: Record<
+  "OA" | "ASS" | "TA",
+  { chip: string; panel: string }
+> = {
+  OA: {
+    chip: "border border-sky-200 bg-sky-50 text-sky-800",
+    panel: "border border-sky-200 bg-sky-50 text-sky-900",
+  },
+  ASS: {
+    chip: "border border-emerald-200 bg-emerald-50 text-emerald-800",
+    panel: "border border-emerald-200 bg-emerald-50 text-emerald-900",
+  },
+  TA: {
+    chip: "border border-amber-200 bg-amber-50 text-amber-800",
+    panel: "border border-amber-200 bg-amber-50 text-amber-900",
+  },
+};
+
+type CalendarViewMode = "year" | "month" | "week" | "day";
 
 type ShiftPreferences = {
   vacationVisibilityRoleGroups?: VacationVisibilityGroup[];
@@ -359,11 +403,62 @@ const getAbsenceRoleOverlapBucket = (role?: string | null) => {
   }
 };
 
+const getSeverityLevel = (share: number, group: "OA" | "ASS") => {
+  if (share <= 0) return 0;
+  if (group === "OA") {
+    if (share <= 0.2) return 1;
+    if (share <= 0.35) return 2;
+    if (share <= 0.5) return 3;
+    return 4;
+  }
+  if (share <= 0.25) return 1;
+  if (share <= 0.4) return 2;
+  if (share <= 0.55) return 3;
+  return 4;
+};
+
+const getSeverityClasses = (level: number) => {
+  if (level <= 0) {
+    return {
+      bgClass: "bg-white",
+      borderClass: "border-slate-200",
+    };
+  }
+  if (level === 1) {
+    return {
+      bgClass: "bg-emerald-50",
+      borderClass: "border-emerald-200",
+    };
+  }
+  if (level === 2) {
+    return {
+      bgClass: "bg-amber-50",
+      borderClass: "border-amber-200",
+    };
+  }
+  if (level === 3) {
+    return {
+      bgClass: "bg-orange-50",
+      borderClass: "border-orange-200",
+    };
+  }
+  return {
+    bgClass: "bg-rose-50",
+    borderClass: "border-rose-200",
+  };
+};
+
+const getRoleBubbleClasses = (group: "OA" | "ASS" | "TA", variant: "chip" | "panel" = "chip") =>
+  ROLE_BUBBLE_STYLES[group][variant];
+
 export default function VacationPlanEditor({
   embedded = false,
 }: { embedded?: boolean } = {}) {
   const { employee: currentUser, isAdmin, capabilities } = useAuth();
   const { toast } = useToast();
+  const [focusDate, setFocusDate] = useState(() => new Date());
+  const [calendarView, setCalendarView] =
+    useState<CalendarViewMode>("month");
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [quarter, setQuarter] = useState(() =>
     Math.floor(new Date().getMonth() / 3),
@@ -420,10 +515,6 @@ export default function VacationPlanEditor({
     notes: "",
   });
   const [updatingId, setUpdatingId] = useState<number | null>(null);
-  const gridScrollRef = useRef<HTMLDivElement | null>(null);
-  const stickyEmployeeHeaderRef = useRef<HTMLTableCellElement | null>(null);
-  const [visibleMonthLabel, setVisibleMonthLabel] = useState("");
-  const [visibleMonthKey, setVisibleMonthKey] = useState("");
 
   const canEditRules = isAdmin || capabilities.includes("vacation.lock");
   const canApprove = isAdmin || capabilities.includes("vacation.approve");
@@ -439,6 +530,11 @@ export default function VacationPlanEditor({
     () => endOfMonth(addMonths(quarterStart, 2)),
     [quarterStart],
   );
+
+  useEffect(() => {
+    setYear(focusDate.getFullYear());
+    setQuarter(Math.floor(focusDate.getMonth() / 3));
+  }, [focusDate]);
 
   const days = useMemo(
     () =>
@@ -461,6 +557,74 @@ export default function VacationPlanEditor({
       };
     });
   }, [quarterStart]);
+
+  const monthViewStart = useMemo(() => startOfMonth(focusDate), [focusDate]);
+  const monthViewEnd = useMemo(() => endOfMonth(focusDate), [focusDate]);
+  const monthGridDays = useMemo(
+    () =>
+      eachDayOfInterval({
+        start: startOfWeek(monthViewStart, { weekStartsOn: 1 }),
+        end: endOfWeek(monthViewEnd, { weekStartsOn: 1 }),
+      }),
+    [monthViewEnd, monthViewStart],
+  );
+  const weekViewStart = useMemo(
+    () => startOfWeek(focusDate, { weekStartsOn: 1 }),
+    [focusDate],
+  );
+  const weekViewEnd = useMemo(
+    () => endOfWeek(focusDate, { weekStartsOn: 1 }),
+    [focusDate],
+  );
+  const weekDays = useMemo(
+    () =>
+      eachDayOfInterval({
+        start: weekViewStart,
+        end: weekViewEnd,
+      }),
+    [weekViewEnd, weekViewStart],
+  );
+
+  const activePeriod = useMemo(() => {
+    if (calendarView === "year") {
+      return {
+        start: startOfYear(focusDate),
+        end: endOfYear(focusDate),
+        label: "Jahr",
+        dativeLabel: "dieses Jahr",
+      };
+    }
+    if (calendarView === "month") {
+      return {
+        start: monthViewStart,
+        end: monthViewEnd,
+        label: "Monat",
+        dativeLabel: "diesen Monat",
+      };
+    }
+    if (calendarView === "week") {
+      return {
+        start: weekViewStart,
+        end: weekViewEnd,
+        label: "Woche",
+        dativeLabel: "diese Woche",
+      };
+    }
+    return {
+      start: startOfDay(focusDate),
+      end: endOfDay(focusDate),
+      label: "Tag",
+      dativeLabel: "diesen Tag",
+    };
+  }, [calendarView, focusDate, monthViewEnd, monthViewStart, weekViewEnd, weekViewStart]);
+  const yearMonths = useMemo(
+    () =>
+      eachMonthOfInterval({
+        start: startOfYear(focusDate),
+        end: endOfYear(focusDate),
+      }),
+    [focusDate],
+  );
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -753,6 +917,27 @@ export default function VacationPlanEditor({
     return map;
   }, [days, visibleCalendarAbsences]);
 
+  const yearDays = useMemo(
+    () =>
+      eachDayOfInterval({
+        start: startOfYear(new Date(year, 0, 1)),
+        end: endOfYear(new Date(year, 0, 1)),
+      }),
+    [year],
+  );
+
+  const yearDayAbsenceMap = useMemo(() => {
+    const map = new Map<string, CalendarAbsence[]>();
+    yearDays.forEach((date) => {
+      const key = formatDateInput(date);
+      const list = visibleCalendarAbsences.filter(
+        (absence) => absence.startDate <= key && absence.endDate >= key,
+      );
+      map.set(key, list);
+    });
+    return map;
+  }, [visibleCalendarAbsences, yearDays]);
+
   const employeeRoleGroupById = useMemo(() => {
     return new Map(
       employees.map((emp) => [
@@ -772,6 +957,46 @@ export default function VacationPlanEditor({
       ]),
     );
   }, [employees]);
+
+  const employeeById = useMemo(
+    () => new Map(employees.map((emp) => [emp.id, emp])),
+    [employees],
+  );
+
+  const planningPool = useMemo(() => {
+    const pool = {
+      OA: 0,
+      ASS: 0,
+    };
+    visibleEmployeesWithSelectedPeople.forEach((emp) => {
+      if (emp.takesShifts === false) return;
+      const role = normalizeRole(emp.role);
+      const group = ROLE_GROUPS[role] ?? null;
+      if (group === "OA") pool.OA += 1;
+      if (group === "ASS") pool.ASS += 1;
+    });
+    return pool;
+  }, [visibleEmployeesWithSelectedPeople]);
+
+  const getDayAbsences = useCallback(
+    (date: Date) => yearDayAbsenceMap.get(formatDateInput(date)) ?? [],
+    [yearDayAbsenceMap],
+  );
+
+  const getAbsenceBreakdown = useCallback(
+    (entries: CalendarAbsence[]) =>
+      entries.reduce(
+        (acc, absence) => {
+          const group = employeeRoleGroupById.get(absence.employeeId);
+          if (group === "OA") acc.OA += 1;
+          if (group === "ASS") acc.ASS += 1;
+          if (group === "TA") acc.TA += 1;
+          return acc;
+        },
+        { OA: 0, ASS: 0, TA: 0 },
+      ),
+    [employeeRoleGroupById],
+  );
 
   const handleExportAbsences = () => {
     if (!activeAbsences.length) {
@@ -913,21 +1138,21 @@ export default function VacationPlanEditor({
     [conflicts],
   );
 
-  const quarterAbsences = useMemo(() => {
-    const start = formatDateInput(quarterStart);
-    const end = formatDateInput(quarterEnd);
+  const activePeriodAbsences = useMemo(() => {
+    const start = formatDateInput(activePeriod.start);
+    const end = formatDateInput(activePeriod.end);
     return absences.filter(
       (absence) =>
         absence.startDate <= end &&
         absence.endDate >= start &&
         visibleEmployeeIds.has(absence.employeeId),
     );
-  }, [absences, quarterStart, quarterEnd, visibleEmployeeIds]);
+  }, [absences, activePeriod.end, activePeriod.start, visibleEmployeeIds]);
 
   const filteredAbsences = useMemo(() => {
-    if (statusFilter === "all") return quarterAbsences;
-    return quarterAbsences.filter((absence) => absence.status === statusFilter);
-  }, [quarterAbsences, statusFilter]);
+    if (statusFilter === "all") return activePeriodAbsences;
+    return activePeriodAbsences.filter((absence) => absence.status === statusFilter);
+  }, [activePeriodAbsences, statusFilter]);
 
   const groupedAbsences = useMemo(() => {
     const groups: Record<
@@ -948,7 +1173,7 @@ export default function VacationPlanEditor({
   }, [filteredAbsences]);
 
   const overlapInfoByAbsenceId = useMemo(() => {
-    const relevant = quarterAbsences.filter((absence) => absence.status !== "Abgelehnt");
+    const relevant = activePeriodAbsences.filter((absence) => absence.status !== "Abgelehnt");
     const roleByEmployeeId = new Map(
       employees.map((emp) => [emp.id, emp.role ?? null]),
     );
@@ -980,7 +1205,7 @@ export default function VacationPlanEditor({
     });
 
     return result;
-  }, [employees, quarterAbsences]);
+  }, [activePeriodAbsences, employees]);
 
   const countVacationDaysForEmployee = (employeeId: number) => {
     const yearStart = new Date(year, 0, 1);
@@ -1004,25 +1229,25 @@ export default function VacationPlanEditor({
 
   const counts = useMemo(() => {
     return {
-      total: quarterAbsences.length,
-      geplant: quarterAbsences.filter((a) => a.status === "Geplant").length,
-      genehmigt: quarterAbsences.filter((a) => a.status === "Genehmigt").length,
-      abgelehnt: quarterAbsences.filter((a) => a.status === "Abgelehnt").length,
+      total: activePeriodAbsences.length,
+      geplant: activePeriodAbsences.filter((a) => a.status === "Geplant").length,
+      genehmigt: activePeriodAbsences.filter((a) => a.status === "Genehmigt").length,
+      abgelehnt: activePeriodAbsences.filter((a) => a.status === "Abgelehnt").length,
     };
-  }, [quarterAbsences]);
+  }, [activePeriodAbsences]);
 
   const sickCount = useMemo(
     () =>
-      quarterAbsences.filter(
+      activePeriodAbsences.filter(
         (absence) =>
           absence.reason === "Krankenstand" && absence.status !== "Abgelehnt",
       ).length,
-    [quarterAbsences],
+    [activePeriodAbsences],
   );
 
   const absenceSummary = useMemo(() => {
-    const start = quarterStart;
-    const end = quarterEnd;
+    const start = activePeriod.start;
+    const end = activePeriod.end;
     const map = new Map<number, Record<string, number>>();
     visibleEmployeesWithSelectedPeople.forEach((emp) => {
       const entry: Record<string, number> = {};
@@ -1049,8 +1274,8 @@ export default function VacationPlanEditor({
       counts: map.get(emp.id) ?? {},
     }));
   }, [
-    quarterEnd,
-    quarterStart,
+    activePeriod.end,
+    activePeriod.start,
     visibleCalendarAbsences,
     visibleEmployeesWithSelectedPeople,
   ]);
@@ -1085,23 +1310,21 @@ export default function VacationPlanEditor({
     return format(date, "EEEE", { locale: de });
   };
 
-  const handlePrevQuarter = () => {
-    setQuarter((prev) => {
-      if (prev === 0) {
-        setYear((yearValue) => yearValue - 1);
-        return 3;
-      }
-      return prev - 1;
+  const handlePrevPeriod = () => {
+    setFocusDate((prev) => {
+      if (calendarView === "year") return addYears(prev, -1);
+      if (calendarView === "month") return addMonths(prev, -1);
+      if (calendarView === "week") return addWeeks(prev, -1);
+      return addDays(prev, -1);
     });
   };
 
-  const handleNextQuarter = () => {
-    setQuarter((prev) => {
-      if (prev === 3) {
-        setYear((yearValue) => yearValue + 1);
-        return 0;
-      }
-      return prev + 1;
+  const handleNextPeriod = () => {
+    setFocusDate((prev) => {
+      if (calendarView === "year") return addYears(prev, 1);
+      if (calendarView === "month") return addMonths(prev, 1);
+      if (calendarView === "week") return addWeeks(prev, 1);
+      return addDays(prev, 1);
     });
   };
 
@@ -1141,31 +1364,6 @@ export default function VacationPlanEditor({
     selectedCompetencyIds.length > 0 ||
     (selectedRoleGroups.length > 0 &&
       selectedRoleGroups.length !== visibilityGroups.length);
-
-  useEffect(() => {
-    const container = gridScrollRef.current;
-    if (!container || !days.length) return;
-
-    const updateVisibleMonth = () => {
-      const firstColWidth = stickyEmployeeHeaderRef.current?.offsetWidth ?? 220;
-      const dayOffset = Math.max(0, container.scrollLeft - firstColWidth);
-      const dayIndex = Math.max(
-        0,
-        Math.min(days.length - 1, Math.floor(dayOffset / COMPACT_DAY_CELL_PX)),
-      );
-      const activeDate = days[dayIndex] ?? days[0];
-      setVisibleMonthLabel(format(activeDate, "MMMM yyyy", { locale: de }));
-      setVisibleMonthKey(format(activeDate, "yyyy-MM"));
-    };
-
-    updateVisibleMonth();
-    container.addEventListener("scroll", updateVisibleMonth, { passive: true });
-    window.addEventListener("resize", updateVisibleMonth);
-    return () => {
-      container.removeEventListener("scroll", updateVisibleMonth);
-      window.removeEventListener("resize", updateVisibleMonth);
-    };
-  }, [days]);
 
   const hasVacationLock = Boolean(vacationLockFrom || vacationLockUntil);
 
@@ -1220,6 +1418,19 @@ export default function VacationPlanEditor({
       }));
     }
     setAbsenceDialogOpen(true);
+  };
+
+  const openQuickAbsenceDialog = (date: Date) => {
+    const defaultEmployeeId = currentUser?.id ?? absenceDraft.employeeId ?? null;
+    if (!defaultEmployeeId) {
+      toast({
+        title: "Kein Mitarbeiter verfuegbar",
+        description: "Bitte erneut anmelden oder einen Mitarbeiter auswaehlen.",
+        variant: "destructive",
+      });
+      return;
+    }
+    openAbsenceDialog(defaultEmployeeId, date);
   };
 
   const openAbsenceEditDialog = (absence: PlannedAbsenceAdmin) => {
@@ -1357,6 +1568,78 @@ export default function VacationPlanEditor({
     return `Eintraege fuer Benutzer gesperrt: ${fromLabel} - ${untilLabel}`;
   }, [hasVacationLock, vacationLockFrom, vacationLockUntil]);
 
+  const selectedDraftEmployee = useMemo(
+    () =>
+      employees.find((emp) => emp.id === absenceDraft.employeeId) ??
+      (currentUser && absenceDraft.employeeId === currentUser.id
+        ? currentUser
+        : null),
+    [absenceDraft.employeeId, currentUser, employees],
+  );
+
+  const selectedDraftEmployeeName = useMemo(() => {
+    if (!selectedDraftEmployee) return "Mitarbeiter waehlen";
+    return (
+      [selectedDraftEmployee.lastName, selectedDraftEmployee.firstName]
+        .filter(Boolean)
+        .join(" ")
+        .trim() ||
+      selectedDraftEmployee.name ||
+      "Unbekannt"
+    );
+  }, [selectedDraftEmployee]);
+
+  const selectedDraftRangeLocked = useMemo(() => {
+    if (!absenceDraft.startDate || !absenceDraft.endDate) return false;
+    return isRangeWithinLock(absenceDraft.startDate, absenceDraft.endDate);
+  }, [absenceDraft.endDate, absenceDraft.startDate, vacationLockFrom, vacationLockUntil]);
+
+  const selectedDraftOverlappingAbsences = useMemo(() => {
+    if (!absenceDraft.startDate || !absenceDraft.endDate) return [];
+    return visibleCalendarAbsences
+      .filter((absence) => {
+        if (absence.source !== "planned") return false;
+        if (absence.status === "Abgelehnt") return false;
+        if (editingAbsence && absence.id === `planned-${editingAbsence.id}`) return false;
+        return (
+          absence.startDate <= absenceDraft.endDate &&
+          absence.endDate >= absenceDraft.startDate
+        );
+      })
+      .slice()
+      .sort((a, b) => {
+        if (a.startDate !== b.startDate) {
+          return a.startDate.localeCompare(b.startDate);
+        }
+        const rankA =
+          ROLE_SORT_ORDER[normalizeRole(employeeById.get(a.employeeId)?.role)] ?? 999;
+        const rankB =
+          ROLE_SORT_ORDER[normalizeRole(employeeById.get(b.employeeId)?.role)] ?? 999;
+        if (rankA !== rankB) return rankA - rankB;
+        const nameA = employeeNameById.get(a.employeeId) ?? "";
+        const nameB = employeeNameById.get(b.employeeId) ?? "";
+        return nameA.localeCompare(nameB, "de");
+      });
+  }, [
+    absenceDraft.endDate,
+    absenceDraft.startDate,
+    editingAbsence,
+    employeeById,
+    employeeNameById,
+    visibleCalendarAbsences,
+  ]);
+
+  const lockWindowLabel = useMemo(() => {
+    if (!hasVacationLock) return null;
+    const fromLabel = vacationLockFrom
+      ? format(toDate(vacationLockFrom), "dd.MM.yyyy")
+      : "offen";
+    const untilLabel = vacationLockUntil
+      ? format(toDate(vacationLockUntil), "dd.MM.yyyy")
+      : "offen";
+    return `${fromLabel} - ${untilLabel}`;
+  }, [hasVacationLock, vacationLockFrom, vacationLockUntil]);
+
   const handleSaveVacationLock = async () => {
     if (!rosterSettings) return;
     setSavingLock(true);
@@ -1456,6 +1739,263 @@ export default function VacationPlanEditor({
       );
   }, [employeeFilterCandidates, selectedEmployeeIds, selectedEmployeeLookup]);
 
+  const calendarPeriodLabel = useMemo(() => {
+    if (calendarView === "year") {
+      return format(focusDate, "yyyy");
+    }
+    if (calendarView === "month") {
+      return format(focusDate, "MMMM yyyy", { locale: de });
+    }
+    if (calendarView === "week") {
+      return `${format(weekViewStart, "dd.MM.", { locale: de })} - ${format(
+        weekViewEnd,
+        "dd.MM.yyyy",
+        { locale: de },
+      )}`;
+    }
+    return format(focusDate, "EEEE, dd.MM.yyyy", { locale: de });
+  }, [calendarView, focusDate, weekViewEnd, weekViewStart]);
+
+  const dayViewAbsences = useMemo(
+    () =>
+      getDayAbsences(focusDate)
+        .slice()
+        .sort((a, b) => {
+          const rankA =
+            ROLE_SORT_ORDER[
+              normalizeRole(employees.find((emp) => emp.id === a.employeeId)?.role)
+            ] ?? 999;
+          const rankB =
+            ROLE_SORT_ORDER[
+              normalizeRole(employees.find((emp) => emp.id === b.employeeId)?.role)
+            ] ?? 999;
+          if (rankA !== rankB) return rankA - rankB;
+          const nameA = employeeNameById.get(a.employeeId) ?? "";
+          const nameB = employeeNameById.get(b.employeeId) ?? "";
+          return nameA.localeCompare(nameB, "de");
+        }),
+    [employeeNameById, employees, focusDate, getDayAbsences],
+  );
+
+  const dayViewGroupedAbsences = useMemo(() => {
+    const groups = new Map<string, CalendarAbsence[]>();
+    dayViewAbsences.forEach((absence) => {
+      const employee = employeeById.get(absence.employeeId);
+      const role = normalizeRole(employee?.role);
+      const key = role || "Sonstige";
+      const list = groups.get(key) ?? [];
+      list.push(absence);
+      groups.set(key, list);
+    });
+    return Array.from(groups.entries()).sort((a, b) => {
+      const rankA = ROLE_SORT_ORDER[a[0]] ?? 999;
+      const rankB = ROLE_SORT_ORDER[b[0]] ?? 999;
+      return rankA - rankB;
+    });
+  }, [dayViewAbsences, employeeById]);
+
+  const getHierarchicalAbsenceGroups = useCallback(
+    (entries: CalendarAbsence[]) => {
+      const groups = new Map<string, CalendarAbsence[]>();
+      entries.forEach((absence) => {
+        const role = normalizeRole(employeeById.get(absence.employeeId)?.role);
+        const key = role || "Sonstige";
+        const list = groups.get(key) ?? [];
+        list.push(absence);
+        groups.set(key, list);
+      });
+
+      return Array.from(groups.entries())
+        .sort((a, b) => {
+          const rankA = ROLE_SORT_ORDER[a[0]] ?? 999;
+          const rankB = ROLE_SORT_ORDER[b[0]] ?? 999;
+          return rankA - rankB;
+        })
+        .map(([role, items]) => [
+          role,
+          items.slice().sort((a, b) => {
+            const nameA = employeeNameById.get(a.employeeId) ?? "";
+            const nameB = employeeNameById.get(b.employeeId) ?? "";
+            return nameA.localeCompare(nameB, "de");
+          }),
+        ] as const);
+    },
+    [employeeById, employeeNameById],
+  );
+
+  const getDayVisualState = useCallback(
+    (date: Date) => {
+      const entries = getDayAbsences(date);
+      const breakdown = getAbsenceBreakdown(entries);
+      const oaShare = planningPool.OA > 0 ? breakdown.OA / planningPool.OA : 0;
+      const assShare =
+        planningPool.ASS > 0 ? breakdown.ASS / planningPool.ASS : 0;
+      const severity = Math.max(
+        getSeverityLevel(oaShare, "OA"),
+        getSeverityLevel(assShare, "ASS"),
+      );
+      const { bgClass, borderClass } = getSeverityClasses(severity);
+
+      const primarAbsent = entries.some(
+        (absence) =>
+          normalizeRole(employeeById.get(absence.employeeId)?.role) ===
+          "Primararzt",
+      );
+      const leadershipAbsent = entries.some((absence) => {
+        const role = normalizeRole(employeeById.get(absence.employeeId)?.role);
+        return (
+          role === "1. Oberarzt" ||
+          role === "Funktionsoberarzt" ||
+          role === "Ausbildungsoberarzt"
+        );
+      });
+
+      return {
+        entries,
+        breakdown,
+        severity,
+        bgClass,
+        borderClass,
+        primarAbsent,
+        leadershipAbsent,
+        specialRingClass: primarAbsent
+          ? "ring-2 ring-violet-300"
+          : leadershipAbsent
+            ? "ring-2 ring-sky-300"
+            : "",
+      };
+    },
+    [employeeById, getAbsenceBreakdown, getDayAbsences, planningPool.ASS, planningPool.OA],
+  );
+
+  const renderDayTooltipContent = useCallback(
+    (date: Date) => {
+      const state = getDayVisualState(date);
+      const tooltipEntries = state.entries.filter(
+        (absence) => absence.source === "planned",
+      );
+      const tooltipBreakdown = getAbsenceBreakdown(tooltipEntries);
+      const tooltipPrimarAbsent = tooltipEntries.some(
+        (absence) =>
+          normalizeRole(employeeById.get(absence.employeeId)?.role) ===
+          "Primararzt",
+      );
+      const tooltipLeadershipAbsent = tooltipEntries.some((absence) => {
+        const role = normalizeRole(employeeById.get(absence.employeeId)?.role);
+        return (
+          role === "1. Oberarzt" ||
+          role === "Funktionsoberarzt" ||
+          role === "Ausbildungsoberarzt"
+        );
+      });
+      const groupedEntries = getHierarchicalAbsenceGroups(tooltipEntries);
+      return (
+        <div className="w-[280px] space-y-3 text-xs">
+          <div>
+            <div className="font-semibold text-slate-900">
+              {format(date, "EEEE, dd.MM.yyyy", { locale: de })}
+            </div>
+            <div className="mt-1 flex flex-wrap gap-1 text-[11px]">
+              <span className={cn("rounded-full px-2 py-0.5", getRoleBubbleClasses("OA"))}>
+                OA {tooltipBreakdown.OA}
+              </span>
+              <span className={cn("rounded-full px-2 py-0.5", getRoleBubbleClasses("ASS"))}>
+                ASS {tooltipBreakdown.ASS}
+              </span>
+              <span className={cn("rounded-full px-2 py-0.5", getRoleBubbleClasses("TA"))}>
+                TA {tooltipBreakdown.TA}
+              </span>
+              {tooltipPrimarAbsent && (
+                <span className="rounded-full bg-violet-100 px-2 py-0.5 text-violet-800">
+                  Primar abwesend
+                </span>
+              )}
+              {!tooltipPrimarAbsent && tooltipLeadershipAbsent && (
+                <span className="rounded-full bg-sky-100 px-2 py-0.5 text-sky-800">
+                  Leitungsfunktion abwesend
+                </span>
+              )}
+            </div>
+          </div>
+          {groupedEntries.length === 0 ? (
+            <div className="text-slate-500">Keine planbaren Abwesenheiten</div>
+          ) : (
+            groupedEntries.map(([role, entries]) => (
+              <div key={`${formatDateInput(date)}-${role}`} className="space-y-1">
+                <div className="font-semibold uppercase tracking-[0.14em] text-slate-500">
+                  {role}
+                </div>
+                <div className="space-y-1">
+                  {entries.map((absence) => {
+                    const style = REASON_STYLES[absence.styleKey];
+                    return (
+                      <div
+                        key={absence.id}
+                        className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-2 py-1.5"
+                      >
+                        <span className="text-slate-900">
+                          {employeeNameById.get(absence.employeeId) ?? "Unbekannt"}
+                        </span>
+                        <span
+                          className={cn(
+                            "rounded-full px-2 py-0.5 text-[11px] font-medium text-slate-800",
+                            style?.bg || "bg-slate-200",
+                          )}
+                        >
+                          {absence.reason}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      );
+    },
+    [employeeById, employeeNameById, getAbsenceBreakdown, getDayVisualState, getHierarchicalAbsenceGroups],
+  );
+
+  const renderQuickAddButton = useCallback(
+    (date: Date, iconClassName = "rounded-full") => {
+      if (!currentUser) return null;
+      const locked = hasVacationLock && !canOverrideLock && isDateWithinLock(formatDateInput(date));
+      const trigger = (
+        <span className="inline-flex">
+          <button
+            type="button"
+            disabled={locked}
+            onClick={(event) => {
+              event.stopPropagation();
+              openQuickAbsenceDialog(date);
+            }}
+            className={cn(
+              "flex h-8 w-8 items-center justify-center border border-white/80 bg-white/90 text-slate-700 shadow-sm transition hover:bg-white",
+              iconClassName,
+              locked && "cursor-not-allowed border-slate-200 bg-white/70 text-slate-400",
+            )}
+            aria-label={`Abwesenheit fuer ${format(date, "dd.MM.yyyy")} eintragen`}
+          >
+            <Plus className="h-4 w-4" />
+          </button>
+        </span>
+      );
+
+      if (!locked) return trigger;
+
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>{trigger}</TooltipTrigger>
+          <TooltipContent className="max-w-[220px] bg-white text-foreground border border-border shadow-md">
+            Bitte an den Ersten Oberarzt oder Primarius wenden.
+          </TooltipContent>
+        </Tooltip>
+      );
+    },
+    [canOverrideLock, currentUser, hasVacationLock, openQuickAbsenceDialog],
+  );
+
   const handleRuleToggle = async (rule: VacationRule, value: boolean) => {
     try {
       const updated = await vacationRulesApi.update(rule.id, {
@@ -1497,82 +2037,129 @@ export default function VacationPlanEditor({
   const content = (
     <div className="space-y-6">
       <Card className="border-none kabeg-shadow">
-        <CardContent className="p-4 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="icon" onClick={handlePrevQuarter}>
-                <ChevronLeft className="w-4 h-4" />
-              </Button>
-              <div className="flex flex-col">
-                <span className="text-xs text-muted-foreground">Quartal</span>
-                <span className="font-semibold">{quarterLabel}</span>
-              </div>
-              <Button variant="outline" size="icon" onClick={handleNextQuarter}>
-                <ChevronRight className="w-4 h-4" />
-              </Button>
-            </div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="flex items-center gap-2">
-                <Label
-                  htmlFor="vacation-year"
-                  className="text-xs text-muted-foreground"
-                >
-                  Jahr
-                </Label>
-                <Input
-                  id="vacation-year"
-                  type="number"
-                  value={year}
-                  onChange={(e) => setYear(Number(e.target.value))}
-                  className="w-24"
-                />
-              </div>
-              {!embedded && (
-                <Select
-                  value={statusFilter}
-                  onValueChange={(value) => setStatusFilter(value as any)}
-                >
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {STATUS_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-              {embedded && currentUser && (
-                <div className="flex items-center gap-2">
-                  <Switch
-                    id="vacation-only-self"
-                    checked={showOnlySelf}
-                    onCheckedChange={setShowOnlySelf}
-                  />
-                  <Label
-                    htmlFor="vacation-only-self"
-                    className="text-sm font-normal"
-                  >
-                    Nur meine Zeile
-                  </Label>
+        <CardContent className="space-y-5 p-5">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
+            <div className="rounded-2xl border border-slate-200 bg-[linear-gradient(135deg,#f8fbff_0%,#eef4ff_100%)] p-4 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="space-y-2">
+                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Planungszeitraum
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-10 w-10 rounded-xl bg-white"
+                      onClick={handlePrevPeriod}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <div>
+                      <div className="text-2xl font-semibold tracking-tight text-slate-900">
+                        {calendarPeriodLabel}
+                      </div>
+                      <div className="text-sm text-slate-500">
+                        {calendarView === "year"
+                          ? "Jahresuebersicht mit verdichteten Engpaessen"
+                          : calendarView === "month"
+                            ? "Monatskalender fuer die operative Planung"
+                            : calendarView === "week"
+                              ? "Wochenfokus fuer die Teamabstimmung"
+                              : "Tagesdetails fuer Freigabe und Bearbeitung"}
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-10 w-10 rounded-xl bg-white"
+                      onClick={handleNextPeriod}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
-              )}
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="gap-2">
-                    <Filter className="w-4 h-4" />
-                    Filter
-                    {filterActive && (
-                      <Badge variant="secondary" className="ml-1">
-                        aktiv
-                      </Badge>
-                    )}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="end" className="w-80">
-                  <div className="space-y-4">
+                <div className="grid min-w-[220px] gap-3 sm:grid-cols-2">
+                  <div className="rounded-xl border border-white/80 bg-white/90 p-3 shadow-sm">
+                    <Label
+                      htmlFor="vacation-year"
+                      className="mb-2 block text-[11px] font-semibold uppercase tracking-wide text-slate-500"
+                    >
+                      Jahr
+                    </Label>
+                    <Input
+                      id="vacation-year"
+                      type="number"
+                      value={year}
+                      onChange={(e) => {
+                        const nextYear = Number(e.target.value);
+                        if (!Number.isFinite(nextYear)) return;
+                        setYear(nextYear);
+                        setFocusDate(
+                          new Date(nextYear, focusDate.getMonth(), focusDate.getDate()),
+                        );
+                      }}
+                      className="h-10 rounded-xl border-slate-200 bg-white"
+                    />
+                  </div>
+                  <div className="rounded-xl border border-white/80 bg-white/90 p-3 shadow-sm">
+                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      Ansicht
+                    </div>
+                    <Tabs
+                      value={calendarView}
+                      onValueChange={(value) =>
+                        setCalendarView(value as CalendarViewMode)
+                      }
+                    >
+                      <TabsList className="grid h-10 w-full grid-cols-4 rounded-xl bg-slate-100">
+                        <TabsTrigger value="year" className="rounded-lg px-2">
+                          Jahr
+                        </TabsTrigger>
+                        <TabsTrigger value="month" className="rounded-lg px-2">
+                          Monat
+                        </TabsTrigger>
+                        <TabsTrigger value="week" className="rounded-lg px-2">
+                          Woche
+                        </TabsTrigger>
+                        <TabsTrigger value="day" className="rounded-lg px-2">
+                          Tag
+                        </TabsTrigger>
+                      </TabsList>
+                    </Tabs>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Aktionen
+                  </div>
+                  <div className="text-sm text-slate-500">
+                    Filter, Export und neue Eintraege
+                  </div>
+                </div>
+                {filterActive && (
+                  <Badge variant="secondary" className="rounded-full">
+                    Filter aktiv
+                  </Badge>
+                )}
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="h-11 justify-start gap-2 rounded-xl border-slate-300"
+                    >
+                      <Filter className="w-4 h-4" />
+                      Filter
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-80">
+                    <div className="space-y-4">
                     <div className="space-y-2">
                       <div className="text-xs font-semibold uppercase text-muted-foreground">
                         Rollen
@@ -1682,37 +2269,72 @@ export default function VacationPlanEditor({
                         )}
                       </div>
                     </div>
-                    <Button variant="ghost" size="sm" onClick={resetFilters}>
-                      Zuruecksetzen
-                    </Button>
+                      <Button variant="ghost" size="sm" onClick={resetFilters}>
+                        Zuruecksetzen
+                      </Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                <Button
+                  variant="outline"
+                  className="h-11 justify-start gap-2 rounded-xl border-slate-300"
+                  onClick={handleExportAbsences}
+                  disabled={activeAbsences.length === 0}
+                >
+                  <CalendarDays className="h-4 w-4" />
+                  CSV exportieren
+                </Button>
+                {embedded && currentUser ? (
+                  <div className="flex h-11 items-center gap-3 rounded-xl border border-slate-300 px-3 sm:col-span-2">
+                    <Switch
+                      id="vacation-only-self"
+                      checked={showOnlySelf}
+                      onCheckedChange={setShowOnlySelf}
+                    />
+                    <Label
+                      htmlFor="vacation-only-self"
+                      className="text-sm font-normal"
+                    >
+                      Nur meine Zeile
+                    </Label>
                   </div>
-                </PopoverContent>
-              </Popover>
-              <Button
-                variant="outline"
-                className="gap-2"
-                onClick={handleExportAbsences}
-                disabled={activeAbsences.length === 0}
-              >
-                CSV exportieren
-              </Button>
-              <Dialog
-                open={absenceDialogOpen}
-                onOpenChange={(open) => {
-                  if (open) {
-                    setAbsenceDialogOpen(true);
-                    return;
-                  }
-                  closeAbsenceDialog();
-                }}
-              >
-                <DialogTrigger asChild>
-                  <Button className="gap-2" disabled={!currentUser}>
-                    <Plus className="w-4 h-4" />
-                    Abwesenheit erfassen
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-[520px]">
+                ) : (
+                  <Select
+                    value={statusFilter}
+                    onValueChange={(value) => setStatusFilter(value as any)}
+                  >
+                    <SelectTrigger className="h-11 rounded-xl border-slate-300 bg-white sm:col-span-2">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {STATUS_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                <Dialog
+                  open={absenceDialogOpen}
+                  onOpenChange={(open) => {
+                    if (open) {
+                      setAbsenceDialogOpen(true);
+                      return;
+                    }
+                    closeAbsenceDialog();
+                  }}
+                >
+                  <DialogTrigger asChild>
+                    <Button
+                      className="h-11 justify-start gap-2 rounded-xl sm:col-span-2"
+                      disabled={!currentUser}
+                    >
+                      <Plus className="w-4 h-4" />
+                      Abwesenheit erfassen
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-[560px]">
                   <DialogHeader>
                     <DialogTitle>
                       {editingAbsence
@@ -1720,144 +2342,296 @@ export default function VacationPlanEditor({
                         : "Abwesenheit eintragen"}
                     </DialogTitle>
                   </DialogHeader>
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label>Mitarbeiter</Label>
-                      {canEditOthers ? (
-                        <Select
-                          value={
-                            absenceDraft.employeeId
-                              ? String(absenceDraft.employeeId)
-                              : ""
-                          }
-                          disabled={Boolean(editingAbsence)}
-                          onValueChange={(value) =>
-                            setAbsenceDraft((prev) => ({
-                              ...prev,
-                              employeeId: Number(value),
-                            }))
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Mitarbeiter waehlen" />
-                          </SelectTrigger>
-                          <SelectContent className="max-h-72">
-                            {visibleEmployees.map((emp) => (
-                              <SelectItem key={emp.id} value={String(emp.id)}>
-                                {emp.lastName} {emp.firstName}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <Input
-                          value={`${currentUser?.lastName ?? ""} ${currentUser?.firstName ?? ""}`}
-                          disabled
-                        />
-                      )}
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Grund</Label>
-                      <Select
-                        value={absenceDraft.reason}
-                        onValueChange={(value) =>
-                          setAbsenceDraft((prev) => ({
-                            ...prev,
-                            reason: value as (typeof ABSENCE_REASONS)[number],
-                          }))
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ABSENCE_REASONS.map((reason) => (
-                            <SelectItem key={reason} value={reason}>
-                              {reason}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {absenceDraft.reason === "Urlaub" && (
-                        <p className="text-xs text-muted-foreground">
-                          Urlaub wird gegen den Anspruch gerechnet. Fortbildung
-                          ist ausgenommen.
-                        </p>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>Von</Label>
-                        <Input
-                          type="date"
-                          value={absenceDraft.startDate}
-                          onChange={(e) =>
-                            setAbsenceDraft((prev) => ({
-                              ...prev,
-                              startDate: e.target.value,
-                            }))
-                          }
-                        />
+                    <div className="space-y-4">
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                              Eintrag
+                            </div>
+                            <div className="mt-1 text-lg font-semibold text-slate-900">
+                              {selectedDraftEmployeeName}
+                            </div>
+                            <div className="text-sm text-slate-500">
+                              {selectedDraftEmployee?.role || "Rolle wird nach Auswahl angezeigt"}
+                            </div>
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 shadow-sm">
+                            {editingAbsence ? "Bestehenden Eintrag bearbeiten" : "Neuen Eintrag erfassen"}
+                          </div>
+                        </div>
                       </div>
-                      <div className="space-y-2">
-                        <Label>Bis</Label>
-                        <Input
-                          type="date"
-                          value={absenceDraft.endDate}
-                          onChange={(e) =>
-                            setAbsenceDraft((prev) => ({
-                              ...prev,
-                              endDate: e.target.value,
-                            }))
-                          }
-                        />
+
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label>Mitarbeiter</Label>
+                          {canEditOthers ? (
+                            <Select
+                              value={
+                                absenceDraft.employeeId
+                                  ? String(absenceDraft.employeeId)
+                                  : ""
+                              }
+                              disabled={Boolean(editingAbsence)}
+                              onValueChange={(value) =>
+                                setAbsenceDraft((prev) => ({
+                                  ...prev,
+                                  employeeId: Number(value),
+                                }))
+                              }
+                            >
+                              <SelectTrigger className="rounded-xl">
+                                <SelectValue placeholder="Mitarbeiter waehlen" />
+                              </SelectTrigger>
+                              <SelectContent className="max-h-72">
+                                {visibleEmployees.map((emp) => (
+                                  <SelectItem key={emp.id} value={String(emp.id)}>
+                                    {emp.lastName} {emp.firstName}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <Input
+                              value={`${currentUser?.lastName ?? ""} ${currentUser?.firstName ?? ""}`}
+                              disabled
+                              className="rounded-xl"
+                            />
+                          )}
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Grund</Label>
+                          <Select
+                            value={absenceDraft.reason}
+                            onValueChange={(value) =>
+                              setAbsenceDraft((prev) => ({
+                                ...prev,
+                                reason: value as (typeof ABSENCE_REASONS)[number],
+                              }))
+                            }
+                          >
+                            <SelectTrigger className="rounded-xl">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {ABSENCE_REASONS.map((reason) => (
+                                <SelectItem key={reason} value={reason}>
+                                  {reason}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {absenceDraft.reason === "Urlaub" && (
+                            <p className="text-xs text-muted-foreground">
+                              Urlaub wird gegen den Anspruch gerechnet. Fortbildung ist ausgenommen.
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Hinweise</Label>
-                      <Textarea
-                        value={absenceDraft.notes}
-                        onChange={(e) =>
-                          setAbsenceDraft((prev) => ({
-                            ...prev,
-                            notes: e.target.value,
-                          }))
-                        }
-                        placeholder="Optional"
-                      />
-                    </div>
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="outline"
-                        onClick={closeAbsenceDialog}
-                      >
-                        Abbrechen
-                      </Button>
-                      <Button
-                        onClick={handleAbsenceSave}
-                        disabled={savingAbsence || !absenceDraft.employeeId}
-                      >
-                        {savingAbsence && (
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <div className="mb-3 flex items-center gap-2">
+                          <CalendarDays className="h-4 w-4 text-slate-500" />
+                          <div className="text-sm font-semibold text-slate-800">
+                            Zeitraum
+                          </div>
+                        </div>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label>Von</Label>
+                            <Input
+                              type="date"
+                              className="rounded-xl"
+                              value={absenceDraft.startDate}
+                              onChange={(e) =>
+                                setAbsenceDraft((prev) => ({
+                                  ...prev,
+                                  startDate: e.target.value,
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Bis</Label>
+                            <Input
+                              type="date"
+                              className="rounded-xl"
+                              value={absenceDraft.endDate}
+                              onChange={(e) =>
+                                setAbsenceDraft((prev) => ({
+                                  ...prev,
+                                  endDate: e.target.value,
+                                }))
+                              }
+                            />
+                          </div>
+                        </div>
+                        {hasVacationLock && (
+                          <div
+                            className={cn(
+                              "mt-3 rounded-xl border px-3 py-2 text-sm",
+                              selectedDraftRangeLocked && !canOverrideLock
+                                ? "border-amber-300 bg-amber-50 text-amber-900"
+                                : "border-slate-200 bg-slate-50 text-slate-600",
+                            )}
+                          >
+                            <div className="flex items-start gap-2">
+                              <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+                              <div>
+                                <div className="font-medium">
+                                  {selectedDraftRangeLocked && !canOverrideLock
+                                    ? "Selbststaendige Eintragung in diesem Zeitraum gesperrt"
+                                    : "Aktive Eintragssperre vorhanden"}
+                                </div>
+                                {lockWindowLabel ? (
+                                  <div className="text-xs">
+                                    Sperrfenster: {lockWindowLabel}
+                                  </div>
+                                ) : null}
+                                {selectedDraftRangeLocked && !canOverrideLock ? (
+                                  <div className="mt-1 text-xs">
+                                    Bitte an den Ersten Oberarzt oder Primarius wenden.
+                                  </div>
+                                ) : null}
+                              </div>
+                            </div>
+                          </div>
                         )}
-                        {editingAbsence ? "Aktualisieren" : "Speichern"}
-                      </Button>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-semibold text-slate-800">
+                              Bereits eingetragen im Zeitraum
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              Planbare Abwesenheiten im gewaehlten Zeitraum.
+                            </div>
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600">
+                            {selectedDraftOverlappingAbsences.length} Eintraege
+                          </div>
+                        </div>
+                        {selectedDraftOverlappingAbsences.length === 0 ? (
+                          <div className="rounded-xl bg-slate-50 px-3 py-3 text-sm text-slate-500">
+                            Keine bestehenden Abwesenheiten im gewaehlten Zeitraum.
+                          </div>
+                        ) : (
+                          <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                            {selectedDraftOverlappingAbsences.map((absence) => {
+                              const style = REASON_STYLES[absence.styleKey];
+                              const overlapStart =
+                                absence.startDate > absenceDraft.startDate
+                                  ? absence.startDate
+                                  : absenceDraft.startDate;
+                              const overlapEnd =
+                                absence.endDate < absenceDraft.endDate
+                                  ? absence.endDate
+                                  : absenceDraft.endDate;
+                              const employee = employeeById.get(absence.employeeId);
+                              return (
+                                <div
+                                  key={`draft-overlap-${absence.id}`}
+                                  className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+                                >
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                      <div className="font-medium text-slate-900">
+                                        {employeeNameById.get(absence.employeeId) ?? "Unbekannt"}
+                                      </div>
+                                      <div className="text-xs text-slate-500">
+                                        {employee?.role || "Ohne Rolle"} ·{" "}
+                                        {format(toDate(overlapStart), "dd.MM.yyyy")} -{" "}
+                                        {format(toDate(overlapEnd), "dd.MM.yyyy")}
+                                      </div>
+                                    </div>
+                                    <span
+                                      className={cn(
+                                        "rounded-full px-2 py-0.5 text-[11px] font-medium text-slate-800",
+                                        style?.bg || "bg-slate-200",
+                                      )}
+                                    >
+                                      {absence.reason}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Hinweise</Label>
+                        <Textarea
+                          value={absenceDraft.notes}
+                          onChange={(e) =>
+                            setAbsenceDraft((prev) => ({
+                              ...prev,
+                              notes: e.target.value,
+                            }))
+                          }
+                          placeholder="Optional"
+                          className="min-h-24 rounded-xl"
+                        />
+                      </div>
+
+                      <div className="flex justify-end gap-2 border-t border-slate-200 pt-3">
+                        <Button variant="outline" onClick={closeAbsenceDialog}>
+                          Abbrechen
+                        </Button>
+                        <Button
+                          onClick={handleAbsenceSave}
+                          disabled={savingAbsence || !absenceDraft.employeeId}
+                        >
+                          {savingAbsence && (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          )}
+                          {editingAbsence ? "Aktualisieren" : "Speichern"}
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                </DialogContent>
-              </Dialog>
+                  </DialogContent>
+                </Dialog>
+              </div>
             </div>
           </div>
           {(hasVacationLock || canEditRules) && (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-white px-3 py-2">
-              <div className="flex items-center gap-2 text-sm">
-                {hasVacationLock ? (
-                  <AlertTriangle className="w-4 h-4 text-amber-500" />
-                ) : (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                )}
-                <span>{vacationLockLabel}</span>
-              </div>
+            <div
+              className={cn(
+                "rounded-2xl border px-4 py-3 shadow-sm",
+                hasVacationLock
+                  ? "border-amber-200 bg-[linear-gradient(135deg,#fff9eb_0%,#fffdf6_100%)]"
+                  : "border-emerald-200 bg-[linear-gradient(135deg,#f3fff8_0%,#fcfffd_100%)]",
+              )}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-start gap-3 text-sm">
+                  <div
+                    className={cn(
+                      "mt-0.5 rounded-full p-2",
+                      hasVacationLock ? "bg-amber-100" : "bg-emerald-100",
+                    )}
+                  >
+                    {hasVacationLock ? (
+                      <AlertTriangle className="w-4 h-4 text-amber-700" />
+                    ) : (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      Eintragssperre
+                    </div>
+                    <div className="font-medium text-slate-900">
+                      {vacationLockLabel}
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      Schraffierte Kalendertage zeigen den Zeitraum, in dem Benutzer selbst keinen Urlaub mehr eintragen koennen.
+                    </div>
+                  </div>
+                </div>
               {canEditRules && (
                 <Dialog open={lockDialogOpen} onOpenChange={setLockDialogOpen}>
                   <DialogTrigger asChild>
@@ -1922,24 +2696,54 @@ export default function VacationPlanEditor({
                   </DialogContent>
                 </Dialog>
               )}
+              </div>
             </div>
           )}
-          <div className="flex flex-wrap gap-2">
-            <Badge variant="outline">Gesamt: {counts.total}</Badge>
-            <Badge variant="outline" className={STATUS_STYLES.Geplant}>
-              Geplant: {counts.geplant}
-            </Badge>
-            <Badge variant="outline" className={STATUS_STYLES.Genehmigt}>
-              Genehmigt: {counts.genehmigt}
-            </Badge>
-            <Badge variant="outline" className={STATUS_STYLES.Abgelehnt}>
-              Abgelehnt: {counts.abgelehnt}
-            </Badge>
-            {selectedEmployeeIds.length > 0 && (
-              <Badge variant="secondary">
-                Mitarbeiter: {selectedEmployeeIds.length}
-              </Badge>
-            )}
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Eintraege
+              </div>
+              <div className="mt-1 text-2xl font-semibold text-slate-900">
+                {counts.total}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Geplant
+              </div>
+              <div className="mt-1 text-2xl font-semibold text-slate-800">
+                {counts.geplant}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 shadow-sm">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                Genehmigt
+              </div>
+              <div className="mt-1 text-2xl font-semibold text-emerald-800">
+                {counts.genehmigt}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 shadow-sm">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-700">
+                Abgelehnt
+              </div>
+              <div className="mt-1 text-2xl font-semibold text-rose-800">
+                {counts.abgelehnt}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Aktive Filter
+              </div>
+              <div className="mt-1 text-base font-semibold text-slate-900">
+                {selectedEmployeeIds.length > 0
+                  ? `${selectedEmployeeIds.length} Mitarbeiter`
+                  : filterActive
+                    ? "Eingeschraenkt"
+                    : "Keine"}
+              </div>
+            </div>
           </div>
           {selectedEmployeeNames.length > 0 && (
             <div className="flex flex-wrap gap-1">
@@ -1965,10 +2769,10 @@ export default function VacationPlanEditor({
             Konflikte werden markiert, Eintraege bleiben dennoch moeglich.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3">
+          <CardContent className="space-y-3">
           {conflicts.length === 0 ? (
             <div className="text-sm text-muted-foreground">
-              Keine Konflikte fuer dieses Quartal.
+              Keine Konflikte fuer {activePeriod.dativeLabel}.
             </div>
           ) : (
             <div className="space-y-2">
@@ -2026,13 +2830,12 @@ export default function VacationPlanEditor({
 
       <Card className="border-none kabeg-shadow">
         <CardHeader>
-          <CardTitle className="text-lg">Jahresplanung (Quartal)</CardTitle>
+          <CardTitle className="text-lg">Kalender</CardTitle>
           <CardDescription>
-            Wochenenden, Feiertage und Schulferien sind markiert. Klicken Sie
-            auf ein Feld, um eine Abwesenheit einzutragen.
+            Klassische Kalenderansicht mit umschaltbarem Detailgrad fuer Jahr, Monat, Woche und Tag.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           {loading ? (
             <div className="flex items-center justify-center py-12 text-muted-foreground">
               <Loader2 className="w-5 h-5 mr-2 animate-spin" />
@@ -2040,290 +2843,500 @@ export default function VacationPlanEditor({
             </div>
           ) : (
             <TooltipProvider delayDuration={120}>
-              <div
-                ref={gridScrollRef}
-                className="max-h-[70vh] overflow-auto border border-border rounded-xl"
-              >
-                <table className="min-w-max border-collapse text-xs">
-                  <thead>
-                    <tr>
-                      <th
-                        ref={stickyEmployeeHeaderRef}
-                        className="sticky left-0 top-0 z-40 bg-white border border-border px-2 py-2 text-left min-w-[190px]"
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Aktiver Zeitraum
+                  </div>
+                  <div className="text-sm font-medium text-slate-900">
+                    {calendarPeriodLabel}
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-600">
+                  <span className="flex items-center gap-1.5">
+                    <span className="inline-flex h-2.5 w-2.5 rounded-sm border border-slate-300 bg-white" />
+                    Normal
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="inline-flex h-2.5 w-2.5 rounded-sm border border-amber-300 bg-amber-50" />
+                    Feiertag / Ferien / Wochenende
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="relative inline-flex h-2.5 w-2.5 overflow-hidden rounded-sm border border-slate-300 bg-white">
+                      <span className="absolute inset-0" style={LOCKED_DAY_OVERLAY_STYLE} />
+                    </span>
+                    Gesperrt
+                  </span>
+                </div>
+              </div>
+
+              {calendarView === "year" && (
+                <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+                  {yearMonths.map((monthDate) => {
+                    const miniMonthDays = eachDayOfInterval({
+                      start: startOfWeek(startOfMonth(monthDate), { weekStartsOn: 1 }),
+                      end: endOfWeek(endOfMonth(monthDate), { weekStartsOn: 1 }),
+                    });
+                    return (
+                      <div
+                        key={format(monthDate, "yyyy-MM")}
+                        className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <span>Mitarbeiter</span>
-                          <span className="text-[11px] font-normal text-muted-foreground whitespace-nowrap">
-                            {visibleMonthLabel || quarterLabel}
+                        <div className="mb-3 flex items-center justify-between">
+                          <button
+                            type="button"
+                            className="text-left text-base font-semibold text-slate-900"
+                            onClick={() => {
+                              setFocusDate(monthDate);
+                              setCalendarView("month");
+                            }}
+                          >
+                            {format(monthDate, "MMMM", { locale: de })}
+                          </button>
+                          <span className="text-xs text-slate-500">
+                            {format(monthDate, "yyyy")}
                           </span>
                         </div>
-                      </th>
-                      {monthSegments.map((segment) => {
-                        const segmentKey = format(segment.days[0], "yyyy-MM");
-                        const isVisibleMonth = visibleMonthKey === segmentKey;
-                        return (
-                          <th
-                            key={segment.label}
-                            colSpan={segment.days.length}
-                            className={cn(
-                              "sticky top-0 z-30 border border-border px-2 py-1 text-center font-semibold",
-                              isVisibleMonth
-                                ? "bg-blue-50 text-blue-800"
-                                : "bg-slate-50",
-                            )}
-                          >
-                            {segment.label}
-                          </th>
-                        );
-                      })}
-                    </tr>
-                    <tr>
-                      <th className="sticky left-0 top-[32px] z-30 bg-white border border-border px-2 py-2 text-left">
-                        Tag
-                      </th>
-                      {days.map((date) => {
-                        const dayKey = formatDateInput(date);
-                        const dayLabel = getDayLabel(date);
-                        return (
-                          <th
-                            key={dayKey}
-                            title={dayLabel}
-                            className={cn(
-                              "sticky top-[32px] z-20 border border-border p-0 text-center font-normal bg-white w-7 min-w-7",
-                              getDayClass(date),
-                              conflictDates.has(dayKey) ? "bg-amber-100" : "",
-                            )}
-                          >
-                            <div className="py-0.5">
-                              <div className="text-[9px] leading-none">
-                                {format(date, "EE", { locale: de })}
-                              </div>
-                              <div className="font-semibold leading-tight">
-                                {format(date, "d")}
-                              </div>
-                            </div>
-                          </th>
-                        );
-                      })}
-                    </tr>
-                    <tr>
-                      <th className="sticky left-0 top-[64px] z-20 bg-white border border-border px-2 py-2 text-left">
-                        Fehlt (gesamt)
-                      </th>
-                      {days.map((date) => {
-                        const dayKey = formatDateInput(date);
-                        const count = dayAbsenceMap.get(dayKey)?.length ?? 0;
-                        const breakdown = (
-                          dayAbsenceMap.get(dayKey) ?? []
-                        ).reduce(
-                          (acc, absence) => {
-                            const group = employeeRoleGroupById.get(
-                              absence.employeeId,
-                            );
-                            if (group === "OA") acc.OA += 1;
-                            if (group === "ASS") acc.ASS += 1;
-                            if (group === "TA") acc.TA += 1;
-                            return acc;
-                          },
-                          { OA: 0, ASS: 0, TA: 0 },
-                        );
-
-                        const breakdownPanel = (
-                          <div className="text-xs leading-relaxed">
-                            <div className="font-semibold">Fehlend:</div>
-                            <div>Oberaerzte: {breakdown.OA}</div>
-                            <div>Assistenzaerzte: {breakdown.ASS}</div>
-                            <div>Turnusaerzte: {breakdown.TA}</div>
-                          </div>
-                        );
-
-                        return (
-                          <th
-                            key={`count-${dayKey}`}
-                            className={cn(
-                              "sticky top-[64px] z-10 border border-border p-0 text-center bg-white w-7 min-w-7",
-                              getDayClass(date),
-                            )}
-                          >
-                            <Popover>
-                              <Tooltip>
+                        <div className="mb-2 grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                          {["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map((label) => (
+                            <div key={label}>{label}</div>
+                          ))}
+                        </div>
+                        <div className="grid grid-cols-7 gap-1">
+                          {miniMonthDays.map((date) => {
+                            const dayState = getDayVisualState(date);
+                            const breakdown = dayState.breakdown;
+                            const inMonth = isSameMonth(date, monthDate);
+                            const locked = isDateWithinLock(formatDateInput(date));
+                            return (
+                              <Tooltip key={formatDateInput(date)}>
                                 <TooltipTrigger asChild>
-                                  <PopoverTrigger asChild>
-                                    <button
-                                      type="button"
-                                      className="flex h-7 w-full items-center justify-center text-[10px] font-semibold"
-                                      aria-label={`Fehlend am ${format(date, "dd.MM.yyyy")}: ${count}`}
-                                    >
-                                      {count > 0 ? count : ""}
-                                    </button>
-                                  </PopoverTrigger>
+                                  <div
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={() => {
+                                      setFocusDate(date);
+                                      setCalendarView("day");
+                                    }}
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Enter" || event.key === " ") {
+                                        event.preventDefault();
+                                        setFocusDate(date);
+                                        setCalendarView("day");
+                                      }
+                                    }}
+                                    className={cn(
+                                      "relative min-h-[58px] rounded-xl border p-1 text-left transition-colors",
+                                      inMonth
+                                        ? cn(
+                                            dayState.borderClass,
+                                            dayState.bgClass,
+                                            "hover:bg-slate-50",
+                                          )
+                                        : "border-transparent bg-slate-50/60 text-slate-300",
+                                      isSameDay(date, focusDate) && "ring-2 ring-blue-200",
+                                      isToday(date) && "border-blue-300",
+                                      inMonth && dayState.specialRingClass,
+                                    )}
+                                  >
+                                    {locked && inMonth && (
+                                      <span
+                                        className="pointer-events-none absolute inset-0 rounded-xl"
+                                        style={LOCKED_DAY_OVERLAY_STYLE}
+                                      />
+                                    )}
+                                    <div className="relative z-[1]">
+                                      <div className="text-[11px] font-semibold">{format(date, "d")}</div>
+                                      {inMonth && (
+                                        <div className="mt-1 space-y-0.5 text-[9px] text-slate-600">
+                                          {breakdown.OA > 0 && (
+                                            <div
+                                              className={cn(
+                                                "inline-flex rounded-full px-1.5 py-0.5 font-medium",
+                                                getRoleBubbleClasses("OA"),
+                                              )}
+                                            >
+                                              OA {breakdown.OA}
+                                            </div>
+                                          )}
+                                          {breakdown.ASS > 0 && (
+                                            <div
+                                              className={cn(
+                                                "inline-flex rounded-full px-1.5 py-0.5 font-medium",
+                                                getRoleBubbleClasses("ASS"),
+                                              )}
+                                            >
+                                              ASS {breakdown.ASS}
+                                            </div>
+                                          )}
+                                          {breakdown.TA > 0 && (
+                                            <div
+                                              className={cn(
+                                                "inline-flex rounded-full px-1.5 py-0.5 font-medium",
+                                                getRoleBubbleClasses("TA"),
+                                              )}
+                                            >
+                                              TA {breakdown.TA}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                    {inMonth && (
+                                      <div className="absolute bottom-1 right-1 z-[2]">
+                                        {renderQuickAddButton(date, "rounded-lg")}
+                                      </div>
+                                    )}
+                                  </div>
                                 </TooltipTrigger>
                                 <TooltipContent className="bg-white text-foreground border border-border shadow-md">
-                                  {breakdownPanel}
+                                  {renderDayTooltipContent(date)}
                                 </TooltipContent>
                               </Tooltip>
-                              <PopoverContent align="center" className="w-auto p-3">
-                                {breakdownPanel}
-                              </PopoverContent>
-                            </Popover>
-                          </th>
-                        );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {displayEmployees.map((emp) => {
-                      const entitlement = emp.vacationEntitlement;
-                      const usedDays = countVacationDaysForEmployee(emp.id);
-                      const entitlementExceeded =
-                        typeof entitlement === "number" && usedDays > entitlement;
-                      const canEditRow =
-                        emp.id === currentUser?.id || canEditOthers;
-                      const employeeName =
-                        [emp.lastName, emp.firstName].filter(Boolean).join(" ").trim() ||
-                        emp.name ||
-                        "Unbekannt";
-
-                      const employeeInfoPanel = (
-                        <div className="space-y-1 text-xs">
-                          <div className="font-semibold">{employeeName}</div>
-                          <div className="text-muted-foreground">
-                            {emp.role || "-"}
-                          </div>
-                          <div
-                            className={cn(
-                              entitlementExceeded
-                                ? "text-red-600"
-                                : "text-muted-foreground",
-                            )}
-                          >
-                            Urlaub: {usedDays} / {entitlement ?? "-"}
-                          </div>
-                        </div>
-                      );
-
-                      return (
-                        <tr
-                          key={emp.id}
-                          className={
-                            emp.id === currentUser?.id ? "bg-blue-50/40" : ""
-                          }
-                        >
-                          <td
-                            className={cn(
-                              "sticky left-0 z-10 border border-border px-2 py-1 text-left",
-                              emp.id === currentUser?.id ? "bg-blue-50/70" : "bg-white",
-                            )}
-                          >
-                            <div className="flex items-center justify-between gap-1">
-                              <Popover>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <PopoverTrigger asChild>
-                                      <button
-                                        type="button"
-                                        className="truncate text-left font-medium text-xs hover:underline focus:outline-none focus:ring-1 focus:ring-ring rounded-sm"
-                                      >
-                                        {employeeName}
-                                      </button>
-                                    </PopoverTrigger>
-                                  </TooltipTrigger>
-                                  <TooltipContent className="bg-white text-foreground border border-border shadow-md">
-                                    {employeeInfoPanel}
-                                  </TooltipContent>
-                                </Tooltip>
-                                <PopoverContent align="start" className="w-56 p-3">
-                                  {employeeInfoPanel}
-                                </PopoverContent>
-                              </Popover>
-                              {canEditRow && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-6 w-6 shrink-0"
-                                  onClick={() => openAbsenceDialog(emp.id)}
-                                  title="Abwesenheit erfassen"
-                                >
-                                  <Plus className="w-3.5 h-3.5" />
-                                </Button>
-                              )}
-                            </div>
-                          </td>
-                          {days.map((date) => {
-                            const dayKey = formatDateInput(date);
-                            const absence = getAbsenceForEmployeeOnDate(
-                              emp.id,
-                              dayKey,
-                            );
-                            const reasonStyle = absence
-                              ? REASON_STYLES[absence.styleKey]
-                              : null;
-                            const cellClass = getDayClass(date);
-                            const insetClass = getDayInsetClass(date);
-                            const isRejected = absence?.status === "Abgelehnt";
-                            const isCellLocked =
-                              !canOverrideLock && isDateWithinLock(dayKey);
-                            const canEditCell = canEditRow && !isCellLocked;
-                            const cellTitle = absence
-                              ? `${absence.reason} (${absence.status ?? "Geplant"})`
-                              : getDayLabel(date);
-                            return (
-                              <td
-                                key={`${emp.id}-${dayKey}`}
-                                title={cellTitle}
-                                className={cn(
-                                  "border border-border p-0 text-center",
-                                  canEditCell ? "cursor-pointer" : "",
-                                )}
-                                onClick={() => {
-                                  if (!canEditCell) return;
-                                  openAbsenceDialog(emp.id, date);
-                                }}
-                              >
-                                <div
-                                  className={cn(
-                                    "relative h-6 w-7",
-                                    cellClass,
-                                    isCellLocked ? "opacity-70" : "",
-                                  )}
-                                >
-                                  {absence && (
-                                    <>
-                                      <div
-                                        className={cn(
-                                          "absolute inset-0",
-                                          reasonStyle?.bg || "bg-slate-200",
-                                          isRejected ? "opacity-40" : "",
-                                        )}
-                                      />
-                                      <div
-                                        className={cn(
-                                          "absolute right-0 top-0 min-w-[10px] rounded-bl-[3px] bg-white/85 px-0.5 text-[8px] font-semibold leading-[10px] text-slate-700",
-                                          isRejected ? "opacity-60" : "",
-                                        )}
-                                      >
-                                        {reasonStyle?.label ?? ""}
-                                      </div>
-                                    </>
-                                  )}
-                                  {insetClass && (
-                                    <div
-                                      className={cn(
-                                        "pointer-events-none absolute inset-[1px] rounded-[2px] border",
-                                        insetClass,
-                                      )}
-                                    />
-                                  )}
-                                </div>
-                              </td>
                             );
                           })}
-                        </tr>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {calendarView === "month" && (
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="mb-2 grid grid-cols-7 gap-2 text-center text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    {["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"].map((label) => (
+                      <div key={label} className="truncate">
+                        {label}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-7 gap-2">
+                    {monthGridDays.map((date) => {
+                      const dayState = getDayVisualState(date);
+                      const absencesForDay = dayState.entries;
+                      const breakdown = dayState.breakdown;
+                      const inMonth = isSameMonth(date, monthViewStart);
+                      const locked = isDateWithinLock(formatDateInput(date));
+                      return (
+                        <Tooltip key={formatDateInput(date)}>
+                          <TooltipTrigger asChild>
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => setFocusDate(date)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  setFocusDate(date);
+                                }
+                              }}
+                              className={cn(
+                                "relative min-h-[132px] rounded-2xl border p-3 text-left transition-colors",
+                                inMonth
+                                  ? cn(
+                                      dayState.borderClass,
+                                      dayState.bgClass,
+                                      "hover:bg-slate-50",
+                                    )
+                                  : "border-transparent bg-slate-50/60 text-slate-400",
+                                isSameDay(date, focusDate) && "ring-2 ring-blue-200",
+                                isToday(date) && "border-blue-300",
+                                inMonth && dayState.specialRingClass,
+                              )}
+                            >
+                              {locked && inMonth && (
+                                <span
+                                  className="pointer-events-none absolute inset-0 rounded-2xl"
+                                  style={LOCKED_DAY_OVERLAY_STYLE}
+                                />
+                              )}
+                              <div className="relative z-[1]">
+                                <div className="mb-2 flex items-center justify-between">
+                                  <span className="text-sm font-semibold">{format(date, "d")}</span>
+                                  {(getAustrianHoliday(date) || getSchoolHoliday(date, holidayLocation)) && (
+                                    <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] text-slate-500">
+                                      Marker
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="space-y-1 text-[11px] text-slate-700">
+                                  <div className="flex flex-col items-start gap-1">
+                                    {breakdown.OA > 0 && (
+                                      <span
+                                        className={cn(
+                                          "rounded-full px-1.5 py-0.5 font-medium",
+                                          getRoleBubbleClasses("OA"),
+                                        )}
+                                      >
+                                        OA {breakdown.OA}
+                                      </span>
+                                    )}
+                                    {breakdown.ASS > 0 && (
+                                      <span
+                                        className={cn(
+                                          "rounded-full px-1.5 py-0.5 font-medium",
+                                          getRoleBubbleClasses("ASS"),
+                                        )}
+                                      >
+                                        ASS {breakdown.ASS}
+                                      </span>
+                                    )}
+                                    {breakdown.TA > 0 && (
+                                      <span
+                                        className={cn(
+                                          "rounded-full px-1.5 py-0.5 font-medium",
+                                          getRoleBubbleClasses("TA"),
+                                        )}
+                                      >
+                                        TA {breakdown.TA}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {absencesForDay.length > 0 && (
+                                    <div className="pt-1 text-xs font-medium text-slate-500">
+                                      {absencesForDay.length}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                              {inMonth && (
+                                <div className="absolute bottom-2 right-2 z-[2]">
+                                  {renderQuickAddButton(date)}
+                                </div>
+                              )}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent className="bg-white text-foreground border border-border shadow-md">
+                            {renderDayTooltipContent(date)}
+                          </TooltipContent>
+                        </Tooltip>
                       );
                     })}
-                  </tbody>
-                </table>
-              </div>
+                  </div>
+                </div>
+              )}
+
+              {calendarView === "week" && (
+                <div className="grid gap-3 xl:grid-cols-7">
+                  {weekDays.map((date) => {
+                    const dayState = getDayVisualState(date);
+                    const absencesForDay = dayState.entries;
+                    const breakdown = dayState.breakdown;
+                    const groupedAbsencesForDay =
+                      getHierarchicalAbsenceGroups(absencesForDay);
+                    const locked = isDateWithinLock(formatDateInput(date));
+                    const totalAbsences = absencesForDay.length;
+                    return (
+                      <Tooltip key={formatDateInput(date)}>
+                        <TooltipTrigger asChild>
+                          <div
+                            className={cn(
+                              "relative rounded-2xl border p-4 shadow-sm",
+                              dayState.borderClass,
+                              dayState.bgClass,
+                              isSameDay(date, focusDate) && "ring-2 ring-blue-200",
+                              dayState.specialRingClass,
+                            )}
+                          >
+                            {locked && (
+                              <span
+                                className="pointer-events-none absolute inset-0 rounded-2xl"
+                                style={LOCKED_DAY_OVERLAY_STYLE}
+                              />
+                            )}
+                            <div className="relative z-[1]">
+                          <button
+                            type="button"
+                            className="mb-4 flex w-full items-start justify-between gap-3 text-left"
+                            onClick={() => {
+                              setFocusDate(date);
+                              setCalendarView("day");
+                            }}
+                          >
+                            <div>
+                              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                {format(date, "EEEE", { locale: de })}
+                              </div>
+                              <div className="mt-1 text-2xl font-semibold text-slate-900">
+                                {format(date, "dd.MM.")}
+                              </div>
+                            </div>
+                            <div className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 shadow-sm">
+                              {totalAbsences} abwesend
+                            </div>
+                          </button>
+
+                          <div className="mb-4 grid grid-cols-3 gap-2 text-[11px]">
+                            {[
+                              { label: "OA", value: breakdown.OA, group: "OA" as const },
+                              { label: "ASS", value: breakdown.ASS, group: "ASS" as const },
+                              { label: "TA", value: breakdown.TA, group: "TA" as const },
+                            ].map((item) => (
+                              <div
+                                key={`${formatDateInput(date)}-${item.label}`}
+                                className={cn(
+                                  "rounded-xl px-2 py-2 text-center",
+                                  getRoleBubbleClasses(item.group, "panel"),
+                                )}
+                              >
+                                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                  {item.label}
+                                </div>
+                                <div className="mt-1 text-base font-semibold text-slate-900">
+                                  {item.value}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="space-y-2 border-t border-slate-100 pt-3 text-xs">
+                            {absencesForDay.length === 0 ? (
+                              <div className="rounded-xl bg-slate-50 px-3 py-2 text-slate-400">
+                                Keine Abwesenheiten
+                              </div>
+                            ) : (
+                              groupedAbsencesForDay.map(([role, entries]) => (
+                                <div key={`${formatDateInput(date)}-${role}`} className="space-y-2">
+                                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                    {role}
+                                  </div>
+                                  {entries.map((absence) => (
+                                    <div
+                                      key={absence.id}
+                                      className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+                                    >
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div>
+                                          <div className="font-medium text-slate-900">
+                                            {employeeNameById.get(absence.employeeId) ?? "Unbekannt"}
+                                          </div>
+                                          <div className="text-[11px] text-slate-500">
+                                            {absence.reason}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              ))
+                            )}
+                          </div>
+                              <div className="absolute bottom-3 right-3 z-[2]">
+                                {renderQuickAddButton(date)}
+                              </div>
+                            </div>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent className="bg-white text-foreground border border-border shadow-md">
+                          {renderDayTooltipContent(date)}
+                        </TooltipContent>
+                      </Tooltip>
+                    );
+                  })}
+                </div>
+              )}
+
+              {calendarView === "day" && (
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                  <div
+                    className={cn(
+                      "relative rounded-2xl border p-4 shadow-sm",
+                      getDayVisualState(focusDate).borderClass,
+                      getDayVisualState(focusDate).bgClass,
+                      getDayVisualState(focusDate).specialRingClass,
+                    )}
+                  >
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      Tagesstatus
+                    </div>
+                    <div className="mt-1 text-2xl font-semibold text-slate-900">
+                      {format(focusDate, "EEEE, dd.MM.yyyy", { locale: de })}
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2 text-sm">
+                      {(() => {
+                        const breakdown = getAbsenceBreakdown(dayViewAbsences);
+                        return (
+                          <>
+                            <span
+                              className={cn(
+                                "rounded-full px-3 py-1 font-medium",
+                                getRoleBubbleClasses("OA"),
+                              )}
+                            >
+                              OA {breakdown.OA}
+                            </span>
+                            <span
+                              className={cn(
+                                "rounded-full px-3 py-1 font-medium",
+                                getRoleBubbleClasses("ASS"),
+                              )}
+                            >
+                              ASS {breakdown.ASS}
+                            </span>
+                            <span
+                              className={cn(
+                                "rounded-full px-3 py-1 font-medium",
+                                getRoleBubbleClasses("TA"),
+                              )}
+                            >
+                              TA {breakdown.TA}
+                            </span>
+                          </>
+                        );
+                      })()}
+                    </div>
+                    {hasVacationLock && isDateWithinLock(formatDateInput(focusDate)) && (
+                      <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                        Dieser Tag liegt im gesperrten Selbstservice-Zeitraum.
+                      </div>
+                    )}
+                    <div className="mt-4 space-y-2 text-sm text-slate-600">
+                      <div>Feiertag/Info: {getDayLabel(focusDate)}</div>
+                      <div>Eintraege: {dayViewAbsences.length}</div>
+                    </div>
+                    <div className="absolute bottom-4 right-4">
+                      {renderQuickAddButton(focusDate)}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      Abwesenheiten
+                    </div>
+                    <div className="space-y-4">
+                      {dayViewGroupedAbsences.length === 0 ? (
+                        <div className="text-sm text-slate-400">Keine Abwesenheiten fuer diesen Tag.</div>
+                      ) : (
+                        dayViewGroupedAbsences.map(([role, entries]) => (
+                          <div key={role} className="rounded-2xl border border-slate-200 p-3">
+                            <div className="mb-2 text-sm font-semibold text-slate-900">
+                              {role}
+                            </div>
+                            <div className="space-y-2">
+                              {entries.map((absence) => (
+                                <div
+                                  key={absence.id}
+                                  className="flex items-start justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2 text-sm"
+                                >
+                                  <div>
+                                    <div className="font-medium text-slate-900">
+                                      {employeeNameById.get(absence.employeeId) ?? "Unbekannt"}
+                                    </div>
+                                    <div className="text-slate-500">{absence.reason}</div>
+                                  </div>
+                                  <span className="rounded-full bg-white px-2 py-0.5 text-xs text-slate-600">
+                                    {absence.status ?? "Genehmigt"}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </TooltipProvider>
           )}
           <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
@@ -2356,13 +3369,13 @@ export default function VacationPlanEditor({
           <CardHeader>
             <CardTitle className="text-lg">Antraege & Status</CardTitle>
             <CardDescription>
-              Uebersicht fuer das aktuelle Quartal mit Statusverwaltung.
+              Uebersicht fuer den gewaehlten {activePeriod.label.toLowerCase()} mit Statusverwaltung.
             </CardDescription>
           </CardHeader>
           <CardContent>
             {filteredAbsences.length === 0 ? (
               <div className="text-muted-foreground text-center py-6">
-                Keine Eintraege fuer dieses Quartal.
+                Keine Eintraege fuer {activePeriod.dativeLabel}.
               </div>
             ) : (
               <div className="space-y-3">
@@ -2591,13 +3604,13 @@ export default function VacationPlanEditor({
               Abwesenheiten nach Kategorie
             </CardTitle>
             <CardDescription>
-              Tagesanzahl pro Mitarbeiter und Kategorie fuer dieses Quartal.
+              Tagesanzahl pro Mitarbeiter und Kategorie fuer den gewaehlten {activePeriod.label.toLowerCase()}.
             </CardDescription>
           </CardHeader>
           <CardContent>
             {absenceSummary.length === 0 ? (
               <div className="text-muted-foreground text-center py-6">
-                Keine Daten fuer dieses Quartal.
+                Keine Daten fuer {activePeriod.dativeLabel}.
               </div>
             ) : (
               <div className="overflow-x-auto">
