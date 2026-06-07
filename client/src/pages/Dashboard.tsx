@@ -82,9 +82,11 @@ import {
 import {
   buildWidgetTodaySnapshot,
   syncWidgetTodaySnapshot,
+  WIDGET_TODAY_SNAPSHOT_KEY,
   type WidgetNotificationSnapshot,
   type WidgetQuickToolSnapshot,
   type WidgetSopSnapshot,
+  type WidgetTodaySnapshotV2,
 } from "@/lib/mobileWidget";
 import { resolveApiUrl } from "@/lib/apiBase";
 import {
@@ -753,20 +755,29 @@ export default function Dashboard() {
     : dashboardError
       ? AlertTriangle
       : Hand;
+  const cachedTodaySnapshot = useMemo<WidgetTodaySnapshotV2 | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.localStorage.getItem(WIDGET_TODAY_SNAPSHOT_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw) as WidgetTodaySnapshotV2;
+    } catch {
+      return null;
+    }
+  }, [dashboardError, todayEntry?.statusLabel]);
   const normalizedTodayStatusLabel = todayEntry?.duty?.serviceType
     ? getServiceLineDisplayLabel(todayEntry.duty.serviceType, todayEntry.statusLabel) ??
       todayEntry.statusLabel
     : todayEntry?.statusLabel ?? null;
-  const heroMessage = normalizedTodayStatusLabel
-      ? `Heute: ${normalizedTodayStatusLabel}`
-    : dashboardError
-      ? dashboardError.startsWith("Fehler")
-        ? dashboardError
-        : `Fehler: ${dashboardError}`
-      : "Willkommen zurück.";
+  const fallbackStatusLabel =
+    cachedTodaySnapshot?.statusLabel ?? cachedTodaySnapshot?.absenceReason ?? null;
+  const heroStatusLabel = normalizedTodayStatusLabel ?? fallbackStatusLabel;
+  const heroMessage = heroStatusLabel ? `Heute: ${heroStatusLabel}` : "Willkommen zurück.";
   const heroSyncNote =
-    dashboardError && normalizedTodayStatusLabel
-      ? "Aktualisierung derzeit nicht vollständig."
+    dashboardError
+      ? heroStatusLabel
+        ? "Aktualisierung derzeit nicht vollständig."
+        : "Status momentan nicht aktuell verfügbar."
       : null;
   const todayTeamNames = useMemo(
     () =>
@@ -776,16 +787,17 @@ export default function Dashboard() {
     [todayEntry?.teammates],
   );
   const todayTeamLine = useMemo(() => {
-    if (!todayEntry) return null;
-    const hasWorkplace = Boolean(todayEntry.workplace);
+    const workplaceLabel = todayEntry?.workplace ?? cachedTodaySnapshot?.workplace ?? null;
+    if (!todayEntry && !workplaceLabel && todayTeamNames.length === 0) return null;
+    const hasWorkplace = Boolean(workplaceLabel);
     const hasNames = todayTeamNames.length > 0;
     if (!hasWorkplace && !hasNames) return null;
     if (hasWorkplace && hasNames) {
-      return `${todayEntry.workplace} mit ${todayTeamNames.join(", ")}`;
+      return `${workplaceLabel} mit ${todayTeamNames.join(", ")}`;
     }
-    if (hasWorkplace) return todayEntry.workplace;
+    if (hasWorkplace) return workplaceLabel;
     return `Mit: ${todayTeamNames.join(", ")}`;
-  }, [todayEntry?.workplace, todayTeamNames]);
+  }, [cachedTodaySnapshot?.workplace, todayEntry, todayTeamNames]);
 
   const todayDutyLine = useMemo(() => {
     const duty = todayEntry?.duty;
