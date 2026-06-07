@@ -2917,7 +2917,7 @@ export async function registerRoutes(
           return trimmed || null;
         };
 
-        const toIsoDay = (value: Date) => ((value.getUTCDay() + 6) % 7) + 1;
+        const toIsoDay = (value: Date) => ((value.getDay() + 6) % 7) + 1;
 
         const previewMeta = previewDates.map((date) => {
           const isoDate = new Date(`${date}T00:00:00`);
@@ -3437,8 +3437,9 @@ const buildAttendanceMembers = (
         }> = [];
         let seenRecentChangeIds: string[] = [];
 
-        if (canSeeDashboardRecentChanges(req)) {
-          const [dutyChangeRows, plannedChangeRows, weeklyOverrideRows, weeklyAssignmentRows] = await Promise.all([
+        try {
+          if (canSeeDashboardRecentChanges(req)) {
+            const [dutyChangeRows, plannedChangeRows, weeklyOverrideRows, weeklyAssignmentRows] = await Promise.all([
             db
               .select({
                 id: rosterShiftChangeLogs.id,
@@ -3745,132 +3746,155 @@ const buildAttendanceMembers = (
             };
           });
 
-          recentChanges = [
-            ...dutyItems,
-            ...plannedItems,
-            ...weeklyItems,
-            ...weeklyAssignmentItems,
-          ]
-            .sort((a, b) => {
-              const aTime = new Date(a.changedAt).getTime();
-              const bTime = new Date(b.changedAt).getTime();
-              return bTime - aTime;
-            })
-            .slice(0, 10);
+            recentChanges = [
+              ...dutyItems,
+              ...plannedItems,
+              ...weeklyItems,
+              ...weeklyAssignmentItems,
+            ]
+              .sort((a, b) => {
+                const aTime = new Date(a.changedAt).getTime();
+                const bTime = new Date(b.changedAt).getTime();
+                return bTime - aTime;
+              })
+              .slice(0, 10);
 
-          if (req.user?.employeeId && recentChanges.length > 0) {
-            const seenRows = await db
-              .select({ itemId: dashboardSeenItems.itemId })
-              .from(dashboardSeenItems)
-              .where(
-                and(
-                  eq(dashboardSeenItems.employeeId, req.user.employeeId),
-                  eq(dashboardSeenItems.itemType, "recent_change"),
-                  inArray(
-                    dashboardSeenItems.itemId,
-                    recentChanges.map((item) => item.id),
+            if (req.user?.employeeId && recentChanges.length > 0) {
+              const seenRows = await db
+                .select({ itemId: dashboardSeenItems.itemId })
+                .from(dashboardSeenItems)
+                .where(
+                  and(
+                    eq(dashboardSeenItems.employeeId, req.user.employeeId),
+                    eq(dashboardSeenItems.itemType, "recent_change"),
+                    inArray(
+                      dashboardSeenItems.itemId,
+                      recentChanges.map((item) => item.id),
+                    ),
                   ),
-                ),
-              );
-            seenRecentChangeIds = seenRows.map((row) => row.itemId);
+                );
+              seenRecentChangeIds = seenRows.map((row) => row.itemId);
+            }
           }
+        } catch (error) {
+          console.error("[Dashboard] recent changes unavailable:", error);
         }
         // --- Attendance widget (Heute / Morgen) -----------------------------------
-        const todayMeta = previewMeta[0];
-        const tomorrowMeta = previewMeta[1];
+        let attendanceWidget: {
+          today: { members: AttendanceMember[]; absentCount: number };
+          tomorrow: { members: AttendanceMember[]; absentCount: number };
+        } | null = null;
+        try {
+          const todayMeta = previewMeta[0];
+          const tomorrowMeta = previewMeta[1];
 
-        // For the dashboard we only treat *approved* absences as “absent”,
-        // otherwise the widget can become empty if many requests are still planned.
-        const approvedAbsentEmployeeIdsForDate = (date: string) => {
-          const set = new Set<number>();
-          plannedAbsenceRowsForPreview.forEach((row) => {
-            if (row.status !== "Genehmigt") return;
-            const employeeId = row.employeeId;
-            if (!employeeId) return;
-            const rowStart = String(row.startDate);
-            const rowEnd = String(row.endDate);
-            if (rowStart <= date && rowEnd >= date) set.add(employeeId);
-          });
-          return set;
-        };
+          // For the dashboard we only treat *approved* absences as “absent”,
+          // otherwise the widget can become empty if many requests are still planned.
+          const approvedAbsentEmployeeIdsForDate = (date: string) => {
+            const set = new Set<number>();
+            plannedAbsenceRowsForPreview.forEach((row) => {
+              if (row.status !== "Genehmigt") return;
+              const employeeId = row.employeeId;
+              if (!employeeId) return;
+              const rowStart = String(row.startDate);
+              const rowEnd = String(row.endDate);
+              if (rowStart <= date && rowEnd >= date) set.add(employeeId);
+            });
+            return set;
+          };
 
-        const todayAbsentIds = todayMeta
-          ? approvedAbsentEmployeeIdsForDate(todayMeta.date)
-          : new Set<number>();
+          const todayAbsentIds = todayMeta
+            ? approvedAbsentEmployeeIdsForDate(todayMeta.date)
+            : new Set<number>();
 
-        const tomorrowAbsentIds = tomorrowMeta
-          ? approvedAbsentEmployeeIdsForDate(tomorrowMeta.date)
-          : new Set<number>();
+          const tomorrowAbsentIds = tomorrowMeta
+            ? approvedAbsentEmployeeIdsForDate(tomorrowMeta.date)
+            : new Set<number>();
 
-        const attendanceWidget =
-          todayMeta && tomorrowMeta
-            ? {
-                today: {
-                  members: buildAttendanceMembers(todayMeta, todayAbsentIds),
-                  absentCount: todayAbsentIds.size,
-                },
-                tomorrow: {
-                  members: buildAttendanceMembers(
-                    tomorrowMeta,
-                    tomorrowAbsentIds,
-                  ),
-                  absentCount: tomorrowAbsentIds.size,
-                },
-              }
-            : null;
+          attendanceWidget =
+            todayMeta && tomorrowMeta
+              ? {
+                  today: {
+                    members: buildAttendanceMembers(todayMeta, todayAbsentIds),
+                    absentCount: todayAbsentIds.size,
+                  },
+                  tomorrow: {
+                    members: buildAttendanceMembers(
+                      tomorrowMeta,
+                      tomorrowAbsentIds,
+                    ),
+                    absentCount: tomorrowAbsentIds.size,
+                  },
+                }
+              : null;
+        } catch (error) {
+          console.error("[Dashboard] attendance widget unavailable:", error);
+        }
         let todayZe: { id: number; possible: true; accepted: boolean } | null =
           null;
-        if (user.employeeId) {
-          const [zeEntry] = await db
+        try {
+          if (user.employeeId) {
+            const [zeEntry] = await db
+              .select({
+                id: plannedAbsences.id,
+                accepted: plannedAbsences.accepted,
+              })
+              .from(plannedAbsences)
+              .where(
+                and(
+                  eq(plannedAbsences.employeeId, user.employeeId),
+                  eq(plannedAbsences.reason, "Zeitausgleich"),
+                  lte(plannedAbsences.startDate, todayVienna),
+                  gte(plannedAbsences.endDate, todayVienna),
+                  ne(plannedAbsences.status, "Abgelehnt"),
+                ),
+              )
+              .limit(1);
+            if (zeEntry) {
+              todayZe = {
+                id: zeEntry.id,
+                possible: true,
+                accepted: Boolean(zeEntry.accepted),
+              };
+            }
+          }
+        } catch (error) {
+          console.error("[Dashboard] ze data unavailable:", error);
+        }
+        let birthday: {
+          firstName: string | null;
+          lastName: string | null;
+        } | null = null;
+        try {
+          const targetDate = parseIsoDateUtc(todayVienna);
+          const birthdayCandidates = await db
             .select({
-              id: plannedAbsences.id,
-              accepted: plannedAbsences.accepted,
+              firstName: employees.firstName,
+              lastName: employees.lastName,
             })
-            .from(plannedAbsences)
+            .from(employees)
             .where(
               and(
-                eq(plannedAbsences.employeeId, user.employeeId),
-                eq(plannedAbsences.reason, "Zeitausgleich"),
-                lte(plannedAbsences.startDate, todayVienna),
-                gte(plannedAbsences.endDate, todayVienna),
-                ne(plannedAbsences.status, "Abgelehnt"),
+                eq(employees.isActive, true),
+                ne(employees.role, "Sekretariat"),
+                isNotNull(employees.birthday),
+                sql`EXTRACT(MONTH FROM ${employees.birthday}) = ${targetDate.getUTCMonth() + 1}`,
+                sql`EXTRACT(DAY FROM ${employees.birthday}) = ${targetDate.getUTCDate()}`,
               ),
             )
+            .orderBy(asc(employees.lastName))
             .limit(1);
-          if (zeEntry) {
-            todayZe = {
-              id: zeEntry.id,
-              possible: true,
-              accepted: Boolean(zeEntry.accepted),
-            };
-          }
-        }
-        const targetDate = parseIsoDateUtc(todayVienna);
-        const birthdayCandidates = await db
-          .select({
-            firstName: employees.firstName,
-            lastName: employees.lastName,
-          })
-          .from(employees)
-          .where(
-            and(
-              eq(employees.isActive, true),
-              ne(employees.role, "Sekretariat"),
-              isNotNull(employees.birthday),
-              sql`EXTRACT(MONTH FROM ${employees.birthday}) = ${targetDate.getUTCMonth() + 1}`,
-              sql`EXTRACT(DAY FROM ${employees.birthday}) = ${targetDate.getUTCDate()}`,
-            ),
-          )
-          .orderBy(asc(employees.lastName))
-          .limit(1);
 
-        const birthdayPerson = birthdayCandidates[0];
-        const birthday = birthdayPerson
-          ? {
-              firstName: normalize(birthdayPerson.firstName),
-              lastName: normalize(birthdayPerson.lastName),
-            }
-          : null;
+          const birthdayPerson = birthdayCandidates[0];
+          birthday = birthdayPerson
+            ? {
+                firstName: normalize(birthdayPerson.firstName),
+                lastName: normalize(birthdayPerson.lastName),
+              }
+            : null;
+        } catch (error) {
+          console.error("[Dashboard] birthday data unavailable:", error);
+        }
 
         const todayPayload = { ...todayPayloadBase, ze: todayZe };
 
