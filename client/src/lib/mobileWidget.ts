@@ -80,6 +80,73 @@ export type WidgetTodaySnapshotV2 = {
   sopFavorites?: WidgetSopSnapshot[];
 };
 
+function readStoredWidgetTodaySnapshot(): WidgetTodaySnapshotV2 | null {
+  try {
+    const raw = localStorage.getItem(WIDGET_TODAY_SNAPSHOT_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as WidgetTodaySnapshotV2;
+  } catch {
+    return null;
+  }
+}
+
+function mergeWidgetSnapshotWithPrevious(
+  current: WidgetTodaySnapshotV2,
+  previous: WidgetTodaySnapshotV2 | null,
+): WidgetTodaySnapshotV2 {
+  if (!previous) return current;
+
+  const hasCurrentTopLevelContent = Boolean(
+    current.statusLabel ||
+      current.workplace ||
+      current.absenceReason ||
+      current.dutyLabel ||
+      current.teammates.length > 0 ||
+      current.nextDays.length > 0,
+  );
+
+  const hasCurrentDailyPlan = Boolean(current.adminDailyPlan?.assignments?.length);
+  const hasPreviousDailyPlan = Boolean(previous.adminDailyPlan?.assignments?.length);
+
+  return {
+    ...current,
+    statusLabel: hasCurrentTopLevelContent ? current.statusLabel : previous.statusLabel,
+    workplace: hasCurrentTopLevelContent ? current.workplace : previous.workplace,
+    absenceReason: hasCurrentTopLevelContent
+      ? current.absenceReason
+      : previous.absenceReason,
+    dutyLabel: hasCurrentTopLevelContent ? current.dutyLabel : previous.dutyLabel,
+    teammates:
+      hasCurrentTopLevelContent || previous.teammates.length === 0
+        ? current.teammates
+        : previous.teammates,
+    nextDays:
+      current.nextDays.length > 0 || previous.nextDays.length === 0
+        ? current.nextDays
+        : previous.nextDays,
+    adminSummary: current.adminSummary ?? previous.adminSummary,
+    adminDailyPlan:
+      hasCurrentDailyPlan || !hasPreviousDailyPlan
+        ? current.adminDailyPlan
+        : previous.adminDailyPlan,
+    notifications:
+      (current.notifications?.length ?? 0) > 0 ||
+      (previous.notifications?.length ?? 0) === 0
+        ? current.notifications
+        : previous.notifications,
+    quickTools:
+      (current.quickTools?.length ?? 0) > 0 ||
+      (previous.quickTools?.length ?? 0) === 0
+        ? current.quickTools
+        : previous.quickTools,
+    sopFavorites:
+      (current.sopFavorites?.length ?? 0) > 0 ||
+      (previous.sopFavorites?.length ?? 0) === 0
+        ? current.sopFavorites
+        : previous.sopFavorites,
+  };
+}
+
 function getIosBridge() {
   return (globalThis as any)?.webkit?.messageHandlers?.mycliniqWidget;
 }
@@ -243,8 +310,16 @@ export function buildWidgetTodaySnapshot(input: {
 export async function syncWidgetTodaySnapshot(
   snapshot: WidgetTodaySnapshotV2,
 ): Promise<void> {
+  const effectiveSnapshot = mergeWidgetSnapshotWithPrevious(
+    snapshot,
+    readStoredWidgetTodaySnapshot(),
+  );
+
   try {
-    localStorage.setItem(WIDGET_TODAY_SNAPSHOT_KEY, JSON.stringify(snapshot));
+    localStorage.setItem(
+      WIDGET_TODAY_SNAPSHOT_KEY,
+      JSON.stringify(effectiveSnapshot),
+    );
     setWidgetSyncDebugStatus({
       at: new Date().toISOString(),
       stage: "local-cache",
@@ -263,7 +338,7 @@ export async function syncWidgetTodaySnapshot(
   try {
     if (Capacitor.isNativePlatform()) {
       await MycliniqWidgetBridge.setTodaySnapshot({
-        snapshotJson: JSON.stringify(snapshot),
+        snapshotJson: JSON.stringify(effectiveSnapshot),
       });
       setWidgetSyncDebugStatus({
         at: new Date().toISOString(),

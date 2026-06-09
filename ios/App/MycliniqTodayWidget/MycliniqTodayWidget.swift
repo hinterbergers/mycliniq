@@ -480,6 +480,12 @@ struct MycliniqAdminOverviewWidgetEntryView: View {
         family == .systemLarge ? 10 : 9
     }
 
+    private func nonDutyNames(for assignment: MycliniqAdminAssignment) -> [String] {
+        if assignment.dutyNames.isEmpty { return assignment.names }
+        let dutySet = Set(assignment.dutyNames)
+        return assignment.names.filter { !dutySet.contains($0) }
+    }
+
     var body: some View {
         WidgetShell {
             if let dailyPlan = entry.snapshot?.adminDailyPlan,
@@ -506,10 +512,13 @@ struct MycliniqAdminOverviewWidgetEntryView: View {
                                         .foregroundColor(.red)
                                 }
                             }
-                            Text(namesLine(assignment.names, maxNames: family == .systemLarge ? 4 : 3))
-                                .font(.system(size: detailSize))
-                                .foregroundColor(mutedWhite)
-                                .lineLimit(1)
+                            let plainNames = nonDutyNames(for: assignment)
+                            if !plainNames.isEmpty {
+                                Text(namesLine(plainNames, maxNames: family == .systemLarge ? 4 : 3))
+                                    .font(.system(size: detailSize))
+                                    .foregroundColor(mutedWhite)
+                                    .lineLimit(1)
+                            }
 
                             if !assignment.dutyNames.isEmpty {
                                 Text(namesLine(assignment.dutyNames, maxNames: family == .systemLarge ? 3 : 2))
