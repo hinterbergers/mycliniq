@@ -79,7 +79,10 @@ async function isThreadMember(threadId: number, employeeId: number) {
       ),
     )
     .limit(1);
-  return Boolean(member);
+  if (member) return true;
+
+  const recoveredMembers = await ensureDirectThreadMembershipIntegrity(threadId);
+  return recoveredMembers.includes(employeeId);
 }
 
 async function isThreadOwner(threadId: number, employeeId: number) {
@@ -218,6 +221,158 @@ async function createMessageNotifications(
   await db.insert(notifications).values(rows);
 }
 
+async function ensureDirectThreadMembershipIntegrity(threadId: number) {
+  const thread = await getThreadById(threadId);
+  if (!thread || thread.type !== "direct") {
+    return [] as number[];
+  }
+
+  const existingMembers = await db
+    .select({
+      employeeId: messageThreadMembers.employeeId,
+    })
+    .from(messageThreadMembers)
+    .where(eq(messageThreadMembers.threadId, threadId));
+
+  const existingMemberIds = Array.from(
+    new Set(
+      existingMembers
+        .map((member) => Number(member.employeeId))
+        .filter((employeeId) => Number.isFinite(employeeId)),
+    ),
+  );
+
+  if (existingMemberIds.length >= 2) {
+    return existingMemberIds;
+  }
+
+  const sentMessages = await db
+    .selectDistinct({
+      employeeId: messageMessages.senderId,
+    })
+    .from(messageMessages)
+    .where(eq(messageMessages.threadId, threadId));
+
+  const threadLink = `/nachrichten?thread=${threadId}`;
+  const notifiedRecipients = await db
+    .selectDistinct({
+      employeeId: notifications.recipientId,
+    })
+    .from(notifications)
+    .where(
+      and(
+        eq(notifications.type, "message"),
+        eq(notifications.link, threadLink),
+      ),
+    );
+
+  const recoveredMemberIds = Array.from(
+    new Set(
+      [
+        ...existingMemberIds,
+        Number(thread.createdById),
+        ...sentMessages.map((row) => Number(row.employeeId)),
+        ...notifiedRecipients.map((row) => Number(row.employeeId)),
+      ].filter((employeeId) => Number.isFinite(employeeId) && employeeId > 0),
+    ),
+  );
+
+  if (recoveredMemberIds.length !== 2) {
+    return existingMemberIds;
+  }
+
+  const missingMembers = recoveredMemberIds.filter(
+    (employeeId) => !existingMemberIds.includes(employeeId),
+  );
+
+  if (missingMembers.length) {
+    await db
+      .insert(messageThreadMembers)
+      .values(
+        missingMembers.map((employeeId) => ({
+          threadId,
+          employeeId,
+          role: thread.createdById === employeeId ? "owner" : "member",
+        })),
+      )
+      .onConflictDoNothing();
+  }
+
+  return recoveredMemberIds;
+}
+
+async function getAccessibleThreadIds(employeeId: number) {
+  const directThreadLinkPrefix = "/nachrichten?thread=";
+
+  const memberRows = await db
+    .selectDistinct({
+      threadId: messageThreadMembers.threadId,
+    })
+    .from(messageThreadMembers)
+    .where(eq(messageThreadMembers.employeeId, employeeId));
+
+  const senderRows = await db
+    .selectDistinct({
+      threadId: messageMessages.threadId,
+    })
+    .from(messageMessages)
+    .innerJoin(
+      messageThreads,
+      eq(messageMessages.threadId, messageThreads.id),
+    )
+    .where(
+      and(
+        eq(messageMessages.senderId, employeeId),
+        eq(messageThreads.type, "direct"),
+      ),
+    );
+
+  const notifiedRows = await db
+    .selectDistinct({
+      threadId: messageThreads.id,
+    })
+    .from(notifications)
+    .innerJoin(
+      messageThreads,
+      eq(
+        notifications.link,
+        sql<string>`${directThreadLinkPrefix} || ${messageThreads.id}::text`,
+      ),
+    )
+    .where(
+      and(
+        eq(notifications.recipientId, employeeId),
+        eq(notifications.type, "message"),
+        eq(messageThreads.type, "direct"),
+      ),
+    );
+
+  const candidateIds = Array.from(
+    new Set(
+      [...memberRows, ...senderRows, ...notifiedRows]
+        .map((row) => Number(row.threadId))
+        .filter((threadId) => Number.isFinite(threadId)),
+    ),
+  );
+
+  if (!candidateIds.length) {
+    return [] as number[];
+  }
+
+  const accessibleIds: number[] = [];
+  for (const threadId of candidateIds) {
+    const recoveredMembers = await ensureDirectThreadMembershipIntegrity(threadId);
+    if (
+      recoveredMembers.includes(employeeId) ||
+      memberRows.some((row) => row.threadId === threadId)
+    ) {
+      accessibleIds.push(threadId);
+    }
+  }
+
+  return accessibleIds;
+}
+
 export function registerMessageRoutes(router: Router) {
   router.use(requireAuth);
 
@@ -229,6 +384,11 @@ export function registerMessageRoutes(router: Router) {
           .status(401)
           .json({ success: false, error: "Nicht authentifiziert" });
       }
+      const accessibleThreadIds = await getAccessibleThreadIds(req.user.employeeId);
+      if (!accessibleThreadIds.length) {
+        return ok(res, []);
+      }
+
       const baseThreads = await db
         .select({
           id: messageThreads.id,
@@ -238,11 +398,7 @@ export function registerMessageRoutes(router: Router) {
           createdAt: messageThreads.createdAt,
         })
         .from(messageThreads)
-        .innerJoin(
-          messageThreadMembers,
-          eq(messageThreadMembers.threadId, messageThreads.id),
-        )
-        .where(eq(messageThreadMembers.employeeId, req.user.employeeId))
+        .where(inArray(messageThreads.id, accessibleThreadIds))
         .orderBy(desc(messageThreads.createdAt));
 
       const threadIds = baseThreads.map((thread) => thread.id);
