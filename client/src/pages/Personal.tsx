@@ -548,10 +548,22 @@ export default function Personal() {
     };
   }, [currentEmployee?.id]);
 
+  const monthlyMyShifts = currentUser
+    ? shifts.filter((shift) => shift.employeeId === currentUser.id)
+    : [];
+  const weekendShiftCount = monthlyMyShifts.filter((shift) => {
+    const date = new Date(`${shift.date}T00:00:00`);
+    const day = date.getDay();
+    return day === 0 || day === 6;
+  }).length;
+
   const activeSummaryText = useMemo(() => {
     if (activeTab === "roster") {
       if (!rosterSummary) return "Monatsdienstplan";
-      const parts = [`${rosterSummary.shifts} Dienste`, `${weekendCount} Wochenenddienste`];
+      const parts = [
+        `${rosterSummary.shifts} Dienste`,
+        `${weekendShiftCount} Wochenenddienste`,
+      ];
       rosterSummary.absenceReasonCounts.forEach(({ reason, days }) => {
         const suffix =
           reason === "Urlaub"
@@ -578,7 +590,7 @@ export default function Personal() {
       return parts.join(" · ");
     }
     return vacationSummary ?? "Urlaubsplanung";
-  }, [activeTab, rosterSummary, vacationSummary, weeklySummary, weekendCount]);
+  }, [activeTab, rosterSummary, vacationSummary, weeklySummary, weekendShiftCount]);
 
   const handleSubscribe = async () => {
     if (!token) {
@@ -1468,15 +1480,6 @@ function RosterView({
     // Langzeit-Abwesenheiten (long_term / legacy) werden im Dienstplan immer ausgeblendet.
     return [...plannedEntries].sort((a, b) => a.name.localeCompare(b.name));
   };
-
-  const myShifts = currentUser
-    ? shifts.filter((shift) => shift.employeeId === currentUser.id)
-    : [];
-  const weekendCount = myShifts.filter((shift) => {
-    const date = new Date(`${shift.date}T00:00:00`);
-    const day = date.getDay();
-    return day === 0 || day === 6;
-  }).length;
 
   const myAbsenceCount = useMemo(() => {
     if (!currentUser) return 0;
