@@ -1408,6 +1408,9 @@ export default function RosterPlan() {
             byService,
             sum: empShifts.length,
             abw: empAbsenceDays,
+            desiredMonthTotal:
+              shiftWishes.find((wish) => wish.employeeId === emp.id)
+                ?.maxShiftsPerMonth ?? null,
           },
         };
       });
@@ -1430,6 +1433,7 @@ export default function RosterPlan() {
     dayStrings,
     serviceLineDisplay,
     serviceLineMeta,
+    shiftWishes,
   ]);
 
   const statsRows = useMemo(() => {
@@ -1448,7 +1452,7 @@ export default function RosterPlan() {
     return rows;
   }, [stats]);
 
-  const statsColumnCount = 2 + serviceLineDisplay.length + 2;
+  const statsColumnCount = 2 + serviceLineDisplay.length + 3;
 
   const handleExport = async () => {
     if (!token) {
@@ -2657,6 +2661,9 @@ export default function RosterPlan() {
                     <TableHead className="text-center font-bold">
                       Summe
                     </TableHead>
+                    <TableHead className="text-center font-bold bg-sky-50/50 text-sky-900">
+                      Gewünscht
+                    </TableHead>
                     <TableHead className="text-center text-slate-500 bg-slate-50/50">
                       Abwesend
                     </TableHead>
@@ -2700,6 +2707,9 @@ export default function RosterPlan() {
                         ))}
                         <TableCell className="text-center font-bold">
                           {emp.stats.sum}
+                        </TableCell>
+                        <TableCell className="text-center font-semibold bg-sky-50/20 text-sky-900">
+                          {emp.stats.desiredMonthTotal ?? "-"}
                         </TableCell>
                         <TableCell className="text-center text-slate-500 bg-slate-50/20">
                           {emp.stats.abw}
