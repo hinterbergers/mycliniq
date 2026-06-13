@@ -551,7 +551,7 @@ export default function Personal() {
   const activeSummaryText = useMemo(() => {
     if (activeTab === "roster") {
       if (!rosterSummary) return "Monatsdienstplan";
-      const parts = [`${rosterSummary.shifts} Dienste`];
+      const parts = [`${rosterSummary.shifts} Dienste`, `${weekendCount} Wochenenddienste`];
       rosterSummary.absenceReasonCounts.forEach(({ reason, days }) => {
         const suffix =
           reason === "Urlaub"
@@ -578,7 +578,7 @@ export default function Personal() {
       return parts.join(" · ");
     }
     return vacationSummary ?? "Urlaubsplanung";
-  }, [activeTab, rosterSummary, vacationSummary, weeklySummary]);
+  }, [activeTab, rosterSummary, vacationSummary, weeklySummary, weekendCount]);
 
   const handleSubscribe = async () => {
     if (!token) {
@@ -2009,32 +2009,6 @@ function RosterView({
           )}
         </DialogContent>
       </Dialog>
-
-      <Card className="border-none kabeg-shadow">
-        <CardHeader>
-          <CardTitle className="text-base">Monatsübersicht</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="p-4 bg-primary/5 rounded-lg border border-primary/10">
-              <p className="text-sm text-muted-foreground">Anzahl Dienste</p>
-              <p className="text-2xl font-bold text-primary">
-                {myShifts.length}
-              </p>
-            </div>
-            <div className="p-4 bg-amber-50 rounded-lg border border-amber-100">
-              <p className="text-sm text-muted-foreground">Abwesenheiten</p>
-              <p className="text-2xl font-bold text-amber-700">
-                {myAbsenceCount}
-              </p>
-            </div>
-            <div className="p-4 bg-pink-50 rounded-lg border border-pink-100">
-              <p className="text-sm text-muted-foreground">Wochenenddienste</p>
-              <p className="text-2xl font-bold text-pink-700">{weekendCount}</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }
