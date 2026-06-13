@@ -349,6 +349,7 @@ export default function Personal() {
     useState<OpenShiftDebugDetail | null>(null);
   const [rosterSummary, setRosterSummary] = useState<{
     shifts: number;
+    weekendShifts: number;
     absenceReasonCounts: Array<{ reason: string; days: number }>;
   } | null>(null);
   const [weeklySummary, setWeeklySummary] = useState<{
@@ -548,21 +549,12 @@ export default function Personal() {
     };
   }, [currentEmployee?.id]);
 
-  const monthlyMyShifts = currentUser
-    ? shifts.filter((shift) => shift.employeeId === currentUser.id)
-    : [];
-  const weekendShiftCount = monthlyMyShifts.filter((shift) => {
-    const date = new Date(`${shift.date}T00:00:00`);
-    const day = date.getDay();
-    return day === 0 || day === 6;
-  }).length;
-
   const activeSummaryText = useMemo(() => {
     if (activeTab === "roster") {
       if (!rosterSummary) return "Monatsdienstplan";
       const parts = [
         `${rosterSummary.shifts} Dienste`,
-        `${weekendShiftCount} Wochenenddienste`,
+        `${rosterSummary.weekendShifts} Wochenenddienste`,
       ];
       rosterSummary.absenceReasonCounts.forEach(({ reason, days }) => {
         const suffix =
@@ -590,7 +582,7 @@ export default function Personal() {
       return parts.join(" · ");
     }
     return vacationSummary ?? "Urlaubsplanung";
-  }, [activeTab, rosterSummary, vacationSummary, weeklySummary, weekendShiftCount]);
+  }, [activeTab, rosterSummary, vacationSummary, weeklySummary]);
 
   const handleSubscribe = async () => {
     if (!token) {
@@ -935,6 +927,7 @@ function RosterView({
   exporting: boolean;
   onSummaryChange?: (summary: {
     shifts: number;
+    weekendShifts: number;
     absenceReasonCounts: Array<{ reason: string; days: number }>;
   }) => void;
 }) {
@@ -1555,12 +1548,23 @@ function RosterView({
     longTermAbsences,
   ]);
 
+  const weekendShiftCount = useMemo(
+    () =>
+      myShifts.filter((shift) => {
+        const date = new Date(`${shift.date}T00:00:00`);
+        const day = date.getDay();
+        return day === 0 || day === 6;
+      }).length,
+    [myShifts],
+  );
+
   useEffect(() => {
     onSummaryChange?.({
       shifts: myShifts.length,
+      weekendShifts: weekendShiftCount,
       absenceReasonCounts: myAbsenceReasonCounts,
     });
-  }, [myAbsenceReasonCounts, myShifts.length, onSummaryChange]);
+  }, [myAbsenceReasonCounts, myShifts.length, onSummaryChange, weekendShiftCount]);
 
   return (
     <div className="space-y-6">
