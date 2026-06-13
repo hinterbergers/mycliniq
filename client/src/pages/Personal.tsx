@@ -1548,23 +1548,36 @@ function RosterView({
     longTermAbsences,
   ]);
 
+  const summaryMyShifts = useMemo(
+    () =>
+      currentUser
+        ? shifts.filter((shift) => shift.employeeId === currentUser.id)
+        : [],
+    [currentUser, shifts],
+  );
+
   const weekendShiftCount = useMemo(
     () =>
-      myShifts.filter((shift) => {
+      summaryMyShifts.filter((shift) => {
         const date = new Date(`${shift.date}T00:00:00`);
         const day = date.getDay();
         return day === 0 || day === 6;
       }).length,
-    [myShifts],
+    [summaryMyShifts],
   );
 
   useEffect(() => {
     onSummaryChange?.({
-      shifts: myShifts.length,
+      shifts: summaryMyShifts.length,
       weekendShifts: weekendShiftCount,
       absenceReasonCounts: myAbsenceReasonCounts,
     });
-  }, [myAbsenceReasonCounts, myShifts.length, onSummaryChange, weekendShiftCount]);
+  }, [
+    myAbsenceReasonCounts,
+    onSummaryChange,
+    summaryMyShifts.length,
+    weekendShiftCount,
+  ]);
 
   return (
     <div className="space-y-6">
