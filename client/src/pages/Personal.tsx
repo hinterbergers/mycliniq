@@ -342,7 +342,7 @@ export default function Personal() {
   const isExternalDuty = user?.accessScope === "external_duty";
   const [unassignedCount, setUnassignedCount] = useState(0);
   const [pendingSwapRequestCount, setPendingSwapRequestCount] = useState(0);
-  const [isMobileHeroExpanded, setIsMobileHeroExpanded] = useState(false);
+  const [isHeroExpanded, setIsHeroExpanded] = useState(true);
   const pageStickyHeaderRef = useRef<HTMLDivElement | null>(null);
   const [pageStickyHeaderHeight, setPageStickyHeaderHeight] = useState(0);
   const [unassignedDebug, setUnassignedDebug] =
@@ -711,23 +711,23 @@ export default function Personal() {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-10 w-10 shrink-0 rounded-full border border-white/15 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground lg:hidden"
-                  onClick={() => setIsMobileHeroExpanded((current) => !current)}
-                  aria-expanded={isMobileHeroExpanded}
-                  aria-label={isMobileHeroExpanded ? "Hero einklappen" : "Hero erweitern"}
-                  data-testid="button-mobile-hero-toggle"
+                  className="h-10 w-10 shrink-0 rounded-full border border-white/15 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
+                  onClick={() => setIsHeroExpanded((current) => !current)}
+                  aria-expanded={isHeroExpanded}
+                  aria-label={isHeroExpanded ? "Hero einklappen" : "Hero erweitern"}
+                  data-testid="button-hero-toggle"
                 >
                   <ChevronDown
                     className={cn(
                       "h-5 w-5 transition-transform duration-200",
-                      isMobileHeroExpanded && "rotate-180",
+                      isHeroExpanded && "rotate-180",
                     )}
                   />
                 </Button>
               </div>
 
-              <div className={cn("hidden lg:block", isMobileHeroExpanded && "block")}>
-                <p className="text-sm text-primary-foreground/80 lg:hidden">
+              <div className={cn("hidden", isHeroExpanded && "block")}>
+                <p className="text-sm text-primary-foreground/80">
                   Monatsdienstplan, Wochenplan und Urlaubsplanung.
                 </p>
 
@@ -785,7 +785,7 @@ export default function Personal() {
                 </div>
               </div>
 
-              <div className={cn("hidden lg:block", isMobileHeroExpanded && "block")}>
+              <div className={cn("hidden", isHeroExpanded && "block")}>
                 <TabsList className="flex h-auto w-full flex-wrap justify-start gap-2 rounded-2xl border border-white/10 bg-white/10 p-2 text-primary-foreground/80 shadow-none">
                   <TabsTrigger
                     value="roster"
