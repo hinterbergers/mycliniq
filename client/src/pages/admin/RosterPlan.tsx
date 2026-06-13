@@ -1112,6 +1112,37 @@ export default function RosterPlan() {
     });
   };
 
+  const getPlannedAbsencesForServiceLine = (
+    date: Date,
+    serviceType: ServiceType,
+  ): RosterAbsenceEntry[] => {
+    const dateStr = format(date, "yyyy-MM-dd");
+
+    return activePlannedAbsences
+      .filter((absence) => absence.startDate <= dateStr && absence.endDate >= dateStr)
+      .filter((absence) => {
+        const employee = employees.find((emp) => emp.id === absence.employeeId);
+        if (!employee) return false;
+        if (employee.isActive === false || employee.takesShifts === false) return false;
+        const supportedTypes = getServiceTypesForEmployee(employee, serviceLineMeta);
+        return supportedTypes.includes(serviceType);
+      })
+      .map((absence) => ({
+        employeeId: absence.employeeId,
+        name: resolveEmployeeLastName(
+          absence.employeeId,
+          absence.employeeName,
+          absence.employeeLastName,
+        ),
+        reason: absence.reason,
+        source: "planned" as const,
+        absenceId: absence.id,
+        status: absence.status,
+        notes: absence.notes ?? null,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, "de"));
+  };
+
   const renderAssignmentCell = (
     date: Date,
     line: {
@@ -2476,21 +2507,47 @@ export default function RosterPlan() {
                   <div className="min-h-6 text-xs leading-5">
                     {(() => {
                       const wishes = getWishesForServiceLine(day, line.key);
-                      if (!wishes.length) {
+                      const plannedAbsences = getPlannedAbsencesForServiceLine(
+                        day,
+                        line.key,
+                      );
+
+                      if (!wishes.length && !plannedAbsences.length) {
                         return <div className="text-slate-300">-</div>;
                       }
-                      return wishes.map((wish) => (
-                        <div
-                          key={`${line.key}-${wish.type}-${wish.employeeId}`}
-                          className={
-                            wish.type === "prefer"
-                              ? "text-blue-600"
-                              : "text-red-600"
-                          }
-                        >
-                          {wish.name}
+
+                      return (
+                        <div className="space-y-1">
+                          {wishes.map((wish) => (
+                            <div
+                              key={`${line.key}-${wish.type}-${wish.employeeId}`}
+                              className={
+                                wish.type === "prefer"
+                                  ? "text-blue-600"
+                                  : "text-red-600"
+                              }
+                            >
+                              {wish.name}
+                            </div>
+                          ))}
+
+                          {plannedAbsences.length > 0 && (
+                            <div className="border-t border-slate-200/80 pt-1">
+                              {plannedAbsences.map((absence) => (
+                                <div
+                                  key={`${line.key}-absence-${absence.employeeId}-${absence.absenceId}`}
+                                  className="text-amber-700"
+                                  title={[absence.name, absence.reason, absence.status]
+                                    .filter(Boolean)
+                                    .join(" · ")}
+                                >
+                                  {absence.name}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                      ));
+                      );
                     })()}
                   </div>
                 )}
