@@ -1143,6 +1143,53 @@ export default function RosterPlan() {
       .sort((a, b) => a.name.localeCompare(b.name, "de"));
   };
 
+  const getAvailableEmployeesForServiceLine = (
+    date: Date,
+    serviceType: ServiceType,
+  ): string[] => {
+    const dateStr = format(date, "yyyy-MM-dd");
+    const isoWeekday = Number(format(date, "i"));
+
+    return employees
+      .filter((employee) => {
+        if (employee.isActive === false || employee.takesShifts === false) return false;
+        if (isLegacyInactiveOnDate(employee, dateStr)) return false;
+
+        const supportedTypes = getServiceTypesForEmployee(employee, serviceLineMeta);
+        if (!supportedTypes.includes(serviceType)) return false;
+
+        const hasPlannedAbsence = activePlannedAbsences.some(
+          (absence) =>
+            absence.employeeId === employee.id &&
+            absence.startDate <= dateStr &&
+            absence.endDate >= dateStr,
+        );
+        if (hasPlannedAbsence) return false;
+
+        const hasLongTermAbsence = longTermAbsences.some(
+          (absence) =>
+            absence.employeeId === employee.id &&
+            absence.status === "Genehmigt" &&
+            absence.startDate <= dateStr &&
+            absence.endDate >= dateStr,
+        );
+        if (hasLongTermAbsence) return false;
+
+        const wish = shiftWishes.find((item) => item.employeeId === employee.id);
+        if (wish) {
+          const avoidDays = Array.isArray(wish.avoidShiftDays) ? wish.avoidShiftDays : [];
+          const avoidWeekdays = Array.isArray(wish.avoidWeekdays) ? wish.avoidWeekdays : [];
+          if (avoidDays.includes(dateStr) || avoidWeekdays.includes(isoWeekday)) {
+            return false;
+          }
+        }
+
+        return true;
+      })
+      .map((employee) => resolveEmployeeLastName(employee.id, employee.name, employee.lastName))
+      .sort((a, b) => a.localeCompare(b, "de"));
+  };
+
   const renderAssignmentCell = (
     date: Date,
     line: {
@@ -2521,35 +2568,54 @@ export default function RosterPlan() {
                       }
 
                       return (
-                        <div className="space-y-1">
-                          {wishes.map((wish) => (
-                            <div
-                              key={`${line.key}-${wish.type}-${wish.employeeId}`}
-                              className={
-                                wish.type === "prefer"
-                                  ? "text-blue-600"
-                                  : "text-red-600"
-                              }
-                            >
-                              {wish.name}
-                            </div>
-                          ))}
+                        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
+                          <div className="space-y-1">
+                            {wishes.map((wish) => (
+                              <div
+                                key={`${line.key}-${wish.type}-${wish.employeeId}`}
+                                className={
+                                  wish.type === "prefer"
+                                    ? "text-blue-600"
+                                    : "text-red-600"
+                                }
+                              >
+                                {wish.name}
+                              </div>
+                            ))}
 
-                          {plannedAbsences.length > 0 && (
-                            <div className="border-t border-slate-200/80 pt-1">
-                              {plannedAbsences.map((absence) => (
-                                <div
-                                  key={`${line.key}-absence-${absence.employeeId}-${absence.absenceId}`}
-                                  className="text-amber-700"
-                                  title={[absence.name, absence.reason, absence.status]
-                                    .filter(Boolean)
-                                    .join(" · ")}
-                                >
-                                  {absence.name}
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                            {plannedAbsences.length > 0 && (
+                              <div className="border-t border-slate-200/80 pt-1">
+                                {plannedAbsences.map((absence) => (
+                                  <div
+                                    key={`${line.key}-absence-${absence.employeeId}-${absence.absenceId}`}
+                                    className="text-amber-700"
+                                    title={[absence.name, absence.reason, absence.status]
+                                      .filter(Boolean)
+                                      .join(" · ")}
+                                  >
+                                    {absence.name}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="border-l border-slate-200/80 pl-2 text-[11px] text-slate-400">
+                            {(() => {
+                              const availableEmployees = getAvailableEmployeesForServiceLine(
+                                day,
+                                line.key,
+                              );
+
+                              if (!availableEmployees.length) {
+                                return <div className="text-slate-300">-</div>;
+                              }
+
+                              return availableEmployees.map((name) => (
+                                <div key={`${line.key}-available-${name}`}>{name}</div>
+                              ));
+                            })()}
+                          </div>
                         </div>
                       );
                     })()}
