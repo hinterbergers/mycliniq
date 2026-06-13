@@ -5,6 +5,8 @@ import { de } from "date-fns/locale";
 import type { Employee, Notification } from "@shared/schema";
 import {
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock3,
   ExternalLink,
   Forward,
@@ -62,6 +64,7 @@ import {
 import { cn } from "@/lib/utils";
 
 const FAVORITE_GROUP_KEY_PREFIX = "cliniq_messages_favorite_group";
+const HERO_COLLAPSED_STORAGE_KEY = "cliniq_messages_hero_collapsed";
 const SYSTEM_THREAD_ID = -1;
 
 type ThreadMessageItem = MessageWithSender & {
@@ -146,6 +149,14 @@ const getEmployeeName = (employee: Employee) =>
 
 const getThreadPreview = (thread: PortalThread) =>
   thread.lastMessage?.content?.trim() || "Noch keine Nachricht";
+
+const getThreadActivityTimestamp = (thread: PortalThread) => {
+  const raw = thread.lastMessage?.createdAt || thread.createdAt;
+  const ts = raw ? new Date(raw).getTime() : 0;
+  return Number.isNaN(ts) ? 0 : ts;
+};
+
+const getThreadUnreadCount = (thread: PortalThread) => thread.unreadCount ?? 0;
 
 const getNotificationTone = (type: Notification["type"]) => {
   switch (type) {
@@ -348,6 +359,7 @@ export default function Messages() {
   const [favoriteGroupThreadId, setFavoriteGroupThreadId] = useState<
     number | null
   >(null);
+  const [isHeroCollapsed, setIsHeroCollapsed] = useState(false);
   const [forwardDialogOpen, setForwardDialogOpen] = useState(false);
   const [messageToForward, setMessageToForward] = useState<ThreadMessageItem | null>(
     null,
@@ -394,6 +406,16 @@ export default function Messages() {
     setForwardLink("");
     setForwardComment("");
   };
+
+  useEffect(() => {
+    try {
+      setIsHeroCollapsed(
+        window.localStorage.getItem(HERO_COLLAPSED_STORAGE_KEY) === "true",
+      );
+    } catch {
+      setIsHeroCollapsed(false);
+    }
+  }, []);
 
   useEffect(() => {
     void loadNotifications();
@@ -563,10 +585,13 @@ export default function Messages() {
     };
   }, [systemNotifications]);
 
-  const portalThreads = useMemo<PortalThread[]>(
-    () => [systemThread, ...threads],
-    [systemThread, threads],
-  );
+  const portalThreads = useMemo<PortalThread[]>(() => {
+    return [systemThread, ...threads].sort((a, b) => {
+      const unreadDelta = getThreadUnreadCount(b) - getThreadUnreadCount(a);
+      if (unreadDelta !== 0) return unreadDelta;
+      return getThreadActivityTimestamp(b) - getThreadActivityTimestamp(a);
+    });
+  }, [systemThread, threads]);
 
   const filteredThreads = useMemo(() => {
     const term = threadSearch.trim().toLowerCase();
@@ -1339,92 +1364,134 @@ export default function Messages() {
     }
   };
 
+  const toggleHeroCollapsed = () => {
+    setIsHeroCollapsed((current) => {
+      const next = !current;
+      try {
+        window.localStorage.setItem(
+          HERO_COLLAPSED_STORAGE_KEY,
+          String(next),
+        );
+      } catch {
+        // ignore localStorage issues
+      }
+      return next;
+    });
+  };
+
   return (
     <Layout title="Nachrichten">
       <div className="mx-auto flex max-w-7xl flex-col gap-6 pb-8">
         <Card className="overflow-hidden border-none bg-gradient-to-br from-slate-950 via-[#113f72] to-[#0f5ba7] text-white shadow-xl">
-          <CardContent className="grid gap-8 p-8 lg:grid-cols-[minmax(0,1.1fr)_360px] lg:p-10">
-            <div className="space-y-5">
-              <Badge className="w-fit border-white/20 bg-white/10 text-white hover:bg-white/10">
-                Nachrichtenportal
-              </Badge>
-              <div className="space-y-3">
-                <h2 className="max-w-3xl text-xl font-bold leading-tight text-white">
-                  Ein Posteingang fuer Hinweise, Chats und Gruppen.
-                </h2>
-                <p className="max-w-xl text-sm text-primary-foreground/80">
-                  Die Startseite fokussiert auf offene Hinweise, bearbeitete
-                  Vorgaenge und schnelle Kommunikation. Chats, Gruppen und
-                  Systemmeldungen liegen in einer mobilen Portalstruktur.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-3">
+          <CardContent
+            className={cn(
+              "p-8 lg:p-10",
+              !isHeroCollapsed &&
+                "grid gap-8 lg:grid-cols-[minmax(0,1.1fr)_360px]",
+            )}
+          >
+            <div className={cn("space-y-5", isHeroCollapsed && "space-y-0")}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="space-y-3">
+                  <Badge className="w-fit border-white/20 bg-white/10 text-white hover:bg-white/10">
+                    Nachrichtenportal
+                  </Badge>
+                  <h2 className="max-w-3xl text-xl font-bold leading-tight text-white">
+                    Ein Posteingang fuer Hinweise, Chats und Gruppen.
+                  </h2>
+                </div>
                 <Button
                   type="button"
-                  className="border-white/20 bg-white text-blue-700 hover:bg-blue-50"
-                  onClick={() => setComposeOpen(true)}
+                  variant="outline"
+                  className="border-white/20 text-white hover:bg-white/10"
+                  onClick={toggleHeroCollapsed}
                 >
-                  <MailPlus className="mr-2 h-4 w-4" />
-                  Neue Nachricht
+                  {isHeroCollapsed ? (
+                    <ChevronDown className="mr-2 h-4 w-4" />
+                  ) : (
+                    <ChevronUp className="mr-2 h-4 w-4" />
+                  )}
+                  {isHeroCollapsed ? "Aufklappen" : "Einklappen"}
                 </Button>
-                {favoriteGroupThread && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="border-white/20 text-white hover:bg-white/10"
-                    onClick={() => openThread(favoriteGroupThread.id)}
-                  >
-                    <Pin className="mr-2 h-4 w-4" />
-                    Nachricht an Gruppe
-                  </Button>
-                )}
               </div>
+              {!isHeroCollapsed && (
+                <>
+                  <p className="max-w-xl text-sm text-primary-foreground/80">
+                    Die Startseite fokussiert auf offene Hinweise, bearbeitete
+                    Vorgaenge und schnelle Kommunikation. Chats, Gruppen und
+                    Systemmeldungen liegen in einer mobilen Portalstruktur.
+                  </p>
+                  <div className="flex flex-wrap gap-3">
+                    <Button
+                      type="button"
+                      className="border-white/20 bg-white text-blue-700 hover:bg-blue-50"
+                      onClick={() => setComposeOpen(true)}
+                    >
+                      <MailPlus className="mr-2 h-4 w-4" />
+                      Neue Nachricht
+                    </Button>
+                    {favoriteGroupThread && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="border-white/20 text-white hover:bg-white/10"
+                        onClick={() => openThread(favoriteGroupThread.id)}
+                      >
+                        <Pin className="mr-2 h-4 w-4" />
+                        Nachricht an Gruppe
+                      </Button>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
 
-            <div className="rounded-3xl border border-white/10 bg-white/10 p-5 backdrop-blur">
-              <div className="rounded-xl border border-white/15 bg-white/10 px-4 py-3 text-sm text-white/70">
-                Portalstatus und Schnellzugriffe
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Badge variant="secondary" className="bg-white text-blue-700 hover:bg-white">
-                  Neu {loadingNotifications ? "..." : unreadNotifications.length}
-                </Badge>
-                <Badge variant="outline" className="border-white/20 text-white">
-                  Chats {loadingThreads ? "..." : threads.length}
-                </Badge>
-                <Badge variant="outline" className="border-white/20 text-white">
-                  Gruppen {groupThreads.length}
-                </Badge>
-              </div>
-              <div className="mt-5 space-y-3 text-sm text-white/90">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">
-                    Favorit
-                  </p>
-                  <p className="mt-2 font-medium text-white">
-                    {favoriteGroupThread
-                      ? getThreadTitle(favoriteGroupThread)
-                      : "Keine Gruppe fixiert"}
-                  </p>
-                  <p className="mt-1 text-xs text-white/65">
-                    Als persoenlicher Header-Shortcut hinterlegbar
-                  </p>
+            {!isHeroCollapsed && (
+              <div className="rounded-3xl border border-white/10 bg-white/10 p-5 backdrop-blur">
+                <div className="rounded-xl border border-white/15 bg-white/10 px-4 py-3 text-sm text-white/70">
+                  Portalstatus und Schnellzugriffe
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">
-                    Fokus
-                  </p>
-                  <p className="mt-2 font-medium text-white">
-                    {unreadNotifications.length > 0
-                      ? "Offene Hinweise zuerst bearbeiten"
-                      : "Eingang ist leer, Chats bleiben aktiv"}
-                  </p>
-                  <p className="mt-1 text-xs text-white/65">
-                    Dashboard und Nachrichten nutzen dieselbe Eingangslogik
-                  </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Badge variant="secondary" className="bg-white text-blue-700 hover:bg-white">
+                    Neu {loadingNotifications ? "..." : unreadNotifications.length}
+                  </Badge>
+                  <Badge variant="outline" className="border-white/20 text-white">
+                    Chats {loadingThreads ? "..." : threads.length}
+                  </Badge>
+                  <Badge variant="outline" className="border-white/20 text-white">
+                    Gruppen {groupThreads.length}
+                  </Badge>
+                </div>
+                <div className="mt-5 space-y-3 text-sm text-white/90">
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">
+                      Favorit
+                    </p>
+                    <p className="mt-2 font-medium text-white">
+                      {favoriteGroupThread
+                        ? getThreadTitle(favoriteGroupThread)
+                        : "Keine Gruppe fixiert"}
+                    </p>
+                    <p className="mt-1 text-xs text-white/65">
+                      Als persoenlicher Header-Shortcut hinterlegbar
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">
+                      Fokus
+                    </p>
+                    <p className="mt-2 font-medium text-white">
+                      {unreadNotifications.length > 0
+                        ? "Offene Hinweise zuerst bearbeiten"
+                        : "Eingang ist leer, Chats bleiben aktiv"}
+                    </p>
+                    <p className="mt-1 text-xs text-white/65">
+                      Dashboard und Nachrichten nutzen dieselbe Eingangslogik
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </CardContent>
         </Card>
 
@@ -1863,9 +1930,10 @@ export default function Messages() {
                   {inboxPaneMode === "threads" &&
                     !loadingThreads &&
                     filteredThreads.length > 0 && (
-                    <div className="space-y-2">
+                    <div className="space-y-1.5">
                       {filteredThreads.map((thread) => {
                         const isActive = selectedThreadId === thread.id;
+                        const isUnread = getThreadUnreadCount(thread) > 0;
                         const isFavoriteGroup =
                           thread.type === "group" &&
                           favoriteGroupThreadId === thread.id &&
@@ -1876,28 +1944,30 @@ export default function Messages() {
                           <div
                             key={thread.id}
                             className={cn(
-                              "rounded-3xl border transition-all",
+                              "rounded-[20px] border transition-all",
                               isActive
                                 ? "border-blue-200 bg-blue-50 shadow-sm"
-                                : "bg-white hover:border-blue-100 hover:bg-slate-50",
+                                : isUnread
+                                  ? "border-blue-200 bg-blue-50/70 hover:border-blue-300 hover:bg-blue-50"
+                                  : "bg-white hover:border-blue-100 hover:bg-slate-50",
                             )}
                           >
-                            <div className="flex items-start gap-2 p-1">
+                            <div className="flex items-start gap-1 p-0.5">
                               <button
                                 type="button"
                                 onClick={() => openThread(thread.id)}
-                                className="min-w-0 flex-1 rounded-[22px] px-3 py-2 text-left"
+                                className="min-w-0 flex-1 rounded-[16px] px-2.5 py-1.5 text-left"
                               >
                                 <div className="flex items-start justify-between gap-2">
                                   <div className="min-w-0">
                                     <div className="flex flex-wrap items-center gap-2">
-                                      <p className="truncate text-sm font-semibold text-slate-900">
+                                      <p className="truncate text-xs font-semibold leading-tight text-slate-900">
                                         {getThreadTitle(thread)}
                                       </p>
                                       {thread.id === SYSTEM_THREAD_ID && (
                                         <Badge
                                           variant="outline"
-                                          className="border-blue-200 text-blue-700"
+                                          className="h-5 border-blue-200 px-2 text-[10px] text-blue-700"
                                         >
                                           <Megaphone className="mr-1 h-3 w-3" />
                                           System
@@ -1905,34 +1975,38 @@ export default function Messages() {
                                       )}
                                       {thread.type === "group" &&
                                         thread.id !== SYSTEM_THREAD_ID && (
-                                        <Badge variant="secondary">Gruppe</Badge>
+                                        <Badge
+                                          variant="secondary"
+                                          className="h-5 px-2 text-[10px]"
+                                        >
+                                          Gruppe
+                                        </Badge>
                                       )}
                                       {isFavoriteGroup && (
                                         <Badge
                                           variant="outline"
-                                          className="border-blue-200 text-blue-700"
+                                          className="h-5 border-blue-200 px-2 text-[10px] text-blue-700"
                                         >
                                           <Pin className="mr-1 h-3 w-3" />
                                           Favorit
                                         </Badge>
                                       )}
                                     </div>
-                                    <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                                    <p className="mt-0.5 line-clamp-2 text-[10px] leading-snug text-muted-foreground">
                                       {getThreadPreview(thread)}
                                     </p>
                                   </div>
                                   <div className="flex shrink-0 flex-col items-end gap-1">
-                                    <span className="text-[11px] text-muted-foreground">
+                                    <span className="text-[9px] text-muted-foreground">
                                       {formatTimestamp(
                                         thread.lastMessage?.createdAt || thread.createdAt,
                                       )}
                                     </span>
-                                    {thread.id === SYSTEM_THREAD_ID &&
-                                      (thread.unreadCount ?? 0) > 0 && (
-                                        <Badge className="bg-blue-600 text-white hover:bg-blue-600">
-                                          {thread.unreadCount}
-                                        </Badge>
-                                      )}
+                                    {isUnread && (
+                                      <Badge className="h-4 min-w-4 bg-blue-600 px-1 text-[9px] text-white hover:bg-blue-600">
+                                        {getThreadUnreadCount(thread)}
+                                      </Badge>
+                                    )}
                                   </div>
                                 </div>
                               </button>
@@ -1941,11 +2015,11 @@ export default function Messages() {
                                   type="button"
                                   size="icon"
                                   variant="ghost"
-                                  className="mt-1 shrink-0 text-slate-500 hover:text-red-600"
+                                  className="mt-0.5 h-7 w-7 shrink-0 text-slate-500 hover:text-red-600"
                                   disabled={deletingThreadId === thread.id}
                                   onClick={() => void handleDeleteDirectThread(thread)}
                                 >
-                                  <Trash2 className="h-4 w-4" />
+                                  <Trash2 className="h-3.5 w-3.5" />
                                 </Button>
                               )}
                             </div>
@@ -2093,7 +2167,7 @@ export default function Messages() {
                                 key={msg.id}
                                 className={cn(
                                   "flex flex-col gap-2",
-                                  isOwn ? "justify-end" : "justify-start",
+                                  isOwn ? "items-end" : "items-start",
                                 )}
                               >
                                 <div
