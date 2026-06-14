@@ -2334,15 +2334,16 @@ export default function VacationPlanEditor({
                       Abwesenheit erfassen
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="sm:max-w-[560px]">
-                  <DialogHeader>
-                    <DialogTitle>
-                      {editingAbsence
-                        ? "Abwesenheit bearbeiten"
-                        : "Abwesenheit eintragen"}
-                    </DialogTitle>
-                  </DialogHeader>
-                    <div className="space-y-4">
+                  <DialogContent className="flex max-h-[85vh] w-[min(92vw,560px)] flex-col overflow-hidden p-0 sm:max-w-[560px]">
+                    <DialogHeader className="shrink-0 border-b border-slate-200 px-6 py-4">
+                      <DialogTitle>
+                        {editingAbsence
+                          ? "Abwesenheit bearbeiten"
+                          : "Abwesenheit eintragen"}
+                      </DialogTitle>
+                    </DialogHeader>
+                    <div className="flex-1 overflow-y-auto px-6 py-4">
+                      <div className="space-y-4">
                       <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
@@ -2591,6 +2592,7 @@ export default function VacationPlanEditor({
                           {editingAbsence ? "Aktualisieren" : "Speichern"}
                         </Button>
                       </div>
+                    </div>
                     </div>
                   </DialogContent>
                 </Dialog>
