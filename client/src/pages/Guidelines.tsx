@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   BookOpen,
   CheckCircle2,
+  ChevronDown,
   Clock3,
   Download,
   Printer,
@@ -224,6 +225,7 @@ export default function Guidelines() {
   const [editingInline, setEditingInline] = useState(false);
   const [draftingNew, setDraftingNew] = useState(false);
   const [editorSaving, setEditorSaving] = useState(false);
+  const [isHeroExpanded, setIsHeroExpanded] = useState(true);
   const [editorForm, setEditorForm] = useState({
     title: "",
     version: "1.0",
@@ -1304,62 +1306,92 @@ export default function Guidelines() {
         ) : (
           <div className="space-y-8">
             <Card className="overflow-hidden border-none bg-gradient-to-br from-slate-950 via-[#113f72] to-[#0f5ba7] text-white shadow-xl">
-              <CardContent className="grid gap-8 p-8 lg:grid-cols-[minmax(0,1.1fr)_360px] lg:p-10">
+              <CardContent className="p-8 lg:p-10">
                 <div className="space-y-5">
-                  <Badge className="w-fit border-white/20 bg-white/10 text-white">
-                    Wissensbasis
-                  </Badge>
-                  <div className="space-y-3">
-                    <h1 className="max-w-3xl text-xl font-bold leading-tight text-white">
-                      SOPs und Dienstanweisungen wie eine interne Wiki-Bibliothek.
-                    </h1>
-                    <p className="max-w-xl text-sm text-primary-foreground/80">
-                      Die Startseite fokussiert auf haeufig genutzte und neue Seiten.
-                      Einzelne Eintraege oeffnen als eigenstaendige Wissensseiten mit
-                      direkter Inline-Bearbeitung fuer die Redaktion.
-                    </p>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-3">
+                      <Badge className="w-fit border-white/20 bg-white/10 text-white">
+                        Wissensbasis
+                      </Badge>
+                      <h1 className="max-w-3xl text-xl font-bold leading-tight text-white">
+                        SOPs und Dienstanweisungen wie eine interne Wiki-Bibliothek.
+                      </h1>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="shrink-0 rounded-full border border-white/15 bg-white/10 text-white hover:bg-white/15 hover:text-white"
+                      onClick={() => setIsHeroExpanded((value) => !value)}
+                      aria-expanded={isHeroExpanded}
+                      aria-label={isHeroExpanded ? "Hero einklappen" : "Hero erweitern"}
+                    >
+                      <ChevronDown
+                        className={`h-5 w-5 transition-transform duration-200 ${
+                          isHeroExpanded ? "rotate-180" : ""
+                        }`}
+                      />
+                    </Button>
                   </div>
-                  <div className="flex flex-wrap gap-3">
-                    {canManageKnowledge && (
-                      <>
-                        <Button onClick={() => startNewArticle("SOP")}>
-                          <Plus className="mr-2 h-4 w-4" />
-                          Neue SOP
-                        </Button>
-                        <Button
-                          variant="secondary"
-                          onClick={() => startNewArticle("Dienstanweisung")}
-                        >
-                          <Plus className="mr-2 h-4 w-4" />
-                          Neue Dienstanweisung
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                </div>
-                <div className="rounded-3xl border border-white/10 bg-white/10 p-5 backdrop-blur">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-3.5 h-4 w-4 text-white/50" />
-                    <Input
-                      value={searchTerm}
-                      onChange={(event) => setSearchTerm(event.target.value)}
-                      placeholder="Wissensseite durchsuchen..."
-                      className="border-white/15 bg-white/10 pl-10 text-white placeholder:text-white/50"
-                    />
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {availableCategories.map((category) => (
-                      <Button
-                        key={category}
-                        size="sm"
-                        variant={selectedCategory === category ? "secondary" : "outline"}
-                        className={selectedCategory === category ? "" : "border-white/20 text-white"}
-                        onClick={() => setSelectedCategory(category)}
-                      >
-                        {category}
-                      </Button>
-                    ))}
-                  </div>
+
+                  {isHeroExpanded && (
+                    <div className="grid gap-8 lg:grid-cols-[minmax(0,1.1fr)_360px]">
+                      <div className="space-y-5">
+                        <p className="max-w-xl text-sm text-primary-foreground/80">
+                          Die Startseite fokussiert auf haeufig genutzte und neue Seiten.
+                          Einzelne Eintraege oeffnen als eigenstaendige Wissensseiten mit
+                          direkter Inline-Bearbeitung fuer die Redaktion.
+                        </p>
+                        <div className="flex flex-wrap gap-3">
+                          {canManageKnowledge && (
+                            <>
+                              <Button onClick={() => startNewArticle("SOP")}>
+                                <Plus className="mr-2 h-4 w-4" />
+                                Neue SOP
+                              </Button>
+                              <Button
+                                variant="secondary"
+                                onClick={() => startNewArticle("Dienstanweisung")}
+                              >
+                                <Plus className="mr-2 h-4 w-4" />
+                                Neue Dienstanweisung
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <div className="rounded-3xl border border-white/10 bg-white/10 p-5 backdrop-blur">
+                        <div className="relative">
+                          <Search className="absolute left-3 top-3.5 h-4 w-4 text-white/50" />
+                          <Input
+                            value={searchTerm}
+                            onChange={(event) => setSearchTerm(event.target.value)}
+                            placeholder="Wissensseite durchsuchen..."
+                            className="border-white/15 bg-white/10 pl-10 text-white placeholder:text-white/50"
+                          />
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {availableCategories.map((category) => (
+                            <Button
+                              key={category}
+                              size="sm"
+                              variant={
+                                selectedCategory === category ? "secondary" : "outline"
+                              }
+                              className={
+                                selectedCategory === category
+                                  ? ""
+                                  : "border-white/20 text-white"
+                              }
+                              onClick={() => setSelectedCategory(category)}
+                            >
+                              {category}
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
