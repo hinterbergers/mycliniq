@@ -15,4 +15,10 @@ jobs:
           username: ${{ secrets.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_KEY }}
           script: |
-            sudo /opt/mycliniq/deploy.sh
+            set -e
+            cd /opt/mycliniq
+            git pull origin main
+            npm install
+            npm run build
+            pm2 restart mycliniq --update-env
+            curl -I http://127.0.0.1:3000/
