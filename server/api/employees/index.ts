@@ -26,7 +26,7 @@ import {
 
 /**
  * Extended validation schema for employee creation
- * Requires: firstName, lastName, email, birthday
+ * Requires: firstName, lastName, email
  */
 const emailSchema = z
   .string()
@@ -42,11 +42,15 @@ const createEmployeeSchema = insertEmployeeSchema.extend({
   email: emailSchema,
   emailPrivate: z.union([emailSchema, z.null()]).optional(),
   birthday: z
-    .string()
-    .regex(
-      /^\d{4}-\d{2}-\d{2}$/,
-      "Geburtsdatum im Format YYYY-MM-DD erforderlich",
-    ),
+    .union([
+      z.string().regex(
+        /^\d{4}-\d{2}-\d{2}$/,
+        "Geburtsdatum im Format YYYY-MM-DD eingeben",
+      ),
+      z.literal(""),
+      z.null(),
+    ])
+    .optional(),
 });
 const USERNAME_REGEX = /^[a-zA-Z0-9._-]{3,50}$/;
 
@@ -187,7 +191,7 @@ export function registerEmployeeRoutes(router: Router) {
   /**
    * POST /api/employees
    * Create new employee
-   * Required fields: firstName, lastName, email, birthday
+   * Required fields: firstName, lastName, email
    */
   router.post(
     "/",

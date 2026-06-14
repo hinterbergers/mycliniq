@@ -315,6 +315,90 @@ function parseVacationEntitlementInput(value: string): number | null {
   return Math.round(parsed);
 }
 
+type EmployeeListView = "active" | "archive";
+type EmployeeVisibilityStatus =
+  | "active"
+  | "inactive_window"
+  | "employment_expired"
+  | "employment_upcoming"
+  | "archived";
+
+const toLocalDateOnly = (value: string | Date | null | undefined) => {
+  const iso = formatBirthday(value);
+  if (!iso) return null;
+  const [year, month, day] = iso.split("-").map(Number);
+  return new Date(year, month - 1, day);
+};
+
+const getTodayDateOnly = () => {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+};
+
+const isDateWithinRange = (
+  date: Date,
+  start: Date | null,
+  end: Date | null,
+) => {
+  if (start && date < start) return false;
+  if (end && date > end) return false;
+  return Boolean(start || end);
+};
+
+const getEmployeeVisibilityStatus = (
+  employee: Employee,
+  today: Date,
+): EmployeeVisibilityStatus => {
+  if (employee.isActive === false) {
+    return "archived";
+  }
+
+  const timedEmployee = employee as Employee & {
+    employmentFrom?: string | null;
+    employmentUntil?: string | null;
+  };
+  const employmentFrom = toLocalDateOnly(timedEmployee.employmentFrom);
+  const employmentUntil = toLocalDateOnly(timedEmployee.employmentUntil);
+
+  if (employmentFrom && today < employmentFrom) {
+    return "employment_upcoming";
+  }
+
+  if (employmentUntil && today > employmentUntil) {
+    return "employment_expired";
+  }
+
+  const inactiveFrom = toLocalDateOnly(employee.inactiveFrom);
+  const inactiveUntil = toLocalDateOnly(employee.inactiveUntil);
+  if (isDateWithinRange(today, inactiveFrom, inactiveUntil)) {
+    return "inactive_window";
+  }
+
+  return "active";
+};
+
+const EMPLOYEE_STATUS_META: Record<
+  Exclude<EmployeeVisibilityStatus, "active">,
+  { label: string; className: string }
+> = {
+  archived: {
+    label: "Archiviert",
+    className: "bg-slate-100 text-slate-700 border-slate-200",
+  },
+  employment_expired: {
+    label: "Befristung abgelaufen",
+    className: "bg-amber-100 text-amber-800 border-amber-200",
+  },
+  employment_upcoming: {
+    label: "Noch nicht aktiv",
+    className: "bg-blue-100 text-blue-800 border-blue-200",
+  },
+  inactive_window: {
+    label: "Derzeit deaktiviert",
+    className: "bg-rose-100 text-rose-700 border-rose-200",
+  },
+};
+
 const PERMISSION_FALLBACK = [
   { key: "users.manage", label: "Kann Benutzer anlegen / verwalten" },
   { key: "dutyplan.edit", label: "Kann Dienstplan bearbeiten" },
@@ -336,6 +420,8 @@ const PERMISSION_FALLBACK = [
 export default function EmployeeManagement() {
   const { employee: currentUser, isAdmin, isTechnicalAdmin } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
+  const [employeeListView, setEmployeeListView] =
+    useState<EmployeeListView>("active");
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1166,7 +1252,7 @@ export default function EmployeeManagement() {
 
   const handleCreateEmployee = async () => {
     const parsedBirthday = parseBirthdayInput(newBirthdayInput);
-    if (parsedBirthday === null || parsedBirthday === "") {
+    if (parsedBirthday === null) {
       toast({
         title: "Fehler",
         description:
@@ -1356,7 +1442,7 @@ export default function EmployeeManagement() {
         firstName: newFormData.firstName.trim(),
         lastName: newFormData.lastName.trim(),
         name: `${newFormData.firstName} ${newFormData.lastName}`.trim(),
-        birthday: parsedBirthday,
+        birthday: parsedBirthday || null,
         email: emailValue,
         emailPrivate: emailPrivateValue || null,
         phoneWork: newFormData.phoneWork.trim() || null,
@@ -1616,7 +1702,15 @@ export default function EmployeeManagement() {
       .filter((id): id is number => typeof id === "number");
   };
 
+  const today = getTodayDateOnly();
+
   const filteredEmployees = employees
+    .filter((emp) => {
+      const status = getEmployeeVisibilityStatus(emp, today);
+      return employeeListView === "active"
+        ? status === "active"
+        : status !== "active";
+    })
     .filter((emp) => {
       const search = searchTerm.toLowerCase();
       const roleLabel = getRoleLabel(emp.role).toLowerCase();
@@ -2165,17 +2259,40 @@ export default function EmployeeManagement() {
               <div className="relative w-full sm:w-96">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Mitarbeiter suchen..."
+                  placeholder={
+                    employeeListView === "active"
+                      ? "Aktive Mitarbeiter suchen..."
+                      : "Archiv durchsuchen..."
+                  }
                   className="pl-9 bg-background"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   data-testid="input-search-employees"
                 />
               </div>
-              <div className="flex gap-2">
-                <Button variant="outline" className="gap-2">
-                  <Filter className="w-4 h-4" /> Filter
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant={employeeListView === "active" ? "default" : "outline"}
+                  className="gap-2"
+                  onClick={() => setEmployeeListView("active")}
+                >
+                  <Filter className="w-4 h-4" /> Aktiv
                 </Button>
+                <Button
+                  variant={employeeListView === "archive" ? "default" : "outline"}
+                  className="gap-2"
+                  onClick={() => setEmployeeListView("archive")}
+                >
+                  Archiv
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  {filteredEmployees.length} angezeigt
+                </span>
+                {employeeListView === "archive" && (
+                  <span className="text-sm text-muted-foreground">
+                    Deaktivierte und abgelaufene Profile bleiben bearbeitbar.
+                  </span>
+                )}
 
                 {canManageEmployees && (
                   <Dialog
@@ -3068,6 +3185,14 @@ export default function EmployeeManagement() {
                   </TableHeader>
                   <TableBody>
                     {filteredEmployees.map((emp) => {
+                      const visibilityStatus = getEmployeeVisibilityStatus(
+                        emp,
+                        today,
+                      );
+                      const statusMeta =
+                        visibilityStatus === "active"
+                          ? null
+                          : EMPLOYEE_STATUS_META[visibilityStatus];
                       const capabilities = getCapabilities(emp);
                       const deploymentLabels = getDeploymentLabels(emp);
                       const employeeCompetencies = emp.competencies || [];
@@ -3080,6 +3205,14 @@ export default function EmployeeManagement() {
                           <TableCell className="font-medium">
                             <div className="flex flex-col">
                               <span>{emp.name}</span>
+                              {statusMeta && (
+                                <Badge
+                                  variant="outline"
+                                  className={`mt-1 w-fit font-normal ${statusMeta.className}`}
+                                >
+                                  {statusMeta.label}
+                                </Badge>
+                              )}
                               {employeeCompetencies.length > 0 && (
                                 <span className="text-xs text-muted-foreground">
                                   {employeeCompetencies.slice(0, 2).join(", ")}
@@ -3159,6 +3292,18 @@ export default function EmployeeManagement() {
                         </TableRow>
                       );
                     })}
+                    {!filteredEmployees.length && (
+                      <TableRow>
+                        <TableCell
+                          colSpan={7}
+                          className="py-8 text-center text-sm text-muted-foreground"
+                        >
+                          {employeeListView === "active"
+                            ? "Keine aktuell aktiven Mitarbeiter gefunden."
+                            : "Keine archivierten oder abgelaufenen Mitarbeiter gefunden."}
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </CardContent>
