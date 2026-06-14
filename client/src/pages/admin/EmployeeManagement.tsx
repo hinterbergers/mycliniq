@@ -1545,10 +1545,11 @@ export default function EmployeeManagement() {
         title: "Gespeichert",
         description: "Mitarbeiter wurde angelegt",
       });
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Fehler",
-        description: "Mitarbeiter konnte nicht angelegt werden",
+        description:
+          error?.message || "Mitarbeiter konnte nicht angelegt werden",
         variant: "destructive",
       });
     } finally {
