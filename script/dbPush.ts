@@ -61,6 +61,9 @@ CREATE INDEX IF NOT EXISTS roster_shift_change_logs_shift_id_idx
 ALTER TABLE employees
 ADD COLUMN IF NOT EXISTS username text;
 
+ALTER TABLE employees
+ADD COLUMN IF NOT EXISTS employment_percentage integer;
+
 CREATE UNIQUE INDEX IF NOT EXISTS employees_username_ci_idx
   ON employees (lower(username))
   WHERE username IS NOT NULL;

@@ -315,6 +315,19 @@ function parseVacationEntitlementInput(value: string): number | null {
   return Math.round(parsed);
 }
 
+function parseEmploymentPercentageInput(value: string): number | null {
+  if (!value.trim()) return 100;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 100) return null;
+  return Math.round(parsed);
+}
+
+function getEmploymentPercentageValue(
+  value: number | null | undefined,
+): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 100;
+}
+
 type EmployeeListView = "active" | "archive";
 type EmployeeVisibilityStatus =
   | "active"
@@ -479,6 +492,7 @@ export default function EmployeeManagement() {
     phoneWork: "",
     phonePrivate: "",
     showPrivateContact: false,
+    employmentPercentage: "100",
     vacationEntitlement: "",
     trainingEnabled: false,
   };
@@ -719,6 +733,7 @@ export default function EmployeeManagement() {
       phoneWork: emp.phoneWork || "",
       phonePrivate: emp.phonePrivate || "",
       showPrivateContact: emp.showPrivateContact || false,
+      employmentPercentage: String(getEmploymentPercentageValue(emp.employmentPercentage)),
       vacationEntitlement:
         emp.vacationEntitlement !== null &&
         emp.vacationEntitlement !== undefined
@@ -1096,6 +1111,19 @@ export default function EmployeeManagement() {
       return;
     }
 
+    const parsedEmploymentPercentage = parseEmploymentPercentageInput(
+      editFormData.employmentPercentage,
+    );
+    if (parsedEmploymentPercentage === null) {
+      toast({
+        title: "Fehler",
+        description:
+          "Bitte ein gueltiges Beschäftigungsausmaß zwischen 1 und 100 eingeben.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const inactiveReasonValue = editInactiveEnabled
       ? editInactiveReason.trim()
       : "";
@@ -1164,6 +1192,7 @@ export default function EmployeeManagement() {
         phonePrivate: editFormData.phonePrivate.trim() || null,
         showPrivateContact: editFormData.showPrivateContact,
         trainingEnabled: editFormData.trainingEnabled,
+        employmentPercentage: parsedEmploymentPercentage,
         role: (editRoleValue || editingEmployee.role) as Employee["role"],
         appRole: (editAppRoleValue ||
           editingEmployee.appRole) as Employee["appRole"],
@@ -1401,6 +1430,19 @@ export default function EmployeeManagement() {
       return;
     }
 
+    const parsedEmploymentPercentageNew = parseEmploymentPercentageInput(
+      newFormData.employmentPercentage,
+    );
+    if (parsedEmploymentPercentageNew === null) {
+      toast({
+        title: "Fehler",
+        description:
+          "Bitte ein gueltiges Beschäftigungsausmaß zwischen 1 und 100 eingeben.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const inactiveReasonValue = newInactiveEnabled
       ? newInactiveReason.trim()
       : "";
@@ -1458,6 +1500,7 @@ export default function EmployeeManagement() {
         inactiveUntil: parsedInactiveUntil || null,
         inactiveReason: inactiveReasonValue || null,
         vacationEntitlement: parsedVacationEntitlementNew,
+        employmentPercentage: parsedEmploymentPercentageNew,
         shiftPreferences: nextShiftPreferences,
         employmentFrom: parsedEmploymentFrom || null,
         employmentUntil: parsedEmploymentUntil || null,
@@ -2465,6 +2508,23 @@ export default function EmployeeManagement() {
                               />
                             </div>
                             <div className="space-y-2">
+                              <Label>Beschäftigungsausmaß (%)</Label>
+                              <Input
+                                type="number"
+                                min={1}
+                                max={100}
+                                step={1}
+                                value={newFormData.employmentPercentage}
+                                onChange={(e) =>
+                                  setNewFormData((prev) => ({
+                                    ...prev,
+                                    employmentPercentage: e.target.value,
+                                  }))
+                                }
+                                placeholder="100"
+                              />
+                            </div>
+                            <div className="space-y-2">
                               <Label>Urlaubsanspruch (Tage)</Label>
                               <Input
                                 type="number"
@@ -3177,6 +3237,7 @@ export default function EmployeeManagement() {
                       <TableHead className="w-[200px]">Name</TableHead>
                       <TableHead>Rolle</TableHead>
                       <TableHead>App-Rolle</TableHead>
+                      <TableHead>Beschäftigung</TableHead>
                       <TableHead>Haupteinsatzbereich</TableHead>
                       <TableHead>Einsetzbar für</TableHead>
                       <TableHead className="text-right">User ID</TableHead>
@@ -3228,6 +3289,11 @@ export default function EmployeeManagement() {
                             </Badge>
                           </TableCell>
                           <TableCell>{getAppRoleBadge(emp.appRole)}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="font-normal">
+                              {getEmploymentPercentageValue(emp.employmentPercentage)}%
+                            </Badge>
+                          </TableCell>
                           <TableCell>
                             {deploymentLabels.length ? (
                               <div className="flex gap-1 flex-wrap">
@@ -3295,7 +3361,7 @@ export default function EmployeeManagement() {
                     {!filteredEmployees.length && (
                       <TableRow>
                         <TableCell
-                          colSpan={7}
+                          colSpan={8}
                           className="py-8 text-center text-sm text-muted-foreground"
                         >
                           {employeeListView === "active"
@@ -3669,6 +3735,23 @@ export default function EmployeeManagement() {
                               phonePrivate: e.target.value,
                             }))
                           }
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Beschäftigungsausmaß (%)</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={100}
+                          step={1}
+                          value={editFormData.employmentPercentage}
+                          onChange={(e) =>
+                            setEditFormData((prev) => ({
+                              ...prev,
+                              employmentPercentage: e.target.value,
+                            }))
+                          }
+                          placeholder="100"
                         />
                       </div>
                       <div className="space-y-2">

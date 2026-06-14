@@ -391,6 +391,7 @@ export const employees = pgTable(
     takesShifts: boolean("takes_shifts").notNull().default(true),
     canOverduty: boolean("can_overduty").notNull().default(false),
     vacationEntitlement: integer("vacation_entitlement"),
+    employmentPercentage: integer("employment_percentage"),
     maxShiftsPerWeek: integer("max_shifts_per_week"),
     employmentFrom: date("employment_from"),
     employmentUntil: date("employment_until"),
