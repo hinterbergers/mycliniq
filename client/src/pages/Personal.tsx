@@ -223,6 +223,20 @@ const PREVIOUS_DAY_DUTY_SERVICE_LINE_SET: ReadonlySet<string> = new Set(
   PREVIOUS_DAY_DUTY_SERVICE_LINE_ORDER,
 );
 
+type WeeklyHeroMeta = {
+  label: string;
+  dateRangeLabel: string;
+  statusLabel: string;
+  canSubscribe: boolean;
+  isExporting: boolean;
+  isLoading: boolean;
+  onSubscribe: () => void | Promise<void>;
+  onExport: () => void | Promise<void>;
+  onCopyLink: () => void | Promise<void>;
+  onPrevWeek: () => void;
+  onNextWeek: () => void;
+};
+
 const buildServiceLineDisplay = (
   lines: ServiceLine[],
   shifts: RosterShift[],
@@ -356,6 +370,7 @@ export default function Personal() {
     plannedDays: number;
     absenceReasonCounts: Array<{ reason: string; days: number }>;
   } | null>(null);
+  const [weeklyHeroMeta, setWeeklyHeroMeta] = useState<WeeklyHeroMeta | null>(null);
   const [vacationSummary, setVacationSummary] = useState<string | null>(null);
   const {
     calendarToken,
@@ -706,7 +721,36 @@ export default function Personal() {
             <div className="space-y-4 rounded-3xl border-none bg-gradient-to-br from-slate-950 via-[#113f72] to-[#0f5ba7] p-5 text-white shadow-xl shadow-primary/15">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0 flex-1">
-                  <h1 className="text-3xl font-bold text-white">Dienstpläne</h1>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                    <h1 className="text-3xl font-bold text-white">Dienstpläne</h1>
+                    {activeTab === "weekly" && weeklyHeroMeta && (
+                      <div className="flex items-center gap-2 text-xs text-primary-foreground/90 sm:text-sm">
+                        <span className="font-medium">{weeklyHeroMeta.label}</span>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 rounded-full border border-white/15 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
+                            onClick={weeklyHeroMeta.onPrevWeek}
+                            data-testid="button-weekly-hero-prev"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 rounded-full border border-white/15 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
+                            onClick={weeklyHeroMeta.onNextWeek}
+                            data-testid="button-weekly-hero-next"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   <p className="hidden text-sm text-primary-foreground/80 lg:block">
                     Monatsdienstplan, Wochenplan und Urlaubsplanung.
                   </p>
@@ -734,6 +778,53 @@ export default function Personal() {
                 <p className="text-sm text-primary-foreground/80">
                   Monatsdienstplan, Wochenplan und Urlaubsplanung.
                 </p>
+
+                {activeTab === "weekly" && weeklyHeroMeta && (
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant="outline"
+                      className="border-white/20 bg-white/10 text-primary-foreground"
+                    >
+                      {weeklyHeroMeta.statusLabel}
+                    </Badge>
+                    <span className="text-sm text-primary-foreground/85">
+                      {weeklyHeroMeta.dateRangeLabel}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="gap-2 border-white/20 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
+                      onClick={weeklyHeroMeta.onSubscribe}
+                      disabled={!weeklyHeroMeta.canSubscribe}
+                      data-testid="button-weekly-hero-subscribe"
+                    >
+                      <Rss className="w-4 h-4" />
+                      Wochenplan abonnieren
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="gap-2 border-white/20 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
+                      onClick={weeklyHeroMeta.onExport}
+                      disabled={weeklyHeroMeta.isExporting || weeklyHeroMeta.isLoading}
+                      data-testid="button-weekly-hero-export"
+                    >
+                      <Download className="w-4 h-4" />
+                      {weeklyHeroMeta.isExporting ? "Export läuft..." : "Export"}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="gap-2 border-white/20 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
+                      onClick={weeklyHeroMeta.onCopyLink}
+                      disabled={!weeklyHeroMeta.canSubscribe}
+                      data-testid="button-weekly-hero-copy-link"
+                    >
+                      <ClipboardCopy className="w-4 h-4" />
+                      Link kopieren
+                    </Button>
+                  </div>
+                )}
 
                 <div className="mt-4 flex w-full flex-col items-start gap-3 lg:mt-0 lg:items-end">
                   <p className="text-sm font-medium text-primary-foreground/95 lg:text-right">
@@ -889,6 +980,7 @@ export default function Personal() {
               calendarToken={resolvedCalendarToken}
               stickyTopOffset={pageStickyHeaderHeight}
               onSummaryChange={setWeeklySummary}
+              onHeroMetaChange={setWeeklyHeroMeta}
             />
           </TabsContent>
 
@@ -2629,6 +2721,7 @@ function WeeklyView({
   calendarToken,
   stickyTopOffset,
   onSummaryChange,
+  onHeroMetaChange,
 }: {
   calendarToken: string | null;
   stickyTopOffset: number;
@@ -2636,6 +2729,7 @@ function WeeklyView({
     plannedDays: number;
     absenceReasonCounts: Array<{ reason: string; days: number }>;
   }) => void;
+  onHeroMetaChange?: (meta: WeeklyHeroMeta | null) => void;
 }) {
   const { employee: currentUser } = useAuth();
   const { toast } = useToast();
@@ -2952,6 +3046,43 @@ function WeeklyView({
     weeklyPlan?.status === "Vorläufig"
       ? "Vorschau"
       : (weeklyPlan?.status ?? "Kein Plan");
+
+  useEffect(() => {
+    onHeroMetaChange?.({
+      label: `KW ${weekNumber} / ${weekYear}`,
+      dateRangeLabel: `${format(weekStart, "dd.MM.yyyy", { locale: de })} – ${format(
+        weekEnd,
+        "dd.MM.yyyy",
+        { locale: de },
+      )}`,
+      statusLabel,
+      canSubscribe: Boolean(calendarToken),
+      isExporting: weeklyExporting,
+      isLoading,
+      onSubscribe: handleWeeklySubscribe,
+      onExport: handleWeeklyExport,
+      onCopyLink: handleCopyWeeklyLink,
+      onPrevWeek: () => setCurrentDate(subWeeks(currentDate, 1)),
+      onNextWeek: () => setCurrentDate(addWeeks(currentDate, 1)),
+    });
+
+    return () => {
+      onHeroMetaChange?.(null);
+    };
+  }, [
+    calendarToken,
+    currentDate,
+    handleCopyWeeklyLink,
+    handleWeeklySubscribe,
+    isLoading,
+    onHeroMetaChange,
+    statusLabel,
+    weekEnd,
+    weeklyExporting,
+    weekNumber,
+    weekStart,
+    weekYear,
+  ]);
 
   const resolveEmployeeName = (
     employeeId: number | null,
@@ -3360,77 +3491,15 @@ function WeeklyView({
   return (
     <div className="space-y-6">
       <Card className="border-none kabeg-shadow overflow-visible">
-          <CardHeader
-            className="sticky z-40 bg-white pb-2 shadow-sm"
-            style={{ top: `${stickyTopOffset}px` }}
+        <CardHeader
+          className="sticky z-40 bg-white pb-2 shadow-sm"
+          style={{ top: `${stickyTopOffset}px` }}
+        >
+          <div
+            ref={headerScrollRef}
+            onScroll={() => syncHorizontalScroll("header")}
+            className="overflow-x-auto"
           >
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="space-y-1">
-                <CardTitle className="flex items-center gap-2">
-                  <CalendarIcon className="w-5 h-5" />
-                  Wochenplan KW {weekNumber} / {weekYear}
-                  <Badge variant="outline" className="ml-2 text-xs">
-                    {statusLabel}
-                  </Badge>
-                </CardTitle>
-                <CardDescription>
-                  {format(weekStart, "dd.MM.yyyy", { locale: de })} –{" "}
-                  {format(weekEnd, "dd.MM.yyyy", { locale: de })}
-                </CardDescription>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleWeeklySubscribe}
-                    disabled={!calendarToken}
-                  >
-                    <Rss className="w-4 h-4" />
-                    Wochenplan abonnieren
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleWeeklyExport}
-                    disabled={weeklyExporting || isLoading}
-                  >
-                    <Download className="w-4 h-4" />
-                    {weeklyExporting ? "Export läuft..." : "Export"}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleCopyWeeklyLink}
-                    disabled={!calendarToken}
-                  >
-                    <ClipboardCopy className="w-4 h-4" />
-                    Link kopieren
-                  </Button>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => setCurrentDate(subWeeks(currentDate, 1))}
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => setCurrentDate(addWeeks(currentDate, 1))}
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-            <div
-              ref={headerScrollRef}
-              onScroll={() => syncHorizontalScroll("header")}
-              className="mt-4 overflow-x-auto"
-            >
               <div
                 className="grid border-t border-slate-200 border-b border-slate-300 bg-slate-100"
                 style={{
@@ -3469,8 +3538,8 @@ function WeeklyView({
                   </div>
                 ))}
               </div>
-            </div>
-          </CardHeader>
+          </div>
+        </CardHeader>
         <CardContent className="p-0">
           {isLoading ? (
             <div className="p-6 text-sm text-muted-foreground">
