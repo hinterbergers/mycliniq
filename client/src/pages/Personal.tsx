@@ -237,6 +237,72 @@ type WeeklyHeroMeta = {
   onNextWeek: () => void;
 };
 
+const areReasonCountsEqual = (
+  left: Array<{ reason: string; days: number }>,
+  right: Array<{ reason: string; days: number }>,
+) => {
+  if (left.length !== right.length) return false;
+  return left.every(
+    (entry, index) =>
+      entry.reason === right[index]?.reason && entry.days === right[index]?.days,
+  );
+};
+
+const isWeeklySummaryEqual = (
+  left: {
+    plannedDays: number;
+    absenceReasonCounts: Array<{ reason: string; days: number }>;
+  } | null,
+  right: {
+    plannedDays: number;
+    absenceReasonCounts: Array<{ reason: string; days: number }>;
+  } | null,
+) => {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return (
+    left.plannedDays === right.plannedDays &&
+    areReasonCountsEqual(left.absenceReasonCounts, right.absenceReasonCounts)
+  );
+};
+
+const isRosterSummaryEqual = (
+  left: {
+    shifts: number;
+    weekendShifts: number;
+    absenceReasonCounts: Array<{ reason: string; days: number }>;
+  } | null,
+  right: {
+    shifts: number;
+    weekendShifts: number;
+    absenceReasonCounts: Array<{ reason: string; days: number }>;
+  } | null,
+) => {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return (
+    left.shifts === right.shifts &&
+    left.weekendShifts === right.weekendShifts &&
+    areReasonCountsEqual(left.absenceReasonCounts, right.absenceReasonCounts)
+  );
+};
+
+const isWeeklyHeroMetaEqual = (
+  left: WeeklyHeroMeta | null,
+  right: WeeklyHeroMeta | null,
+) => {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return (
+    left.label === right.label &&
+    left.dateRangeLabel === right.dateRangeLabel &&
+    left.statusLabel === right.statusLabel &&
+    left.canSubscribe === right.canSubscribe &&
+    left.isExporting === right.isExporting &&
+    left.isLoading === right.isLoading
+  );
+};
+
 const buildServiceLineDisplay = (
   lines: ServiceLine[],
   shifts: RosterShift[],
@@ -598,6 +664,41 @@ export default function Personal() {
     }
     return vacationSummary ?? "Urlaubsplanung";
   }, [activeTab, rosterSummary, vacationSummary, weeklySummary]);
+
+  const handleRosterSummaryChange = useCallback(
+    (nextSummary: {
+      shifts: number;
+      weekendShifts: number;
+      absenceReasonCounts: Array<{ reason: string; days: number }>;
+    }) => {
+      setRosterSummary((currentSummary) =>
+        isRosterSummaryEqual(currentSummary, nextSummary)
+          ? currentSummary
+          : nextSummary,
+      );
+    },
+    [],
+  );
+
+  const handleWeeklySummaryChange = useCallback(
+    (nextSummary: {
+      plannedDays: number;
+      absenceReasonCounts: Array<{ reason: string; days: number }>;
+    }) => {
+      setWeeklySummary((currentSummary) =>
+        isWeeklySummaryEqual(currentSummary, nextSummary)
+          ? currentSummary
+          : nextSummary,
+      );
+    },
+    [],
+  );
+
+  const handleWeeklyHeroMetaChange = useCallback((nextMeta: WeeklyHeroMeta | null) => {
+    setWeeklyHeroMeta((currentMeta) =>
+      isWeeklyHeroMetaEqual(currentMeta, nextMeta) ? currentMeta : nextMeta,
+    );
+  }, []);
 
   const handleSubscribe = async () => {
     if (!token) {
@@ -968,7 +1069,7 @@ export default function Personal() {
               onSubscribe={handleSubscribe}
               onExport={handleExport}
               exporting={exporting}
-              onSummaryChange={setRosterSummary}
+              onSummaryChange={handleRosterSummaryChange}
             />
           </TabsContent>
 
@@ -979,8 +1080,8 @@ export default function Personal() {
             <WeeklyView
               calendarToken={resolvedCalendarToken}
               stickyTopOffset={pageStickyHeaderHeight}
-              onSummaryChange={setWeeklySummary}
-              onHeroMetaChange={setWeeklyHeroMeta}
+              onSummaryChange={handleWeeklySummaryChange}
+              onHeroMetaChange={handleWeeklyHeroMetaChange}
             />
           </TabsContent>
 
