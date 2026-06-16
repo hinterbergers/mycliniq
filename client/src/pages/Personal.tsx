@@ -806,7 +806,7 @@ export default function Personal() {
   };
 
   return (
-    <Layout title="Dienstpläne">
+    <Layout>
       <div className="space-y-6">
         <Tabs
           value={activeTab}

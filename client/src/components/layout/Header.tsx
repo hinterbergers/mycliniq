@@ -532,9 +532,11 @@ export function Header({
         >
           <Menu className="w-5 h-5" />
         </Button>
-        <h2 className="text-xl font-semibold text-white tracking-tight truncate">
-          {title}
-        </h2>
+        {title ? (
+          <h2 className="text-xl font-semibold text-white tracking-tight truncate">
+            {title}
+          </h2>
+        ) : null}
       </div>
 
       <div className="flex items-center gap-2 md:gap-4 shrink-0">
