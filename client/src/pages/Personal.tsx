@@ -2752,15 +2752,15 @@ function WeeklyView({
   const bodyScrollRef = useRef<HTMLDivElement | null>(null);
   const syncingScrollRef = useRef<"header" | "body" | null>(null);
 
-  const getWeeklyCalendarUrl = () => {
+  const getWeeklyCalendarUrl = useCallback(() => {
     if (!calendarToken || typeof window === "undefined") return null;
     const baseUrl = window.location.origin.replace(/\/$/, "");
     return `${baseUrl}/api/weekly/calendar?calendarToken=${encodeURIComponent(
       calendarToken,
     )}&weeks=8`;
-  };
+  }, [calendarToken]);
 
-  const handleWeeklySubscribe = async () => {
+  const handleWeeklySubscribe = useCallback(async () => {
     const calendarUrl = getWeeklyCalendarUrl();
     if (!calendarUrl) {
       toast({
@@ -2789,9 +2789,9 @@ function WeeklyView({
         description: "Der Abo-Link wurde geöffnet.",
       });
     }
-  };
+  }, [getWeeklyCalendarUrl, toast]);
 
-  const handleCopyWeeklyLink = async () => {
+  const handleCopyWeeklyLink = useCallback(async () => {
     const calendarUrl = getWeeklyCalendarUrl();
     if (!calendarUrl) {
       toast({
@@ -2824,7 +2824,7 @@ function WeeklyView({
         variant: "destructive",
       });
     }
-  };
+  }, [getWeeklyCalendarUrl, toast]);
 
   const weekStart = useMemo(
     () => startOfWeek(currentDate, { weekStartsOn: 1 }),
@@ -3047,43 +3047,6 @@ function WeeklyView({
       ? "Vorschau"
       : (weeklyPlan?.status ?? "Kein Plan");
 
-  useEffect(() => {
-    onHeroMetaChange?.({
-      label: `KW ${weekNumber} / ${weekYear}`,
-      dateRangeLabel: `${format(weekStart, "dd.MM.yyyy", { locale: de })} – ${format(
-        weekEnd,
-        "dd.MM.yyyy",
-        { locale: de },
-      )}`,
-      statusLabel,
-      canSubscribe: Boolean(calendarToken),
-      isExporting: weeklyExporting,
-      isLoading,
-      onSubscribe: handleWeeklySubscribe,
-      onExport: handleWeeklyExport,
-      onCopyLink: handleCopyWeeklyLink,
-      onPrevWeek: () => setCurrentDate(subWeeks(currentDate, 1)),
-      onNextWeek: () => setCurrentDate(addWeeks(currentDate, 1)),
-    });
-
-    return () => {
-      onHeroMetaChange?.(null);
-    };
-  }, [
-    calendarToken,
-    currentDate,
-    handleCopyWeeklyLink,
-    handleWeeklySubscribe,
-    isLoading,
-    onHeroMetaChange,
-    statusLabel,
-    weekEnd,
-    weeklyExporting,
-    weekNumber,
-    weekStart,
-    weekYear,
-  ]);
-
   const resolveEmployeeName = (
     employeeId: number | null,
     fallback?: string | null,
@@ -3207,7 +3170,7 @@ function WeeklyView({
     [employeesById, longTermAbsences, plannedAbsences],
   );
 
-  const handleWeeklyExport = async () => {
+  const handleWeeklyExport = useCallback(async () => {
     if (visibleRooms.length === 0) {
       toast({
         title: "Export nicht möglich",
@@ -3486,7 +3449,72 @@ function WeeklyView({
     } finally {
       setWeeklyExporting(false);
     }
-  };
+  }, [
+    absencesByDate,
+    assignmentsByRoomWeekday,
+    employeesById,
+    previousDayDutyByDate,
+    resolveAbsenceName,
+    resolveEmployeeLastName,
+    toast,
+    visibleRooms,
+    weekDays,
+    weekNumber,
+    weekYear,
+  ]);
+
+  const goToPreviousWeek = useCallback(() => {
+    setCurrentDate((value) => subWeeks(value, 1));
+  }, []);
+
+  const goToNextWeek = useCallback(() => {
+    setCurrentDate((value) => addWeeks(value, 1));
+  }, []);
+
+  const weeklyHeroMeta = useMemo<WeeklyHeroMeta>(
+    () => ({
+      label: `KW ${weekNumber} / ${weekYear}`,
+      dateRangeLabel: `${format(weekStart, "dd.MM.yyyy", { locale: de })} – ${format(
+        weekEnd,
+        "dd.MM.yyyy",
+        { locale: de },
+      )}`,
+      statusLabel,
+      canSubscribe: Boolean(calendarToken),
+      isExporting: weeklyExporting,
+      isLoading,
+      onSubscribe: handleWeeklySubscribe,
+      onExport: handleWeeklyExport,
+      onCopyLink: handleCopyWeeklyLink,
+      onPrevWeek: goToPreviousWeek,
+      onNextWeek: goToNextWeek,
+    }),
+    [
+      calendarToken,
+      goToNextWeek,
+      goToPreviousWeek,
+      handleCopyWeeklyLink,
+      handleWeeklyExport,
+      handleWeeklySubscribe,
+      isLoading,
+      statusLabel,
+      weekEnd,
+      weeklyExporting,
+      weekNumber,
+      weekStart,
+      weekYear,
+    ],
+  );
+
+  useEffect(() => {
+    onHeroMetaChange?.(weeklyHeroMeta);
+  }, [onHeroMetaChange, weeklyHeroMeta]);
+
+  useEffect(() => {
+    return () => {
+      onHeroMetaChange?.(null);
+    };
+  }, [onHeroMetaChange]);
 
   return (
     <div className="space-y-6">
