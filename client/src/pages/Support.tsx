@@ -8,8 +8,9 @@ export default function Support() {
           </p>
           <h1 className="mt-3 text-4xl font-bold tracking-tight">Support</h1>
           <p className="mt-4 text-sm leading-6 text-slate-600">
-            MyCliniQ ist eine interne klinische Arbeitsplattform. Support und Freischaltungen
-            erfolgen ueber die zustaendigen Administrator:innen innerhalb der Organisation.
+            MyCliniQ ist eine interne klinische Arbeitsplattform. Diese Seite dient als
+            zentrale Support-Anlaufstelle fuer Fragen zur iPhone-App, zur Webanwendung,
+            zu Dienstplaenen, Widgets und zu klinischen Tools.
           </p>
         </header>
 
@@ -22,16 +23,56 @@ export default function Support() {
               <li>Fragen zu Dienstplaenen, Widgets oder Benachrichtigungen</li>
               <li>technische Stoerungen in Webanwendung oder iPhone-App</li>
               <li>Freischaltung von Benutzer:innen oder Rollen</li>
+              <li>Rueckfragen zu medizinischen Rechnern und deren Quellenangaben</li>
             </ul>
           </div>
         </section>
 
         <section className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm">
-          <h2 className="text-2xl font-semibold">Kontaktweg</h2>
-          <p className="mt-3 text-sm leading-6 text-slate-700">
-            Der Support erfolgt ueber die in Ihrer Einrichtung benannten Administrator:innen,
-            das Sekretariat oder die interne Projektverantwortung fuer MyCliniQ.
-          </p>
+          <h2 className="text-2xl font-semibold">Ansprechpartner</h2>
+          <div className="mt-3 space-y-3 text-sm leading-6 text-slate-700">
+            <div>
+              <p className="font-semibold text-slate-900">Dr. Stefan Hinterberger</p>
+              <p>Projektverantwortung und Support fuer MyCliniQ</p>
+            </div>
+            <div className="space-y-1">
+              <p>
+                E-Mail:{" "}
+                <a
+                  href="mailto:stefan.hinterberger@kabeg.at"
+                  className="font-medium text-[#0F5BA7] hover:underline"
+                >
+                  stefan.hinterberger@kabeg.at
+                </a>
+              </p>
+              <p>
+                Telefon:{" "}
+                <a
+                  href="tel:+4346353826413"
+                  className="font-medium text-[#0F5BA7] hover:underline"
+                >
+                  +43 463 538 26413
+                </a>
+              </p>
+            </div>
+            <p>
+              Bitte beschreiben Sie bei Support-Anfragen das betroffene Geraet, die
+              Funktion und den Zeitpunkt des Problems moeglichst konkret.
+            </p>
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm">
+          <h2 className="text-2xl font-semibold">Supportumfang</h2>
+          <div className="mt-3 space-y-2 text-sm leading-6 text-slate-700">
+            <p>Unterstuetzt werden insbesondere:</p>
+            <ul className="list-disc space-y-1 pl-5">
+              <li>Fragen zur Bedienung der App und der Webversion</li>
+              <li>Fehlerberichte zu Widgets, Nachrichten, Dienstplaenen und Tools</li>
+              <li>Rueckfragen zur Datenaktualisierung und zu Benutzerrechten</li>
+              <li>allgemeine Rueckfragen fuer App-Review und interne Verteilung</li>
+            </ul>
+          </div>
         </section>
       </div>
     </div>

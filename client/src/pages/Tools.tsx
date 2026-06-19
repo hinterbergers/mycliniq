@@ -34,6 +34,7 @@ import {
   Sparkles,
   ArrowUp,
   ArrowDown,
+  ExternalLink,
 } from "lucide-react";
 import {
   addDays,
@@ -49,6 +50,57 @@ import {
   getToolTargetUrl,
   type ToolKey,
 } from "@/lib/toolCatalog";
+
+type ToolSource = {
+  label: string;
+  href: string;
+  detail?: string;
+};
+
+function ToolSources({
+  note,
+  sources,
+}: {
+  note?: string;
+  sources: ToolSource[];
+}) {
+  return (
+    <Card className="border-slate-200 bg-slate-50/80">
+      <CardHeader>
+        <CardTitle>Quellen</CardTitle>
+        <CardDescription>
+          Medizinische Rechner dienen der klinischen Orientierung und ersetzen
+          nicht die individuelle fachliche Beurteilung.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {note ? (
+          <p className="text-xs leading-5 text-slate-600">{note}</p>
+        ) : null}
+        <ul className="space-y-2">
+          {sources.map((source) => (
+            <li key={source.href} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+              <a
+                href={source.href}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-xs font-medium text-[#0F5BA7] hover:underline"
+              >
+                {source.label}
+                <ExternalLink className="h-3 w-3" />
+              </a>
+              {source.detail ? (
+                <p className="mt-1 text-[11px] leading-5 text-slate-600">
+                  {source.detail}
+                </p>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
 
 function parseDateValue(value: string): Date | null {
   if (!value) return null;
@@ -227,6 +279,24 @@ function PregnancyWeeksCalculator() {
           )}
         </CardContent>
       </Card>
+
+      <ToolSources
+        note="Die Berechnung folgt der geburtshilflichen Standarddatierung aus letzter Menstruation beziehungsweise bekanntem Termin. Die Transfer-Ansicht leitet das Schwangerschaftsalter aus Transferdatum plus Embryonalter nach obstetrischer Konvention ab."
+        sources={[
+          {
+            label: "ACOG Committee Opinion No. 700: Methods for Estimating the Due Date",
+            href: "https://www.acog.org/clinical/clinical-guidance/committee-opinion/articles/2017/05/methods-for-estimating-the-due-date",
+            detail:
+              "Grundlage fuer ET-/SSW-Datierung in der Geburtshilfe; urspruenglich 2017, reaffirmed 2023.",
+          },
+          {
+            label: "ACOG - Estimated Due Date Redating Table",
+            href: "https://www.acog.org/clinical/clinical-guidance/committee-opinion/articles/2017/05/methods-for-estimating-the-due-date#table1",
+            detail:
+              "Referenz fuer Standardisierung der Terminberechnung und Dokumentation des finalen ET.",
+          },
+        ]}
+      />
     </div>
   );
 }
@@ -296,7 +366,8 @@ function PulCalculator() {
         note =
           "Progesteron < 2 nmol/L: niedriges EUG-Risiko, eher abortiver Verlauf.";
       } else {
-        note = "Progesteron ergänzt die Einordnung (vereinfachtes M6-Modell).";
+        note =
+          "Progesteron ergänzt die Einordnung. Die App verwendet hier bewusst nur eine vereinfachte Orientierung und nicht den voll validierten M6-Algorithmus.";
       }
     }
 
@@ -320,7 +391,7 @@ function PulCalculator() {
             <SelectContent>
               <SelectItem value="ratio">β-hCG-Ratio</SelectItem>
               <SelectItem value="progesterone">
-                M6 (hCG + Progesteron)
+                hCG + Progesteron
               </SelectItem>
             </SelectContent>
           </Select>
@@ -440,6 +511,25 @@ function PulCalculator() {
         Hinweis: Vereinfachte Risikoklassifikation. Klinische Beurteilung bleibt
         erforderlich.
       </p>
+
+      <ToolSources
+        note="Die hCG-Ratio-Schwellen und die PUL-Einordnung in der App dienen nur als strukturierte Erstorientierung. Die Progesteron-Variante ist bewusst als vereinfachte, nicht validierte Abbildung klinischer Heuristik gekennzeichnet und ersetzt keinen publizierten M6-Rechner."
+        sources={[
+          {
+            label: "NICE Guideline NG126: Ectopic pregnancy and miscarriage",
+            href: "https://www.nice.org.uk/guidance/ng126",
+            detail:
+              "Leitlinie zur Abklaerung frueher Schwangerschaftskomplikationen mit seriellen hCG-Kontrollen und Ultraschall.",
+          },
+          {
+            label:
+              "Seeber BE et al. Diagnostic value of serum hCG on the outcome of pregnancy of unknown location",
+            href: "https://academic.oup.com/humupd/article/12/4/439/705354",
+            detail:
+              "Systematische Uebersicht zu hCG-Ratio und Verlauf bei Pregnancy of Unknown Location (PUL).",
+          },
+        ]}
+      />
     </div>
   );
 }
@@ -538,6 +628,24 @@ function BodySurfaceAreaCalculator() {
           )}
         </CardContent>
       </Card>
+
+      <ToolSources
+        note="Die MTX-Ausgabe zeigt die haeufig verwendete Berechnung 50 mg/m² auf Basis der Mosteller-KOF. Dosierungsentscheidungen muessen individuell, leitlinienbasiert und unter Beruecksichtigung von Kontraindikationen getroffen werden."
+        sources={[
+          {
+            label: "Mosteller RD. Simplified calculation of body-surface area",
+            href: "https://pubmed.ncbi.nlm.nih.gov/3657876/",
+            detail:
+              "Originalreferenz der Mosteller-Formel: sqrt((Groesse cm x Gewicht kg) / 3600).",
+          },
+          {
+            label: "ACOG Practice Bulletin No. 193: Tubal Ectopic Pregnancy",
+            href: "https://www.acog.org/clinical/clinical-guidance/practice-bulletin/articles/2018/03/tubal-ectopic-pregnancy",
+            detail:
+              "Geburtshilfliche Leitlinie mit Methotrexat-Regimen, inklusive Single-Dose-Strategie mit 50 mg/m².",
+          },
+        ]}
+      />
     </div>
   );
 }
@@ -678,6 +786,24 @@ function BishopScoreCalculator() {
         Hinweis: Vereinfachte klinische Orientierung. Die geburtshilfliche
         Gesamtbeurteilung bleibt ausschlaggebend.
       </p>
+
+      <ToolSources
+        note="Der Bishop-Score wird in MyCliniQ als strukturierte Dokumentationshilfe verwendet. Die Schwellenwerte fuer die Einordnung bleiben klinischer Kontext und lokaler Entscheidungsweg."
+        sources={[
+          {
+            label: "Bishop EH. Pelvic Scoring for Elective Induction",
+            href: "https://pubmed.ncbi.nlm.nih.gov/14199536/",
+            detail:
+              "Originalpublikation des Bishop-Scores mit den klassischen fuenf Komponenten.",
+          },
+          {
+            label: "NICE Guideline NG207: Inducing labour",
+            href: "https://www.nice.org.uk/guidance/ng207",
+            detail:
+              "Aktuelle Leitlinie zur Geburtseinleitung und zur Beurteilung der Zervixreife im klinischen Kontext.",
+          },
+        ]}
+      />
     </div>
   );
 }
@@ -796,6 +922,24 @@ function BodyMassIndexCalculator() {
           )}
         </CardContent>
       </Card>
+
+      <ToolSources
+        note="Die BMI-Klassifikation in der App folgt den WHO-Grenzwerten fuer Erwachsene. Der BMI ist ein Screening-Mass und keine alleinige Diagnostik."
+        sources={[
+          {
+            label: "WHO Fact Sheet: Obesity and overweight",
+            href: "https://www.who.int/news-room/fact-sheets/detail/obesity-and-overweight",
+            detail:
+              "WHO-Definitionen fuer BMI, Uebergewicht und Adipositas bei Erwachsenen.",
+          },
+          {
+            label: "WHO Adult definitions of overweight and obesity",
+            href: "https://www.who.int/news-room/fact-sheets/detail/obesity-and-overweight#Definition",
+            detail:
+              "Erwachsenen-Grenzwerte: Uebergewicht ab BMI >= 25, Adipositas ab BMI >= 30.",
+          },
+        ]}
+      />
     </div>
   );
 }

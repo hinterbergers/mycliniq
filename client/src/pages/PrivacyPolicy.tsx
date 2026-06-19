@@ -94,11 +94,22 @@ export default function PrivacyPolicy() {
 
         <section className={sectionClassName}>
           <h2 className="text-2xl font-semibold">8. Kontakt</h2>
-          <p className="text-sm leading-6 text-slate-700">
-            Bei Fragen zum Datenschutz in MyCliniQ wenden Sie sich bitte an die zuständigen
-            Administrator:innen oder an die innerhalb Ihrer Einrichtung benannte
-            Datenschutz-Ansprechstelle.
-          </p>
+          <div className="space-y-2 text-sm leading-6 text-slate-700">
+            <p>
+              Bei Fragen zum Datenschutz in MyCliniQ wenden Sie sich bitte an die
+              zuständigen Administrator:innen oder an die innerhalb Ihrer Einrichtung
+              benannte Datenschutz-Ansprechstelle.
+            </p>
+            <p>
+              Technischer Ansprechpartner:{" "}
+              <a
+                href="mailto:stefan.hinterberger@kabeg.at"
+                className="font-medium text-[#0F5BA7] hover:underline"
+              >
+                Dr. Stefan Hinterberger, stefan.hinterberger@kabeg.at
+              </a>
+            </p>
+          </div>
         </section>
       </div>
     </div>
