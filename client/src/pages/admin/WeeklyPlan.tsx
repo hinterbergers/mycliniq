@@ -88,6 +88,7 @@ import {
   formatRoomTime,
   getEmployeeDisplayName,
   getRecurringUnavailableWeekdays,
+  getRoomAssignmentCompetencyStatus,
   getRoomSettingForDate,
   isEmployeeAbsentOnDate,
   isEmployeeEligibleForRoom,
@@ -2210,19 +2211,16 @@ export default function WeeklyPlan() {
       const employeeAssignments = roomAssignments.filter(
         (assignment) => assignment.employeeId,
       );
+      const assignedEmployees = employeeAssignments
+        .map((assignment) =>
+          assignment.employeeId ? employeesById.get(assignment.employeeId) : null,
+        )
+        .filter((employee): employee is Employee => Boolean(employee));
 
-      const hasEligibleAssignment = employeeAssignments.some((assignment) => {
-        if (!assignment.employeeId) return false;
-        const employee = employeesById.get(assignment.employeeId);
-        return employee ? isEmployeeEligibleForRoom(employee, room) : false;
-      });
-
-      const competencyStatus =
-        employeeAssignments.length === 0
-          ? "missing"
-          : hasEligibleAssignment
-            ? "fulfilled"
-            : "partial";
+      const competencyStatus = getRoomAssignmentCompetencyStatus(
+        room,
+        assignedEmployees,
+      );
 
       return competencyStatus === "missing";
     });
@@ -2974,23 +2972,18 @@ export default function WeeklyPlan() {
                 const remainingEligible = availableForRoom.filter(
                   (employee) => !assignedEmployeeIds.has(employee.id),
                 );
+                const assignedEmployees = employeeAssignments
+                  .map((assignment) =>
+                    assignment.employeeId
+                      ? employeesById.get(assignment.employeeId)
+                      : null,
+                  )
+                  .filter((employee): employee is Employee => Boolean(employee));
 
-                const hasEligibleAssignment = employeeAssignments.some(
-                  (assignment) => {
-                    if (!assignment.employeeId) return false;
-                    const employee = employeesById.get(assignment.employeeId);
-                    return employee
-                      ? isEmployeeEligibleForRoom(employee, room)
-                      : false;
-                  },
+                const competencyStatus = getRoomAssignmentCompetencyStatus(
+                  room,
+                  assignedEmployees,
                 );
-
-                const competencyStatus =
-                  employeeAssignments.length === 0
-                    ? "missing"
-                    : hasEligibleAssignment
-                      ? "fulfilled"
-                      : "partial";
 
                 const isClosed = setting?.isClosed;
                 const isBlocked = noteAssignment?.isBlocked;

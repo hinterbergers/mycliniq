@@ -217,6 +217,94 @@ export const employeeMatchesCompetencies = (
   return true;
 };
 
+const roomAssignmentsMeetRoleRequirements = (
+  employees: Employee[],
+  required: string[] = [],
+  alternative: string[] = [],
+): boolean => {
+  const assignedRoleKeys = new Set(
+    employees.flatMap((employee) => getEmployeeRoleKeys(employee.role)),
+  );
+
+  if (required.length > 0 && !required.every((value) => assignedRoleKeys.has(value))) {
+    return false;
+  }
+
+  if (
+    alternative.length > 0 &&
+    !alternative.some((value) => assignedRoleKeys.has(value))
+  ) {
+    return false;
+  }
+
+  return true;
+};
+
+const roomAssignmentsMeetCompetencyRequirements = (
+  employees: Employee[],
+  requiredCompetencies: WeeklyPlanRoom["requiredCompetencies"] = [],
+): boolean => {
+  if (!requiredCompetencies || requiredCompetencies.length === 0) return true;
+
+  const assignedCompetencies = new Set(
+    employees.flatMap((employee) =>
+      (employee.competencies || []).map((comp) => normalizeValue(comp)),
+    ),
+  );
+  const hasCompetency = (value?: string | null) =>
+    assignedCompetencies.has(normalizeValue(value));
+
+  const andCompetencies = requiredCompetencies.filter(
+    (comp) => comp.relationType === "AND",
+  );
+  const orCompetencies = requiredCompetencies.filter(
+    (comp) => comp.relationType === "OR",
+  );
+
+  if (
+    andCompetencies.length > 0 &&
+    !andCompetencies.every(
+      (comp) =>
+        hasCompetency(comp.competencyCode) ||
+        hasCompetency(comp.competencyName),
+    )
+  ) {
+    return false;
+  }
+
+  if (
+    orCompetencies.length > 0 &&
+    !orCompetencies.some(
+      (comp) =>
+        hasCompetency(comp.competencyCode) ||
+        hasCompetency(comp.competencyName),
+    )
+  ) {
+    return false;
+  }
+
+  return true;
+};
+
+export const getRoomAssignmentCompetencyStatus = (
+  room: WeeklyPlanRoom,
+  assignedEmployees: Employee[],
+): "missing" | "partial" | "fulfilled" => {
+  if (assignedEmployees.length === 0) return "missing";
+
+  const roleOk = roomAssignmentsMeetRoleRequirements(
+    assignedEmployees,
+    room.requiredRoleCompetencies || [],
+    room.alternativeRoleCompetencies || [],
+  );
+  const competencyOk = roomAssignmentsMeetCompetencyRequirements(
+    assignedEmployees,
+    room.requiredCompetencies || [],
+  );
+
+  return roleOk && competencyOk ? "fulfilled" : "partial";
+};
+
 export const isEmployeeEligibleForRoom = (
   employee: Employee,
   room: WeeklyPlanRoom,
