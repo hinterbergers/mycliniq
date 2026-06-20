@@ -126,6 +126,21 @@ function isEmployeeInactiveOnDate(
   );
 }
 
+function isEmployeeEmployedOnDate(
+  employmentFrom: string | null | undefined,
+  employmentUntil: string | null | undefined,
+  dayIso: string,
+): boolean {
+  const day = toDateOnly(dayIso);
+  if (!day) return false;
+  const from = toDateOnly(employmentFrom);
+  const until = toDateOnly(employmentUntil);
+
+  if (from && day.getTime() < from.getTime()) return false;
+  if (until && day.getTime() > until.getTime()) return false;
+  return true;
+}
+
 function getRecurringUnavailableWeekdays(shiftPreferences: unknown): number[] {
   if (!shiftPreferences || typeof shiftPreferences !== "object") return [];
   const value = (shiftPreferences as { recurringUnavailableWeekdays?: unknown })
@@ -891,6 +906,16 @@ export function registerWeeklyPlanRoutes(router: Router) {
               isEmployeeInactiveOnDate(
                 employee.inactiveFrom,
                 employee.inactiveUntil,
+                dayDate,
+              )
+            ) {
+              reasons.add("EMPLOYEE_INACTIVE");
+            }
+
+            if (
+              !isEmployeeEmployedOnDate(
+                employee.employmentFrom,
+                employee.employmentUntil,
                 dayDate,
               )
             ) {

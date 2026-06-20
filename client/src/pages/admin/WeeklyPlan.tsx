@@ -315,6 +315,30 @@ const parseIsoDateLocal = (value: string): Date | null => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
+const isEmployeeEmployedOnDate = (
+  employee: Pick<Employee, "employmentFrom" | "employmentUntil">,
+  day: Date,
+) => {
+  const employmentFrom = toIsoDateOnly(employee.employmentFrom);
+  const employmentUntil = toIsoDateOnly(employee.employmentUntil);
+  const target = format(day, "yyyy-MM-dd");
+  if (employmentFrom && target < employmentFrom) return false;
+  if (employmentUntil && target > employmentUntil) return false;
+  return true;
+};
+
+const doesEmployeeEmploymentOverlapRange = (
+  employee: Pick<Employee, "employmentFrom" | "employmentUntil">,
+  fromIso: string,
+  toIso: string,
+) => {
+  const employmentFrom = toIsoDateOnly(employee.employmentFrom);
+  const employmentUntil = toIsoDateOnly(employee.employmentUntil);
+  if (employmentFrom && employmentFrom > toIso) return false;
+  if (employmentUntil && employmentUntil < fromIso) return false;
+  return true;
+};
+
 type NoteDialogState = {
   roomId: number;
   weekday: number;
@@ -820,6 +844,13 @@ export default function WeeklyPlan() {
     return [...employees]
       .filter((employee) => employee.isActive)
       .filter((employee) => getRoleGroupKey(employee.role) !== "sekretariat")
+      .filter((employee) =>
+        doesEmployeeEmploymentOverlapRange(
+          employee,
+          ruleProfileRange.from,
+          ruleProfileRange.to,
+        ),
+      )
       .filter((employee) => {
         const inactiveHit = overlapsRange(
           employee.inactiveFrom as string | null | undefined,
@@ -963,6 +994,7 @@ export default function WeeklyPlan() {
       const previousDay = addDays(day, -1);
       const available = employees
         .filter((employee) => employee.isActive)
+        .filter((employee) => isEmployeeEmployedOnDate(employee, day))
         .filter(
           (employee) =>
             !isEmployeeAbsentOnDate(
