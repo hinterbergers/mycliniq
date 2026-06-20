@@ -2222,7 +2222,7 @@ export default function WeeklyPlan() {
         assignedEmployees,
       );
 
-      return competencyStatus === "missing";
+      return competencyStatus !== "fulfilled";
     });
   }, [
     assignmentsByDayRoom,
