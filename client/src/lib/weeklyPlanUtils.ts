@@ -259,6 +259,14 @@ export const getWeekdayOccurrence = (date: Date) =>
 type WeekdaySetting = NonNullable<WeeklyPlanRoom["weekdaySettings"]>[number];
 type WeekdayRecurrence = WeekdaySetting["recurrence"];
 
+const getRecurrencePriority = (recurrence?: WeekdayRecurrence) => {
+  if (recurrence === "monthly_selected_weeks") return 3;
+  if (recurrence === "monthly_first_third" || recurrence === "monthly_once") {
+    return 2;
+  }
+  return 1;
+};
+
 export const matchesRecurrence = (
   recurrence: WeekdayRecurrence,
   date: Date,
@@ -285,14 +293,21 @@ export const matchesRecurrence = (
 
 export const getRoomSettingForDate = (room: WeeklyPlanRoom, date: Date) => {
   const weekday = getWeekdayIndex(date);
-  const setting = room.weekdaySettings?.find(
-    (entry) => entry.weekday === weekday,
-  );
-  if (!setting) return null;
-  if (!matchesRecurrence(setting.recurrence, date, setting.monthWeeks)) {
-    return null;
-  }
-  return setting;
+  const matchingSettings = (room.weekdaySettings ?? [])
+    .filter(
+      (entry) =>
+        entry.weekday === weekday &&
+        matchesRecurrence(entry.recurrence, date, entry.monthWeeks),
+    )
+    .sort((a, b) => {
+      const priorityDiff =
+        getRecurrencePriority(b.recurrence) -
+        getRecurrencePriority(a.recurrence);
+      if (priorityDiff !== 0) return priorityDiff;
+      return (b.id ?? 0) - (a.id ?? 0);
+    });
+
+  return matchingSettings[0] ?? null;
 };
 
 export const isEmployeeAbsentOnDate = (

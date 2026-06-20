@@ -401,6 +401,58 @@ const matchesRecurrence = (
   return true;
 };
 
+const getRecurrencePriority = (
+  recurrence:
+    | "weekly"
+    | "monthly_first_third"
+    | "monthly_once"
+    | "monthly_selected_weeks"
+    | null
+    | undefined,
+) => {
+  if (recurrence === "monthly_selected_weeks") return 3;
+  if (recurrence === "monthly_first_third" || recurrence === "monthly_once") {
+    return 2;
+  }
+  return 1;
+};
+
+const getApplicableRoomSetting = <
+  T extends {
+    id: number;
+    weekday: number;
+    recurrence:
+      | "weekly"
+      | "monthly_first_third"
+      | "monthly_once"
+      | "monthly_selected_weeks"
+      | null;
+    monthWeeks: number[] | null;
+  },
+>(
+  settings: T[] | undefined,
+  weekday: number,
+  day: Date,
+) => {
+  if (!settings?.length) return null;
+
+  const matchingSettings = settings
+    .filter(
+      (entry) =>
+        entry.weekday === weekday &&
+        matchesRecurrence(entry.recurrence, day, entry.monthWeeks),
+    )
+    .sort((a, b) => {
+      const priorityDiff =
+        getRecurrencePriority(b.recurrence) -
+        getRecurrencePriority(a.recurrence);
+      if (priorityDiff !== 0) return priorityDiff;
+      return b.id - a.id;
+    });
+
+  return matchingSettings[0] ?? null;
+};
+
 const weeklyYearWeekParamSchema = z.object({
   year: z.string().regex(/^\d+$/).transform(Number),
   week: z.string().regex(/^\d+$/).transform(Number),
@@ -677,14 +729,11 @@ export function registerWeeklyPlanRoutes(router: Router) {
 
       const dayRooms = roomsList
         .map((room) => {
-          const setting =
-            settingsByRoom
-              .get(room.id)
-              ?.find(
-                (entry) =>
-                  entry.weekday === weekday &&
-                  matchesRecurrence(entry.recurrence, day, entry.monthWeeks),
-              ) ?? null;
+          const setting = getApplicableRoomSetting(
+            settingsByRoom.get(room.id),
+            weekday,
+            day,
+          );
           return { room, setting };
         })
         .filter((entry) => Boolean(entry.setting));
