@@ -124,15 +124,20 @@ const getDefaultMonthWeeks = (recurrence: WeeklyScheduleRecurrence): number[] =>
   if (recurrence === "weekly") return [...ALL_MONTH_WEEKS];
   if (recurrence === "monthly_first_third") return [1, 3];
   if (recurrence === "monthly_once") return [1];
-  return [];
+  return [...ALL_MONTH_WEEKS];
 };
 
 const normalizeMonthWeeks = (value: number[] | undefined, recurrence: WeeklyScheduleRecurrence) =>
-  Array.from(new Set(value ?? getDefaultMonthWeeks(recurrence)))
+  Array.from(
+    new Set(
+      value && value.length > 0 ? value : getDefaultMonthWeeks(recurrence),
+    ),
+  )
     .filter((week) => Number.isInteger(week) && week >= 1 && week <= 5)
     .sort((a, b) => a - b);
 
 const getRecurrenceFromMonthWeeks = (monthWeeks: number[]): WeeklyScheduleRecurrence => {
+  if (monthWeeks.length === 0) return "weekly";
   if (monthWeeks.length >= ALL_MONTH_WEEKS.length) return "weekly";
   if (monthWeeks.length === 2 && monthWeeks[0] === 1 && monthWeeks[1] === 3) {
     return "monthly_first_third";

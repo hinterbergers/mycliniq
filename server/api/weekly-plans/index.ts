@@ -396,7 +396,8 @@ const matchesRecurrence = (
   if (recurrence === "monthly_first_third") return occurrence === 1 || occurrence === 3;
   if (recurrence === "monthly_once") return occurrence === 1;
   if (recurrence === "monthly_selected_weeks") {
-    return Array.isArray(monthWeeks) && monthWeeks.includes(occurrence);
+    if (!Array.isArray(monthWeeks) || monthWeeks.length === 0) return true;
+    return monthWeeks.includes(occurrence);
   }
   return true;
 };
