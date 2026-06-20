@@ -2898,6 +2898,9 @@ export default function WeeklyPlan() {
                                             </TooltipTrigger>
                                             <TooltipContent
                                               side="left"
+                                              align="center"
+                                              sideOffset={12}
+                                              avoidCollisions={false}
                                               className="max-w-[280px]"
                                             >
                                               <div className="space-y-1">
