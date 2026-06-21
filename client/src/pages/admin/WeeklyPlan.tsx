@@ -37,6 +37,7 @@ import { Layout } from "@/components/layout/Layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -64,6 +65,7 @@ import {
 } from "@/components/ui/tooltip";
 
 import {
+  competencyApi,
   employeeApi,
   longTermAbsencesApi,
   plannedAbsencesAdminApi,
@@ -79,7 +81,12 @@ import {
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
-import type { Employee, LongTermAbsence, RosterShift } from "@shared/schema";
+import type {
+  Competency,
+  Employee,
+  LongTermAbsence,
+  RosterShift,
+} from "@shared/schema";
 import {
   WEEKDAY_LABELS,
   WEEKDAY_FULL,
@@ -254,6 +261,28 @@ const ABSENCE_REASONS = [
   "Sonstiges",
   "Ruhezeit",
 ] as const;
+
+const ROLE_COMPETENCIES = [
+  { id: "facharzt", label: "Facharzt/Fachaerztin" },
+  { id: "assistenzarzt", label: "Assistenzarzt/Assistenzaerztin" },
+  { id: "primararzt", label: "Primararzt/Primaraerztin" },
+  { id: "op_assistenz", label: "OP-Assistenz" },
+  { id: "sekretaerin", label: "Sekretaerin" },
+] as const;
+
+type WeeklyRoomEditState = {
+  id: number;
+  name: string;
+  requiredRoleCompetencies: string[];
+  alternativeRoleCompetencies: string[];
+  requiredAdminCompetencyIds: number[];
+  alternativeAdminCompetencyIds: number[];
+};
+
+type WeeklyEmployeeCompetencyDialogState = {
+  roomId: number;
+  roomName: string;
+};
 
 type AbsenceDraft = {
   employeeId: number | null;
@@ -569,6 +598,23 @@ export default function WeeklyPlan() {
   const [isSaving, setIsSaving] = useState(false);
   const [isReorderMode, setIsReorderMode] = useState(false);
   const [roomOrderIds, setRoomOrderIds] = useState<number[]>([]);
+  const [availableCompetencies, setAvailableCompetencies] = useState<
+    Competency[]
+  >([]);
+  const [editingRoomConfig, setEditingRoomConfig] =
+    useState<WeeklyRoomEditState | null>(null);
+  const [isRoomConfigDialogOpen, setIsRoomConfigDialogOpen] = useState(false);
+  const [isSavingRoomConfig, setIsSavingRoomConfig] = useState(false);
+  const [employeeCompetencyDialog, setEmployeeCompetencyDialog] =
+    useState<WeeklyEmployeeCompetencyDialogState | null>(null);
+  const [selectedQuickCompetencyIds, setSelectedQuickCompetencyIds] = useState<
+    number[]
+  >([]);
+  const [selectedQuickEmployeeIds, setSelectedQuickEmployeeIds] = useState<
+    number[]
+  >([]);
+  const [isSavingQuickCompetencies, setIsSavingQuickCompetencies] =
+    useState(false);
   const [rightPaneOffset, setRightPaneOffset] = useState(96);
   const draggedRoomIdRef = useRef<number | null>(null);
   const toolbarRef = useRef<HTMLDivElement | null>(null);
@@ -1152,6 +1198,7 @@ export default function WeeklyPlan() {
         roomsData,
         planData,
         employeesData,
+        competenciesData,
         longTermData,
         plannedData,
         rosterData,
@@ -1159,6 +1206,7 @@ export default function WeeklyPlan() {
         roomApi.getWeeklyPlan(),
         weeklyPlanApi.getByWeek(weekYear, weekNumber, true),
         employeeApi.getAll(),
+        competencyApi.getAll(),
         longTermAbsencesApi.getByStatus("Genehmigt", from, to),
         plannedAbsencesAdminApi.getRange({ from, to }),
         Promise.all(
@@ -1169,6 +1217,11 @@ export default function WeeklyPlan() {
       setRooms(roomsData);
       setWeeklyPlan(planData);
       setEmployees(employeesData);
+      setAvailableCompetencies(
+        [...competenciesData].sort((a, b) =>
+          (a.code || a.name).localeCompare(b.code || b.name, "de"),
+        ),
+      );
       setLongTermAbsences(longTermData);
       setPlannedAbsences(plannedData);
       setRosterShifts(rosterData.flat());
@@ -1995,6 +2048,13 @@ export default function WeeklyPlan() {
       showAssignedAvailableEmployees,
     ],
   );
+  const employeeCompetencyCandidates = useMemo(() => {
+    const source =
+      visibleAvailableEmployeesOrdered.length > 0
+        ? visibleAvailableEmployeesOrdered
+        : availableEmployeesOrdered;
+    return [...source].sort(compareAvailabilityEmployees);
+  }, [availableEmployeesOrdered, visibleAvailableEmployeesOrdered]);
   const availableEmployeeSections = useMemo(() => {
     const sections = [
       { key: "senior", title: "Oberaerzte", employees: [] as Employee[] },
@@ -2337,6 +2397,220 @@ export default function WeeklyPlan() {
     }
   };
 
+  const toggleRoleCompetencySelection = (
+    list:
+      | "requiredRoleCompetencies"
+      | "alternativeRoleCompetencies",
+    competencyId: string,
+  ) => {
+    setEditingRoomConfig((prev) => {
+      if (!prev) return prev;
+      const exists = prev[list].includes(competencyId);
+      return {
+        ...prev,
+        [list]: exists
+          ? prev[list].filter((item) => item !== competencyId)
+          : [...prev[list], competencyId],
+      };
+    });
+  };
+
+  const toggleAdminCompetencySelection = (
+    list:
+      | "requiredAdminCompetencyIds"
+      | "alternativeAdminCompetencyIds",
+    competencyId: number,
+  ) => {
+    setEditingRoomConfig((prev) => {
+      if (!prev) return prev;
+      const exists = prev[list].includes(competencyId);
+      return {
+        ...prev,
+        [list]: exists
+          ? prev[list].filter((item) => item !== competencyId)
+          : [...prev[list], competencyId],
+      };
+    });
+  };
+
+  const handleOpenRoomConfigDialog = async (room: WeeklyPlanRoom) => {
+    setIsSaving(true);
+    try {
+      const detail = await roomApi.getById(room.id);
+      const requiredAdminCompetencyIds = (detail.requiredCompetencies || [])
+        .filter((entry) => entry.relationType === "AND")
+        .map((entry) => entry.competencyId);
+      const alternativeAdminCompetencyIds = (detail.requiredCompetencies || [])
+        .filter((entry) => entry.relationType === "OR")
+        .map((entry) => entry.competencyId);
+
+      setEditingRoomConfig({
+        id: room.id,
+        name: room.name,
+        requiredRoleCompetencies: room.requiredRoleCompetencies || [],
+        alternativeRoleCompetencies: room.alternativeRoleCompetencies || [],
+        requiredAdminCompetencyIds,
+        alternativeAdminCompetencyIds,
+      });
+      setIsRoomConfigDialogOpen(true);
+    } catch (error) {
+      console.error("Failed to load room configuration", error);
+      toast({
+        title: "Arbeitsplatz konnte nicht geladen werden",
+        description: "Die Eigenschaften konnten nicht geoeffnet werden.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveRoomConfig = async () => {
+    if (!editingRoomConfig) return;
+
+    setIsSavingRoomConfig(true);
+    try {
+      await roomApi.update(editingRoomConfig.id, {
+        requiredRoleCompetencies: editingRoomConfig.requiredRoleCompetencies,
+        alternativeRoleCompetencies: editingRoomConfig.alternativeRoleCompetencies,
+      });
+
+      await roomApi.updateCompetencies(editingRoomConfig.id, [
+        ...editingRoomConfig.requiredAdminCompetencyIds.map((competencyId) => ({
+          competencyId,
+          relationType: "AND" as const,
+        })),
+        ...editingRoomConfig.alternativeAdminCompetencyIds.map(
+          (competencyId) => ({
+            competencyId,
+            relationType: "OR" as const,
+          }),
+        ),
+      ]);
+
+      const detail = await roomApi.getById(editingRoomConfig.id);
+      setRooms((prev) =>
+        prev.map((room) =>
+          room.id === editingRoomConfig.id
+            ? {
+                ...room,
+                requiredRoleCompetencies:
+                  editingRoomConfig.requiredRoleCompetencies,
+                alternativeRoleCompetencies:
+                  editingRoomConfig.alternativeRoleCompetencies,
+                requiredCompetencies: detail.requiredCompetencies || [],
+              }
+            : room,
+        ),
+      );
+
+      toast({
+        title: "Arbeitsplatz gespeichert",
+        description: "Die Anforderungen wurden aktualisiert.",
+      });
+      setIsRoomConfigDialogOpen(false);
+      setEditingRoomConfig(null);
+    } catch (error) {
+      console.error("Failed to save room configuration", error);
+      toast({
+        title: "Speichern fehlgeschlagen",
+        description: "Die Raum-Eigenschaften konnten nicht gespeichert werden.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingRoomConfig(false);
+    }
+  };
+
+  const handleOpenEmployeeCompetencyDialog = (room: WeeklyPlanRoom) => {
+    const preselectedIds = [
+      ...new Set(
+        (room.requiredCompetencies || []).map((entry) => entry.competencyId),
+      ),
+    ];
+    setEmployeeCompetencyDialog({
+      roomId: room.id,
+      roomName: room.name,
+    });
+    setSelectedQuickCompetencyIds(preselectedIds);
+    setSelectedQuickEmployeeIds([]);
+  };
+
+  const toggleQuickCompetency = (competencyId: number) => {
+    setSelectedQuickCompetencyIds((prev) =>
+      prev.includes(competencyId)
+        ? prev.filter((item) => item !== competencyId)
+        : [...prev, competencyId],
+    );
+  };
+
+  const toggleQuickEmployee = (employeeId: number) => {
+    setSelectedQuickEmployeeIds((prev) =>
+      prev.includes(employeeId)
+        ? prev.filter((item) => item !== employeeId)
+        : [...prev, employeeId],
+    );
+  };
+
+  const handleSaveEmployeeCompetencies = async () => {
+    if (
+      !employeeCompetencyDialog ||
+      selectedQuickCompetencyIds.length === 0 ||
+      selectedQuickEmployeeIds.length === 0
+    ) {
+      return;
+    }
+
+    setIsSavingQuickCompetencies(true);
+    try {
+      await Promise.all(
+        selectedQuickEmployeeIds.map(async (employeeId) => {
+          const existing = await employeeApi.getCompetencies(employeeId);
+          const mergedIds = Array.from(
+            new Set([
+              ...existing.map((entry) => entry.competencyId),
+              ...selectedQuickCompetencyIds,
+            ]),
+          );
+          const updated = await employeeApi.updateCompetencies(
+            employeeId,
+            mergedIds,
+          );
+          const updatedNames = updated.competencies
+            .map((entry) => entry.name)
+            .filter((value): value is string => Boolean(value));
+
+          setEmployees((prev) =>
+            prev.map((employee) =>
+              employee.id === employeeId
+                ? { ...employee, competencies: updatedNames }
+                : employee,
+            ),
+          );
+        }),
+      );
+
+      toast({
+        title: "Benutzer aktualisiert",
+        description:
+          "Die gewaelten Kompetenzen wurden global in den Mitarbeiterprofilen gespeichert.",
+      });
+      setEmployeeCompetencyDialog(null);
+      setSelectedQuickCompetencyIds([]);
+      setSelectedQuickEmployeeIds([]);
+    } catch (error) {
+      console.error("Failed to save employee competencies", error);
+      toast({
+        title: "Kompetenzen konnten nicht gespeichert werden",
+        description:
+          "Die globale Zuweisung fuer Mitarbeiter ist fehlgeschlagen.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingQuickCompetencies(false);
+    }
+  };
+
   return (
     <Layout title="Wochenplan-Editor" disableMotion>
       <div className="space-y-4">
@@ -2466,8 +2740,8 @@ export default function WeeklyPlan() {
                     >
                       <GripVertical className="w-3.5 h-3.5" />
                       {isReorderMode
-                        ? "Reihenfolge speichern"
-                        : "Reihenfolge ändern"}
+                        ? "Wochenplan speichern"
+                        : "Wochenplan bearbeiten"}
                     </Button>
                     {weeklyPlan?.status === "Freigegeben" ? (
                       <Button
@@ -3088,15 +3362,37 @@ export default function WeeklyPlan() {
                           )}
                         </div>
                         {isReorderMode ? (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="gap-2 text-xs"
-                          >
-                            <GripVertical className="w-3.5 h-3.5" />
-                            Verschieben
-                          </Button>
+                          <div className="flex flex-wrap items-center justify-end gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="gap-2 text-xs"
+                              onClick={() => handleOpenRoomConfigDialog(room)}
+                            >
+                              Kompetenzen
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="gap-2 text-xs"
+                              onClick={() =>
+                                handleOpenEmployeeCompetencyDialog(room)
+                              }
+                            >
+                              Benutzer
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="gap-2 text-xs"
+                            >
+                              <GripVertical className="w-3.5 h-3.5" />
+                              Verschieben
+                            </Button>
+                          </div>
                         ) : (
                           <div className="flex items-center gap-2">
                             <Badge
@@ -3370,6 +3666,294 @@ export default function WeeklyPlan() {
         </div>
 
       </div>
+
+      <Dialog
+        open={isRoomConfigDialogOpen}
+        onOpenChange={(open) => {
+          setIsRoomConfigDialogOpen(open);
+          if (!open) setEditingRoomConfig(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-[920px] max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Arbeitsplatz bearbeiten: {editingRoomConfig?.name || ""}
+            </DialogTitle>
+          </DialogHeader>
+          {editingRoomConfig && (
+            <div className="space-y-6">
+              <div className="space-y-3">
+                <div>
+                  <Label className="text-base font-medium">
+                    Basis-Kompetenzen (AND)
+                  </Label>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Alle ausgewaehlten Kompetenzen muessen erfuellt sein.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {ROLE_COMPETENCIES.map((comp) => (
+                    <div key={comp.id} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`weekly-room-required-${comp.id}`}
+                        checked={editingRoomConfig.requiredRoleCompetencies.includes(
+                          comp.id,
+                        )}
+                        onCheckedChange={() =>
+                          toggleRoleCompetencySelection(
+                            "requiredRoleCompetencies",
+                            comp.id,
+                          )
+                        }
+                      />
+                      <Label
+                        htmlFor={`weekly-room-required-${comp.id}`}
+                        className="text-sm cursor-pointer"
+                      >
+                        {comp.label}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <Label className="text-base font-medium">
+                    Basis-Kompetenzen (ODER)
+                  </Label>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Mindestens eine der ausgewaehlten Kompetenzen muss erfuellt
+                    sein.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {ROLE_COMPETENCIES.map((comp) => (
+                    <div key={comp.id} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`weekly-room-alternative-${comp.id}`}
+                        checked={editingRoomConfig.alternativeRoleCompetencies.includes(
+                          comp.id,
+                        )}
+                        onCheckedChange={() =>
+                          toggleRoleCompetencySelection(
+                            "alternativeRoleCompetencies",
+                            comp.id,
+                          )
+                        }
+                      />
+                      <Label
+                        htmlFor={`weekly-room-alternative-${comp.id}`}
+                        className="text-sm cursor-pointer"
+                      >
+                        {comp.label}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <Label className="text-base font-medium">
+                    Kompetenzen aus Verwaltung (AND)
+                  </Label>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Alle ausgewaehlten Verwaltungskompetenzen muessen gemeinsam
+                    vorhanden sein.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {availableCompetencies.map((comp) => (
+                    <div key={comp.id} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`weekly-room-admin-required-${comp.id}`}
+                        checked={editingRoomConfig.requiredAdminCompetencyIds.includes(
+                          comp.id,
+                        )}
+                        onCheckedChange={() =>
+                          toggleAdminCompetencySelection(
+                            "requiredAdminCompetencyIds",
+                            comp.id,
+                          )
+                        }
+                      />
+                      <Label
+                        htmlFor={`weekly-room-admin-required-${comp.id}`}
+                        className="text-sm cursor-pointer"
+                      >
+                        {comp.code ? `${comp.code} - ${comp.name}` : comp.name}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <Label className="text-base font-medium">
+                    Kompetenzen aus Verwaltung (ODER)
+                  </Label>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Mindestens eine Kompetenz aus dieser Liste ist ausreichend.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {availableCompetencies.map((comp) => (
+                    <div key={comp.id} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`weekly-room-admin-alternative-${comp.id}`}
+                        checked={editingRoomConfig.alternativeAdminCompetencyIds.includes(
+                          comp.id,
+                        )}
+                        onCheckedChange={() =>
+                          toggleAdminCompetencySelection(
+                            "alternativeAdminCompetencyIds",
+                            comp.id,
+                          )
+                        }
+                      />
+                      <Label
+                        htmlFor={`weekly-room-admin-alternative-${comp.id}`}
+                        className="text-sm cursor-pointer"
+                      >
+                        {comp.code ? `${comp.code} - ${comp.name}` : comp.name}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsRoomConfigDialogOpen(false);
+                setEditingRoomConfig(null);
+              }}
+            >
+              Abbrechen
+            </Button>
+            <Button onClick={handleSaveRoomConfig} disabled={isSavingRoomConfig}>
+              Speichern
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(employeeCompetencyDialog)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEmployeeCompetencyDialog(null);
+            setSelectedQuickCompetencyIds([]);
+            setSelectedQuickEmployeeIds([]);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[960px] max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Benutzer und Kompetenzen:{" "}
+              {employeeCompetencyDialog?.roomName || ""}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-6">
+            <div className="space-y-3">
+              <div>
+                <Label className="text-base font-medium">
+                  Kompetenzen waehlen
+                </Label>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Die Auswahl wird global in den Mitarbeiterprofilen gespeichert.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {availableCompetencies.map((comp) => (
+                  <div key={comp.id} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`quick-competency-${comp.id}`}
+                      checked={selectedQuickCompetencyIds.includes(comp.id)}
+                      onCheckedChange={() => toggleQuickCompetency(comp.id)}
+                    />
+                    <Label
+                      htmlFor={`quick-competency-${comp.id}`}
+                      className="text-sm cursor-pointer"
+                    >
+                      {comp.code ? `${comp.code} - ${comp.name}` : comp.name}
+                    </Label>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <Label className="text-base font-medium">
+                  Benutzer zuordnen
+                </Label>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Schnellzuweisung fuer aktuell anwesende und verfuegbare
+                  Mitarbeiter in dieser Woche.
+                </p>
+              </div>
+              <div className="max-h-[320px] overflow-y-auto rounded-lg border p-3 space-y-2">
+                {employeeCompetencyCandidates.map((employee) => (
+                  <div
+                    key={employee.id}
+                    className="flex items-start space-x-2 rounded-md border px-3 py-2"
+                  >
+                    <Checkbox
+                      id={`quick-employee-${employee.id}`}
+                      checked={selectedQuickEmployeeIds.includes(employee.id)}
+                      onCheckedChange={() => toggleQuickEmployee(employee.id)}
+                    />
+                    <Label
+                      htmlFor={`quick-employee-${employee.id}`}
+                      className="flex-1 cursor-pointer"
+                    >
+                      <div className="text-sm font-medium">
+                        {getEmployeeDisplayName(employee)}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {employee.role || "Ohne Rolle"}
+                      </div>
+                    </Label>
+                  </div>
+                ))}
+                {employeeCompetencyCandidates.length === 0 && (
+                  <div className="text-sm text-muted-foreground">
+                    Keine verfuegbaren Mitarbeiter fuer diese Woche gefunden.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setEmployeeCompetencyDialog(null);
+                setSelectedQuickCompetencyIds([]);
+                setSelectedQuickEmployeeIds([]);
+              }}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              onClick={handleSaveEmployeeCompetencies}
+              disabled={
+                isSavingQuickCompetencies ||
+                selectedQuickCompetencyIds.length === 0 ||
+                selectedQuickEmployeeIds.length === 0
+              }
+            >
+              Global speichern
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={generationPreviewDialogOpen}
