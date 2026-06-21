@@ -2964,13 +2964,17 @@ export default function WeeklyPlan() {
                     .filter((id): id is number => typeof id === "number"),
                 );
 
-                const availableForRoom = (
-                  availabilityByWeekday.get(selectedWeekday) ?? []
-                ).filter((employee) =>
+                const availableForRoom = visibleAvailableEmployeesOrdered.filter(
+                  (employee) =>
                   isEmployeeEligibleForRoom(employee, room),
                 );
                 const remainingEligible = availableForRoom.filter(
                   (employee) => !assignedEmployeeIds.has(employee.id),
+                );
+                const previewEligibleEmployees = remainingEligible.slice(0, 10);
+                const hiddenEligibleCount = Math.max(
+                  0,
+                  remainingEligible.length - previewEligibleEmployees.length,
                 );
                 const assignedEmployees = employeeAssignments
                   .map((assignment) =>
@@ -3316,6 +3320,21 @@ export default function WeeklyPlan() {
                             );
                           })}
                         </div>
+                        {previewEligibleEmployees.length > 0 && (
+                          <div className="rounded-md bg-white/40 px-2 py-1 text-[10px] leading-4 text-slate-600">
+                            <span className="font-medium text-slate-700">
+                              Passend verfuegbar:
+                            </span>{" "}
+                            {previewEligibleEmployees
+                              .map((employee) =>
+                                employee.lastName ||
+                                getEmployeeDisplayName(employee),
+                              )
+                              .join(", ")}
+                            {hiddenEligibleCount > 0 &&
+                              ` +${hiddenEligibleCount}`}
+                          </div>
+                        )}
                         <div className="flex flex-wrap gap-2">
                           <Button
                             size="sm"
