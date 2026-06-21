@@ -3029,7 +3029,10 @@ export default function EmployeeManagement() {
                                   Kompetenzen auswählen
                                 </Button>
                               </PopoverTrigger>
-                              <PopoverContent align="start" className="w-80">
+                              <PopoverContent
+                                align="start"
+                                className="w-80 max-h-[min(24rem,calc(100vh-8rem))] overflow-y-auto"
+                              >
                                 <div className="space-y-2">
                                   <Input
                                     value={competencySearch}
@@ -3038,7 +3041,7 @@ export default function EmployeeManagement() {
                                     }
                                     placeholder="Kompetenz suchen..."
                                   />
-                                  <div className="max-h-56 overflow-y-auto space-y-2">
+                                  <div className="max-h-[50vh] overflow-y-auto space-y-2">
                                     {filteredAvailableCompetencies.map(
                                       (comp) => {
                                         const checked =
@@ -3113,7 +3116,10 @@ export default function EmployeeManagement() {
                                   Diplome auswählen
                                 </Button>
                               </PopoverTrigger>
-                              <PopoverContent align="start" className="w-80">
+                              <PopoverContent
+                                align="start"
+                                className="w-80 max-h-[min(24rem,calc(100vh-8rem))] overflow-y-auto"
+                              >
                                 <div className="space-y-2">
                                   <Input
                                     value={diplomaSearch}
@@ -3122,7 +3128,7 @@ export default function EmployeeManagement() {
                                     }
                                     placeholder="Diplom suchen..."
                                   />
-                                  <div className="max-h-56 overflow-y-auto space-y-2">
+                                  <div className="max-h-[50vh] overflow-y-auto space-y-2">
                                     {filteredAvailableDiplomas.map(
                                       (diploma) => {
                                         const checked = newDiplomaIds.includes(
@@ -3196,7 +3202,10 @@ export default function EmployeeManagement() {
                                   Einsatzbereiche auswählen
                                 </Button>
                               </PopoverTrigger>
-                              <PopoverContent align="start" className="w-80">
+                              <PopoverContent
+                                align="start"
+                                className="w-80 max-h-[min(24rem,calc(100vh-8rem))] overflow-y-auto"
+                              >
                                 <div className="space-y-2">
                                   <Input
                                     value={roomSearch}
@@ -3205,7 +3214,7 @@ export default function EmployeeManagement() {
                                     }
                                     placeholder="Arbeitsplätze suchen..."
                                   />
-                                  <div className="max-h-56 overflow-y-auto space-y-2">
+                                  <div className="max-h-[50vh] overflow-y-auto space-y-2">
                                     {filteredRooms.map((room) => {
                                       const checked =
                                         newDeploymentRoomIds.includes(room.id);
@@ -4215,7 +4224,10 @@ export default function EmployeeManagement() {
                             Kompetenzen auswählen
                           </Button>
                         </PopoverTrigger>
-                        <PopoverContent align="start" className="w-80">
+                        <PopoverContent
+                          align="start"
+                          className="w-80 max-h-[min(24rem,calc(100vh-8rem))] overflow-y-auto"
+                        >
                           <div className="space-y-2">
                             <Input
                               value={competencySearch}
@@ -4224,7 +4236,7 @@ export default function EmployeeManagement() {
                               }
                               placeholder="Kompetenz suchen..."
                             />
-                            <div className="max-h-56 overflow-y-auto space-y-2">
+                            <div className="max-h-[50vh] overflow-y-auto space-y-2">
                               {filteredAvailableCompetencies.map((comp) => {
                                 const checked = editCompetencyIds.includes(
                                   comp.id,
@@ -4296,14 +4308,17 @@ export default function EmployeeManagement() {
                             Diplome auswählen
                           </Button>
                         </PopoverTrigger>
-                        <PopoverContent align="start" className="w-80">
+                        <PopoverContent
+                          align="start"
+                          className="w-80 max-h-[min(24rem,calc(100vh-8rem))] overflow-y-auto"
+                        >
                           <div className="space-y-2">
                             <Input
                               value={diplomaSearch}
                               onChange={(e) => setDiplomaSearch(e.target.value)}
                               placeholder="Diplom suchen..."
                             />
-                            <div className="max-h-56 overflow-y-auto space-y-2">
+                            <div className="max-h-[50vh] overflow-y-auto space-y-2">
                               {filteredAvailableDiplomas.map((diploma) => {
                                 const checked = editDiplomaIds.includes(
                                   diploma.id,
@@ -4375,14 +4390,17 @@ export default function EmployeeManagement() {
                             Einsatzbereiche auswählen
                           </Button>
                         </PopoverTrigger>
-                        <PopoverContent align="start" className="w-80">
+                        <PopoverContent
+                          align="start"
+                          className="w-80 max-h-[min(24rem,calc(100vh-8rem))] overflow-y-auto"
+                        >
                           <div className="space-y-2">
                             <Input
                               value={roomSearch}
                               onChange={(e) => setRoomSearch(e.target.value)}
                               placeholder="Arbeitsplätze suchen..."
                             />
-                            <div className="max-h-56 overflow-y-auto space-y-2">
+                            <div className="max-h-[50vh] overflow-y-auto space-y-2">
                               {filteredRooms.map((room) => {
                                 const checked = editDeploymentRoomIds.includes(
                                   room.id,
@@ -4716,7 +4734,10 @@ export default function EmployeeManagement() {
                         Diplome auswählen
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent align="start" className="w-80">
+                    <PopoverContent
+                      align="start"
+                      className="w-80 max-h-[min(24rem,calc(100vh-8rem))] overflow-y-auto"
+                    >
                       <div className="space-y-2">
                         <Input
                           value={competencyDiplomaSearch}
@@ -4725,7 +4746,7 @@ export default function EmployeeManagement() {
                           }
                           placeholder="Diplom suchen..."
                         />
-                        <div className="max-h-56 overflow-y-auto space-y-2">
+                        <div className="max-h-[50vh] overflow-y-auto space-y-2">
                           {filteredCompetencyDiplomas.map((diploma) => {
                             const checked = competencyDiplomaIds.includes(
                               diploma.id,
