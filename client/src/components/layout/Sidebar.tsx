@@ -70,7 +70,10 @@ export function Sidebar({
   // “Verwaltung” is shown if the user is a superuser (admin/technical admin)
   // OR has at least one admin capability.
   const hasAdminAccess =
-    isSuperuser || canAny(adminCaps) || canManageEducationCatalog;
+    isSuperuser ||
+    user?.appRole === "Ausbilder" ||
+    canAny(adminCaps) ||
+    canManageEducationCatalog;
 
   type NavChild = {
     href: string;
