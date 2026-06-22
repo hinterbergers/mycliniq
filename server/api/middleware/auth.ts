@@ -18,6 +18,7 @@ export interface AuthUser {
   id: number;
   oderId?: string;
   employeeId: number;
+  role?: string | null;
   appRole: "Admin" | "Ausbilder" | "Editor" | "User";
   systemRole: "employee" | "department_admin" | "clinic_admin" | "system_admin";
   isAdmin: boolean;
@@ -261,6 +262,7 @@ async function getAuthUserByEmployeeId(
     return {
       id: userId,
       employeeId: employee.id,
+      role: employee.role ?? null,
       appRole: employee.appRole as "Admin" | "Ausbilder" | "Editor" | "User",
       systemRole,
       isAdmin:
