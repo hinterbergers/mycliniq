@@ -24,7 +24,7 @@ import { useAuth } from "@/lib/auth";
 
 export default function PlanningCockpit() {
   const [, setLocation] = useLocation();
-  const { canAny, isSuperuser } = useAuth();
+  const { canAny, isSuperuser, canManageEducationCatalog } = useAuth();
 
   const modules = [
     {
@@ -122,11 +122,14 @@ export default function PlanningCockpit() {
 
   const visibleModules = isSuperuser
     ? modules
-    : modules.filter((module) =>
-        (module.requiredAnyCaps ?? []).length === 0
+    : modules.filter((module) => {
+        if (module.title === "Ausbildungs-Editor") {
+          return canManageEducationCatalog;
+        }
+        return (module.requiredAnyCaps ?? []).length === 0
           ? true
-          : canAny(module.requiredAnyCaps),
-      );
+          : canAny(module.requiredAnyCaps);
+      });
 
   const canCreateAbsence = isSuperuser || canAny(["absence.create"]);
   const canManageResources = isSuperuser || canAny(["resources.manage"]);
