@@ -30,11 +30,20 @@ import {
 } from "@/components/ui/table";
 import { Loader2, Save } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import {
+  formatRequirementTarget,
+  getRequirementProgressSummary,
+  educationProgressStatusOptions,
+} from "@/lib/education";
 
 type DraftRow = {
   completedCount: string;
   verifiedCount: string;
   lastEntryLabel: string;
+  currentLevel: string;
+  status: "offen" | "begonnen" | "ziel_erreicht" | "bestaetigt" | "abgelaufen";
+  lastEntryRole: string;
+  lastEntryDate: string;
 };
 
 type TraineeRoleFilter = "all" | "assistenz" | "facharzt" | "turnus";
@@ -155,6 +164,26 @@ export default function EducationTrainerCockpit() {
           (requirementRows.find((row) => row.requirement.id === requirementId)?.progress
             ?.lastEntryLabel ??
             ""),
+        currentLevel:
+          current[requirementId]?.currentLevel ??
+          String(
+            requirementRows.find((row) => row.requirement.id === requirementId)?.progress
+              ?.currentLevel ?? "",
+          ),
+        status:
+          current[requirementId]?.status ??
+          ((requirementRows.find((row) => row.requirement.id === requirementId)?.progress
+            ?.status as DraftRow["status"] | undefined) ?? "offen"),
+        lastEntryRole:
+          current[requirementId]?.lastEntryRole ??
+          (requirementRows.find((row) => row.requirement.id === requirementId)?.progress
+            ?.lastEntryRole ??
+            ""),
+        lastEntryDate:
+          current[requirementId]?.lastEntryDate ??
+          (requirementRows.find((row) => row.requirement.id === requirementId)?.progress
+            ?.lastEntryDate ??
+            ""),
         [field]: value,
       },
     }));
@@ -183,6 +212,12 @@ export default function EducationTrainerCockpit() {
         completedCount: Number(draft?.completedCount ?? row.progress?.completedCount ?? 0),
         verifiedCount: Number(draft?.verifiedCount ?? row.progress?.verifiedCount ?? 0),
         lastEntryLabel: draft?.lastEntryLabel ?? row.progress?.lastEntryLabel ?? "",
+        currentLevel: draft?.currentLevel ? Number(draft.currentLevel) : null,
+        status:
+          draft?.status ??
+          ((row.progress?.status as DraftRow["status"] | undefined) ?? "offen"),
+        lastEntryRole: draft?.lastEntryRole ?? row.progress?.lastEntryRole ?? "",
+        lastEntryDate: draft?.lastEntryDate ?? row.progress?.lastEntryDate ?? "",
       });
       await queryClient.invalidateQueries({ queryKey: ["education", "trainer"] });
       toast({ title: "Fortschritt gespeichert" });
@@ -334,6 +369,7 @@ export default function EducationTrainerCockpit() {
                       <TableHead>Soll</TableHead>
                       <TableHead>Erfasst</TableHead>
                       <TableHead>Bestaetigt</TableHead>
+                      <TableHead>Level / Status</TableHead>
                       <TableHead>Letzter Eintrag</TableHead>
                       <TableHead className="w-[120px]" />
                     </TableRow>
@@ -341,6 +377,11 @@ export default function EducationTrainerCockpit() {
                   <TableBody>
                     {requirementRows.map((row) => {
                       const draft = drafts[row.requirement.id];
+                      const target = formatRequirementTarget(row.requirement);
+                      const progressSummary = getRequirementProgressSummary(
+                        row.requirement,
+                        row.progress,
+                      );
                       return (
                         <TableRow key={row.requirement.id}>
                           <TableCell>
@@ -350,7 +391,10 @@ export default function EducationTrainerCockpit() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            {row.requirement.requiredCount} {row.requirement.unitLabel}
+                            <div>{target.targetLabel}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {target.typeLabel}
+                            </div>
                           </TableCell>
                           <TableCell>
                             <Input
@@ -387,6 +431,58 @@ export default function EducationTrainerCockpit() {
                             />
                           </TableCell>
                           <TableCell>
+                            <div className="grid gap-2">
+                              {typeof row.requirement.targetLevel === "number" ? (
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  max="5"
+                                  value={
+                                    draft?.currentLevel ??
+                                    String(row.progress?.currentLevel ?? "")
+                                  }
+                                  onChange={(event) =>
+                                    setDraftField(
+                                      row.requirement.id,
+                                      "currentLevel",
+                                      event.target.value,
+                                    )
+                                  }
+                                  placeholder="Level"
+                                />
+                              ) : null}
+                              <Select
+                                value={
+                                  draft?.status ??
+                                  ((row.progress?.status as DraftRow["status"] | undefined) ??
+                                    "offen")
+                                }
+                                onValueChange={(value) =>
+                                  setDraftField(
+                                    row.requirement.id,
+                                    "status",
+                                    value,
+                                  )
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Status" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {educationProgressStatusOptions.map((option) => (
+                                    <SelectItem
+                                      key={option.value}
+                                      value={option.value}
+                                    >
+                                      {option.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="grid gap-2">
                             <Input
                               value={
                                 draft?.lastEntryLabel ??
@@ -402,6 +498,42 @@ export default function EducationTrainerCockpit() {
                               }
                               placeholder="z. B. OP-Liste Mai"
                             />
+                              <div className="grid gap-2 md:grid-cols-2">
+                                <Input
+                                  value={
+                                    draft?.lastEntryRole ??
+                                    row.progress?.lastEntryRole ??
+                                    ""
+                                  }
+                                  onChange={(event) =>
+                                    setDraftField(
+                                      row.requirement.id,
+                                      "lastEntryRole",
+                                      event.target.value,
+                                    )
+                                  }
+                                  placeholder="Rolle, z. B. 1. Assistenz"
+                                />
+                                <Input
+                                  type="date"
+                                  value={
+                                    draft?.lastEntryDate ??
+                                    row.progress?.lastEntryDate ??
+                                    ""
+                                  }
+                                  onChange={(event) =>
+                                    setDraftField(
+                                      row.requirement.id,
+                                      "lastEntryDate",
+                                      event.target.value,
+                                    )
+                                  }
+                                />
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {progressSummary.detailLabel}
+                              </div>
+                            </div>
                           </TableCell>
                           <TableCell>
                             <Button
@@ -421,7 +553,7 @@ export default function EducationTrainerCockpit() {
                     })}
                     {requirementRows.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-muted-foreground">
+                        <TableCell colSpan={7} className="text-muted-foreground">
                           Noch keine Katalogeintraege vorhanden.
                         </TableCell>
                       </TableRow>

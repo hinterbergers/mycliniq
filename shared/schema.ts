@@ -463,8 +463,21 @@ export const educationRequirements = pgTable(
     code: text("code"),
     description: text("description"),
     category: text("category"),
+    evaluationType: text("evaluation_type").notNull().default("count"),
     requiredCount: integer("required_count").notNull().default(0),
     unitLabel: text("unit_label").notNull().default("Anzahl"),
+    targetLevel: integer("target_level"),
+    timeScope: text("time_scope"),
+    requiresUpload: boolean("requires_upload").notNull().default(false),
+    requiresTrainerSignoff: boolean("requires_trainer_signoff")
+      .notNull()
+      .default(true),
+    roleTrackingEnabled: boolean("role_tracking_enabled")
+      .notNull()
+      .default(false),
+    roleOptions: jsonb("role_options").notNull().default(sql`'[]'::jsonb`),
+    countingRule: text("counting_rule"),
+    fieldConfig: jsonb("field_config").notNull().default(sql`'{}'::jsonb`),
     matchingHints: text("matching_hints")
       .array()
       .notNull()
@@ -544,9 +557,14 @@ export const educationProgress = pgTable(
       .notNull(),
     completedCount: integer("completed_count").notNull().default(0),
     verifiedCount: integer("verified_count").notNull().default(0),
+    currentLevel: integer("current_level"),
+    status: text("status").notNull().default("offen"),
     lastActivityAt: timestamp("last_activity_at"),
     lastEntryLabel: text("last_entry_label"),
+    lastEntryRole: text("last_entry_role"),
+    lastEntryDate: date("last_entry_date"),
     notes: text("notes"),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
     updatedById: integer("updated_by_id").references(() => employees.id),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),

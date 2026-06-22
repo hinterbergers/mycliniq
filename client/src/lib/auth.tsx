@@ -78,8 +78,8 @@ export interface AuthContextType {
   isTechnicalAdminActual: boolean;
 
   // Admin-Ansicht als Benutzer simulieren
-  viewMode: "default" | "user" | "trainer";
-  setViewMode: (value: "default" | "user" | "trainer") => void;
+  viewMode: "default" | "user" | "trainer" | "editor";
+  setViewMode: (value: "default" | "user" | "trainer" | "editor") => void;
   viewAsUser: boolean;
   setViewAsUser: (value: boolean) => void;
 
@@ -159,7 +159,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [viewMode, setViewModeState] = useState<"default" | "user" | "trainer">(
+  const [viewMode, setViewModeState] = useState<
+    "default" | "user" | "trainer" | "editor"
+  >(
     "default",
   );
   const viewAsUser = viewMode === "user";
@@ -222,6 +224,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [user?.appRole, viewMode],
   );
 
+  const isEditorRole = useMemo(
+    () => user?.appRole === "Editor" || viewMode === "editor",
+    [user?.appRole, viewMode],
+  );
+
   const isEducationParticipantRole = useMemo(() => {
     const role = String(employee?.role ?? "").toLowerCase();
     return (
@@ -256,8 +263,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const canManageEducationCatalog = useMemo(
-    () => isSuperuser || isTrainerRole || can("training.edit"),
-    [isSuperuser, isTrainerRole, can],
+    () => isSuperuser || isTrainerRole || isEditorRole || can("training.edit"),
+    [isSuperuser, isTrainerRole, isEditorRole, can],
   );
 
   const canViewTrainerCockpit = useMemo(
@@ -273,6 +280,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () =>
       isSuperuser ||
       isTrainerRole ||
+      isEditorRole ||
       isEducationParticipantRole ||
       trainingEnabledFromEmployee ||
       trainingEnabledFromUser ||
@@ -281,6 +289,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [
       isSuperuser,
       isTrainerRole,
+      isEditorRole,
       isEducationParticipantRole,
       trainingEnabledFromEmployee,
       trainingEnabledFromUser,
@@ -289,7 +298,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const setViewMode = useCallback(
-    (value: "default" | "user" | "trainer") => {
+    (value: "default" | "user" | "trainer" | "editor") => {
       if (!canUseViewMode) return;
       setViewModeState(value);
     },
@@ -499,13 +508,68 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         );
       } else {
         setViewModeState(
-          stored === "user" || stored === "trainer" ? stored : "default",
+          stored === "user" ||
+            stored === "trainer" ||
+            stored === "editor"
+            ? stored
+            : "default",
         );
       }
     } catch {
       // ignore
     }
   }, [user?.appRole]);
+
+  const effectiveUser = useMemo(() => {
+    if (!user) return null;
+    if (viewMode === "default") return user;
+    if (viewMode === "user") {
+      return {
+        ...user,
+        appRole: "User",
+        isAdmin: false,
+        systemRole: "employee" as SystemRole,
+      };
+    }
+    if (viewMode === "trainer") {
+      return {
+        ...user,
+        appRole: "Ausbilder",
+        isAdmin: false,
+        systemRole: "employee" as SystemRole,
+      };
+    }
+    return {
+      ...user,
+      appRole: "Editor",
+      isAdmin: false,
+      systemRole: "employee" as SystemRole,
+    };
+  }, [user, viewMode]);
+
+  const effectiveEmployee = useMemo(() => {
+    if (!employee) return null;
+    if (viewMode === "default") return employee;
+    if (viewMode === "user") {
+      return {
+        ...employee,
+        appRole: "User",
+        isAdmin: false,
+      };
+    }
+    if (viewMode === "trainer") {
+      return {
+        ...employee,
+        appRole: "Ausbilder",
+        isAdmin: false,
+      };
+    }
+    return {
+      ...employee,
+      appRole: "Editor",
+      isAdmin: false,
+    };
+  }, [employee, viewMode]);
 
   useEffect(() => {
     if (!canUseViewMode && viewMode !== "default") {
@@ -648,8 +712,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthContextType>(
     () => ({
-      employee,
-      user,
+      employee: effectiveEmployee,
+      user: effectiveUser,
       token,
       isLoading,
       isAuthenticated,
@@ -674,8 +738,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       refreshAuth,
     }),
     [
-      employee,
-      user,
+      effectiveEmployee,
+      effectiveUser,
       token,
       isLoading,
       isAuthenticated,

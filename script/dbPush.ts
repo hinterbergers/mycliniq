@@ -201,6 +201,33 @@ CREATE INDEX IF NOT EXISTS education_requirements_module_id_idx
 CREATE INDEX IF NOT EXISTS education_requirements_category_idx
   ON education_requirements (category);
 
+ALTER TABLE education_requirements
+ADD COLUMN IF NOT EXISTS evaluation_type text NOT NULL DEFAULT 'count';
+
+ALTER TABLE education_requirements
+ADD COLUMN IF NOT EXISTS target_level integer;
+
+ALTER TABLE education_requirements
+ADD COLUMN IF NOT EXISTS time_scope text;
+
+ALTER TABLE education_requirements
+ADD COLUMN IF NOT EXISTS requires_upload boolean NOT NULL DEFAULT false;
+
+ALTER TABLE education_requirements
+ADD COLUMN IF NOT EXISTS requires_trainer_signoff boolean NOT NULL DEFAULT true;
+
+ALTER TABLE education_requirements
+ADD COLUMN IF NOT EXISTS role_tracking_enabled boolean NOT NULL DEFAULT false;
+
+ALTER TABLE education_requirements
+ADD COLUMN IF NOT EXISTS role_options jsonb NOT NULL DEFAULT '[]'::jsonb;
+
+ALTER TABLE education_requirements
+ADD COLUMN IF NOT EXISTS counting_rule text;
+
+ALTER TABLE education_requirements
+ADD COLUMN IF NOT EXISTS field_config jsonb NOT NULL DEFAULT '{}'::jsonb;
+
 CREATE TABLE IF NOT EXISTS education_mentor_assignments (
   id serial PRIMARY KEY,
   trainer_employee_id integer NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
@@ -243,6 +270,21 @@ CREATE INDEX IF NOT EXISTS education_progress_requirement_id_idx
 
 CREATE UNIQUE INDEX IF NOT EXISTS education_progress_employee_requirement_idx
   ON education_progress (employee_id, requirement_id);
+
+ALTER TABLE education_progress
+ADD COLUMN IF NOT EXISTS current_level integer;
+
+ALTER TABLE education_progress
+ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'offen';
+
+ALTER TABLE education_progress
+ADD COLUMN IF NOT EXISTS last_entry_role text;
+
+ALTER TABLE education_progress
+ADD COLUMN IF NOT EXISTS last_entry_date date;
+
+ALTER TABLE education_progress
+ADD COLUMN IF NOT EXISTS metadata jsonb NOT NULL DEFAULT '{}'::jsonb;
 
 CREATE TABLE IF NOT EXISTS education_profiles (
   id serial PRIMARY KEY,

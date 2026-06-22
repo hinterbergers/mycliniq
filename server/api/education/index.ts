@@ -28,6 +28,29 @@ import {
   requireEducationTrainer,
 } from "../middleware/auth";
 
+const evaluationTypeValues = [
+  "count",
+  "count_level",
+  "procedure",
+  "case_log",
+  "time_period",
+  "binary_signoff",
+  "certificate",
+  "course",
+  "exam",
+  "upload",
+  "audit",
+  "center_requirement",
+] as const;
+
+const progressStatusValues = [
+  "offen",
+  "begonnen",
+  "ziel_erreicht",
+  "bestaetigt",
+  "abgelaufen",
+] as const;
+
 const programSchema = z.object({
   title: z.string().min(1, "Titel erforderlich"),
   slug: z.string().min(1, "Slug erforderlich").optional(),
@@ -51,8 +74,17 @@ const requirementSchema = z.object({
   code: z.string().optional(),
   description: z.string().optional(),
   category: z.string().optional(),
+  evaluationType: z.enum(evaluationTypeValues).optional(),
   requiredCount: z.number().int().min(0),
   unitLabel: z.string().min(1).optional(),
+  targetLevel: z.number().int().min(0).max(5).nullable().optional(),
+  timeScope: z.string().optional(),
+  requiresUpload: z.boolean().optional(),
+  requiresTrainerSignoff: z.boolean().optional(),
+  roleTrackingEnabled: z.boolean().optional(),
+  roleOptions: z.array(z.string()).optional(),
+  countingRule: z.string().optional(),
+  fieldConfig: z.record(z.string(), z.any()).optional(),
   matchingHints: z.array(z.string()).optional(),
   sourceReference: z.string().optional(),
   sortOrder: z.number().int().optional(),
@@ -64,8 +96,13 @@ const progressSchema = z.object({
   requirementId: z.number().int().positive(),
   completedCount: z.number().int().min(0),
   verifiedCount: z.number().int().min(0),
+  currentLevel: z.number().int().min(0).max(5).nullable().optional(),
+  status: z.enum(progressStatusValues).optional(),
   notes: z.string().optional(),
   lastEntryLabel: z.string().optional(),
+  lastEntryRole: z.string().optional(),
+  lastEntryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 });
 
 const mentorAssignmentSchema = z.object({
@@ -153,6 +190,98 @@ const buildEmployeeDisplayName = (employee?: {
     .filter(Boolean)
     .join(" ")
     .trim() || employee?.name || "Unbekannt";
+
+const getRequirementTarget = (requirement: {
+  requiredCount?: number | null;
+  targetLevel?: number | null;
+  evaluationType?: string | null;
+}) => {
+  const hasCountTarget = Number(requirement.requiredCount ?? 0) > 0;
+  const hasLevelTarget = Number.isFinite(requirement.targetLevel ?? null);
+
+  if (hasCountTarget && hasLevelTarget) {
+    return 2;
+  }
+  if (hasCountTarget || hasLevelTarget) {
+    return 1;
+  }
+  if (requirement.evaluationType === "binary_signoff") {
+    return 1;
+  }
+  return 0;
+};
+
+const getRequirementProgress = (
+  requirement: {
+    requiredCount?: number | null;
+    targetLevel?: number | null;
+    evaluationType?: string | null;
+    requiresTrainerSignoff?: boolean | null;
+  },
+  progress?: {
+    completedCount?: number | null;
+    verifiedCount?: number | null;
+    currentLevel?: number | null;
+    status?: string | null;
+  } | null,
+) => {
+  const targetCount = Math.max(0, Number(requirement.requiredCount ?? 0));
+  const targetLevel = Number.isFinite(requirement.targetLevel ?? null)
+    ? Number(requirement.targetLevel ?? 0)
+    : null;
+  const completedCount = Math.max(0, Number(progress?.completedCount ?? 0));
+  const verifiedCount = Math.max(0, Number(progress?.verifiedCount ?? 0));
+  const currentLevel = Number.isFinite(progress?.currentLevel ?? null)
+    ? Number(progress?.currentLevel ?? 0)
+    : 0;
+  const status = String(progress?.status ?? "offen");
+  const hasCountTarget = targetCount > 0;
+  const hasLevelTarget = targetLevel !== null && targetLevel > 0;
+
+  let completedParts = 0;
+  let verifiedParts = 0;
+  let targetParts = 0;
+
+  if (hasCountTarget) {
+    targetParts += 1;
+    completedParts += Math.min(1, completedCount / targetCount);
+    verifiedParts += Math.min(1, verifiedCount / targetCount);
+  }
+
+  if (hasLevelTarget) {
+    targetParts += 1;
+    completedParts += Math.min(1, currentLevel / targetLevel);
+    verifiedParts += Math.min(1, currentLevel / targetLevel);
+  }
+
+  if (!hasCountTarget && !hasLevelTarget) {
+    targetParts = getRequirementTarget(requirement);
+    if (targetParts > 0) {
+      const isDone =
+        status === "ziel_erreicht" ||
+        status === "bestaetigt" ||
+        verifiedCount > 0 ||
+        completedCount > 0;
+      completedParts = isDone ? targetParts : 0;
+      verifiedParts =
+        status === "bestaetigt" ||
+        (!requirement.requiresTrainerSignoff && isDone) ||
+        verifiedCount > 0
+          ? targetParts
+          : 0;
+    }
+  }
+
+  return {
+    targetParts,
+    completedParts,
+    verifiedParts,
+    completedFraction:
+      targetParts > 0 ? Math.min(1, completedParts / targetParts) : 0,
+    verifiedFraction:
+      targetParts > 0 ? Math.min(1, verifiedParts / targetParts) : 0,
+  };
+};
 
 async function readDepartmentEducationEvents(
   departmentId: number,
@@ -282,9 +411,28 @@ async function readCatalog(departmentId: number) {
   }));
 }
 
-async function readProgressSummary(employeeIds: number[], requirementIds: number[]) {
+async function readProgressSummary(
+  employeeIds: number[],
+  requirements: Array<{
+    id: number;
+    requiredCount?: number | null;
+    targetLevel?: number | null;
+    evaluationType?: string | null;
+    requiresTrainerSignoff?: boolean | null;
+  }>,
+) {
+  const requirementIds = requirements.map((item) => item.id);
   if (!employeeIds.length || !requirementIds.length) {
-    return new Map<number, { completed: number; verified: number }>();
+    return new Map<
+      number,
+      {
+        completedParts: number;
+        verifiedParts: number;
+        targetParts: number;
+        completedRequirements: number;
+        verifiedRequirements: number;
+      }
+    >();
   }
 
   const progressRows = await db
@@ -297,12 +445,44 @@ async function readProgressSummary(employeeIds: number[], requirementIds: number
       ),
     );
 
-  const summary = new Map<number, { completed: number; verified: number }>();
-  progressRows.forEach((row) => {
-    const current = summary.get(row.employeeId) ?? { completed: 0, verified: 0 };
-    current.completed += row.completedCount ?? 0;
-    current.verified += row.verifiedCount ?? 0;
-    summary.set(row.employeeId, current);
+  const summary = new Map<
+    number,
+    {
+      completedParts: number;
+      verifiedParts: number;
+      targetParts: number;
+      completedRequirements: number;
+      verifiedRequirements: number;
+    }
+  >();
+
+  employeeIds.forEach((employeeId) => {
+    const current = {
+      completedParts: 0,
+      verifiedParts: 0,
+      targetParts: 0,
+      completedRequirements: 0,
+      verifiedRequirements: 0,
+    };
+
+    requirements.forEach((requirement) => {
+      const progress = progressRows.find(
+        (row) =>
+          row.employeeId === employeeId && row.requirementId === requirement.id,
+      );
+      const requirementProgress = getRequirementProgress(requirement, progress);
+      current.completedParts += requirementProgress.completedParts;
+      current.verifiedParts += requirementProgress.verifiedParts;
+      current.targetParts += requirementProgress.targetParts;
+      if (requirementProgress.completedFraction >= 1) {
+        current.completedRequirements += 1;
+      }
+      if (requirementProgress.verifiedFraction >= 1) {
+        current.verifiedRequirements += 1;
+      }
+    });
+
+    summary.set(employeeId, current);
   });
   return summary;
 }
@@ -382,6 +562,21 @@ export function registerEducationRoutes(router: Router) {
     }),
   );
 
+  router.delete(
+    "/programs/:id",
+    requireEducationTrainer,
+    validateParams(idParamSchema),
+    asyncHandler(async (req, res) => {
+      const { id } = req.params as z.infer<typeof idParamSchema>;
+      const [deleted] = await db
+        .delete(educationPrograms)
+        .where(eq(educationPrograms.id, id))
+        .returning();
+      if (!deleted) return notFound(res, "Ausbildungsprogramm");
+      return ok(res, deleted);
+    }),
+  );
+
   router.post(
     "/modules",
     requireEducationTrainer,
@@ -435,6 +630,21 @@ export function registerEducationRoutes(router: Router) {
     }),
   );
 
+  router.delete(
+    "/modules/:id",
+    requireEducationTrainer,
+    validateParams(idParamSchema),
+    asyncHandler(async (req, res) => {
+      const { id } = req.params as z.infer<typeof idParamSchema>;
+      const [deleted] = await db
+        .delete(educationModules)
+        .where(eq(educationModules.id, id))
+        .returning();
+      if (!deleted) return notFound(res, "Ausbildungsmodul");
+      return ok(res, deleted);
+    }),
+  );
+
   router.post(
     "/requirements",
     requireEducationTrainer,
@@ -449,8 +659,17 @@ export function registerEducationRoutes(router: Router) {
           code: payload.code?.trim() || null,
           description: payload.description?.trim() || null,
           category: payload.category?.trim() || null,
+          evaluationType: payload.evaluationType ?? "count",
           requiredCount: payload.requiredCount,
           unitLabel: payload.unitLabel?.trim() || "Anzahl",
+          targetLevel: payload.targetLevel ?? null,
+          timeScope: payload.timeScope?.trim() || null,
+          requiresUpload: payload.requiresUpload ?? false,
+          requiresTrainerSignoff: payload.requiresTrainerSignoff ?? true,
+          roleTrackingEnabled: payload.roleTrackingEnabled ?? false,
+          roleOptions: payload.roleOptions ?? [],
+          countingRule: payload.countingRule?.trim() || null,
+          fieldConfig: payload.fieldConfig ?? {},
           matchingHints:
             payload.matchingHints?.map((hint) => hint.trim()).filter(Boolean) ?? [],
           sourceReference: payload.sourceReference?.trim() || null,
@@ -484,11 +703,38 @@ export function registerEducationRoutes(router: Router) {
           ...(typeof payload.category !== "undefined"
             ? { category: payload.category?.trim() || null }
             : {}),
+          ...(typeof payload.evaluationType !== "undefined"
+            ? { evaluationType: payload.evaluationType }
+            : {}),
           ...(typeof payload.requiredCount === "number"
             ? { requiredCount: payload.requiredCount }
             : {}),
           ...(typeof payload.unitLabel !== "undefined"
             ? { unitLabel: payload.unitLabel?.trim() || "Anzahl" }
+            : {}),
+          ...(typeof payload.targetLevel !== "undefined"
+            ? { targetLevel: payload.targetLevel ?? null }
+            : {}),
+          ...(typeof payload.timeScope !== "undefined"
+            ? { timeScope: payload.timeScope?.trim() || null }
+            : {}),
+          ...(typeof payload.requiresUpload === "boolean"
+            ? { requiresUpload: payload.requiresUpload }
+            : {}),
+          ...(typeof payload.requiresTrainerSignoff === "boolean"
+            ? { requiresTrainerSignoff: payload.requiresTrainerSignoff }
+            : {}),
+          ...(typeof payload.roleTrackingEnabled === "boolean"
+            ? { roleTrackingEnabled: payload.roleTrackingEnabled }
+            : {}),
+          ...(typeof payload.roleOptions !== "undefined"
+            ? { roleOptions: payload.roleOptions ?? [] }
+            : {}),
+          ...(typeof payload.countingRule !== "undefined"
+            ? { countingRule: payload.countingRule?.trim() || null }
+            : {}),
+          ...(typeof payload.fieldConfig !== "undefined"
+            ? { fieldConfig: payload.fieldConfig ?? {} }
             : {}),
           ...(typeof payload.matchingHints !== "undefined"
             ? {
@@ -512,6 +758,21 @@ export function registerEducationRoutes(router: Router) {
         .returning();
       if (!updated) return notFound(res, "Anforderung");
       return ok(res, updated);
+    }),
+  );
+
+  router.delete(
+    "/requirements/:id",
+    requireEducationTrainer,
+    validateParams(idParamSchema),
+    asyncHandler(async (req, res) => {
+      const { id } = req.params as z.infer<typeof idParamSchema>;
+      const [deleted] = await db
+        .delete(educationRequirements)
+        .where(eq(educationRequirements.id, id))
+        .returning();
+      if (!deleted) return notFound(res, "Anforderung");
+      return ok(res, deleted);
     }),
   );
 
@@ -686,8 +947,13 @@ export function registerEducationRoutes(router: Router) {
           .set({
             completedCount: payload.completedCount,
             verifiedCount: payload.verifiedCount,
+            currentLevel: payload.currentLevel ?? null,
+            status: payload.status ?? "offen",
             notes: payload.notes?.trim() || null,
             lastEntryLabel: payload.lastEntryLabel?.trim() || null,
+            lastEntryRole: payload.lastEntryRole?.trim() || null,
+            lastEntryDate: payload.lastEntryDate ?? null,
+            metadata: payload.metadata ?? {},
             lastActivityAt: new Date(),
             updatedById: req.user?.employeeId,
             updatedAt: new Date(),
@@ -704,8 +970,13 @@ export function registerEducationRoutes(router: Router) {
           requirementId: payload.requirementId,
           completedCount: payload.completedCount,
           verifiedCount: payload.verifiedCount,
+          currentLevel: payload.currentLevel ?? null,
+          status: payload.status ?? "offen",
           notes: payload.notes?.trim() || null,
           lastEntryLabel: payload.lastEntryLabel?.trim() || null,
+          lastEntryRole: payload.lastEntryRole?.trim() || null,
+          lastEntryDate: payload.lastEntryDate ?? null,
+          metadata: payload.metadata ?? {},
           lastActivityAt: new Date(),
           updatedById: req.user?.employeeId,
         })
@@ -756,10 +1027,7 @@ export function registerEducationRoutes(router: Router) {
         program.modules.flatMap((module) => module.requirements),
       );
       const requirementIds = allRequirements.map((item) => item.id);
-      const totalRequired = allRequirements.reduce(
-        (sum, item) => sum + (item.requiredCount ?? 0),
-        0,
-      );
+      const totalRequirements = allRequirements.length;
 
       const trainees = traineeRows.filter((row) =>
         traineeRoleMatchers.some((matcher) =>
@@ -772,7 +1040,7 @@ export function registerEducationRoutes(router: Router) {
 
       const traineeIds = trainees.map((row) => row.id);
       const [summaryMap, progressRows] = await Promise.all([
-        readProgressSummary(traineeIds, requirementIds),
+        readProgressSummary(traineeIds, allRequirements),
         traineeIds.length && requirementIds.length
           ? db
               .select()
@@ -787,16 +1055,28 @@ export function registerEducationRoutes(router: Router) {
       ]);
 
       const traineePayload = trainees.map((trainee) => {
-        const summary = summaryMap.get(trainee.id) ?? { completed: 0, verified: 0 };
+        const summary = summaryMap.get(trainee.id) ?? {
+          completedParts: 0,
+          verifiedParts: 0,
+          targetParts: 0,
+          completedRequirements: 0,
+          verifiedRequirements: 0,
+        };
         return {
           ...trainee,
           summary: {
-            completed: summary.completed,
-            verified: summary.verified,
-            totalRequired,
+            completed: summary.completedRequirements,
+            verified: summary.verifiedRequirements,
+            totalRequired: totalRequirements,
+            completedParts: summary.completedParts,
+            verifiedParts: summary.verifiedParts,
+            targetParts: summary.targetParts,
             completionPercent:
-              totalRequired > 0
-                ? Math.min(100, Math.round((summary.verified / totalRequired) * 100))
+              summary.targetParts > 0
+                ? Math.min(
+                    100,
+                    Math.round((summary.verifiedParts / summary.targetParts) * 100),
+                  )
                 : 0,
           },
         };
@@ -1180,17 +1460,25 @@ export function registerEducationRoutes(router: Router) {
         .where(eq(educationEventRequests.employeeId, req.user.employeeId))
         .orderBy(desc(educationEventRequests.createdAt));
 
-      const completed = progress.reduce(
-        (sum, row) => sum + (row.completedCount ?? 0),
-        0,
-      );
-      const verified = progress.reduce(
-        (sum, row) => sum + (row.verifiedCount ?? 0),
-        0,
-      );
-      const totalRequired = requirements.reduce(
-        (sum, item) => sum + (item.requiredCount ?? 0),
-        0,
+      const summary = requirements.reduce(
+        (acc, requirement) => {
+          const progressRow =
+            progress.find((row) => row.requirementId === requirement.id) ?? null;
+          const rowSummary = getRequirementProgress(requirement, progressRow);
+          acc.completedParts += rowSummary.completedParts;
+          acc.verifiedParts += rowSummary.verifiedParts;
+          acc.targetParts += rowSummary.targetParts;
+          if (rowSummary.completedFraction >= 1) acc.completedRequirements += 1;
+          if (rowSummary.verifiedFraction >= 1) acc.verifiedRequirements += 1;
+          return acc;
+        },
+        {
+          completedParts: 0,
+          verifiedParts: 0,
+          targetParts: 0,
+          completedRequirements: 0,
+          verifiedRequirements: 0,
+        },
       );
 
       return ok(res, {
@@ -1200,12 +1488,18 @@ export function registerEducationRoutes(router: Router) {
         events,
         eventRequests,
         summary: {
-          completed,
-          verified,
-          totalRequired,
+          completed: summary.completedRequirements,
+          verified: summary.verifiedRequirements,
+          totalRequired: requirements.length,
+          completedParts: summary.completedParts,
+          verifiedParts: summary.verifiedParts,
+          targetParts: summary.targetParts,
           completionPercent:
-            totalRequired > 0
-              ? Math.min(100, Math.round((verified / totalRequired) * 100))
+            summary.targetParts > 0
+              ? Math.min(
+                  100,
+                  Math.round((summary.verifiedParts / summary.targetParts) * 100),
+                )
               : 0,
         },
       });

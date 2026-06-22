@@ -104,6 +104,8 @@ export function Header({
     isAdminActual ||
     user?.appRole === "Editor" ||
     user?.appRole === "Ausbilder";
+  const canSeeOnlineUsers =
+    (isTechnicalAdmin || user?.appRole === "Admin") && !viewAsUser;
   const serviceLineMeta = useMemo(
     () =>
       serviceLines.map((line) => ({
@@ -222,7 +224,7 @@ export function Header({
   }, [headerSearchResults, personPreviewById, personPreviewLoadingIds]);
 
   useEffect(() => {
-    if (!isAdminActual || viewAsUser) {
+    if (!canSeeOnlineUsers) {
       setOnlineUsers([]);
       return;
     }
@@ -246,7 +248,7 @@ export function Header({
       active = false;
       clearInterval(intervalId);
     };
-  }, [isAdminActual, viewAsUser]);
+  }, [canSeeOnlineUsers]);
 
   const loadPlanningData = async () => {
     try {
@@ -597,7 +599,7 @@ export function Header({
           )}
         </div>
 
-        {isAdminActual && !viewAsUser && (
+        {canSeeOnlineUsers && (
           <HoverCard>
             <HoverCardTrigger asChild>
               <Button
@@ -646,7 +648,7 @@ export function Header({
             <Select
               value={viewMode}
               onValueChange={(value) =>
-                setViewMode(value as "default" | "user" | "trainer")
+                setViewMode(value as "default" | "user" | "trainer" | "editor")
               }
             >
               <SelectTrigger className="h-8 w-36 border-white/20 bg-white/10 text-white">
@@ -655,6 +657,7 @@ export function Header({
               <SelectContent>
                 <SelectItem value="default">Standard</SelectItem>
                 <SelectItem value="user">User</SelectItem>
+                <SelectItem value="editor">Editor</SelectItem>
                 <SelectItem value="trainer">Ausbilder</SelectItem>
               </SelectContent>
             </Select>

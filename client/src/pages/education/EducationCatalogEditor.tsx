@@ -27,8 +27,13 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ExternalLink, Loader2, Pencil, Plus, Save, X } from "lucide-react";
+import { ExternalLink, Loader2, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import {
+  educationEvaluationTypeOptions,
+  educationProgressStatusOptions,
+  formatRequirementTarget,
+} from "@/lib/education";
 
 type EditableProgram = {
   title: string;
@@ -46,8 +51,29 @@ type EditableRequirement = {
   moduleId: string;
   title: string;
   category: string;
+  evaluationType:
+    | "count"
+    | "count_level"
+    | "procedure"
+    | "case_log"
+    | "time_period"
+    | "binary_signoff"
+    | "certificate"
+    | "course"
+    | "exam"
+    | "upload"
+    | "audit"
+    | "center_requirement";
   requiredCount: string;
   unitLabel: string;
+  targetLevel: string;
+  timeScope: string;
+  requiresUpload: boolean;
+  requiresTrainerSignoff: boolean;
+  roleTrackingEnabled: boolean;
+  roleOptions: string;
+  countingRule: string;
+  sourceReference: string;
   description: string;
   matchingHints: string;
 };
@@ -98,8 +124,26 @@ const buildRequirementDraft = (
   moduleId: String(moduleId),
   title: requirement.title ?? "",
   category: requirement.category ?? "",
+  evaluationType:
+    (requirement.evaluationType as EditableRequirement["evaluationType"]) ?? "count",
   requiredCount: String(requirement.requiredCount ?? 0),
   unitLabel: requirement.unitLabel ?? "Anzahl",
+  targetLevel:
+    typeof requirement.targetLevel === "number"
+      ? String(requirement.targetLevel)
+      : "",
+  timeScope: requirement.timeScope ?? "",
+  requiresUpload: Boolean(requirement.requiresUpload),
+  requiresTrainerSignoff:
+    typeof requirement.requiresTrainerSignoff === "boolean"
+      ? requirement.requiresTrainerSignoff
+      : true,
+  roleTrackingEnabled: Boolean(requirement.roleTrackingEnabled),
+  roleOptions: Array.isArray(requirement.roleOptions)
+    ? requirement.roleOptions.join("\n")
+    : "",
+  countingRule: requirement.countingRule ?? "",
+  sourceReference: requirement.sourceReference ?? "",
   description: requirement.description ?? "",
   matchingHints: (requirement.matchingHints ?? []).join("\n"),
 });
@@ -162,7 +206,20 @@ export default function EducationCatalogEditor() {
   const [requirementModuleId, setRequirementModuleId] = useState<string>("");
   const [requirementTitle, setRequirementTitle] = useState("");
   const [requirementCategory, setRequirementCategory] = useState("");
+  const [requirementEvaluationType, setRequirementEvaluationType] =
+    useState<EditableRequirement["evaluationType"]>("count");
   const [requirementCount, setRequirementCount] = useState("1");
+  const [requirementUnitLabel, setRequirementUnitLabel] = useState("Anzahl");
+  const [requirementTargetLevel, setRequirementTargetLevel] = useState("");
+  const [requirementTimeScope, setRequirementTimeScope] = useState("");
+  const [requirementRequiresUpload, setRequirementRequiresUpload] = useState(false);
+  const [requirementRequiresTrainerSignoff, setRequirementRequiresTrainerSignoff] =
+    useState(true);
+  const [requirementRoleTrackingEnabled, setRequirementRoleTrackingEnabled] =
+    useState(false);
+  const [requirementRoleOptions, setRequirementRoleOptions] = useState("");
+  const [requirementCountingRule, setRequirementCountingRule] = useState("");
+  const [requirementSourceReference, setRequirementSourceReference] = useState("");
   const [requirementHints, setRequirementHints] = useState("");
   const [eventTitle, setEventTitle] = useState("");
   const [eventType, setEventType] = useState("Fortbildung");
@@ -189,6 +246,7 @@ export default function EducationCatalogEditor() {
     useState<EditableRequirement | null>(null);
   const [eventDraft, setEventDraft] = useState<EditableEvent | null>(null);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [decidingRequestId, setDecidingRequestId] = useState<number | null>(null);
   const [requestDecisionNotes, setRequestDecisionNotes] = useState<
     Record<number, string>
@@ -310,15 +368,38 @@ export default function EducationCatalogEditor() {
         moduleId: Number(requirementModuleId),
         title: requirementTitle.trim(),
         category: requirementCategory.trim() || undefined,
+        evaluationType: requirementEvaluationType,
         requiredCount: Number(requirementCount) || 0,
+        unitLabel: requirementUnitLabel.trim() || "Anzahl",
+        targetLevel: requirementTargetLevel ? Number(requirementTargetLevel) : null,
+        timeScope: requirementTimeScope.trim() || undefined,
+        requiresUpload: requirementRequiresUpload,
+        requiresTrainerSignoff: requirementRequiresTrainerSignoff,
+        roleTrackingEnabled: requirementRoleTrackingEnabled,
+        roleOptions: requirementRoleOptions
+          .split("\n")
+          .map((value) => value.trim())
+          .filter(Boolean),
+        countingRule: requirementCountingRule.trim() || undefined,
         matchingHints: requirementHints
           .split("\n")
           .map((value) => value.trim())
           .filter(Boolean),
+        sourceReference: requirementSourceReference.trim() || undefined,
       });
       setRequirementTitle("");
       setRequirementCategory("");
+      setRequirementEvaluationType("count");
       setRequirementCount("1");
+      setRequirementUnitLabel("Anzahl");
+      setRequirementTargetLevel("");
+      setRequirementTimeScope("");
+      setRequirementRequiresUpload(false);
+      setRequirementRequiresTrainerSignoff(true);
+      setRequirementRoleTrackingEnabled(false);
+      setRequirementRoleOptions("");
+      setRequirementCountingRule("");
+      setRequirementSourceReference("");
       setRequirementHints("");
       await refresh();
       toast({ title: "Anforderung angelegt" });
@@ -451,12 +532,26 @@ export default function EducationCatalogEditor() {
         title: requirementDraft.title.trim(),
         category: requirementDraft.category.trim() || "",
         description: requirementDraft.description.trim() || "",
+        evaluationType: requirementDraft.evaluationType,
         requiredCount: Number(requirementDraft.requiredCount) || 0,
         unitLabel: requirementDraft.unitLabel.trim() || "Anzahl",
+        targetLevel: requirementDraft.targetLevel
+          ? Number(requirementDraft.targetLevel)
+          : null,
+        timeScope: requirementDraft.timeScope.trim() || "",
+        requiresUpload: requirementDraft.requiresUpload,
+        requiresTrainerSignoff: requirementDraft.requiresTrainerSignoff,
+        roleTrackingEnabled: requirementDraft.roleTrackingEnabled,
+        roleOptions: requirementDraft.roleOptions
+          .split("\n")
+          .map((value) => value.trim())
+          .filter(Boolean),
+        countingRule: requirementDraft.countingRule.trim() || "",
         matchingHints: requirementDraft.matchingHints
           .split("\n")
           .map((value) => value.trim())
           .filter(Boolean),
+        sourceReference: requirementDraft.sourceReference.trim() || "",
       });
       await refresh();
       cancelEdit();
@@ -490,6 +585,54 @@ export default function EducationCatalogEditor() {
       toast({ title: "Fortbildung aktualisiert" });
     } finally {
       setUpdatingId(null);
+    }
+  };
+
+  const deleteProgram = async (programId: number, title: string) => {
+    const confirmed = window.confirm(
+      `Programm "${title}" wirklich löschen? Zugehörige Module und Soll-Leistungen werden ebenfalls entfernt.`,
+    );
+    if (!confirmed) return;
+    setDeletingId(programId);
+    try {
+      await educationApi.deleteProgram(programId);
+      await refresh();
+      cancelEdit();
+      toast({ title: "Programm gelöscht" });
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const deleteModule = async (moduleId: number, title: string) => {
+    const confirmed = window.confirm(
+      `Modul "${title}" wirklich löschen? Zugehörige Soll-Leistungen werden ebenfalls entfernt.`,
+    );
+    if (!confirmed) return;
+    setDeletingId(moduleId);
+    try {
+      await educationApi.deleteModule(moduleId);
+      await refresh();
+      cancelEdit();
+      toast({ title: "Modul gelöscht" });
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const deleteRequirement = async (requirementId: number, title: string) => {
+    const confirmed = window.confirm(
+      `Soll-Leistung "${title}" wirklich löschen?`,
+    );
+    if (!confirmed) return;
+    setDeletingId(requirementId);
+    try {
+      await educationApi.deleteRequirement(requirementId);
+      await refresh();
+      cancelEdit();
+      toast({ title: "Soll-Leistung gelöscht" });
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -536,6 +679,117 @@ export default function EducationCatalogEditor() {
       setSavingProfile(false);
     }
   };
+
+  const renderRequirementFields = (
+    draft: EditableRequirement,
+    onChange: (patch: Partial<EditableRequirement>) => void,
+  ) => (
+    <div className="space-y-3">
+      <Select
+        value={draft.evaluationType}
+        onValueChange={(value) =>
+          onChange({
+            evaluationType: value as EditableRequirement["evaluationType"],
+          })
+        }
+      >
+        <SelectTrigger>
+          <SelectValue placeholder="Bewertungstyp waehlen" />
+        </SelectTrigger>
+        <SelectContent>
+          {educationEvaluationTypeOptions.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <div className="grid gap-3 md:grid-cols-2">
+        <Input
+          type="number"
+          min="0"
+          value={draft.requiredCount}
+          onChange={(event) => onChange({ requiredCount: event.target.value })}
+          placeholder="Zielwert"
+        />
+        <Input
+          value={draft.unitLabel}
+          onChange={(event) => onChange({ unitLabel: event.target.value })}
+          placeholder="Einheit"
+        />
+      </div>
+      {(draft.evaluationType === "count_level" ||
+        draft.evaluationType === "procedure" ||
+        draft.evaluationType === "case_log") && (
+        <Input
+          type="number"
+          min="0"
+          max="5"
+          value={draft.targetLevel}
+          onChange={(event) => onChange({ targetLevel: event.target.value })}
+          placeholder="Ziel-Kompetenzstufe 0-5"
+        />
+      )}
+      {(draft.evaluationType === "time_period" ||
+        draft.evaluationType === "course" ||
+        draft.evaluationType === "certificate" ||
+        draft.evaluationType === "exam") && (
+        <Input
+          value={draft.timeScope}
+          onChange={(event) => onChange({ timeScope: event.target.value })}
+          placeholder="Zeitraumbezug, z. B. gesamt / jährlich / 3 Module à 9 Monate"
+        />
+      )}
+      {(draft.evaluationType === "procedure" || draft.roleTrackingEnabled) && (
+        <>
+          <Textarea
+            value={draft.roleOptions}
+            onChange={(event) => onChange({ roleOptions: event.target.value })}
+            placeholder="Rollenoptionen, je Zeile eine, z. B. 1. Assistenz"
+          />
+          <Textarea
+            value={draft.countingRule}
+            onChange={(event) => onChange({ countingRule: event.target.value })}
+            placeholder="Zählregel, z. B. Assistenz zählt mit 20 %"
+          />
+        </>
+      )}
+      <Input
+        value={draft.sourceReference}
+        onChange={(event) => onChange({ sourceReference: event.target.value })}
+        placeholder="Quelle / Referenz"
+      />
+      <div className="grid gap-3 md:grid-cols-3">
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox
+            checked={draft.requiresUpload}
+            onCheckedChange={(checked) =>
+              onChange({ requiresUpload: checked === true })
+            }
+          />
+          Nachweisdatei erforderlich
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox
+            checked={draft.requiresTrainerSignoff}
+            onCheckedChange={(checked) =>
+              onChange({ requiresTrainerSignoff: checked !== false })
+            }
+          />
+          Freigabe durch Ausbilder
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox
+            checked={draft.roleTrackingEnabled}
+            onCheckedChange={(checked) =>
+              onChange({ roleTrackingEnabled: checked === true })
+            }
+          />
+          Rollen erfassen
+        </label>
+      </div>
+    </div>
+  );
 
   if (isLoading) {
     return (
@@ -1285,13 +1539,65 @@ export default function EducationCatalogEditor() {
                   value={requirementCategory}
                   onChange={(event) => setRequirementCategory(event.target.value)}
                 />
-                <Input
-                  type="number"
-                  min="0"
-                  placeholder="Anzahl"
-                  value={requirementCount}
-                  onChange={(event) => setRequirementCount(event.target.value)}
-                />
+                {renderRequirementFields(
+                  {
+                    moduleId: requirementModuleId,
+                    title: requirementTitle,
+                    category: requirementCategory,
+                    evaluationType: requirementEvaluationType,
+                    requiredCount: requirementCount,
+                    unitLabel: requirementUnitLabel,
+                    targetLevel: requirementTargetLevel,
+                    timeScope: requirementTimeScope,
+                    requiresUpload: requirementRequiresUpload,
+                    requiresTrainerSignoff: requirementRequiresTrainerSignoff,
+                    roleTrackingEnabled: requirementRoleTrackingEnabled,
+                    roleOptions: requirementRoleOptions,
+                    countingRule: requirementCountingRule,
+                    sourceReference: requirementSourceReference,
+                    description: "",
+                    matchingHints: requirementHints,
+                  },
+                  (patch) => {
+                    if (typeof patch.evaluationType !== "undefined") {
+                      setRequirementEvaluationType(patch.evaluationType);
+                    }
+                    if (typeof patch.requiredCount !== "undefined") {
+                      setRequirementCount(patch.requiredCount);
+                    }
+                    if (typeof patch.unitLabel !== "undefined") {
+                      setRequirementUnitLabel(patch.unitLabel);
+                    }
+                    if (typeof patch.targetLevel !== "undefined") {
+                      setRequirementTargetLevel(patch.targetLevel);
+                    }
+                    if (typeof patch.timeScope !== "undefined") {
+                      setRequirementTimeScope(patch.timeScope);
+                    }
+                    if (typeof patch.requiresUpload !== "undefined") {
+                      setRequirementRequiresUpload(patch.requiresUpload);
+                    }
+                    if (typeof patch.requiresTrainerSignoff !== "undefined") {
+                      setRequirementRequiresTrainerSignoff(
+                        patch.requiresTrainerSignoff,
+                      );
+                    }
+                    if (typeof patch.roleTrackingEnabled !== "undefined") {
+                      setRequirementRoleTrackingEnabled(
+                        patch.roleTrackingEnabled,
+                      );
+                    }
+                    if (typeof patch.roleOptions !== "undefined") {
+                      setRequirementRoleOptions(patch.roleOptions);
+                    }
+                    if (typeof patch.countingRule !== "undefined") {
+                      setRequirementCountingRule(patch.countingRule);
+                    }
+                    if (typeof patch.sourceReference !== "undefined") {
+                      setRequirementSourceReference(patch.sourceReference);
+                    }
+                  },
+                )}
                 <Textarea
                   placeholder="Alternative Bezeichnungen, je Zeile eine"
                   value={requirementHints}
@@ -1384,6 +1690,18 @@ export default function EducationCatalogEditor() {
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void deleteProgram(program.id, program.title)}
+                          disabled={deletingId === program.id}
+                        >
+                          {deletingId === program.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </Button>
                       </>
                     )}
                   </div>
@@ -1465,13 +1783,27 @@ export default function EducationCatalogEditor() {
                             </Button>
                           </>
                         ) : (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => startModuleEdit(program, module)}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => startModuleEdit(program, module)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => void deleteModule(module.id, module.title)}
+                              disabled={deletingId === module.id}
+                            >
+                              {deletingId === module.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </>
                         )}
                       </div>
                     </div>
@@ -1532,36 +1864,13 @@ export default function EducationCatalogEditor() {
                                     )
                                   }
                                 />
-                                <div className="grid gap-3 md:grid-cols-2">
-                                  <Input
-                                    type="number"
-                                    min="0"
-                                    value={requirementDraft.requiredCount}
-                                    onChange={(event) =>
-                                      setRequirementDraft((current) =>
-                                        current
-                                          ? {
-                                              ...current,
-                                              requiredCount: event.target.value,
-                                            }
-                                          : current,
-                                      )
-                                    }
-                                  />
-                                  <Input
-                                    value={requirementDraft.unitLabel}
-                                    onChange={(event) =>
-                                      setRequirementDraft((current) =>
-                                        current
-                                          ? {
-                                              ...current,
-                                              unitLabel: event.target.value,
-                                            }
-                                          : current,
-                                      )
-                                    }
-                                  />
-                                </div>
+                                {renderRequirementFields(
+                                  requirementDraft,
+                                  (patch) =>
+                                    setRequirementDraft((current) =>
+                                      current ? { ...current, ...patch } : current,
+                                    ),
+                                )}
                                 <Textarea
                                   value={requirementDraft.description}
                                   onChange={(event) =>
@@ -1593,16 +1902,23 @@ export default function EducationCatalogEditor() {
                               </div>
                             ) : (
                               <div>
+                                {(() => {
+                                  const target = formatRequirementTarget(requirement);
+                                  return (
+                                    <>
                                 <div className="font-medium">{requirement.title}</div>
                                 <div className="text-sm text-muted-foreground">
-                                  {(requirement.category || "Leistung")} · Soll{" "}
-                                  {requirement.requiredCount} {requirement.unitLabel}
+                                  {(requirement.category || "Leistung")} ·{" "}
+                                  {target.typeLabel} · {target.targetLabel}
                                 </div>
                                 {requirement.description && (
                                   <div className="mt-1 text-sm text-muted-foreground">
                                     {requirement.description}
                                   </div>
                                 )}
+                                    </>
+                                  );
+                                })()}
                               </div>
                             )}
                             <div className="flex items-center gap-2">
@@ -1630,15 +1946,34 @@ export default function EducationCatalogEditor() {
                                   </Button>
                                 </>
                               ) : (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() =>
-                                    startRequirementEdit(module.id, requirement)
-                                  }
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() =>
+                                      startRequirementEdit(module.id, requirement)
+                                    }
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() =>
+                                      void deleteRequirement(
+                                        requirement.id,
+                                        requirement.title,
+                                      )
+                                    }
+                                    disabled={deletingId === requirement.id}
+                                  >
+                                    {deletingId === requirement.id ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <Trash2 className="h-4 w-4" />
+                                    )}
+                                  </Button>
+                                </>
                               )}
                             </div>
                           </div>
@@ -1650,6 +1985,30 @@ export default function EducationCatalogEditor() {
                                     {hint}
                                   </Badge>
                                 ))}
+                              </div>
+                            )}
+                          {editingRequirementId !== requirement.id &&
+                            (requirement.roleTrackingEnabled ||
+                              requirement.requiresUpload ||
+                              requirement.countingRule ||
+                              requirement.sourceReference) && (
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {requirement.roleTrackingEnabled ? (
+                                  <Badge variant="outline">Rollenpflicht</Badge>
+                                ) : null}
+                                {requirement.requiresUpload ? (
+                                  <Badge variant="outline">Nachweisdatei</Badge>
+                                ) : null}
+                                {requirement.countingRule ? (
+                                  <Badge variant="outline">
+                                    {requirement.countingRule}
+                                  </Badge>
+                                ) : null}
+                                {requirement.sourceReference ? (
+                                  <Badge variant="outline">
+                                    Quelle hinterlegt
+                                  </Badge>
+                                ) : null}
                               </div>
                             )}
                         </div>

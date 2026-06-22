@@ -14,6 +14,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Loader2, Upload, ExternalLink } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import {
+  formatRequirementTarget,
+  getRequirementProgressSummary,
+} from "@/lib/education";
 
 export default function EducationOverview() {
   const queryClient = useQueryClient();
@@ -83,7 +87,7 @@ export default function EducationOverview() {
             <div className="grid gap-4 md:grid-cols-4">
               <div className="rounded-xl bg-secondary/40 p-4">
                 <div className="text-xs uppercase text-muted-foreground">
-                  Erfasst
+                  Module erfüllt
                 </div>
                 <div className="mt-2 text-2xl font-semibold">
                   {data?.summary.completed ?? 0}
@@ -99,7 +103,7 @@ export default function EducationOverview() {
               </div>
               <div className="rounded-xl bg-secondary/40 p-4">
                 <div className="text-xs uppercase text-muted-foreground">
-                  Soll gesamt
+                  Soll-Leistungen
                 </div>
                 <div className="mt-2 text-2xl font-semibold">
                   {data?.summary.totalRequired ?? 0}
@@ -245,6 +249,11 @@ export default function EducationOverview() {
                     <div className="space-y-2">
                       {module.requirements.map((requirement) => {
                         const progress = progressByRequirement.get(requirement.id);
+                        const target = formatRequirementTarget(requirement);
+                        const progressSummary = getRequirementProgressSummary(
+                          requirement,
+                          progress,
+                        );
                         return (
                           <div
                             key={requirement.id}
@@ -253,16 +262,16 @@ export default function EducationOverview() {
                             <div>
                               <div className="font-medium">{requirement.title}</div>
                               <div className="text-sm text-muted-foreground">
-                                {(requirement.category || "Leistung")} · Soll{" "}
-                                {requirement.requiredCount} {requirement.unitLabel}
+                                {(requirement.category || "Leistung")} ·{" "}
+                                {target.typeLabel} · {target.targetLabel}
                               </div>
                             </div>
                             <div className="flex gap-2 text-sm">
                               <Badge variant="secondary">
-                                Erfasst {progress?.completedCount ?? 0}
+                                {progressSummary.detailLabel}
                               </Badge>
                               <Badge>
-                                Bestaetigt {progress?.verifiedCount ?? 0}
+                                {progressSummary.percent}%
                               </Badge>
                             </div>
                           </div>

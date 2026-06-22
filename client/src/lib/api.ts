@@ -210,6 +210,9 @@ export type EducationTrainerTrainee = EducationTrainerPerson & {
     completed: number;
     verified: number;
     totalRequired: number;
+    completedParts: number;
+    verifiedParts: number;
+    targetParts: number;
     completionPercent: number;
   };
 };
@@ -258,6 +261,9 @@ export type EducationSelfOverview = {
     completed: number;
     verified: number;
     totalRequired: number;
+    completedParts: number;
+    verifiedParts: number;
+    targetParts: number;
     completionPercent: number;
   };
 };
@@ -1201,6 +1207,13 @@ export const educationApi = {
     return handleResponse<EducationProgram>(response);
   },
 
+  deleteProgram: async (id: number): Promise<EducationProgram> => {
+    const response = await apiFetch(`${API_BASE}/education/programs/${id}`, {
+      method: "DELETE",
+    });
+    return handleResponse<EducationProgram>(response);
+  },
+
   createModule: async (payload: {
     programId: number;
     title: string;
@@ -1234,14 +1247,42 @@ export const educationApi = {
     return handleResponse<EducationModule>(response);
   },
 
+  deleteModule: async (id: number): Promise<EducationModule> => {
+    const response = await apiFetch(`${API_BASE}/education/modules/${id}`, {
+      method: "DELETE",
+    });
+    return handleResponse<EducationModule>(response);
+  },
+
   createRequirement: async (payload: {
     moduleId: number;
     title: string;
     code?: string;
     description?: string;
     category?: string;
+    evaluationType?:
+      | "count"
+      | "count_level"
+      | "procedure"
+      | "case_log"
+      | "time_period"
+      | "binary_signoff"
+      | "certificate"
+      | "course"
+      | "exam"
+      | "upload"
+      | "audit"
+      | "center_requirement";
     requiredCount: number;
     unitLabel?: string;
+    targetLevel?: number | null;
+    timeScope?: string;
+    requiresUpload?: boolean;
+    requiresTrainerSignoff?: boolean;
+    roleTrackingEnabled?: boolean;
+    roleOptions?: string[];
+    countingRule?: string;
+    fieldConfig?: Record<string, any>;
     matchingHints?: string[];
     sourceReference?: string;
     sortOrder?: number;
@@ -1262,8 +1303,29 @@ export const educationApi = {
       code: string;
       description: string;
       category: string;
+      evaluationType:
+        | "count"
+        | "count_level"
+        | "procedure"
+        | "case_log"
+        | "time_period"
+        | "binary_signoff"
+        | "certificate"
+        | "course"
+        | "exam"
+        | "upload"
+        | "audit"
+        | "center_requirement";
       requiredCount: number;
       unitLabel: string;
+      targetLevel: number | null;
+      timeScope: string;
+      requiresUpload: boolean;
+      requiresTrainerSignoff: boolean;
+      roleTrackingEnabled: boolean;
+      roleOptions: string[];
+      countingRule: string;
+      fieldConfig: Record<string, any>;
       matchingHints: string[];
       sourceReference: string;
       sortOrder: number;
@@ -1277,13 +1339,25 @@ export const educationApi = {
     return handleResponse<EducationRequirement>(response);
   },
 
+  deleteRequirement: async (id: number): Promise<EducationRequirement> => {
+    const response = await apiFetch(`${API_BASE}/education/requirements/${id}`, {
+      method: "DELETE",
+    });
+    return handleResponse<EducationRequirement>(response);
+  },
+
   upsertProgress: async (payload: {
     employeeId: number;
     requirementId: number;
     completedCount: number;
     verifiedCount: number;
+    currentLevel?: number | null;
+    status?: "offen" | "begonnen" | "ziel_erreicht" | "bestaetigt" | "abgelaufen";
     notes?: string;
     lastEntryLabel?: string;
+    lastEntryRole?: string;
+    lastEntryDate?: string;
+    metadata?: Record<string, any>;
   }): Promise<EducationProgress> => {
     const response = await apiFetch(`${API_BASE}/education/progress`, {
       method: "POST",
