@@ -65,12 +65,23 @@ export default function PrivacyPolicy() {
 
         <section className={sectionClassName}>
           <h2 className="text-2xl font-semibold">5. Speicherung und Sicherheit</h2>
-          <p className="text-sm leading-6 text-slate-700">
-            Zugriff auf MyCliniQ erhalten ausschliesslich berechtigte Nutzer:innen. Die Anwendung
-            verwendet technische und organisatorische Massnahmen zum Schutz vor unbefugtem Zugriff,
-            Verlust und Manipulation. Daten werden nur so lange gespeichert, wie dies fuer Betrieb,
-            Nachvollziehbarkeit, Support oder gesetzliche Pflichten erforderlich ist.
-          </p>
+          <div className="space-y-2 text-sm leading-6 text-slate-700">
+            <p>
+              Zugriff auf MyCliniQ erhalten ausschliesslich berechtigte Nutzer:innen. Die
+              Anwendung verwendet technische und organisatorische Massnahmen zum Schutz vor
+              unbefugtem Zugriff, Verlust und Manipulation. Daten werden nur so lange
+              gespeichert, wie dies fuer Betrieb, Nachvollziehbarkeit, Support oder
+              gesetzliche Pflichten erforderlich ist.
+            </p>
+            <p>
+              Persoenliche Zugangsdaten duerfen nicht an Dritte weitergegeben werden. Jede
+              Nutzerin und jeder Nutzer ist fuer die vertrauliche Verwahrung der eigenen
+              Zugangsdaten verantwortlich. Bei missbraeuchlicher Weitergabe oder
+              unzureichender Sicherung persoenlicher Zugangsdaten koennen Nutzer:innen im
+              Rahmen der anwendbaren internen und gesetzlichen Vorschriften fuer daraus
+              entstehende Schaeden oder Folgen verantwortlich gemacht werden.
+            </p>
+          </div>
         </section>
 
         <section className={sectionClassName}>
