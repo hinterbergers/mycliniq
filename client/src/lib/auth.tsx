@@ -263,17 +263,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const canManageEducationCatalog = useMemo(
-    () => isSuperuser || isTrainerRole || isEditorRole || can("training.edit"),
-    [isSuperuser, isTrainerRole, isEditorRole, can],
+    () => isSuperuser || isTrainerRole,
+    [isSuperuser, isTrainerRole],
   );
 
   const canViewTrainerCockpit = useMemo(
     () =>
       isSuperuser ||
-      isTrainerRole ||
-      can("training.supervise") ||
-      can("training.edit"),
-    [isSuperuser, isTrainerRole, can],
+      isTrainerRole,
+    [isSuperuser, isTrainerRole],
   );
 
   const canViewEducation = useMemo(

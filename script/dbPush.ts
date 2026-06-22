@@ -166,6 +166,7 @@ CREATE TABLE IF NOT EXISTS education_modules (
   title text NOT NULL,
   slug text NOT NULL,
   description text,
+  target_role text,
   sort_order integer NOT NULL DEFAULT 0,
   is_active boolean NOT NULL DEFAULT true,
   created_at timestamp NOT NULL DEFAULT now(),
@@ -177,6 +178,9 @@ CREATE INDEX IF NOT EXISTS education_modules_program_id_idx
 
 CREATE UNIQUE INDEX IF NOT EXISTS education_modules_program_slug_idx
   ON education_modules (program_id, slug);
+
+ALTER TABLE education_modules
+ADD COLUMN IF NOT EXISTS target_role text;
 
 CREATE TABLE IF NOT EXISTS education_requirements (
   id serial PRIMARY KEY,

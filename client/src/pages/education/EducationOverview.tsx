@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/Layout";
 import { educationApi } from "@/lib/api";
@@ -12,7 +12,13 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Upload, ExternalLink } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  Loader2,
+  Upload,
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   formatRequirementTarget,
@@ -27,6 +33,50 @@ export default function EducationOverview() {
     queryFn: () => educationApi.getMyOverview(),
   });
   const [requestingEventId, setRequestingEventId] = useState<number | null>(null);
+  const [collapsedPrograms, setCollapsedPrograms] = useState<Record<number, boolean>>(
+    {},
+  );
+  const [collapsedModules, setCollapsedModules] = useState<Record<number, boolean>>(
+    {},
+  );
+
+  const normalizeRole = (value?: string | null) =>
+    (value ?? "")
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim();
+
+  const getRoleRank = (value?: string | null) => {
+    const role = normalizeRole(value);
+    if (!role) return 0;
+    if (role.includes("primar")) return 7;
+    if (role.includes("ausbildungsober") || role.includes("funktionsober")) return 6;
+    if (role.includes("1. ober") || role.includes("oberarzt") || role.includes("oberarztin"))
+      return 6;
+    if (role.includes("facharzt") || role.includes("facharztin")) return 5;
+    if (role.includes("assistenz")) return 4;
+    if (role.includes("turnus")) return 3;
+    if (role.includes("student") || role.includes("kpj") || role.includes("famul"))
+      return 2;
+    if (role.includes("sekret")) return 1;
+    return 0;
+  };
+
+  const parseTargetRoleRanks = (value?: string | null) =>
+    (value ?? "")
+      .split(/[,/]| und /i)
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .map((entry) => getRoleRank(entry))
+      .filter((rank) => rank > 0);
+
+  const requiresAdvancedRole = (...values: Array<string | null | undefined>) => {
+    const haystack = values.map((value) => normalizeRole(value)).join(" ");
+    return /(facharztvoraus|fa voraus|nach facharzt|nur facharzt|nur facharztin|ogum ii)/i.test(
+      haystack,
+    );
+  };
 
   const progressByRequirement = useMemo(() => {
     const map = new Map<
@@ -50,6 +100,148 @@ export default function EducationOverview() {
     });
     return map;
   }, [data?.eventRequests]);
+
+  const canAccessByRole = (
+    currentRoleRank: number,
+    ...values: Array<string | null | undefined>
+  ) => {
+    const targetRanks = parseTargetRoleRanks(values.join(" "));
+    const minimumRequiredRank =
+      targetRanks.length > 0 ? Math.min(...targetRanks) : 0;
+
+    if (minimumRequiredRank > 0 && currentRoleRank < minimumRequiredRank) {
+      return false;
+    }
+
+    if (
+      requiresAdvancedRole(...values) &&
+      currentRoleRank < getRoleRank("Facharzt")
+    ) {
+      return false;
+    }
+
+    return true;
+  };
+
+  const visibleCatalog = useMemo(() => {
+    const currentRoleRank = getRoleRank(data?.employeeRole);
+
+    return (data?.catalog ?? [])
+      .map((program) => ({
+        ...program,
+        modules: program.modules.filter((module) =>
+          canAccessByRole(
+            currentRoleRank,
+            module.targetRole,
+            program.targetRole,
+            module.title,
+            module.description,
+          ),
+        ),
+      }))
+      .filter((program) => {
+        const programAccessible = canAccessByRole(
+          currentRoleRank,
+          program.targetRole,
+          program.title,
+          program.description,
+        );
+        return programAccessible || program.modules.length > 0;
+      });
+  }, [data?.catalog, data?.employeeRole]);
+
+  const visibleEvents = useMemo(() => {
+    const currentRoleRank = getRoleRank(data?.employeeRole);
+
+    return (data?.events ?? []).filter((event) => {
+      return canAccessByRole(
+        currentRoleRank,
+        event.targetRole,
+        event.title,
+        event.description,
+      );
+    });
+  }, [data?.employeeRole, data?.events]);
+
+  const visibleSummary = useMemo(() => {
+    const requirements = visibleCatalog.flatMap((program) =>
+      program.modules.flatMap((module) => module.requirements),
+    );
+
+    const summary = requirements.reduce(
+      (acc, requirement) => {
+        const progress = progressByRequirement.get(requirement.id);
+        const rowSummary = getRequirementProgressSummary(requirement, progress);
+        const requiredCount = Math.max(0, Number(requirement.requiredCount ?? 0));
+        const verifiedCount = Math.max(0, Number(progress?.verifiedCount ?? 0));
+        const targetLevel =
+          typeof requirement.targetLevel === "number" ? requirement.targetLevel : null;
+        const currentLevel =
+          typeof progress?.currentLevel === "number" ? progress.currentLevel : null;
+        const statusComplete =
+          progress?.status === "bestaetigt" || progress?.status === "ziel_erreicht";
+        const countComplete = requiredCount > 0 ? verifiedCount >= requiredCount : false;
+        const levelComplete =
+          targetLevel !== null && targetLevel > 0
+            ? (currentLevel ?? 0) >= targetLevel
+            : false;
+        const requirementComplete =
+          requiredCount > 0 || (targetLevel !== null && targetLevel > 0)
+            ? countComplete || levelComplete
+            : statusComplete;
+
+        acc.totalRequired += 1;
+        acc.completed += requirementComplete ? 1 : 0;
+        acc.verified += requirementComplete ? 1 : 0;
+        acc.percentParts += rowSummary.percent;
+        return acc;
+      },
+      {
+        completed: 0,
+        verified: 0,
+        totalRequired: 0,
+        percentParts: 0,
+      },
+    );
+
+    return {
+      completed: summary.completed,
+      verified: summary.verified,
+      totalRequired: summary.totalRequired,
+      completionPercent:
+        summary.totalRequired > 0
+          ? Math.round(summary.percentParts / summary.totalRequired)
+          : 0,
+    };
+  }, [progressByRequirement, visibleCatalog]);
+
+  useEffect(() => {
+    setCollapsedPrograms((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const program of visibleCatalog) {
+        if (typeof next[program.id] === "undefined") {
+          next[program.id] = false;
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+
+    setCollapsedModules((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const program of visibleCatalog) {
+        for (const module of program.modules) {
+          if (typeof next[module.id] === "undefined") {
+            next[module.id] = true;
+            changed = true;
+          }
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [visibleCatalog]);
 
   const handleRequestInterest = async (eventId: number) => {
     setRequestingEventId(eventId);
@@ -90,7 +282,7 @@ export default function EducationOverview() {
                   Module erfüllt
                 </div>
                 <div className="mt-2 text-2xl font-semibold">
-                  {data?.summary.completed ?? 0}
+                  {visibleSummary.completed}
                 </div>
               </div>
               <div className="rounded-xl bg-secondary/40 p-4">
@@ -98,7 +290,7 @@ export default function EducationOverview() {
                   Bestaetigt
                 </div>
                 <div className="mt-2 text-2xl font-semibold">
-                  {data?.summary.verified ?? 0}
+                  {visibleSummary.verified}
                 </div>
               </div>
               <div className="rounded-xl bg-secondary/40 p-4">
@@ -106,7 +298,7 @@ export default function EducationOverview() {
                   Soll-Leistungen
                 </div>
                 <div className="mt-2 text-2xl font-semibold">
-                  {data?.summary.totalRequired ?? 0}
+                  {visibleSummary.totalRequired}
                 </div>
               </div>
               <div className="rounded-xl bg-primary/10 p-4">
@@ -114,11 +306,11 @@ export default function EducationOverview() {
                   Fortschritt
                 </div>
                 <div className="mt-2 text-2xl font-semibold">
-                  {data?.summary.completionPercent ?? 0}%
+                  {visibleSummary.completionPercent}%
                 </div>
               </div>
             </div>
-            <Progress value={data?.summary.completionPercent ?? 0} />
+            <Progress value={visibleSummary.completionPercent} />
           </CardContent>
         </Card>
 
@@ -131,7 +323,7 @@ export default function EducationOverview() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {(data?.events ?? []).map((event) => {
+            {visibleEvents.map((event) => {
               const request = requestByEventId.get(event.id);
               return (
                 <div
@@ -181,7 +373,7 @@ export default function EducationOverview() {
                 </div>
               );
             })}
-            {(data?.events ?? []).length === 0 && (
+            {visibleEvents.length === 0 && (
               <p className="text-sm text-muted-foreground">
                 Aktuell sind keine Fortbildungen oder Kongresse ausgeschrieben.
               </p>
@@ -229,23 +421,59 @@ export default function EducationOverview() {
         </Card>
 
         <div className="space-y-4">
-          {(data?.catalog ?? []).map((program) => (
+          {visibleCatalog.map((program) => (
             <Card key={program.id}>
               <CardHeader>
-                <CardTitle>{program.title}</CardTitle>
-                <CardDescription>
-                  {program.description || "Noch keine Beschreibung hinterlegt."}
-                </CardDescription>
+                <button
+                  type="button"
+                  className="flex min-w-0 items-start gap-3 text-left"
+                  onClick={() =>
+                    setCollapsedPrograms((current) => ({
+                      ...current,
+                      [program.id]: !current[program.id],
+                    }))
+                  }
+                >
+                  {collapsedPrograms[program.id] ? (
+                    <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+                  ) : (
+                    <ChevronDown className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+                  )}
+                  <div>
+                    <CardTitle>{program.title}</CardTitle>
+                    <CardDescription>
+                      {program.description || "Noch keine Beschreibung hinterlegt."}
+                    </CardDescription>
+                  </div>
+                </button>
               </CardHeader>
+              {!collapsedPrograms[program.id] && (
               <CardContent className="space-y-4">
                 {program.modules.map((module) => (
                   <div key={module.id} className="rounded-xl border p-4">
-                    <div className="mb-3">
-                      <div className="font-semibold">{module.title}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {module.description || "Noch keine Modulbeschreibung."}
+                    <button
+                      type="button"
+                      className="mb-3 flex min-w-0 items-start gap-3 text-left"
+                      onClick={() =>
+                        setCollapsedModules((current) => ({
+                          ...current,
+                          [module.id]: !current[module.id],
+                        }))
+                      }
+                    >
+                      {collapsedModules[module.id] ? (
+                        <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+                      ) : (
+                        <ChevronDown className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+                      )}
+                      <div>
+                        <div className="font-semibold">{module.title}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {module.description || "Noch keine Modulbeschreibung."}
+                        </div>
                       </div>
-                    </div>
+                    </button>
+                    {!collapsedModules[module.id] && (
                     <div className="space-y-2">
                       {module.requirements.map((requirement) => {
                         const progress = progressByRequirement.get(requirement.id);
@@ -283,6 +511,7 @@ export default function EducationOverview() {
                         </p>
                       )}
                     </div>
+                    )}
                   </div>
                 ))}
                 {program.modules.length === 0 && (
@@ -291,6 +520,7 @@ export default function EducationOverview() {
                   </p>
                 )}
               </CardContent>
+              )}
             </Card>
           ))}
         </div>

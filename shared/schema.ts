@@ -427,6 +427,7 @@ export const educationModules = pgTable(
     title: text("title").notNull(),
     slug: text("slug").notNull(),
     description: text("description"),
+    targetRole: text("target_role"),
     sortOrder: integer("sort_order").notNull().default(0),
     isActive: boolean("is_active").notNull().default(true),
     createdAt: timestamp("created_at").defaultNow().notNull(),

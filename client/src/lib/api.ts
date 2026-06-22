@@ -252,6 +252,7 @@ export type EducationEventRequestOverview = EducationEventRequest & {
 };
 
 export type EducationSelfOverview = {
+  employeeRole: string | null;
   catalog: EducationCatalogProgram[];
   progress: EducationProgress[];
   uploads: EducationImportUpload[];
@@ -1219,6 +1220,7 @@ export const educationApi = {
     title: string;
     slug?: string;
     description?: string;
+    targetRole?: string;
     sortOrder?: number;
     isActive?: boolean;
   }): Promise<EducationModule> => {
@@ -1236,6 +1238,7 @@ export const educationApi = {
       title: string;
       slug: string;
       description: string;
+      targetRole: string;
       sortOrder: number;
       isActive: boolean;
     }>,

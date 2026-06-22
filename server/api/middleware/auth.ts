@@ -586,11 +586,7 @@ export function requireTrainingEnabled(
 export function isEducationTrainer(req: Request): boolean {
   if (!req.user) return false;
   if (req.user.isAdmin || req.user.systemRole !== "employee") return true;
-  return (
-    req.user.appRole === "Ausbilder" ||
-    req.user.capabilities.includes("training.edit") ||
-    req.user.capabilities.includes("training.supervise")
-  );
+  return req.user.appRole === "Ausbilder";
 }
 
 export function requireEducationTrainer(

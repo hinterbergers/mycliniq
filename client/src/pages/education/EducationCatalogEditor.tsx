@@ -55,6 +55,7 @@ type EditableModule = {
   programId: string;
   title: string;
   description: string;
+  targetRole: string;
 };
 
 type EditableRequirement = {
@@ -110,6 +111,26 @@ type EditableProfile = {
   notes: string;
 };
 
+const MEDICAL_ROLE_OPTIONS = [
+  "Turnusarzt",
+  "Assistenzarzt",
+  "Facharzt",
+  "Oberarzt",
+  "Funktionsoberarzt",
+  "Ausbildungsoberarzt",
+  "1. Oberarzt",
+  "Primararzt",
+] as const;
+
+const parseRoleSelection = (value?: string | null) =>
+  (value ?? "")
+    .split(/[,/]| und /i)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+const serializeRoleSelection = (roles: string[]) =>
+  roles.filter(Boolean).join(" / ");
+
 const buildProgramDraft = (
   program: EducationCatalogProgram,
 ): EditableProgram => ({
@@ -125,6 +146,7 @@ const buildModuleDraft = (
   programId: String(programId),
   title: module.title ?? "",
   description: module.description ?? "",
+  targetRole: module.targetRole ?? "",
 });
 
 const buildRequirementDraft = (
@@ -213,6 +235,7 @@ export default function EducationCatalogEditor() {
   const [moduleProgramId, setModuleProgramId] = useState<string>("");
   const [moduleTitle, setModuleTitle] = useState("");
   const [moduleDescription, setModuleDescription] = useState("");
+  const [moduleTargetRole, setModuleTargetRole] = useState("Assistenzarzt");
   const [requirementModuleId, setRequirementModuleId] = useState<string>("");
   const [requirementTitle, setRequirementTitle] = useState("");
   const [requirementCategory, setRequirementCategory] = useState("");
@@ -393,9 +416,11 @@ export default function EducationCatalogEditor() {
         programId: Number(moduleProgramId),
         title: moduleTitle.trim(),
         description: moduleDescription.trim() || undefined,
+        targetRole: moduleTargetRole.trim() || undefined,
       });
       setModuleTitle("");
       setModuleDescription("");
+      setModuleTargetRole("Assistenzarzt");
       await refresh();
       toast({ title: "Modul angelegt" });
     } finally {
@@ -561,6 +586,7 @@ export default function EducationCatalogEditor() {
         programId: Number(moduleDraft.programId),
         title: moduleDraft.title.trim(),
         description: moduleDraft.description.trim() || "",
+        targetRole: moduleDraft.targetRole.trim() || "",
       });
       await refresh();
       cancelEdit();
@@ -838,6 +864,62 @@ export default function EducationCatalogEditor() {
       </div>
     </div>
   );
+
+  const renderRoleSelector = (
+    value: string,
+    onChange: (nextValue: string) => void,
+  ) => {
+    const selected = parseRoleSelection(value);
+    return (
+      <div className="space-y-2">
+        <div className="flex flex-wrap gap-2">
+          {MEDICAL_ROLE_OPTIONS.map((role) => {
+            const active = selected.includes(role);
+            return (
+              <button
+                key={role}
+                type="button"
+                className={`rounded-full border px-3 py-1 text-sm transition-colors ${
+                  active
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border bg-background text-foreground"
+                }`}
+                onClick={() => {
+                  const next = active
+                    ? selected.filter((entry) => entry !== role)
+                    : [...selected, role];
+                  onChange(serializeRoleSelection(next));
+                }}
+              >
+                {role}
+              </button>
+            );
+          })}
+        </div>
+        <Textarea
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="Ausgewählte Funktionen"
+          className="min-h-[88px] resize-y"
+        />
+      </div>
+    );
+  };
+
+  const renderRoleBadges = (value?: string | null, className = "mt-2 flex flex-wrap gap-2") => {
+    const roles = parseRoleSelection(value);
+    if (roles.length === 0) return null;
+
+    return (
+      <div className={className}>
+        {roles.map((role) => (
+          <Badge key={role} variant="outline">
+            {role}
+          </Badge>
+        ))}
+      </div>
+    );
+  };
 
   if (isLoading) {
     return (
@@ -1514,11 +1596,7 @@ export default function EducationCatalogEditor() {
                   value={programTitle}
                   onChange={(event) => setProgramTitle(event.target.value)}
                 />
-                <Input
-                  placeholder="Zielrolle"
-                  value={programTargetRole}
-                  onChange={(event) => setProgramTargetRole(event.target.value)}
-                />
+                {renderRoleSelector(programTargetRole, setProgramTargetRole)}
                 <Textarea
                   placeholder="Beschreibung"
                   value={programDescription}
@@ -1554,6 +1632,7 @@ export default function EducationCatalogEditor() {
                   value={moduleDescription}
                   onChange={(event) => setModuleDescription(event.target.value)}
                 />
+                {renderRoleSelector(moduleTargetRole, setModuleTargetRole)}
                 <Button type="submit" disabled={saving !== null || !moduleProgramId}>
                   <Plus className="mr-2 h-4 w-4" />
                   Modul anlegen
@@ -1681,16 +1760,13 @@ export default function EducationCatalogEditor() {
                             )
                           }
                         />
-                        <Input
-                          value={programDraft.targetRole}
-                          onChange={(event) =>
+                        {renderRoleSelector(
+                          programDraft.targetRole,
+                          (value) =>
                             setProgramDraft((current) =>
-                              current
-                                ? { ...current, targetRole: event.target.value }
-                                : current,
-                            )
-                          }
-                        />
+                              current ? { ...current, targetRole: value } : current,
+                            ),
+                        )}
                         <Textarea
                           value={programDraft.description}
                           onChange={(event) =>
@@ -1747,9 +1823,9 @@ export default function EducationCatalogEditor() {
                       </>
                     ) : (
                       <>
-                        <Badge variant="outline">
-                          {program.targetRole || "offen"}
-                        </Badge>
+                        {program.targetRole
+                          ? renderRoleBadges(program.targetRole, "flex flex-wrap justify-end gap-2")
+                          : null}
                         <Button
                           size="sm"
                           variant="outline"
@@ -1825,6 +1901,13 @@ export default function EducationCatalogEditor() {
                                 )
                               }
                             />
+                            {renderRoleSelector(
+                              moduleDraft.targetRole,
+                              (value) =>
+                                setModuleDraft((current) =>
+                                  current ? { ...current, targetRole: value } : current,
+                                ),
+                            )}
                           </div>
                         </div>
                       ) : (
@@ -1848,6 +1931,7 @@ export default function EducationCatalogEditor() {
                             <div className="text-sm text-muted-foreground">
                               {module.description || "Noch keine Modulbeschreibung."}
                             </div>
+                            {renderRoleBadges(module.targetRole)}
                           </div>
                         </button>
                       )}

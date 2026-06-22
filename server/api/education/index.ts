@@ -64,6 +64,7 @@ const moduleSchema = z.object({
   title: z.string().min(1, "Titel erforderlich"),
   slug: z.string().min(1, "Slug erforderlich").optional(),
   description: z.string().optional(),
+  targetRole: z.string().optional(),
   sortOrder: z.number().int().optional(),
   isActive: z.boolean().optional(),
 });
@@ -590,6 +591,7 @@ export function registerEducationRoutes(router: Router) {
           title: payload.title.trim(),
           slug: slugify(payload.slug?.trim() || payload.title),
           description: payload.description?.trim() || null,
+          targetRole: payload.targetRole?.trim() || null,
           sortOrder: payload.sortOrder ?? 0,
           isActive: payload.isActive ?? true,
         })
@@ -614,6 +616,9 @@ export function registerEducationRoutes(router: Router) {
           ...(payload.slug ? { slug: slugify(payload.slug) } : {}),
           ...(typeof payload.description !== "undefined"
             ? { description: payload.description?.trim() || null }
+            : {}),
+          ...(typeof payload.targetRole !== "undefined"
+            ? { targetRole: payload.targetRole?.trim() || null }
             : {}),
           ...(typeof payload.sortOrder === "number"
             ? { sortOrder: payload.sortOrder }
@@ -1482,6 +1487,7 @@ export function registerEducationRoutes(router: Router) {
       );
 
       return ok(res, {
+        employeeRole: req.user.role ?? null,
         catalog,
         progress,
         uploads,
