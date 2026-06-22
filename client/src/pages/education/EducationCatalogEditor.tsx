@@ -27,7 +27,17 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ExternalLink, Loader2, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  Loader2,
+  Pencil,
+  Plus,
+  Save,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   educationEvaluationTypeOptions,
@@ -257,6 +267,12 @@ export default function EducationCatalogEditor() {
   const [selectedProfileEmployeeId, setSelectedProfileEmployeeId] = useState<string>("");
   const [profileDraft, setProfileDraft] = useState<EditableProfile | null>(null);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [collapsedPrograms, setCollapsedPrograms] = useState<Record<number, boolean>>(
+    {},
+  );
+  const [collapsedModules, setCollapsedModules] = useState<Record<number, boolean>>(
+    {},
+  );
 
   const moduleOptions = useMemo(
     () =>
@@ -293,6 +309,30 @@ export default function EducationCatalogEditor() {
     today.setHours(0, 0, 0, 0);
     return new Date(profileDraft.examDate) < today;
   }, [profileDraft?.examDate]);
+
+  useEffect(() => {
+    setCollapsedPrograms((current) => {
+      const next = { ...current };
+      for (const program of catalog) {
+        if (typeof next[program.id] === "undefined") {
+          next[program.id] = false;
+        }
+      }
+      return next;
+    });
+
+    setCollapsedModules((current) => {
+      const next = { ...current };
+      for (const program of catalog) {
+        for (const module of program.modules) {
+          if (typeof next[module.id] === "undefined") {
+            next[module.id] = true;
+          }
+        }
+      }
+      return next;
+    });
+  }, [catalog]);
 
   const profileSummary = useMemo(
     () =>
@@ -442,6 +482,7 @@ export default function EducationCatalogEditor() {
   };
 
   const startProgramEdit = (program: EducationCatalogProgram) => {
+    setCollapsedPrograms((current) => ({ ...current, [program.id]: false }));
     setEditingProgramId(program.id);
     setEditingModuleId(null);
     setEditingRequirementId(null);
@@ -452,6 +493,8 @@ export default function EducationCatalogEditor() {
     program: EducationCatalogProgram,
     module: EducationCatalogProgram["modules"][number],
   ) => {
+    setCollapsedPrograms((current) => ({ ...current, [program.id]: false }));
+    setCollapsedModules((current) => ({ ...current, [module.id]: false }));
     setEditingProgramId(null);
     setEditingModuleId(module.id);
     setEditingRequirementId(null);
@@ -462,6 +505,7 @@ export default function EducationCatalogEditor() {
     moduleId: number,
     requirement: EducationCatalogProgram["modules"][number]["requirements"][number],
   ) => {
+    setCollapsedModules((current) => ({ ...current, [moduleId]: false }));
     setEditingProgramId(null);
     setEditingModuleId(null);
     setEditingRequirementId(requirement.id);
@@ -1619,47 +1663,63 @@ export default function EducationCatalogEditor() {
               <Card key={program.id}>
               <CardHeader>
                 <div className="flex items-start justify-between gap-4">
-                  {editingProgramId === program.id && programDraft ? (
-                    <div className="w-full space-y-3">
-                      <Input
-                        value={programDraft.title}
-                        onChange={(event) =>
-                          setProgramDraft((current) =>
-                            current
-                              ? { ...current, title: event.target.value }
-                              : current,
-                          )
-                        }
-                      />
-                      <Input
-                        value={programDraft.targetRole}
-                        onChange={(event) =>
-                          setProgramDraft((current) =>
-                            current
-                              ? { ...current, targetRole: event.target.value }
-                              : current,
-                          )
-                        }
-                      />
-                      <Textarea
-                        value={programDraft.description}
-                        onChange={(event) =>
-                          setProgramDraft((current) =>
-                            current
-                              ? { ...current, description: event.target.value }
-                              : current,
-                          )
-                        }
-                      />
-                    </div>
-                  ) : (
-                    <div>
-                      <CardTitle>{program.title}</CardTitle>
-                      <CardDescription>
-                        {program.description || "Noch keine Beschreibung."}
-                      </CardDescription>
-                    </div>
-                  )}
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                    onClick={() =>
+                      setCollapsedPrograms((current) => ({
+                        ...current,
+                        [program.id]: !current[program.id],
+                      }))
+                    }
+                  >
+                    {collapsedPrograms[program.id] ? (
+                      <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <ChevronDown className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+                    )}
+                    {editingProgramId === program.id && programDraft ? (
+                      <div className="w-full space-y-3">
+                        <Input
+                          value={programDraft.title}
+                          onChange={(event) =>
+                            setProgramDraft((current) =>
+                              current
+                                ? { ...current, title: event.target.value }
+                                : current,
+                            )
+                          }
+                        />
+                        <Input
+                          value={programDraft.targetRole}
+                          onChange={(event) =>
+                            setProgramDraft((current) =>
+                              current
+                                ? { ...current, targetRole: event.target.value }
+                                : current,
+                            )
+                          }
+                        />
+                        <Textarea
+                          value={programDraft.description}
+                          onChange={(event) =>
+                            setProgramDraft((current) =>
+                              current
+                                ? { ...current, description: event.target.value }
+                                : current,
+                            )
+                          }
+                        />
+                      </div>
+                    ) : (
+                      <div>
+                        <CardTitle>{program.title}</CardTitle>
+                        <CardDescription>
+                          {program.description || "Noch keine Beschreibung."}
+                        </CardDescription>
+                      </div>
+                    )}
+                  </button>
                   <div className="flex items-center gap-2">
                     {editingProgramId === program.id ? (
                       <>
@@ -1707,63 +1767,80 @@ export default function EducationCatalogEditor() {
                   </div>
                 </div>
               </CardHeader>
+              {!collapsedPrograms[program.id] && (
               <CardContent className="space-y-4">
                 {program.modules.map((module) => (
                   <div key={module.id} className="rounded-xl border p-4">
                     <div className="mb-3 flex items-start justify-between gap-3">
-                      {editingModuleId === module.id && moduleDraft ? (
-                        <div className="w-full space-y-3">
-                          <Select
-                            value={moduleDraft.programId}
-                            onValueChange={(value) =>
-                              setModuleDraft((current) =>
-                                current ? { ...current, programId: value } : current,
-                              )
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Programm waehlen" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {catalog.map((optionProgram) => (
-                                <SelectItem
-                                  key={optionProgram.id}
-                                  value={String(optionProgram.id)}
-                                >
-                                  {optionProgram.title}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <Input
-                            value={moduleDraft.title}
-                            onChange={(event) =>
-                              setModuleDraft((current) =>
-                                current
-                                  ? { ...current, title: event.target.value }
-                                  : current,
-                              )
-                            }
-                          />
-                          <Textarea
-                            value={moduleDraft.description}
-                            onChange={(event) =>
-                              setModuleDraft((current) =>
-                                current
-                                  ? { ...current, description: event.target.value }
-                                  : current,
-                              )
-                            }
-                          />
-                        </div>
-                      ) : (
-                        <div>
-                          <div className="font-semibold">{module.title}</div>
-                          <div className="text-sm text-muted-foreground">
-                            {module.description || "Noch keine Modulbeschreibung."}
+                      <button
+                        type="button"
+                        className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                        onClick={() =>
+                          setCollapsedModules((current) => ({
+                            ...current,
+                            [module.id]: !current[module.id],
+                          }))
+                        }
+                      >
+                        {collapsedModules[module.id] ? (
+                          <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+                        ) : (
+                          <ChevronDown className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+                        )}
+                        {editingModuleId === module.id && moduleDraft ? (
+                          <div className="w-full space-y-3">
+                            <Select
+                              value={moduleDraft.programId}
+                              onValueChange={(value) =>
+                                setModuleDraft((current) =>
+                                  current ? { ...current, programId: value } : current,
+                                )
+                              }
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Programm waehlen" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {catalog.map((optionProgram) => (
+                                  <SelectItem
+                                    key={optionProgram.id}
+                                    value={String(optionProgram.id)}
+                                  >
+                                    {optionProgram.title}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Input
+                              value={moduleDraft.title}
+                              onChange={(event) =>
+                                setModuleDraft((current) =>
+                                  current
+                                    ? { ...current, title: event.target.value }
+                                    : current,
+                                )
+                              }
+                            />
+                            <Textarea
+                              value={moduleDraft.description}
+                              onChange={(event) =>
+                                setModuleDraft((current) =>
+                                  current
+                                    ? { ...current, description: event.target.value }
+                                    : current,
+                                )
+                              }
+                            />
                           </div>
-                        </div>
-                      )}
+                        ) : (
+                          <div>
+                            <div className="font-semibold">{module.title}</div>
+                            <div className="text-sm text-muted-foreground">
+                              {module.description || "Noch keine Modulbeschreibung."}
+                            </div>
+                          </div>
+                        )}
+                      </button>
                       <div className="flex items-center gap-2">
                         {editingModuleId === module.id ? (
                           <>
@@ -1807,6 +1884,7 @@ export default function EducationCatalogEditor() {
                         )}
                       </div>
                     </div>
+                    {!collapsedModules[module.id] && (
                     <div className="space-y-2">
                       {module.requirements.map((requirement) => (
                         <div
@@ -2019,9 +2097,11 @@ export default function EducationCatalogEditor() {
                         </p>
                       )}
                     </div>
+                    )}
                   </div>
                 ))}
               </CardContent>
+              )}
               </Card>
             ))}
           </div>
