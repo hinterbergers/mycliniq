@@ -1827,10 +1827,16 @@ export default function VacationPlanEditor({
   );
 
   useEffect(() => {
-    if (!embedded || !onHeroMetaChange) return;
-    onHeroMetaChange(heroMeta);
-    return () => onHeroMetaChange(null);
+    if (!embedded) return;
+    onHeroMetaChange?.(heroMeta);
   }, [embedded, heroMeta, onHeroMetaChange]);
+
+  useEffect(() => {
+    if (!embedded) return;
+    return () => {
+      onHeroMetaChange?.(null);
+    };
+  }, [embedded, onHeroMetaChange]);
 
   const dayViewAbsences = useMemo(
     () =>

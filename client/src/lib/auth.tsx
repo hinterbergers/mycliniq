@@ -82,6 +82,9 @@ export interface AuthContextType {
   setViewAsUser: (value: boolean) => void;
 
   canViewTraining: boolean;
+  canViewEducation: boolean;
+  canManageEducationCatalog: boolean;
+  canViewTrainerCockpit: boolean;
 
   capabilities: string[];
   can: (capability: string) => boolean;
@@ -172,7 +175,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const canUseViewAsUserMode = useMemo(() => {
     if (!user) return false;
-    return isAdminActual || user.appRole === "Editor";
+    return (
+      isAdminActual ||
+      user.appRole === "Editor" ||
+      user.appRole === "Ausbilder"
+    );
   }, [user, isAdminActual]);
 
   const isAdmin = useMemo(
@@ -205,6 +212,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [user],
   );
 
+  const isTrainerRole = useMemo(
+    () => user?.appRole === "Ausbilder",
+    [user?.appRole],
+  );
+
+  const isTraineeRole = useMemo(() => {
+    const role = (employee?.role ?? "").toLowerCase();
+    return (
+      role.includes("assistenz") ||
+      role.includes("turnus") ||
+      role.includes("kpj") ||
+      role.includes("famul")
+    );
+  }, [employee?.role]);
+
   const canViewTraining = useMemo(
     () =>
       isSuperuser ||
@@ -225,6 +247,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const canAny = useCallback(
     (caps: string[]) => caps.some((cap) => can(cap)),
     [can],
+  );
+
+  const canManageEducationCatalog = useMemo(
+    () => isSuperuser || isTrainerRole || can("training.edit"),
+    [isSuperuser, isTrainerRole, can],
+  );
+
+  const canViewTrainerCockpit = useMemo(
+    () =>
+      isSuperuser ||
+      isTrainerRole ||
+      can("training.supervise") ||
+      can("training.edit"),
+    [isSuperuser, isTrainerRole, can],
+  );
+
+  const canViewEducation = useMemo(
+    () =>
+      isSuperuser ||
+      isTrainerRole ||
+      isTraineeRole ||
+      trainingEnabledFromEmployee ||
+      trainingEnabledFromUser,
+    [
+      isSuperuser,
+      isTrainerRole,
+      isTraineeRole,
+      trainingEnabledFromEmployee,
+      trainingEnabledFromUser,
+    ],
   );
 
   const setViewAsUser = useCallback(
@@ -423,7 +475,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const stored = localStorage.getItem(VIEW_AS_USER_KEY);
       if (stored === null) {
-        setViewAsUserState(user?.appRole === "Editor");
+        setViewAsUserState(
+          user?.appRole === "Editor" || user?.appRole === "Ausbilder",
+        );
       } else {
         setViewAsUserState(stored === "1");
       }
@@ -589,6 +643,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       canAny,
       isSuperuser,
       canViewTraining,
+      canViewEducation,
+      canManageEducationCatalog,
+      canViewTrainerCockpit,
       login,
       logout,
       refreshAuth,
@@ -610,6 +667,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       canAny,
       isSuperuser,
       canViewTraining,
+      canViewEducation,
+      canManageEducationCatalog,
+      canViewTrainerCockpit,
       login,
       logout,
       refreshAuth,
