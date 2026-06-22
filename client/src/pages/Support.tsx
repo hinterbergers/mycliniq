@@ -74,20 +74,6 @@ export default function Support() {
             </ul>
           </div>
         </section>
-
-        <footer className="rounded-3xl border border-white/15 bg-white/10 px-6 py-4 text-sm text-white backdrop-blur-sm">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-white/80">MyCliniQ Informationen</p>
-            <div className="flex flex-wrap items-center gap-4">
-              <a href="/support" className="font-medium text-white hover:underline">
-                Support
-              </a>
-              <a href="/datenschutz" className="font-medium text-white hover:underline">
-                Datenschutz
-              </a>
-            </div>
-          </div>
-        </footer>
       </div>
     </div>
   );

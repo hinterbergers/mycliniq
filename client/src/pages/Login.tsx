@@ -15,6 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Stethoscope, Eye, EyeOff, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Capacitor } from "@capacitor/core";
+import { SiteFooter } from "@/components/layout/SiteFooter";
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -57,104 +58,107 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0F5BA7] to-[#0B4887] flex items-center justify-center p-4">
-      <Card className="w-full max-w-md shadow-2xl">
-        <CardHeader className="space-y-4 text-center pb-2">
-          <div className="mx-auto w-16 h-16 bg-[#0F5BA7] rounded-2xl flex items-center justify-center">
-            <Stethoscope className="w-8 h-8 text-white" />
-          </div>
-          <div>
-            <CardTitle className="text-2xl font-bold">MyCliniQ</CardTitle>
-            <CardDescription className="text-base">
-              Klinikum Klagenfurt - Abteilung für Frauenheilkunde
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent className="pt-4">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="identifier">E-Mail oder Benutzername</Label>
-              <Input
-                id="identifier"
-                type="text"
-                placeholder="vorname.nachname@kabeg.at oder benutzername"
-                value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
-                required
-                autoComplete="username"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                data-testid="input-identifier"
-              />
+    <div className="min-h-screen bg-gradient-to-br from-[#0F5BA7] to-[#0B4887] flex flex-col">
+      <div className="flex flex-1 items-center justify-center p-4">
+        <Card className="w-full max-w-md shadow-2xl">
+          <CardHeader className="space-y-4 text-center pb-2">
+            <div className="mx-auto w-16 h-16 bg-[#0F5BA7] rounded-2xl flex items-center justify-center">
+              <Stethoscope className="w-8 h-8 text-white" />
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="password">Passwort</Label>
-              <div className="relative">
+            <div>
+              <CardTitle className="text-2xl font-bold">MyCliniQ</CardTitle>
+              <CardDescription className="text-base">
+                Klinikum Klagenfurt - Abteilung für Frauenheilkunde
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="identifier">E-Mail oder Benutzername</Label>
                 <Input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  id="identifier"
+                  type="text"
+                  placeholder="vorname.nachname@kabeg.at oder benutzername"
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
                   required
-                  autoComplete="current-password"
-                  className="pr-10"
-                  data-testid="input-password"
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  data-testid="input-identifier"
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  data-testid="button-toggle-password"
-                >
-                  {showPassword ? (
-                    <EyeOff className="w-4 h-4" />
-                  ) : (
-                    <Eye className="w-4 h-4" />
-                  )}
-                </button>
               </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="password">Passwort</Label>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    autoComplete="current-password"
+                    className="pr-10"
+                    data-testid="input-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    data-testid="button-toggle-password"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="rememberMe"
+                  checked={rememberMe}
+                  onCheckedChange={(checked) => setRememberMe(checked === true)}
+                  data-testid="checkbox-remember"
+                />
+                <Label htmlFor="rememberMe" className="text-sm cursor-pointer">
+                  Angemeldet bleiben (30 Tage)
+                </Label>
+              </div>
+
+              <Button
+                type="submit"
+                className="w-full bg-[#0F5BA7] hover:bg-[#0B4887]"
+                disabled={isLoading}
+                data-testid="button-login"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Anmeldung...
+                  </>
+                ) : (
+                  "Anmelden"
+                )}
+              </Button>
+            </form>
+
+            <div className="mt-6 text-center text-sm text-muted-foreground">
+              <p>
+                Bei Problemen mit der Anmeldung wenden Sie sich bitte an das
+                Sekretariat.
+              </p>
             </div>
-
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="rememberMe"
-                checked={rememberMe}
-                onCheckedChange={(checked) => setRememberMe(checked === true)}
-                data-testid="checkbox-remember"
-              />
-              <Label htmlFor="rememberMe" className="text-sm cursor-pointer">
-                Angemeldet bleiben (30 Tage)
-              </Label>
-            </div>
-
-            <Button
-              type="submit"
-              className="w-full bg-[#0F5BA7] hover:bg-[#0B4887]"
-              disabled={isLoading}
-              data-testid="button-login"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Anmeldung...
-                </>
-              ) : (
-                "Anmelden"
-              )}
-            </Button>
-          </form>
-
-          <div className="mt-6 text-center text-sm text-muted-foreground">
-            <p>
-              Bei Problemen mit der Anmeldung wenden Sie sich bitte an das
-              Sekretariat.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
+      <SiteFooter />
     </div>
   );
 }

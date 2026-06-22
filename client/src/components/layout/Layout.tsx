@@ -1,5 +1,6 @@
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
+import { SiteFooter } from "./SiteFooter";
 import { ReactNode, useEffect, useState } from "react";
 
 interface LayoutProps {
@@ -66,6 +67,7 @@ export function Layout({ children, title, disableMotion }: LayoutProps) {
         <div className="flex-1 min-h-0 p-6 overflow-y-auto">
           <div className={contentClassName}>{children}</div>
         </div>
+        <SiteFooter />
       </main>
       {mobileNavOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
