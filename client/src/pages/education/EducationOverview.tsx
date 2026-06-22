@@ -47,29 +47,33 @@ export default function EducationOverview() {
       .replace(/[\u0300-\u036f]/g, "")
       .trim();
 
-  const getRoleRank = (value?: string | null) => {
+  const getCanonicalRoleKey = (value?: string | null) => {
     const role = normalizeRole(value);
-    if (!role) return 0;
-    if (role.includes("primar")) return 7;
-    if (role.includes("ausbildungsober") || role.includes("funktionsober")) return 6;
-    if (role.includes("1. ober") || role.includes("oberarzt") || role.includes("oberarztin"))
-      return 6;
-    if (role.includes("facharzt") || role.includes("facharztin")) return 5;
-    if (role.includes("assistenz")) return 4;
-    if (role.includes("turnus")) return 3;
-    if (role.includes("student") || role.includes("kpj") || role.includes("famul"))
-      return 2;
-    if (role.includes("sekret")) return 1;
-    return 0;
+    if (!role) return "";
+    if (role.includes("ausbildungsober")) return "ausbildungsoberarzt";
+    if (role.includes("funktionsober")) return "funktionsoberarzt";
+    if (role.includes("1. ober") || role.includes("erster ober")) {
+      return "1. oberarzt";
+    }
+    if (role.includes("primar")) return "primararzt";
+    if (role.includes("oberarzt") || role.includes("oberarztin")) return "oberarzt";
+    if (role.includes("facharzt") || role.includes("facharztin")) return "facharzt";
+    if (role.includes("assistenz")) return "assistenzarzt";
+    if (role.includes("turnus")) return "turnusarzt";
+    if (role.includes("student") || role.includes("kpj") || role.includes("famul")) {
+      return "student";
+    }
+    if (role.includes("sekret")) return "sekretariat";
+    return role;
   };
 
-  const parseTargetRoleRanks = (value?: string | null) =>
+  const parseTargetRoleKeys = (value?: string | null) =>
     (value ?? "")
       .split(/[,/]| und /i)
       .map((entry) => entry.trim())
       .filter(Boolean)
-      .map((entry) => getRoleRank(entry))
-      .filter((rank) => rank > 0);
+      .map((entry) => getCanonicalRoleKey(entry))
+      .filter(Boolean);
 
   const requiresAdvancedRole = (...values: Array<string | null | undefined>) => {
     const haystack = values.map((value) => normalizeRole(value)).join(" ");
@@ -101,21 +105,33 @@ export default function EducationOverview() {
     return map;
   }, [data?.eventRequests]);
 
-  const canAccessByRole = (
-    currentRoleRank: number,
-    ...values: Array<string | null | undefined>
-  ) => {
-    const targetRanks = parseTargetRoleRanks(values.join(" "));
-    const minimumRequiredRank =
-      targetRanks.length > 0 ? Math.min(...targetRanks) : 0;
+  const canAccessByRole = ({
+    currentRole,
+    targetRoles,
+    contextValues = [],
+  }: {
+    currentRole: string | null | undefined;
+    targetRoles: Array<string | null | undefined>;
+    contextValues?: Array<string | null | undefined>;
+  }) => {
+    const currentRoleKey = getCanonicalRoleKey(currentRole);
+    const targetRoleKeys = targetRoles.flatMap((value) => parseTargetRoleKeys(value));
 
-    if (minimumRequiredRank > 0 && currentRoleRank < minimumRequiredRank) {
+    if (
+      targetRoleKeys.length > 0 &&
+      (!currentRoleKey || !targetRoleKeys.includes(currentRoleKey))
+    ) {
       return false;
     }
 
     if (
-      requiresAdvancedRole(...values) &&
-      currentRoleRank < getRoleRank("Facharzt")
+      requiresAdvancedRole(...contextValues, ...targetRoles) &&
+      getCanonicalRoleKey(currentRole) !== "facharzt" &&
+      getCanonicalRoleKey(currentRole) !== "oberarzt" &&
+      getCanonicalRoleKey(currentRole) !== "funktionsoberarzt" &&
+      getCanonicalRoleKey(currentRole) !== "ausbildungsoberarzt" &&
+      getCanonicalRoleKey(currentRole) !== "1. oberarzt" &&
+      getCanonicalRoleKey(currentRole) !== "primararzt"
     ) {
       return false;
     }
@@ -124,42 +140,38 @@ export default function EducationOverview() {
   };
 
   const visibleCatalog = useMemo(() => {
-    const currentRoleRank = getRoleRank(data?.employeeRole);
+    const currentRole = data?.employeeRole;
 
     return (data?.catalog ?? [])
       .map((program) => ({
         ...program,
         modules: program.modules.filter((module) =>
-          canAccessByRole(
-            currentRoleRank,
-            module.targetRole,
-            program.targetRole,
-            module.title,
-            module.description,
-          ),
+          canAccessByRole({
+            currentRole,
+            targetRoles: [module.targetRole, program.targetRole],
+            contextValues: [module.title, module.description, program.title, program.description],
+          }),
         ),
       }))
       .filter((program) => {
-        const programAccessible = canAccessByRole(
-          currentRoleRank,
-          program.targetRole,
-          program.title,
-          program.description,
-        );
+        const programAccessible = canAccessByRole({
+          currentRole,
+          targetRoles: [program.targetRole],
+          contextValues: [program.title, program.description],
+        });
         return programAccessible || program.modules.length > 0;
       });
   }, [data?.catalog, data?.employeeRole]);
 
   const visibleEvents = useMemo(() => {
-    const currentRoleRank = getRoleRank(data?.employeeRole);
+    const currentRole = data?.employeeRole;
 
     return (data?.events ?? []).filter((event) => {
-      return canAccessByRole(
-        currentRoleRank,
-        event.targetRole,
-        event.title,
-        event.description,
-      );
+      return canAccessByRole({
+        currentRole,
+        targetRoles: [event.targetRole],
+        contextValues: [event.title, event.description],
+      });
     });
   }, [data?.employeeRole, data?.events]);
 
