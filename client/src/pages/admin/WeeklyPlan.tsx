@@ -3665,12 +3665,28 @@ export default function WeeklyPlan() {
                             <span className="font-medium text-slate-700">
                               Passend verfuegbar:
                             </span>{" "}
-                            {previewEligibleEmployees
-                              .map((employee) =>
-                                employee.lastName ||
-                                getEmployeeDisplayName(employee),
-                              )
-                              .join(", ")}
+                            {previewEligibleEmployees.map((employee, index) => (
+                              <span key={employee.id}>
+                                <button
+                                  type="button"
+                                  className="inline rounded-sm px-0.5 text-left text-slate-700 underline-offset-2 hover:text-primary hover:underline disabled:cursor-not-allowed disabled:no-underline disabled:opacity-60"
+                                  onClick={() =>
+                                    handleAssignEmployee(
+                                      room.id,
+                                      selectedWeekday,
+                                      employee.id,
+                                    )
+                                  }
+                                  disabled={disableAssignmentEditing}
+                                >
+                                  {employee.lastName ||
+                                    getEmployeeDisplayName(employee)}
+                                </button>
+                                {index < previewEligibleEmployees.length - 1
+                                  ? ", "
+                                  : ""}
+                              </span>
+                            ))}
                             {hiddenEligibleCount > 0 &&
                               ` +${hiddenEligibleCount}`}
                           </div>
