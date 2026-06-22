@@ -312,25 +312,29 @@ export default function EducationCatalogEditor() {
 
   useEffect(() => {
     setCollapsedPrograms((current) => {
+      let changed = false;
       const next = { ...current };
       for (const program of catalog) {
         if (typeof next[program.id] === "undefined") {
           next[program.id] = false;
+          changed = true;
         }
       }
-      return next;
+      return changed ? next : current;
     });
 
     setCollapsedModules((current) => {
+      let changed = false;
       const next = { ...current };
       for (const program of catalog) {
         for (const module of program.modules) {
           if (typeof next[module.id] === "undefined") {
             next[module.id] = true;
+            changed = true;
           }
         }
       }
-      return next;
+      return changed ? next : current;
     });
   }, [catalog]);
 
@@ -1663,22 +1667,9 @@ export default function EducationCatalogEditor() {
               <Card key={program.id}>
               <CardHeader>
                 <div className="flex items-start justify-between gap-4">
-                  <button
-                    type="button"
-                    className="flex min-w-0 flex-1 items-start gap-3 text-left"
-                    onClick={() =>
-                      setCollapsedPrograms((current) => ({
-                        ...current,
-                        [program.id]: !current[program.id],
-                      }))
-                    }
-                  >
-                    {collapsedPrograms[program.id] ? (
-                      <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
-                    ) : (
+                  {editingProgramId === program.id && programDraft ? (
+                    <div className="flex min-w-0 flex-1 items-start gap-3 text-left">
                       <ChevronDown className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
-                    )}
-                    {editingProgramId === program.id && programDraft ? (
                       <div className="w-full space-y-3">
                         <Input
                           value={programDraft.title}
@@ -1711,15 +1702,31 @@ export default function EducationCatalogEditor() {
                           }
                         />
                       </div>
-                    ) : (
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                      onClick={() =>
+                        setCollapsedPrograms((current) => ({
+                          ...current,
+                          [program.id]: !current[program.id],
+                        }))
+                      }
+                    >
+                      {collapsedPrograms[program.id] ? (
+                        <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+                      ) : (
+                        <ChevronDown className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+                      )}
                       <div>
                         <CardTitle>{program.title}</CardTitle>
                         <CardDescription>
                           {program.description || "Noch keine Beschreibung."}
                         </CardDescription>
                       </div>
-                    )}
-                  </button>
+                    </button>
+                  )}
                   <div className="flex items-center gap-2">
                     {editingProgramId === program.id ? (
                       <>
@@ -1772,22 +1779,9 @@ export default function EducationCatalogEditor() {
                 {program.modules.map((module) => (
                   <div key={module.id} className="rounded-xl border p-4">
                     <div className="mb-3 flex items-start justify-between gap-3">
-                      <button
-                        type="button"
-                        className="flex min-w-0 flex-1 items-start gap-3 text-left"
-                        onClick={() =>
-                          setCollapsedModules((current) => ({
-                            ...current,
-                            [module.id]: !current[module.id],
-                          }))
-                        }
-                      >
-                        {collapsedModules[module.id] ? (
-                          <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
-                        ) : (
+                      {editingModuleId === module.id && moduleDraft ? (
+                        <div className="flex min-w-0 flex-1 items-start gap-3 text-left">
                           <ChevronDown className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
-                        )}
-                        {editingModuleId === module.id && moduleDraft ? (
                           <div className="w-full space-y-3">
                             <Select
                               value={moduleDraft.programId}
@@ -1832,15 +1826,31 @@ export default function EducationCatalogEditor() {
                               }
                             />
                           </div>
-                        ) : (
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                          onClick={() =>
+                            setCollapsedModules((current) => ({
+                              ...current,
+                              [module.id]: !current[module.id],
+                            }))
+                          }
+                        >
+                          {collapsedModules[module.id] ? (
+                            <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+                          ) : (
+                            <ChevronDown className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+                          )}
                           <div>
                             <div className="font-semibold">{module.title}</div>
                             <div className="text-sm text-muted-foreground">
                               {module.description || "Noch keine Modulbeschreibung."}
                             </div>
                           </div>
-                        )}
-                      </button>
+                        </button>
+                      )}
                       <div className="flex items-center gap-2">
                         {editingModuleId === module.id ? (
                           <>
