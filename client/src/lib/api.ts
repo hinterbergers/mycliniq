@@ -2843,6 +2843,8 @@ export type OnlineUser = {
   name: string;
   lastName: string;
   lastSeenAt: string | null;
+  ipAddress?: string | null;
+  deviceName?: string | null;
 };
 
 export type OnlineUsersResponse = {

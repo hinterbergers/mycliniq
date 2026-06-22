@@ -8,6 +8,7 @@ export { db } from "./db";
 
 const app = express();
 app.set("etag", false);
+app.set("trust proxy", true);
 const httpServer = createServer(app);
 const API_CORS_ALLOWED_ORIGINS = new Set([
   "capacitor://localhost",

@@ -906,6 +906,8 @@ export const sessions = pgTable("sessions", {
     .notNull(),
   token: text("token").notNull().unique(),
   deviceName: text("device_name"),
+  ipAddress: text("ip_address"),
+  forwardedFor: text("forwarded_for"),
   isRemembered: boolean("is_remembered").notNull().default(false),
   expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),

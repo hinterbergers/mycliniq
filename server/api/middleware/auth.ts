@@ -9,6 +9,7 @@ import {
   permissions,
 } from "@shared/schema";
 import { forbidden, unauthorized } from "../../lib/api-response";
+import { getClientIp, getForwardedForHeader } from "../../lib/requestClientIp";
 
 /**
  * User context attached to authenticated requests
@@ -285,7 +286,7 @@ async function getAuthUserByEmployeeId(
  * Verify token and return user data
  * TODO: Replace with proper JWT verification in production
  */
-async function verifyToken(token: string): Promise<AuthUser | null> {
+async function verifyToken(token: string, req: Request): Promise<AuthUser | null> {
   try {
     // Check if session exists and is valid
     const [session] = await db
@@ -307,7 +308,11 @@ async function verifyToken(token: string): Promise<AuthUser | null> {
     if (!lastSeenAt || now.getTime() - lastSeenAt.getTime() > 2 * 60 * 1000) {
       await db
         .update(sessions)
-        .set({ lastSeenAt: now })
+        .set({
+          lastSeenAt: now,
+          ipAddress: getClientIp(req),
+          forwardedFor: getForwardedForHeader(req),
+        })
         .where(eq(sessions.id, session.id));
     }
 
@@ -358,7 +363,7 @@ export async function authenticate(
       return next();
     }
 
-    const user = await verifyToken(token);
+    const user = await verifyToken(token, req);
 
     if (!user) {
       // Token invalid or expired

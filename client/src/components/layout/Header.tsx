@@ -53,6 +53,11 @@ function formatOnlineUserDisplayName(user: { name?: string | null; lastName?: st
   return `${name} ${last}`.trim();
 }
 
+function formatOnlineUserMeta(user: Pick<OnlineUser, "ipAddress" | "deviceName">) {
+  const parts = [user.ipAddress?.trim(), user.deviceName?.trim()].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
 export function Header({
   title,
   onToggleMobileNav,
@@ -604,7 +609,7 @@ export function Header({
                 <span>{onlineCount}</span>
               </Button>
             </HoverCardTrigger>
-            <HoverCardContent align="end" className="w-56">
+            <HoverCardContent align="end" className="w-80">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">
                 Online ({onlineCount})
               </p>
@@ -614,11 +619,21 @@ export function Header({
                 </p>
               ) : (
                 <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
-                  {onlineUsers.map((user) => (
-                    <p key={user.id} className="text-sm">
-                      {formatOnlineUserDisplayName(user)}
-                    </p>
-                  ))}
+                  {onlineUsers.map((user) => {
+                    const meta = formatOnlineUserMeta(user);
+                    return (
+                      <div key={user.id} className="rounded-md border px-2 py-1.5">
+                        <p className="text-sm font-medium">
+                          {formatOnlineUserDisplayName(user)}
+                        </p>
+                        {meta ? (
+                          <p className="text-xs text-muted-foreground break-all">
+                            {meta}
+                          </p>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </HoverCardContent>

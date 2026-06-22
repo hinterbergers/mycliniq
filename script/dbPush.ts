@@ -70,6 +70,12 @@ ADD COLUMN IF NOT EXISTS username text;
 ALTER TABLE employees
 ADD COLUMN IF NOT EXISTS employment_percentage integer;
 
+ALTER TABLE sessions
+ADD COLUMN IF NOT EXISTS ip_address text;
+
+ALTER TABLE sessions
+ADD COLUMN IF NOT EXISTS forwarded_for text;
+
 CREATE UNIQUE INDEX IF NOT EXISTS employees_username_ci_idx
   ON employees (lower(username))
   WHERE username IS NOT NULL;

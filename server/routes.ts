@@ -77,6 +77,7 @@ import {
   normalizeServiceLineKey,
 } from "@shared/serviceLineKey";
 import { requireAuth, hasCapability } from "./api/middleware/auth";
+import { getClientIp, getForwardedForHeader } from "./lib/requestClientIp";
 import {
   addDays,
   addWeeks,
@@ -1352,12 +1353,19 @@ export async function registerRoutes(
         expiresAt.setHours(expiresAt.getHours() + 8);
       }
 
+      const userAgentHeader = req.headers["user-agent"];
+      const deviceName = Array.isArray(userAgentHeader)
+        ? userAgentHeader.join(" | ")
+        : userAgentHeader || "Unknown";
+
       await storage.createSession({
         employeeId: employee.id,
         token,
         isRemembered: !!rememberMe,
         expiresAt,
-        deviceName: req.headers["user-agent"] || "Unknown",
+        deviceName,
+        ipAddress: getClientIp(req),
+        forwardedFor: getForwardedForHeader(req),
       });
 
       await storage.updateEmployeeLastLogin(employee.id);
@@ -6472,6 +6480,8 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
           .select({
             employeeId: sessions.employeeId,
             lastSeenAt: sessions.lastSeenAt,
+            ipAddress: sessions.ipAddress,
+            deviceName: sessions.deviceName,
           })
           .from(sessions)
           .where(
@@ -6481,15 +6491,26 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
             ),
           );
 
-        const latestByEmployee = new Map<number, Date>();
+        const latestByEmployee = new Map<
+          number,
+          {
+            lastSeenAt: Date;
+            ipAddress: string | null;
+            deviceName: string | null;
+          }
+        >();
         for (const session of activeSessions) {
           const lastSeen = session.lastSeenAt
             ? new Date(session.lastSeenAt)
             : null;
           if (!lastSeen) continue;
           const current = latestByEmployee.get(session.employeeId);
-          if (!current || lastSeen > current) {
-            latestByEmployee.set(session.employeeId, lastSeen);
+          if (!current || lastSeen > current.lastSeenAt) {
+            latestByEmployee.set(session.employeeId, {
+              lastSeenAt: lastSeen,
+              ipAddress: session.ipAddress ?? null,
+              deviceName: session.deviceName ?? null,
+            });
           }
         }
 
@@ -6510,12 +6531,17 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
 
         const users = rows
           .filter((row) => row.isActive)
-          .map((row) => ({
-            id: row.id,
-            name: row.name,
-            lastName: row.lastName || "",
-            lastSeenAt: latestByEmployee.get(row.id)?.toISOString() ?? null,
-          }))
+          .map((row) => {
+            const latestSession = latestByEmployee.get(row.id);
+            return {
+              id: row.id,
+              name: row.name,
+              lastName: row.lastName || "",
+              lastSeenAt: latestSession?.lastSeenAt.toISOString() ?? null,
+              ipAddress: latestSession?.ipAddress ?? null,
+              deviceName: latestSession?.deviceName ?? null,
+            };
+          })
           .sort((a, b) => {
             const lastNameCmp = a.lastName.localeCompare(b.lastName);
             if (lastNameCmp !== 0) return lastNameCmp;
