@@ -324,20 +324,83 @@ export const doesEmployeeContributeToRoom = (
   assignedEmployees: Employee[] = [],
 ): boolean => {
   if (isEmployeeEligibleForRoom(employee, room)) return true;
-
-  const currentEmployees = assignedEmployees.filter(
-    (assigned) => assigned.id !== employee.id,
+  const currentEmployees = assignedEmployees.filter((assigned) => assigned.id !== employee.id);
+  const assignedRoleKeys = new Set(
+    currentEmployees.flatMap((assigned) => getEmployeeRoleKeys(assigned.role)),
   );
-  const nextEmployees = [...currentEmployees, employee];
+  const employeeRoleKeys = new Set(getEmployeeRoleKeys(employee.role));
 
-  const currentStatus = getRoomAssignmentCompetencyStatus(room, currentEmployees);
-  const nextStatus = getRoomAssignmentCompetencyStatus(room, nextEmployees);
+  const assignedCompetencies = new Set(
+    currentEmployees.flatMap((assigned) =>
+      (assigned.competencies || []).map((competency) => normalizeValue(competency)),
+    ),
+  );
+  const employeeCompetencies = new Set(
+    (employee.competencies || []).map((competency) => normalizeValue(competency)),
+  );
+  const hasEmployeeCompetency = (value?: string | null) =>
+    employeeCompetencies.has(normalizeValue(value));
 
-  if (currentStatus === "missing" && nextStatus === "partial") return true;
-  if (currentStatus === "partial" && nextStatus === "fulfilled") return true;
-  if (currentStatus === "missing" && nextStatus === "fulfilled") return true;
+  const requiredRoles = room.requiredRoleCompetencies || [];
+  const alternativeRoles = room.alternativeRoleCompetencies || [];
+  const andCompetencies = (room.requiredCompetencies || []).filter(
+    (competency) => competency.relationType === "AND",
+  );
+  const orCompetencies = (room.requiredCompetencies || []).filter(
+    (competency) => competency.relationType === "OR",
+  );
 
-  return false;
+  const missingRequiredRoles =
+    requiredRoles.length > 0
+      ? requiredRoles.filter((role) => !assignedRoleKeys.has(role))
+      : [];
+  const missingAlternativeRole =
+    alternativeRoles.length > 0 &&
+    !alternativeRoles.some((role) => assignedRoleKeys.has(role));
+
+  const missingAndCompetencies = andCompetencies.filter(
+    (competency) =>
+      !assignedCompetencies.has(normalizeValue(competency.competencyCode)) &&
+      !assignedCompetencies.has(normalizeValue(competency.competencyName)),
+  );
+  const missingOrCompetency =
+    orCompetencies.length > 0 &&
+    !orCompetencies.some(
+      (competency) =>
+        assignedCompetencies.has(normalizeValue(competency.competencyCode)) ||
+        assignedCompetencies.has(normalizeValue(competency.competencyName)),
+    );
+
+  const roleRequirementActive =
+    requiredRoles.length > 0 || alternativeRoles.length > 0;
+  const competencyRequirementActive =
+    andCompetencies.length > 0 || orCompetencies.length > 0;
+
+  const helpsRoleRequirement = !roleRequirementActive
+    ? true
+    : missingRequiredRoles.length > 0
+      ? missingRequiredRoles.some((role) => employeeRoleKeys.has(role))
+      : missingAlternativeRole
+        ? alternativeRoles.some((role) => employeeRoleKeys.has(role))
+        : true;
+
+  const helpsCompetencyRequirement = !competencyRequirementActive
+    ? true
+    : missingAndCompetencies.length > 0
+      ? missingAndCompetencies.some(
+          (competency) =>
+            hasEmployeeCompetency(competency.competencyCode) ||
+            hasEmployeeCompetency(competency.competencyName),
+        )
+      : missingOrCompetency
+        ? orCompetencies.some(
+            (competency) =>
+              hasEmployeeCompetency(competency.competencyCode) ||
+              hasEmployeeCompetency(competency.competencyName),
+          )
+        : true;
+
+  return helpsRoleRequirement && helpsCompetencyRequirement;
 };
 
 type IsoWeekday = 1 | 2 | 3 | 4 | 5 | 6 | 7;
