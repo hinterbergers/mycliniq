@@ -158,7 +158,7 @@ export default function Login() {
           </CardContent>
         </Card>
       </div>
-      <SiteFooter />
+      <SiteFooter mode="standalone" />
     </div>
   );
 }

@@ -34,6 +34,7 @@ import PublicWeeklyPlan from "@/pages/PublicWeeklyPlan";
 import PublicRosterPlan from "@/pages/PublicRosterPlan";
 import PrivacyPolicy from "@/pages/PrivacyPolicy";
 import Support from "@/pages/Support";
+import { LegalEmbed } from "@/pages/LegalEmbed";
 import { Loader2 } from "lucide-react";
 import { TrainingRoute } from "@/components/training/TrainingRoute";
 import { EducationRoute } from "@/components/education/EducationRoute";
@@ -128,6 +129,12 @@ function Router() {
       <Route path="/dienstplan-public" component={PublicRosterPlan} />
       <Route path="/datenschutz" component={PrivacyPolicy} />
       <Route path="/support" component={Support} />
+      <Route path="/rechtliches/datenschutz">
+        {() => <LegalEmbed title="Datenschutz" src="/datenschutz" />}
+      </Route>
+      <Route path="/rechtliches/support">
+        {() => <LegalEmbed title="Support" src="/support" />}
+      </Route>
 
       <Route path="/">{() => <ProtectedRoute component={Dashboard} />}</Route>
 
