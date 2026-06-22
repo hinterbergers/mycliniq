@@ -100,6 +100,7 @@ import {
   isEmployeeAbsentOnDate,
   isEmployeeEligibleForRoom,
   isEmployeeOnDutyDate,
+  normalizeWeeklyPlanText,
 } from "@/lib/weeklyPlanUtils";
 import {
   getWeeklyPlanningReasonLabel,
@@ -2048,13 +2049,13 @@ export default function WeeklyPlan() {
       showAssignedAvailableEmployees,
     ],
   );
-  const employeeCompetencyCandidates = useMemo(() => {
-    const source =
-      visibleAvailableEmployeesOrdered.length > 0
-        ? visibleAvailableEmployeesOrdered
-        : availableEmployeesOrdered;
-    return [...source].sort(compareAvailabilityEmployees);
-  }, [availableEmployeesOrdered, visibleAvailableEmployeesOrdered]);
+  const employeeCompetencyCandidates = useMemo(
+    () =>
+      [...employees]
+        .filter((employee) => employee.isActive)
+        .sort(compareAvailabilityEmployees),
+    [employees],
+  );
   const availableEmployeeSections = useMemo(() => {
     const sections = [
       { key: "senior", title: "Oberaerzte", employees: [] as Employee[] },
@@ -2433,6 +2434,36 @@ export default function WeeklyPlan() {
     });
   };
 
+  const getEmployeesWithCompetencies = useCallback(
+    (competencyIds: number[]) => {
+      if (competencyIds.length === 0) return [] as number[];
+
+      const selectedCompetencies = availableCompetencies.filter((competency) =>
+        competencyIds.includes(competency.id),
+      );
+      if (selectedCompetencies.length === 0) return [] as number[];
+
+      const normalizedTokens = selectedCompetencies.flatMap((competency) => {
+        const tokens = [competency.name];
+        if (competency.code) tokens.push(competency.code);
+        return tokens.map((token) => normalizeWeeklyPlanText(token));
+      });
+
+      return employees
+        .filter((employee) => employee.isActive)
+        .filter((employee) => {
+          const employeeCompetencies = (employee.competencies || []).map((entry) =>
+            normalizeWeeklyPlanText(entry),
+          );
+          return normalizedTokens.some((token) =>
+            employeeCompetencies.includes(token),
+          );
+        })
+        .map((employee) => employee.id);
+    },
+    [availableCompetencies, employees],
+  );
+
   const handleOpenRoomConfigDialog = async (room: WeeklyPlanRoom) => {
     setIsSaving(true);
     try {
@@ -2528,20 +2559,26 @@ export default function WeeklyPlan() {
         (room.requiredCompetencies || []).map((entry) => entry.competencyId),
       ),
     ];
+    const preselectedEmployeeIds = getEmployeesWithCompetencies(preselectedIds);
     setEmployeeCompetencyDialog({
       roomId: room.id,
       roomName: room.name,
     });
     setSelectedQuickCompetencyIds(preselectedIds);
-    setSelectedQuickEmployeeIds([]);
+    setSelectedQuickEmployeeIds(preselectedEmployeeIds);
   };
 
   const toggleQuickCompetency = (competencyId: number) => {
-    setSelectedQuickCompetencyIds((prev) =>
-      prev.includes(competencyId)
+    setSelectedQuickCompetencyIds((prev) => {
+      const next = prev.includes(competencyId)
         ? prev.filter((item) => item !== competencyId)
-        : [...prev, competencyId],
-    );
+        : [...prev, competencyId];
+      const preselectedEmployeeIds = getEmployeesWithCompetencies(next);
+      setSelectedQuickEmployeeIds((current) =>
+        Array.from(new Set([...current, ...preselectedEmployeeIds])),
+      );
+      return next;
+    });
   };
 
   const toggleQuickEmployee = (employeeId: number) => {
