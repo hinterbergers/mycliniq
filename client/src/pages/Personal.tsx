@@ -27,6 +27,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Switch } from "@/components/ui/switch";
 import {
   ArrowRightLeft,
   Calendar as CalendarIcon,
@@ -37,6 +38,7 @@ import {
   ChevronRight,
   ClipboardCopy,
   Download,
+  Filter,
   Heart,
   Loader2,
   RefreshCw,
@@ -103,7 +105,10 @@ import type {
 import { getServiceLineDisplayLabel } from "@shared/shiftTypes";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
-import VacationPlanEditor from "@/pages/admin/VacationPlanEditor";
+import VacationPlanEditor, {
+  type CalendarViewMode,
+  type VacationHeroMeta,
+} from "@/pages/admin/VacationPlanEditor";
 import {
   WEEKDAY_LABELS,
   WEEKDAY_FULL,
@@ -237,6 +242,13 @@ type WeeklyHeroMeta = {
   onNextWeek: () => void;
 };
 
+const VACATION_VIEW_LABELS: Record<CalendarViewMode, string> = {
+  year: "Jahr",
+  month: "Monat",
+  week: "Woche",
+  day: "Tag",
+};
+
 const areReasonCountsEqual = (
   left: Array<{ reason: string; days: number }>,
   right: Array<{ reason: string; days: number }>,
@@ -300,6 +312,26 @@ const isWeeklyHeroMetaEqual = (
     left.canSubscribe === right.canSubscribe &&
     left.isExporting === right.isExporting &&
     left.isLoading === right.isLoading
+  );
+};
+
+const isVacationHeroMetaEqual = (
+  left: VacationHeroMeta | null,
+  right: VacationHeroMeta | null,
+) => {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return (
+    left.label === right.label &&
+    left.view === right.view &&
+    left.filterActive === right.filterActive &&
+    left.showOnlySelf === right.showOnlySelf &&
+    left.exportDisabled === right.exportDisabled &&
+    left.counts.total === right.counts.total &&
+    left.counts.geplant === right.counts.geplant &&
+    left.counts.genehmigt === right.counts.genehmigt &&
+    left.counts.abgelehnt === right.counts.abgelehnt &&
+    left.counts.activeFilterLabel === right.counts.activeFilterLabel
   );
 };
 
@@ -437,6 +469,9 @@ export default function Personal() {
     absenceReasonCounts: Array<{ reason: string; days: number }>;
   } | null>(null);
   const [weeklyHeroMeta, setWeeklyHeroMeta] = useState<WeeklyHeroMeta | null>(null);
+  const [vacationHeroMeta, setVacationHeroMeta] = useState<VacationHeroMeta | null>(
+    null,
+  );
   const [vacationSummary, setVacationSummary] = useState<string | null>(null);
   const {
     calendarToken,
@@ -700,6 +735,15 @@ export default function Personal() {
     );
   }, []);
 
+  const handleVacationHeroMetaChange = useCallback(
+    (nextMeta: VacationHeroMeta | null) => {
+      setVacationHeroMeta((currentMeta) =>
+        isVacationHeroMetaEqual(currentMeta, nextMeta) ? currentMeta : nextMeta,
+      );
+    },
+    [],
+  );
+
   const handleSubscribe = async () => {
     if (!token) {
       toast({
@@ -851,6 +895,33 @@ export default function Personal() {
                         </div>
                       </div>
                     )}
+                    {activeTab === "vacation" && vacationHeroMeta && (
+                      <div className="flex items-center gap-2 text-xs text-primary-foreground/90 sm:text-sm">
+                        <span className="font-medium">{vacationHeroMeta.label}</span>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 rounded-full border border-white/15 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
+                            onClick={vacationHeroMeta.onPrevPeriod}
+                            data-testid="button-vacation-hero-prev"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 rounded-full border border-white/15 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
+                            onClick={vacationHeroMeta.onNextPeriod}
+                            data-testid="button-vacation-hero-next"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <p className="hidden text-sm text-primary-foreground/80 lg:block">
                     Monatsdienstplan, Wochenplan und Urlaubsplanung.
@@ -927,10 +998,115 @@ export default function Personal() {
                   </div>
                 )}
 
+                {activeTab === "vacation" && vacationHeroMeta && (
+                  <div className="mt-4 space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge
+                        variant="outline"
+                        className="border-white/20 bg-white/10 text-primary-foreground"
+                      >
+                        {VACATION_VIEW_LABELS[vacationHeroMeta.view]}
+                      </Badge>
+                      <Badge
+                        variant="outline"
+                        className="border-white/20 bg-white/10 text-primary-foreground"
+                      >
+                        {vacationHeroMeta.counts.total} Eintraege
+                      </Badge>
+                      <Badge
+                        variant="outline"
+                        className="border-white/20 bg-white/10 text-primary-foreground"
+                      >
+                        {vacationHeroMeta.counts.genehmigt} Genehmigt
+                      </Badge>
+                      {vacationHeroMeta.counts.geplant > 0 && (
+                        <Badge
+                          variant="outline"
+                          className="border-white/20 bg-white/10 text-primary-foreground"
+                        >
+                          {vacationHeroMeta.counts.geplant} Geplant
+                        </Badge>
+                      )}
+                      {vacationHeroMeta.counts.abgelehnt > 0 && (
+                        <Badge
+                          variant="outline"
+                          className="border-white/20 bg-white/10 text-primary-foreground"
+                        >
+                          {vacationHeroMeta.counts.abgelehnt} Abgelehnt
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Tabs
+                        value={vacationHeroMeta.view}
+                        onValueChange={(value) =>
+                          vacationHeroMeta.onViewChange(value as CalendarViewMode)
+                        }
+                        className="w-full sm:w-auto"
+                      >
+                        <TabsList className="grid h-10 w-full grid-cols-4 rounded-xl border border-white/15 bg-white/10 p-1 sm:w-[260px]">
+                          {(Object.keys(VACATION_VIEW_LABELS) as CalendarViewMode[]).map(
+                            (view) => (
+                              <TabsTrigger
+                                key={view}
+                                value={view}
+                                className="rounded-lg px-2 text-primary-foreground data-[state=active]:bg-white data-[state=active]:text-primary"
+                              >
+                                {VACATION_VIEW_LABELS[view]}
+                              </TabsTrigger>
+                            ),
+                          )}
+                        </TabsList>
+                      </Tabs>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="gap-2 border-white/20 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
+                        onClick={vacationHeroMeta.onOpenFilters}
+                        data-testid="button-vacation-hero-filter"
+                      >
+                        <Filter className="w-4 h-4" />
+                        Filter
+                        {vacationHeroMeta.filterActive && (
+                          <span className="text-primary-foreground/80">
+                            ({vacationHeroMeta.counts.activeFilterLabel})
+                          </span>
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="gap-2 border-white/20 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
+                        onClick={vacationHeroMeta.onExport}
+                        disabled={vacationHeroMeta.exportDisabled}
+                        data-testid="button-vacation-hero-export"
+                      >
+                        <CalendarDays className="w-4 h-4" />
+                        CSV exportieren
+                      </Button>
+                      {currentEmployee && (
+                        <div className="flex h-10 items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-3 text-sm text-primary-foreground">
+                          <Switch
+                            checked={vacationHeroMeta.showOnlySelf}
+                            onCheckedChange={vacationHeroMeta.onShowOnlySelfChange}
+                            aria-label="Nur meine Zeile"
+                          />
+                          <span>Nur meine Zeile</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="mt-4 flex w-full flex-col items-start gap-3 lg:mt-0 lg:items-end">
                   <p className="text-sm font-medium text-primary-foreground/95 lg:text-right">
                     {activeSummaryText}
                   </p>
+                  {activeTab === "vacation" && vacationHeroMeta && (
+                    <p className="text-xs text-primary-foreground/75 lg:text-right">
+                      Filter: {vacationHeroMeta.counts.activeFilterLabel}
+                    </p>
+                  )}
                   <div className="flex flex-wrap gap-2 lg:justify-end">
                     <Button
                       variant="ghost"
@@ -1089,7 +1265,10 @@ export default function Personal() {
             value="vacation"
             className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300"
           >
-            <VacationPlanEditor embedded />
+            <VacationPlanEditor
+              embedded
+              onHeroMetaChange={handleVacationHeroMetaChange}
+            />
           </TabsContent>
         </Tabs>
       </div>

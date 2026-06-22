@@ -201,7 +201,28 @@ const ROLE_BUBBLE_STYLES: Record<
   },
 };
 
-type CalendarViewMode = "year" | "month" | "week" | "day";
+export type CalendarViewMode = "year" | "month" | "week" | "day";
+
+export type VacationHeroMeta = {
+  label: string;
+  view: CalendarViewMode;
+  counts: {
+    total: number;
+    geplant: number;
+    genehmigt: number;
+    abgelehnt: number;
+    activeFilterLabel: string;
+  };
+  filterActive: boolean;
+  showOnlySelf: boolean;
+  exportDisabled: boolean;
+  onPrevPeriod: () => void;
+  onNextPeriod: () => void;
+  onViewChange: (view: CalendarViewMode) => void;
+  onOpenFilters: () => void;
+  onExport: () => void | Promise<void>;
+  onShowOnlySelfChange: (checked: boolean) => void;
+};
 
 type ShiftPreferences = {
   vacationVisibilityRoleGroups?: VacationVisibilityGroup[];
@@ -453,7 +474,11 @@ const getRoleBubbleClasses = (group: "OA" | "ASS" | "TA", variant: "chip" | "pan
 
 export default function VacationPlanEditor({
   embedded = false,
-}: { embedded?: boolean } = {}) {
+  onHeroMetaChange,
+}: {
+  embedded?: boolean;
+  onHeroMetaChange?: (meta: VacationHeroMeta | null) => void;
+} = {}) {
   const { employee: currentUser, isAdmin, capabilities } = useAuth();
   const { toast } = useToast();
   const [focusDate, setFocusDate] = useState(() => new Date());
@@ -499,6 +524,7 @@ export default function VacationPlanEditor({
   );
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<number[]>([]);
   const [employeeFilterQuery, setEmployeeFilterQuery] = useState("");
+  const [filterPopoverOpen, setFilterPopoverOpen] = useState(false);
   const [absenceDraft, setAbsenceDraft] = useState<AbsenceDraft>(() =>
     createEmptyAbsenceDraft(currentUser?.id ?? null),
   );
@@ -1756,6 +1782,56 @@ export default function VacationPlanEditor({
     return format(focusDate, "EEEE, dd.MM.yyyy", { locale: de });
   }, [calendarView, focusDate, weekViewEnd, weekViewStart]);
 
+  const activeFilterLabel = useMemo(() => {
+    if (selectedEmployeeIds.length > 0) {
+      return `${selectedEmployeeIds.length} Mitarbeiter`;
+    }
+    if (filterActive) return "Eingeschraenkt";
+    return "Keine";
+  }, [filterActive, selectedEmployeeIds.length]);
+
+  const heroMeta = useMemo<VacationHeroMeta>(
+    () => ({
+      label: calendarPeriodLabel,
+      view: calendarView,
+      counts: {
+        total: counts.total,
+        geplant: counts.geplant,
+        genehmigt: counts.genehmigt,
+        abgelehnt: counts.abgelehnt,
+        activeFilterLabel,
+      },
+      filterActive,
+      showOnlySelf,
+      exportDisabled: activeAbsences.length === 0,
+      onPrevPeriod: handlePrevPeriod,
+      onNextPeriod: handleNextPeriod,
+      onViewChange: (view) => setCalendarView(view),
+      onOpenFilters: () => setFilterPopoverOpen(true),
+      onExport: handleExportAbsences,
+      onShowOnlySelfChange: (checked) => setShowOnlySelf(checked),
+    }),
+    [
+      activeAbsences.length,
+      activeFilterLabel,
+      calendarPeriodLabel,
+      calendarView,
+      counts.abgelehnt,
+      counts.geplant,
+      counts.genehmigt,
+      counts.total,
+      filterActive,
+      handleExportAbsences,
+      showOnlySelf,
+    ],
+  );
+
+  useEffect(() => {
+    if (!embedded || !onHeroMetaChange) return;
+    onHeroMetaChange(heroMeta);
+    return () => onHeroMetaChange(null);
+  }, [embedded, heroMeta, onHeroMetaChange]);
+
   const dayViewAbsences = useMemo(
     () =>
       getDayAbsences(focusDate)
@@ -2034,11 +2110,132 @@ export default function VacationPlanEditor({
 
   const quarterLabel = `${format(quarterStart, "MMMM", { locale: de })} - ${format(quarterEnd, "MMMM yyyy", { locale: de })}`;
 
+  const filterPopoverContent = (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <div className="text-xs font-semibold uppercase text-muted-foreground">
+          Rollen
+        </div>
+        <div className="max-h-32 overflow-y-auto space-y-2 pr-1">
+          {visibilityGroups.map((group) => (
+            <div key={group} className="flex items-center gap-2">
+              <Checkbox
+                id={`filter-role-${group}`}
+                checked={selectedRoleGroups.includes(group)}
+                onCheckedChange={() => toggleRoleFilter(group)}
+              />
+              <Label
+                htmlFor={`filter-role-${group}`}
+                className="text-sm font-normal cursor-pointer"
+              >
+                {VISIBILITY_GROUP_LABELS[group]}
+              </Label>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-xs font-semibold uppercase text-muted-foreground">
+            Mitarbeiter
+          </div>
+          {selectedEmployeeIds.length > 0 && (
+            <span className="text-[11px] text-muted-foreground">
+              {selectedEmployeeIds.length} gewaehlt
+            </span>
+          )}
+        </div>
+        <Input
+          value={employeeFilterQuery}
+          onChange={(e) => setEmployeeFilterQuery(e.target.value)}
+          placeholder="Mitarbeiter suchen..."
+          className="h-8"
+        />
+        <div className="max-h-44 overflow-y-auto space-y-2 pr-1">
+          {filteredEmployeeFilterCandidates.map((emp) => {
+            const label =
+              [emp.lastName, emp.firstName].filter(Boolean).join(" ").trim() ||
+              emp.name ||
+              "Unbekannt";
+            return (
+              <div key={`filter-emp-${emp.id}`} className="flex items-start gap-2">
+                <Checkbox
+                  id={`filter-emp-${emp.id}`}
+                  checked={selectedEmployeeIds.includes(emp.id)}
+                  onCheckedChange={() => toggleEmployeeFilter(emp.id)}
+                />
+                <Label
+                  htmlFor={`filter-emp-${emp.id}`}
+                  className="text-sm font-normal cursor-pointer leading-tight"
+                >
+                  <div>{label}</div>
+                  {emp.role ? (
+                    <div className="text-[11px] text-muted-foreground">
+                      {emp.role}
+                    </div>
+                  ) : null}
+                </Label>
+              </div>
+            );
+          })}
+          {!filteredEmployeeFilterCandidates.length && (
+            <p className="text-xs text-muted-foreground">
+              Keine passenden Mitarbeiter
+            </p>
+          )}
+        </div>
+      </div>
+      <div className="space-y-2">
+        <div className="text-xs font-semibold uppercase text-muted-foreground">
+          Kompetenzen
+        </div>
+        <div className="max-h-40 overflow-y-auto space-y-2 pr-1">
+          {activeCompetencies.map((comp) => (
+            <div key={comp.id} className="flex items-center gap-2">
+              <Checkbox
+                id={`filter-comp-${comp.id}`}
+                checked={selectedCompetencyIds.includes(comp.id)}
+                onCheckedChange={() => toggleCompetencyFilter(comp.id)}
+              />
+              <Label
+                htmlFor={`filter-comp-${comp.id}`}
+                className="text-sm font-normal cursor-pointer"
+              >
+                {comp.name}
+              </Label>
+            </div>
+          ))}
+          {!activeCompetencies.length && (
+            <p className="text-xs text-muted-foreground">
+              Keine Kompetenzen vorhanden
+            </p>
+          )}
+        </div>
+      </div>
+      <Button variant="ghost" size="sm" onClick={resetFilters}>
+        Zuruecksetzen
+      </Button>
+    </div>
+  );
+
   const content = (
     <div className="space-y-6">
-      <Card className="border-none kabeg-shadow">
-        <CardContent className="space-y-5 p-5">
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
+      {embedded && (
+        <Popover open={filterPopoverOpen} onOpenChange={setFilterPopoverOpen}>
+          <PopoverTrigger asChild>
+            <button type="button" className="sr-only" aria-hidden="true" tabIndex={-1}>
+              Filter
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-80">
+            {filterPopoverContent}
+          </PopoverContent>
+        </Popover>
+      )}
+      {!embedded && (
+        <Card className="border-none kabeg-shadow">
+          <CardContent className="space-y-5 p-5">
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
             <div className="rounded-2xl border border-slate-200 bg-[linear-gradient(135deg,#f8fbff_0%,#eef4ff_100%)] p-4 shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="space-y-2">
@@ -2148,7 +2345,7 @@ export default function VacationPlanEditor({
                 )}
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <Popover>
+                <Popover open={filterPopoverOpen} onOpenChange={setFilterPopoverOpen}>
                   <PopoverTrigger asChild>
                     <Button
                       variant="outline"
@@ -2159,120 +2356,7 @@ export default function VacationPlanEditor({
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent align="end" className="w-80">
-                    <div className="space-y-4">
-                    <div className="space-y-2">
-                      <div className="text-xs font-semibold uppercase text-muted-foreground">
-                        Rollen
-                      </div>
-                      <div className="max-h-32 overflow-y-auto space-y-2 pr-1">
-                        {visibilityGroups.map((group) => (
-                          <div key={group} className="flex items-center gap-2">
-                            <Checkbox
-                              id={`filter-role-${group}`}
-                              checked={selectedRoleGroups.includes(group)}
-                              onCheckedChange={() => toggleRoleFilter(group)}
-                            />
-                            <Label
-                              htmlFor={`filter-role-${group}`}
-                              className="text-sm font-normal cursor-pointer"
-                            >
-                              {VISIBILITY_GROUP_LABELS[group]}
-                            </Label>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-xs font-semibold uppercase text-muted-foreground">
-                          Mitarbeiter
-                        </div>
-                        {selectedEmployeeIds.length > 0 && (
-                          <span className="text-[11px] text-muted-foreground">
-                            {selectedEmployeeIds.length} gewaehlt
-                          </span>
-                        )}
-                      </div>
-                      <Input
-                        value={employeeFilterQuery}
-                        onChange={(e) => setEmployeeFilterQuery(e.target.value)}
-                        placeholder="Mitarbeiter suchen..."
-                        className="h-8"
-                      />
-                      <div className="max-h-44 overflow-y-auto space-y-2 pr-1">
-                        {filteredEmployeeFilterCandidates.map((emp) => {
-                          const label =
-                            [emp.lastName, emp.firstName]
-                              .filter(Boolean)
-                              .join(" ")
-                              .trim() || emp.name || "Unbekannt";
-                          return (
-                            <div
-                              key={`filter-emp-${emp.id}`}
-                              className="flex items-start gap-2"
-                            >
-                              <Checkbox
-                                id={`filter-emp-${emp.id}`}
-                                checked={selectedEmployeeIds.includes(emp.id)}
-                                onCheckedChange={() => toggleEmployeeFilter(emp.id)}
-                              />
-                              <Label
-                                htmlFor={`filter-emp-${emp.id}`}
-                                className="text-sm font-normal cursor-pointer leading-tight"
-                              >
-                                <div>{label}</div>
-                                {emp.role ? (
-                                  <div className="text-[11px] text-muted-foreground">
-                                    {emp.role}
-                                  </div>
-                                ) : null}
-                              </Label>
-                            </div>
-                          );
-                        })}
-                        {!filteredEmployeeFilterCandidates.length && (
-                          <p className="text-xs text-muted-foreground">
-                            Keine passenden Mitarbeiter
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="text-xs font-semibold uppercase text-muted-foreground">
-                        Kompetenzen
-                      </div>
-                      <div className="max-h-40 overflow-y-auto space-y-2 pr-1">
-                        {activeCompetencies.map((comp) => (
-                          <div
-                            key={comp.id}
-                            className="flex items-center gap-2"
-                          >
-                            <Checkbox
-                              id={`filter-comp-${comp.id}`}
-                              checked={selectedCompetencyIds.includes(comp.id)}
-                              onCheckedChange={() =>
-                                toggleCompetencyFilter(comp.id)
-                              }
-                            />
-                            <Label
-                              htmlFor={`filter-comp-${comp.id}`}
-                              className="text-sm font-normal cursor-pointer"
-                            >
-                              {comp.name}
-                            </Label>
-                          </div>
-                        ))}
-                        {!activeCompetencies.length && (
-                          <p className="text-xs text-muted-foreground">
-                            Keine Kompetenzen vorhanden
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                      <Button variant="ghost" size="sm" onClick={resetFilters}>
-                        Zuruecksetzen
-                      </Button>
-                    </div>
+                    {filterPopoverContent}
                   </PopoverContent>
                 </Popover>
                 <Button
@@ -2701,68 +2785,69 @@ export default function VacationPlanEditor({
               </div>
             </div>
           )}
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Eintraege
+          {!embedded && (
+            <>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Eintraege
+                  </div>
+                  <div className="mt-1 text-2xl font-semibold text-slate-900">
+                    {counts.total}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Geplant
+                  </div>
+                  <div className="mt-1 text-2xl font-semibold text-slate-800">
+                    {counts.geplant}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 shadow-sm">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                    Genehmigt
+                  </div>
+                  <div className="mt-1 text-2xl font-semibold text-emerald-800">
+                    {counts.genehmigt}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 shadow-sm">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-700">
+                    Abgelehnt
+                  </div>
+                  <div className="mt-1 text-2xl font-semibold text-rose-800">
+                    {counts.abgelehnt}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Aktive Filter
+                  </div>
+                  <div className="mt-1 text-base font-semibold text-slate-900">
+                    {activeFilterLabel}
+                  </div>
+                </div>
               </div>
-              <div className="mt-1 text-2xl font-semibold text-slate-900">
-                {counts.total}
-              </div>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Geplant
-              </div>
-              <div className="mt-1 text-2xl font-semibold text-slate-800">
-                {counts.geplant}
-              </div>
-            </div>
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 shadow-sm">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                Genehmigt
-              </div>
-              <div className="mt-1 text-2xl font-semibold text-emerald-800">
-                {counts.genehmigt}
-              </div>
-            </div>
-            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 shadow-sm">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-700">
-                Abgelehnt
-              </div>
-              <div className="mt-1 text-2xl font-semibold text-rose-800">
-                {counts.abgelehnt}
-              </div>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Aktive Filter
-              </div>
-              <div className="mt-1 text-base font-semibold text-slate-900">
-                {selectedEmployeeIds.length > 0
-                  ? `${selectedEmployeeIds.length} Mitarbeiter`
-                  : filterActive
-                    ? "Eingeschraenkt"
-                    : "Keine"}
-              </div>
-            </div>
-          </div>
-          {selectedEmployeeNames.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {selectedEmployeeNames.slice(0, 6).map((name) => (
-                <Badge key={name} variant="outline" className="text-[11px] px-2 py-0">
-                  {name}
-                </Badge>
-              ))}
-              {selectedEmployeeNames.length > 6 && (
-                <Badge variant="outline" className="text-[11px] px-2 py-0">
-                  +{selectedEmployeeNames.length - 6} weitere
-                </Badge>
+              {selectedEmployeeNames.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {selectedEmployeeNames.slice(0, 6).map((name) => (
+                    <Badge key={name} variant="outline" className="text-[11px] px-2 py-0">
+                      {name}
+                    </Badge>
+                  ))}
+                  {selectedEmployeeNames.length > 6 && (
+                    <Badge variant="outline" className="text-[11px] px-2 py-0">
+                      +{selectedEmployeeNames.length - 6} weitere
+                    </Badge>
+                  )}
+                </div>
               )}
-            </div>
+            </>
           )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="border-none kabeg-shadow">
         <CardHeader>
@@ -3362,10 +3447,9 @@ export default function VacationPlanEditor({
               <span className="inline-flex h-2.5 w-2.5 rounded-sm bg-slate-50 border border-slate-200" />
               <span>Wochenende</span>
             </div>
-          </div>
-        </CardContent>
-      </Card>
-
+            </div>
+          </CardContent>
+        </Card>
       {!embedded && (
         <Card className="border-none kabeg-shadow">
           <CardHeader>
