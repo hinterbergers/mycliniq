@@ -242,6 +242,19 @@ type WeeklyHeroMeta = {
   onNextWeek: () => void;
 };
 
+type RosterHeroMeta = {
+  label: string;
+  statusLabel: string;
+  areaFilter: "all" | "geb" | "gyn";
+  isExporting: boolean;
+  isLoading: boolean;
+  onSubscribe: () => void | Promise<void>;
+  onExport: () => void | Promise<void>;
+  onPrevMonth: () => void;
+  onNextMonth: () => void;
+  onAreaFilterChange: (value: "all" | "geb" | "gyn") => void;
+};
+
 const VACATION_VIEW_LABELS: Record<CalendarViewMode, string> = {
   year: "Jahr",
   month: "Monat",
@@ -310,6 +323,21 @@ const isWeeklyHeroMetaEqual = (
     left.dateRangeLabel === right.dateRangeLabel &&
     left.statusLabel === right.statusLabel &&
     left.canSubscribe === right.canSubscribe &&
+    left.isExporting === right.isExporting &&
+    left.isLoading === right.isLoading
+  );
+};
+
+const isRosterHeroMetaEqual = (
+  left: RosterHeroMeta | null,
+  right: RosterHeroMeta | null,
+) => {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return (
+    left.label === right.label &&
+    left.statusLabel === right.statusLabel &&
+    left.areaFilter === right.areaFilter &&
     left.isExporting === right.isExporting &&
     left.isLoading === right.isLoading
   );
@@ -468,6 +496,7 @@ export default function Personal() {
     plannedDays: number;
     absenceReasonCounts: Array<{ reason: string; days: number }>;
   } | null>(null);
+  const [rosterHeroMeta, setRosterHeroMeta] = useState<RosterHeroMeta | null>(null);
   const [weeklyHeroMeta, setWeeklyHeroMeta] = useState<WeeklyHeroMeta | null>(null);
   const [vacationHeroMeta, setVacationHeroMeta] = useState<VacationHeroMeta | null>(
     null,
@@ -735,6 +764,12 @@ export default function Personal() {
     );
   }, []);
 
+  const handleRosterHeroMetaChange = useCallback((nextMeta: RosterHeroMeta | null) => {
+    setRosterHeroMeta((currentMeta) =>
+      isRosterHeroMetaEqual(currentMeta, nextMeta) ? currentMeta : nextMeta,
+    );
+  }, []);
+
   const handleVacationHeroMetaChange = useCallback(
     (nextMeta: VacationHeroMeta | null) => {
       setVacationHeroMeta((currentMeta) =>
@@ -868,6 +903,33 @@ export default function Personal() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                     <h1 className="text-3xl font-bold text-white">Dienstpläne</h1>
+                    {activeTab === "roster" && rosterHeroMeta && (
+                      <div className="flex items-center gap-2 text-xs text-primary-foreground/90 sm:text-sm">
+                        <span className="font-medium">{rosterHeroMeta.label}</span>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 rounded-full border border-white/15 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
+                            onClick={rosterHeroMeta.onPrevMonth}
+                            data-testid="button-roster-hero-prev"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 rounded-full border border-white/15 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
+                            onClick={rosterHeroMeta.onNextMonth}
+                            data-testid="button-roster-hero-next"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                     {activeTab === "weekly" && weeklyHeroMeta && (
                       <div className="flex items-center gap-2 text-xs text-primary-foreground/90 sm:text-sm">
                         <span className="font-medium">{weeklyHeroMeta.label}</span>
@@ -995,6 +1057,55 @@ export default function Personal() {
                       <ClipboardCopy className="w-4 h-4" />
                       Link kopieren
                     </Button>
+                  </div>
+                )}
+
+                {activeTab === "roster" && rosterHeroMeta && (
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant="outline"
+                      className="border-white/20 bg-white/10 text-primary-foreground"
+                    >
+                      Status: {rosterHeroMeta.statusLabel}
+                    </Badge>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="gap-2 border-white/20 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
+                      onClick={rosterHeroMeta.onSubscribe}
+                      data-testid="button-roster-hero-subscribe"
+                    >
+                      <Rss className="w-4 h-4" />
+                      Abonnieren
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="gap-2 border-white/20 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
+                      onClick={rosterHeroMeta.onExport}
+                      disabled={rosterHeroMeta.isExporting || rosterHeroMeta.isLoading}
+                      data-testid="button-roster-hero-export"
+                    >
+                      <Download className="w-4 h-4" />
+                      {rosterHeroMeta.isExporting ? "Export läuft..." : "Export"}
+                    </Button>
+                    <Select
+                      value={rosterHeroMeta.areaFilter}
+                      onValueChange={(value) =>
+                        rosterHeroMeta.onAreaFilterChange(
+                          value as "all" | "geb" | "gyn",
+                        )
+                      }
+                    >
+                      <SelectTrigger className="h-9 w-full min-w-[160px] border-white/20 bg-white/10 text-primary-foreground sm:w-[200px]">
+                        <SelectValue placeholder="Bereich" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Alle Bereiche</SelectItem>
+                        <SelectItem value="geb">Geburtshilfe</SelectItem>
+                        <SelectItem value="gyn">Gynäkologie</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 )}
 
@@ -1246,6 +1357,7 @@ export default function Personal() {
               onExport={handleExport}
               exporting={exporting}
               onSummaryChange={handleRosterSummaryChange}
+              onHeroMetaChange={handleRosterHeroMetaChange}
             />
           </TabsContent>
 
@@ -1291,6 +1403,7 @@ function RosterView({
   onExport,
   exporting,
   onSummaryChange,
+  onHeroMetaChange,
 }: {
   currentDate: Date;
   setCurrentDate: (d: Date) => void;
@@ -1302,6 +1415,7 @@ function RosterView({
     weekendShifts: number;
     absenceReasonCounts: Array<{ reason: string; days: number }>;
   }) => void;
+  onHeroMetaChange?: (meta: RosterHeroMeta | null) => void;
 }) {
   const { employee: currentUser, user, token } = useAuth();
   const { toast } = useToast();
@@ -1323,6 +1437,7 @@ function RosterView({
   const [unassignedDialogOpen, setUnassignedDialogOpen] = useState(false);
   const [claimingShiftId, setClaimingShiftId] = useState<string | number | null>(null);
   const [showAbsenceColumn, setShowAbsenceColumn] = useState(false);
+  const [selectedArea, setSelectedArea] = useState<"all" | "geb" | "gyn">("all");
 
   const planStatus = dutyPlan?.status;
   const statusLabel = planStatus ? PLAN_STATUS_LABELS[planStatus] : "Vorschau";
@@ -1951,90 +2066,44 @@ function RosterView({
     weekendShiftCount,
   ]);
 
+  const rosterHeroMeta = useMemo<RosterHeroMeta>(
+    () => ({
+      label: format(currentDate, "MMMM yyyy", { locale: de }),
+      statusLabel,
+      areaFilter: selectedArea,
+      isExporting: exporting,
+      isLoading: planLoading,
+      onSubscribe,
+      onExport,
+      onPrevMonth: () => setCurrentDate(subMonths(currentDate, 1)),
+      onNextMonth: () => setCurrentDate(addMonths(currentDate, 1)),
+      onAreaFilterChange: setSelectedArea,
+    }),
+    [
+      currentDate,
+      exporting,
+      onExport,
+      onSubscribe,
+      planLoading,
+      selectedArea,
+      setCurrentDate,
+      statusLabel,
+    ],
+  );
+
+  useEffect(() => {
+    onHeroMetaChange?.(rosterHeroMeta);
+  }, [onHeroMetaChange, rosterHeroMeta]);
+
+  useEffect(() => {
+    return () => {
+      onHeroMetaChange?.(null);
+    };
+  }, [onHeroMetaChange]);
+
   return (
     <div className="space-y-6">
       <Card className="border-none kabeg-shadow overflow-visible">
-        <div className="border-b border-border bg-card p-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-center gap-3">
-            <h3 className="text-lg font-semibold flex items-center gap-2">
-              <CalendarIcon className="w-5 h-5 text-primary" />
-              {format(currentDate, "MMMM yyyy", { locale: de })}
-            </h3>
-            <div className="flex items-center gap-1 bg-secondary rounded-lg p-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => setCurrentDate(subMonths(currentDate, 1))}
-                data-testid="button-prev-month"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => setCurrentDate(addMonths(currentDate, 1))}
-                data-testid="button-next-month"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge
-                variant="outline"
-                className={
-                  planStatus === "Freigegeben"
-                    ? "bg-green-50 text-green-700 border-green-200"
-                    : planStatus === "Vorläufig"
-                      ? "bg-blue-50 text-blue-700 border-blue-200"
-                      : "bg-amber-50 text-amber-700 border-amber-200"
-                }
-              >
-                {planLoading
-                  ? "Status wird geladen..."
-                  : `Status: ${statusLabel}`}
-              </Badge>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-2"
-                onClick={onSubscribe}
-                data-testid="button-subscribe"
-              >
-                <Rss className="w-4 h-4" />
-                <span className="hidden sm:inline">Abonnieren</span>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-2"
-                onClick={onExport}
-                disabled={exporting}
-                data-testid="button-export"
-              >
-                <Download className="w-4 h-4" />
-                <span className="hidden sm:inline">
-                  {exporting ? "Export läuft..." : "Export"}
-                </span>
-              </Button>
-              <Select defaultValue="all">
-                <SelectTrigger className="h-9 w-full min-w-[160px] sm:w-[180px]">
-                  <SelectValue placeholder="Bereich" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Alle Bereiche</SelectItem>
-                  <SelectItem value="geb">Geburtshilfe</SelectItem>
-                  <SelectItem value="gyn">Gynäkologie</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </div>
-
         <div className="space-y-3 p-4 md:hidden">
           {rosterLoading ? (
             <div className="rounded-xl border border-border bg-background px-4 py-8 text-center text-sm text-muted-foreground">
