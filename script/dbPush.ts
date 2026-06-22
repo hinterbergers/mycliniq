@@ -28,6 +28,12 @@ function getDatabaseUrl(): string {
 }
 
 const migrationSql = `
+ALTER TYPE app_role
+ADD VALUE IF NOT EXISTS 'Ausbilder';
+
+ALTER TYPE user_app_role
+ADD VALUE IF NOT EXISTS 'Ausbilder';
+
 ALTER TABLE rooms
 ADD COLUMN IF NOT EXISTS row_color text;
 
@@ -110,6 +116,239 @@ ADD COLUMN IF NOT EXISTS created_by_id integer REFERENCES employees(id);
 
 ALTER TABLE weekly_plan_assignments
 ADD COLUMN IF NOT EXISTS updated_by_id integer REFERENCES employees(id);
+
+DO $$
+BEGIN
+  CREATE TYPE education_import_status AS ENUM ('draft', 'uploaded', 'mapped', 'reviewed');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TYPE education_import_status ADD VALUE IF NOT EXISTS 'draft';
+  ALTER TYPE education_import_status ADD VALUE IF NOT EXISTS 'uploaded';
+  ALTER TYPE education_import_status ADD VALUE IF NOT EXISTS 'mapped';
+  ALTER TYPE education_import_status ADD VALUE IF NOT EXISTS 'reviewed';
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE TABLE IF NOT EXISTS education_programs (
+  id serial PRIMARY KEY,
+  department_id integer NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+  title text NOT NULL,
+  slug text NOT NULL,
+  description text,
+  target_role text,
+  is_active boolean NOT NULL DEFAULT true,
+  created_by_id integer REFERENCES employees(id),
+  updated_by_id integer REFERENCES employees(id),
+  created_at timestamp NOT NULL DEFAULT now(),
+  updated_at timestamp NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS education_programs_department_id_idx
+  ON education_programs (department_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS education_programs_department_slug_idx
+  ON education_programs (department_id, slug);
+
+CREATE TABLE IF NOT EXISTS education_modules (
+  id serial PRIMARY KEY,
+  program_id integer NOT NULL REFERENCES education_programs(id) ON DELETE CASCADE,
+  title text NOT NULL,
+  slug text NOT NULL,
+  description text,
+  sort_order integer NOT NULL DEFAULT 0,
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamp NOT NULL DEFAULT now(),
+  updated_at timestamp NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS education_modules_program_id_idx
+  ON education_modules (program_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS education_modules_program_slug_idx
+  ON education_modules (program_id, slug);
+
+CREATE TABLE IF NOT EXISTS education_requirements (
+  id serial PRIMARY KEY,
+  module_id integer NOT NULL REFERENCES education_modules(id) ON DELETE CASCADE,
+  title text NOT NULL,
+  code text,
+  description text,
+  category text,
+  required_count integer NOT NULL DEFAULT 0,
+  unit_label text NOT NULL DEFAULT 'Anzahl',
+  matching_hints text[] NOT NULL DEFAULT ARRAY[]::text[],
+  source_reference text,
+  sort_order integer NOT NULL DEFAULT 0,
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamp NOT NULL DEFAULT now(),
+  updated_at timestamp NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS education_requirements_module_id_idx
+  ON education_requirements (module_id);
+
+CREATE INDEX IF NOT EXISTS education_requirements_category_idx
+  ON education_requirements (category);
+
+CREATE TABLE IF NOT EXISTS education_mentor_assignments (
+  id serial PRIMARY KEY,
+  trainer_employee_id integer NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  trainee_employee_id integer NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  assigned_by_id integer REFERENCES employees(id),
+  notes text,
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamp NOT NULL DEFAULT now(),
+  updated_at timestamp NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS education_mentor_assignments_trainer_idx
+  ON education_mentor_assignments (trainer_employee_id);
+
+CREATE INDEX IF NOT EXISTS education_mentor_assignments_trainee_idx
+  ON education_mentor_assignments (trainee_employee_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS education_mentor_assignments_unique_active_idx
+  ON education_mentor_assignments (trainer_employee_id, trainee_employee_id);
+
+CREATE TABLE IF NOT EXISTS education_progress (
+  id serial PRIMARY KEY,
+  employee_id integer NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  requirement_id integer NOT NULL REFERENCES education_requirements(id) ON DELETE CASCADE,
+  completed_count integer NOT NULL DEFAULT 0,
+  verified_count integer NOT NULL DEFAULT 0,
+  last_activity_at timestamp,
+  last_entry_label text,
+  notes text,
+  updated_by_id integer REFERENCES employees(id),
+  created_at timestamp NOT NULL DEFAULT now(),
+  updated_at timestamp NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS education_progress_employee_id_idx
+  ON education_progress (employee_id);
+
+CREATE INDEX IF NOT EXISTS education_progress_requirement_id_idx
+  ON education_progress (requirement_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS education_progress_employee_requirement_idx
+  ON education_progress (employee_id, requirement_id);
+
+CREATE TABLE IF NOT EXISTS education_profiles (
+  id serial PRIMARY KEY,
+  employee_id integer NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  training_start_date date,
+  basic_training_completed boolean NOT NULL DEFAULT false,
+  expected_training_end_date date,
+  exam_date date,
+  exam_passed boolean NOT NULL DEFAULT false,
+  notes text,
+  updated_by_id integer REFERENCES employees(id),
+  created_at timestamp NOT NULL DEFAULT now(),
+  updated_at timestamp NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS education_profiles_employee_id_idx
+  ON education_profiles (employee_id);
+
+CREATE INDEX IF NOT EXISTS education_profiles_exam_date_idx
+  ON education_profiles (exam_date);
+
+CREATE TABLE IF NOT EXISTS education_import_uploads (
+  id serial PRIMARY KEY,
+  employee_id integer NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  uploaded_by_id integer REFERENCES employees(id) ON DELETE SET NULL,
+  file_name text NOT NULL,
+  mime_type text,
+  status education_import_status NOT NULL DEFAULT 'draft',
+  row_count integer NOT NULL DEFAULT 0,
+  matched_count integer NOT NULL DEFAULT 0,
+  unmatched_count integer NOT NULL DEFAULT 0,
+  raw_rows jsonb NOT NULL DEFAULT '[]'::jsonb,
+  notes text,
+  created_at timestamp NOT NULL DEFAULT now(),
+  updated_at timestamp NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS education_import_uploads_employee_id_idx
+  ON education_import_uploads (employee_id);
+
+CREATE INDEX IF NOT EXISTS education_import_uploads_status_idx
+  ON education_import_uploads (status);
+
+DO $$
+BEGIN
+  CREATE TYPE education_event_status AS ENUM ('draft', 'published', 'archived');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  CREATE TYPE education_event_request_status AS ENUM ('interested', 'approved', 'rejected');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE TABLE IF NOT EXISTS education_events (
+  id serial PRIMARY KEY,
+  department_id integer NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+  title text NOT NULL,
+  event_type text NOT NULL DEFAULT 'Fortbildung',
+  location text,
+  external_url text,
+  description text,
+  target_role text,
+  starts_at date NOT NULL,
+  ends_at date NOT NULL,
+  max_approvals integer,
+  status education_event_status NOT NULL DEFAULT 'draft',
+  created_by_id integer REFERENCES employees(id),
+  updated_by_id integer REFERENCES employees(id),
+  created_at timestamp NOT NULL DEFAULT now(),
+  updated_at timestamp NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS education_events_department_id_idx
+  ON education_events (department_id);
+
+CREATE INDEX IF NOT EXISTS education_events_status_idx
+  ON education_events (status);
+
+CREATE INDEX IF NOT EXISTS education_events_starts_at_idx
+  ON education_events (starts_at);
+
+CREATE TABLE IF NOT EXISTS education_event_requests (
+  id serial PRIMARY KEY,
+  event_id integer NOT NULL REFERENCES education_events(id) ON DELETE CASCADE,
+  employee_id integer NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  requested_by_id integer REFERENCES employees(id) ON DELETE SET NULL,
+  status education_event_request_status NOT NULL DEFAULT 'interested',
+  interest_note text,
+  decision_note text,
+  cost_covered_by_department boolean NOT NULL DEFAULT false,
+  decided_by_id integer REFERENCES employees(id),
+  decided_at timestamp,
+  linked_planned_absence_id integer,
+  created_at timestamp NOT NULL DEFAULT now(),
+  updated_at timestamp NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS education_event_requests_event_id_idx
+  ON education_event_requests (event_id);
+
+CREATE INDEX IF NOT EXISTS education_event_requests_employee_id_idx
+  ON education_event_requests (employee_id);
+
+CREATE INDEX IF NOT EXISTS education_event_requests_status_idx
+  ON education_event_requests (status);
+
+CREATE UNIQUE INDEX IF NOT EXISTS education_event_requests_event_employee_idx
+  ON education_event_requests (event_id, employee_id);
 
 UPDATE tool_visibility
 SET sort_order = CASE tool_key

@@ -88,7 +88,10 @@ export function Header({
   >([]);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
 
-  const canUseViewAsUserToggle = isAdminActual || user?.appRole === "Editor";
+  const canUseViewAsUserToggle =
+    isAdminActual ||
+    user?.appRole === "Editor" ||
+    user?.appRole === "Ausbilder";
   const serviceLineMeta = useMemo(
     () =>
       serviceLines.map((line) => ({

@@ -17,6 +17,7 @@ import {
   Building,
   CalendarDays,
   SlidersHorizontal,
+  GraduationCap,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
@@ -88,6 +89,16 @@ export default function PlanningCockpit() {
         "project.manage",
         "project.delete",
       ],
+    },
+    {
+      title: "Ausbildungs-Editor",
+      description:
+        "Ausbildungsprogramme, Module und Soll-Leistungen strukturell vorbereiten.",
+      icon: GraduationCap,
+      action: () => setLocation("/ausbildung/katalog"),
+      color: "text-emerald-700",
+      bg: "bg-emerald-50",
+      requiredAnyCaps: ["training.edit", "training.supervise"],
     },
     {
       title: "Widgets bearbeiten",

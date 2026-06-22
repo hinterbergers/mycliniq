@@ -217,10 +217,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [user?.appRole],
   );
 
-  const isTraineeRole = useMemo(() => {
-    const role = (employee?.role ?? "").toLowerCase();
+  const isEducationParticipantRole = useMemo(() => {
+    const role = String(employee?.role ?? "").toLowerCase();
     return (
       role.includes("assistenz") ||
+      role.includes("facharzt") ||
       role.includes("turnus") ||
       role.includes("kpj") ||
       role.includes("famul")
@@ -267,15 +268,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () =>
       isSuperuser ||
       isTrainerRole ||
-      isTraineeRole ||
+      isEducationParticipantRole ||
       trainingEnabledFromEmployee ||
-      trainingEnabledFromUser,
+      trainingEnabledFromUser ||
+      can("training.supervise") ||
+      can("training.edit"),
     [
       isSuperuser,
       isTrainerRole,
-      isTraineeRole,
+      isEducationParticipantRole,
       trainingEnabledFromEmployee,
       trainingEnabledFromUser,
+      can,
     ],
   );
 

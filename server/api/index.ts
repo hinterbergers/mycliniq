@@ -26,6 +26,7 @@ import { registerMessageRoutes } from "./messages";
 import { registerTaskRoutes } from "./tasks";
 import { registerPlanningRoutes } from "./roster/planning";
 import { registerTrainingRoutes } from "./training";
+import { registerEducationRoutes } from "./education";
 import { registerSearchRoutes } from "./search";
 
 /**
@@ -99,6 +100,10 @@ export function registerModularApiRoutes(app: Express): void {
   const trainingRouter = Router();
   registerTrainingRoutes(trainingRouter);
   app.use("/api/training", trainingRouter);
+
+  const educationRouter = Router();
+  registerEducationRoutes(educationRouter);
+  app.use("/api/education", educationRouter);
 
   const searchRouter = Router();
   registerSearchRoutes(searchRouter);

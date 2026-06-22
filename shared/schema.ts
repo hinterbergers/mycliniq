@@ -24,6 +24,7 @@ import { z } from "zod";
 // User App Role Enum (for authentication/authorization)
 export const userAppRoleEnum = pgEnum("user_app_role", [
   "User",
+  "Ausbilder",
   "Admin",
   "Primararzt",
   "1. Oberarzt",
@@ -94,7 +95,12 @@ export const absenceReasonEnum = pgEnum("absence_reason", [
 ]);
 
 // App-wide role system (separate from medical roles)
-export const appRoleEnum = pgEnum("app_role", ["Admin", "Editor", "User"]);
+export const appRoleEnum = pgEnum("app_role", [
+  "Admin",
+  "Ausbilder",
+  "Editor",
+  "User",
+]);
 
 // System roles for two-tier permission system
 export const systemRoleEnum = pgEnum("system_role", [
@@ -353,6 +359,387 @@ export type InsertTrainingPresentation = z.infer<
   typeof insertTrainingPresentationSchema
 >;
 export type TrainingPresentation = typeof trainingPresentations.$inferSelect;
+
+export const educationImportStatusEnum = pgEnum("education_import_status", [
+  "draft",
+  "uploaded",
+  "mapped",
+  "reviewed",
+]);
+
+export const educationEventStatusEnum = pgEnum("education_event_status", [
+  "draft",
+  "published",
+  "archived",
+]);
+
+export const educationEventRequestStatusEnum = pgEnum(
+  "education_event_request_status",
+  ["interested", "approved", "rejected"],
+);
+
+export const educationPrograms = pgTable(
+  "education_programs",
+  {
+    id: serial("id").primaryKey(),
+    departmentId: integer("department_id")
+      .references(() => departments.id, { onDelete: "cascade" })
+      .notNull(),
+    title: text("title").notNull(),
+    slug: text("slug").notNull(),
+    description: text("description"),
+    targetRole: text("target_role"),
+    isActive: boolean("is_active").notNull().default(true),
+    createdById: integer("created_by_id").references(() => employees.id),
+    updatedById: integer("updated_by_id").references(() => employees.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("education_programs_department_id_idx").on(table.departmentId),
+    uniqueIndex("education_programs_department_slug_idx").on(
+      table.departmentId,
+      table.slug,
+    ),
+  ],
+);
+
+export const insertEducationProgramSchema = createInsertSchema(
+  educationPrograms,
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertEducationProgram = z.infer<
+  typeof insertEducationProgramSchema
+>;
+export type EducationProgram = typeof educationPrograms.$inferSelect;
+
+export const educationModules = pgTable(
+  "education_modules",
+  {
+    id: serial("id").primaryKey(),
+    programId: integer("program_id")
+      .references(() => educationPrograms.id, { onDelete: "cascade" })
+      .notNull(),
+    title: text("title").notNull(),
+    slug: text("slug").notNull(),
+    description: text("description"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("education_modules_program_id_idx").on(table.programId),
+    uniqueIndex("education_modules_program_slug_idx").on(
+      table.programId,
+      table.slug,
+    ),
+  ],
+);
+
+export const insertEducationModuleSchema = createInsertSchema(
+  educationModules,
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertEducationModule = z.infer<typeof insertEducationModuleSchema>;
+export type EducationModule = typeof educationModules.$inferSelect;
+
+export const educationRequirements = pgTable(
+  "education_requirements",
+  {
+    id: serial("id").primaryKey(),
+    moduleId: integer("module_id")
+      .references(() => educationModules.id, { onDelete: "cascade" })
+      .notNull(),
+    title: text("title").notNull(),
+    code: text("code"),
+    description: text("description"),
+    category: text("category"),
+    requiredCount: integer("required_count").notNull().default(0),
+    unitLabel: text("unit_label").notNull().default("Anzahl"),
+    matchingHints: text("matching_hints")
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::text[]`),
+    sourceReference: text("source_reference"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("education_requirements_module_id_idx").on(table.moduleId),
+    index("education_requirements_category_idx").on(table.category),
+  ],
+);
+
+export const insertEducationRequirementSchema = createInsertSchema(
+  educationRequirements,
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertEducationRequirement = z.infer<
+  typeof insertEducationRequirementSchema
+>;
+export type EducationRequirement = typeof educationRequirements.$inferSelect;
+
+export const educationMentorAssignments = pgTable(
+  "education_mentor_assignments",
+  {
+    id: serial("id").primaryKey(),
+    trainerEmployeeId: integer("trainer_employee_id")
+      .references(() => employees.id, { onDelete: "cascade" })
+      .notNull(),
+    traineeEmployeeId: integer("trainee_employee_id")
+      .references(() => employees.id, { onDelete: "cascade" })
+      .notNull(),
+    assignedById: integer("assigned_by_id").references(() => employees.id),
+    notes: text("notes"),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("education_mentor_assignments_trainer_idx").on(table.trainerEmployeeId),
+    index("education_mentor_assignments_trainee_idx").on(table.traineeEmployeeId),
+    uniqueIndex("education_mentor_assignments_unique_active_idx")
+      .on(table.trainerEmployeeId, table.traineeEmployeeId),
+  ],
+);
+
+export const insertEducationMentorAssignmentSchema = createInsertSchema(
+  educationMentorAssignments,
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertEducationMentorAssignment = z.infer<
+  typeof insertEducationMentorAssignmentSchema
+>;
+export type EducationMentorAssignment =
+  typeof educationMentorAssignments.$inferSelect;
+
+export const educationProgress = pgTable(
+  "education_progress",
+  {
+    id: serial("id").primaryKey(),
+    employeeId: integer("employee_id")
+      .references(() => employees.id, { onDelete: "cascade" })
+      .notNull(),
+    requirementId: integer("requirement_id")
+      .references(() => educationRequirements.id, { onDelete: "cascade" })
+      .notNull(),
+    completedCount: integer("completed_count").notNull().default(0),
+    verifiedCount: integer("verified_count").notNull().default(0),
+    lastActivityAt: timestamp("last_activity_at"),
+    lastEntryLabel: text("last_entry_label"),
+    notes: text("notes"),
+    updatedById: integer("updated_by_id").references(() => employees.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("education_progress_employee_id_idx").on(table.employeeId),
+    index("education_progress_requirement_id_idx").on(table.requirementId),
+    uniqueIndex("education_progress_employee_requirement_idx").on(
+      table.employeeId,
+      table.requirementId,
+    ),
+  ],
+);
+
+export const insertEducationProgressSchema = createInsertSchema(
+  educationProgress,
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertEducationProgress = z.infer<typeof insertEducationProgressSchema>;
+export type EducationProgress = typeof educationProgress.$inferSelect;
+
+export const educationProfiles = pgTable(
+  "education_profiles",
+  {
+    id: serial("id").primaryKey(),
+    employeeId: integer("employee_id")
+      .references(() => employees.id, { onDelete: "cascade" })
+      .notNull(),
+    trainingStartDate: date("training_start_date"),
+    basicTrainingCompleted: boolean("basic_training_completed")
+      .notNull()
+      .default(false),
+    expectedTrainingEndDate: date("expected_training_end_date"),
+    examDate: date("exam_date"),
+    examPassed: boolean("exam_passed").notNull().default(false),
+    notes: text("notes"),
+    updatedById: integer("updated_by_id").references(() => employees.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("education_profiles_employee_id_idx").on(table.employeeId),
+    index("education_profiles_exam_date_idx").on(table.examDate),
+  ],
+);
+
+export const insertEducationProfileSchema = createInsertSchema(
+  educationProfiles,
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertEducationProfile = z.infer<typeof insertEducationProfileSchema>;
+export type EducationProfile = typeof educationProfiles.$inferSelect;
+
+export const educationImportUploads = pgTable(
+  "education_import_uploads",
+  {
+    id: serial("id").primaryKey(),
+    employeeId: integer("employee_id")
+      .references(() => employees.id, { onDelete: "cascade" })
+      .notNull(),
+    uploadedById: integer("uploaded_by_id")
+      .references(() => employees.id, { onDelete: "set null" }),
+    fileName: text("file_name").notNull(),
+    mimeType: text("mime_type"),
+    status: educationImportStatusEnum("status").notNull().default("draft"),
+    rowCount: integer("row_count").notNull().default(0),
+    matchedCount: integer("matched_count").notNull().default(0),
+    unmatchedCount: integer("unmatched_count").notNull().default(0),
+    rawRows: jsonb("raw_rows")
+      .$type<Record<string, unknown>[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("education_import_uploads_employee_id_idx").on(table.employeeId),
+    index("education_import_uploads_status_idx").on(table.status),
+  ],
+);
+
+export const insertEducationImportUploadSchema = createInsertSchema(
+  educationImportUploads,
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertEducationImportUpload = z.infer<
+  typeof insertEducationImportUploadSchema
+>;
+export type EducationImportUpload = typeof educationImportUploads.$inferSelect;
+
+export const educationEvents = pgTable(
+  "education_events",
+  {
+    id: serial("id").primaryKey(),
+    departmentId: integer("department_id")
+      .references(() => departments.id, { onDelete: "cascade" })
+      .notNull(),
+    title: text("title").notNull(),
+    eventType: text("event_type").notNull().default("Fortbildung"),
+    location: text("location"),
+    externalUrl: text("external_url"),
+    description: text("description"),
+    targetRole: text("target_role"),
+    startsAt: date("starts_at").notNull(),
+    endsAt: date("ends_at").notNull(),
+    maxApprovals: integer("max_approvals"),
+    status: educationEventStatusEnum("status").notNull().default("draft"),
+    createdById: integer("created_by_id").references(() => employees.id),
+    updatedById: integer("updated_by_id").references(() => employees.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("education_events_department_id_idx").on(table.departmentId),
+    index("education_events_status_idx").on(table.status),
+    index("education_events_starts_at_idx").on(table.startsAt),
+  ],
+);
+
+export const insertEducationEventSchema = createInsertSchema(
+  educationEvents,
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertEducationEvent = z.infer<typeof insertEducationEventSchema>;
+export type EducationEvent = typeof educationEvents.$inferSelect;
+
+export const educationEventRequests = pgTable(
+  "education_event_requests",
+  {
+    id: serial("id").primaryKey(),
+    eventId: integer("event_id")
+      .references(() => educationEvents.id, { onDelete: "cascade" })
+      .notNull(),
+    employeeId: integer("employee_id")
+      .references(() => employees.id, { onDelete: "cascade" })
+      .notNull(),
+    requestedById: integer("requested_by_id")
+      .references(() => employees.id, { onDelete: "set null" }),
+    status: educationEventRequestStatusEnum("status")
+      .notNull()
+      .default("interested"),
+    interestNote: text("interest_note"),
+    decisionNote: text("decision_note"),
+    costCoveredByDepartment: boolean("cost_covered_by_department")
+      .notNull()
+      .default(false),
+    decidedById: integer("decided_by_id").references(() => employees.id),
+    decidedAt: timestamp("decided_at"),
+    linkedPlannedAbsenceId: integer("linked_planned_absence_id"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("education_event_requests_event_id_idx").on(table.eventId),
+    index("education_event_requests_employee_id_idx").on(table.employeeId),
+    index("education_event_requests_status_idx").on(table.status),
+    uniqueIndex("education_event_requests_event_employee_idx").on(
+      table.eventId,
+      table.employeeId,
+    ),
+  ],
+);
+
+export const insertEducationEventRequestSchema = createInsertSchema(
+  educationEventRequests,
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  decidedAt: true,
+});
+
+export type InsertEducationEventRequest = z.infer<
+  typeof insertEducationEventRequestSchema
+>;
+export type EducationEventRequest = typeof educationEventRequests.$inferSelect;
 
 // Employees table
 export const employees = pgTable(

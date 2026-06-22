@@ -44,6 +44,9 @@ export function Sidebar({
     canAny,
     isSuperuser,
     canViewTraining,
+    canViewEducation,
+    canManageEducationCatalog,
+    canViewTrainerCockpit,
   } = useAuth();
   const isExternalDuty = user?.accessScope === "external_duty";
 
@@ -89,9 +92,33 @@ export function Sidebar({
     { href: "/aufgaben", label: "Aufgaben", icon: ListCheck },
     { href: "/tools", label: "Tools", icon: Wrench },
     { href: "/nachrichten", label: "Nachrichten", icon: MessageCircle },
+    ...(canViewEducation
+      ? [
+          {
+            label: "Ausbildung",
+            icon: GraduationCap,
+            children: [
+              {
+                href: "/ausbildung",
+                label: "Mein Bereich",
+                icon: GraduationCap,
+              },
+              ...(canViewTrainerCockpit
+                ? [
+                    {
+                      href: "/ausbildung/cockpit",
+                      label: "Ausbilder-Cockpit",
+                      icon: Users,
+                    },
+                  ]
+                : []),
+            ],
+          } as NavItem,
+        ]
+      : []),
     {
       label: "Fortbildung",
-      icon: GraduationCap,
+      icon: Video,
       trainingOnly: true,
       children: [
         { href: "/fortbildung/videos", label: "Videos", icon: Video },
@@ -132,7 +159,11 @@ export function Sidebar({
 
   return (
     <aside
-      className={cn("kabeg-deep-gradient flex flex-col", containerClass, className)}
+      className={cn(
+        "kabeg-deep-gradient flex min-h-0 flex-col",
+        containerClass,
+        className,
+      )}
       data-variant={variant}
     >
       <a
@@ -173,7 +204,7 @@ export function Sidebar({
           </div>
         </div>
       )}
-      <nav className="flex-1 px-3 py-4 space-y-1">
+      <nav className="flex-1 min-h-0 overflow-y-auto px-3 py-4 space-y-1">
         {navItems
           .filter((item) => {
             if (item.adminOnly && !hasAdminAccess) return false;

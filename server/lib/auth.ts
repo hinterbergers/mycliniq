@@ -71,7 +71,7 @@ async function getAuthUserByEmployeeId(
     return null;
   }
 
-  const appRole = employee.appRole as "Admin" | "Editor" | "User";
+  const appRole = employee.appRole as "Admin" | "Ausbilder" | "Editor" | "User";
   const systemRole = (employee as any).systemRole ?? appRole;
   const capabilities = Array.isArray((employee as any).capabilities)
     ? ((employee as any).capabilities as string[])

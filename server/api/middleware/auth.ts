@@ -17,7 +17,7 @@ export interface AuthUser {
   id: number;
   oderId?: string;
   employeeId: number;
-  appRole: "Admin" | "Editor" | "User";
+  appRole: "Admin" | "Ausbilder" | "Editor" | "User";
   systemRole: "employee" | "department_admin" | "clinic_admin" | "system_admin";
   isAdmin: boolean;
   name: string;
@@ -260,7 +260,7 @@ async function getAuthUserByEmployeeId(
     return {
       id: userId,
       employeeId: employee.id,
-      appRole: employee.appRole as "Admin" | "Editor" | "User",
+      appRole: employee.appRole as "Admin" | "Ausbilder" | "Editor" | "User",
       systemRole,
       isAdmin:
         employee.isAdmin || employee.appRole === "Admin" || isTechnicalAdmin,
@@ -576,6 +576,40 @@ export function requireTrainingEnabled(
   }
 
   forbidden(res, "Fortbildungen sind nicht freigeschaltet");
+}
+
+export function isEducationTrainer(req: Request): boolean {
+  if (!req.user) return false;
+  if (req.user.isAdmin || req.user.systemRole !== "employee") return true;
+  return (
+    req.user.appRole === "Ausbilder" ||
+    req.user.capabilities.includes("training.edit") ||
+    req.user.capabilities.includes("training.supervise")
+  );
+}
+
+export function requireEducationTrainer(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  if (!req.user) {
+    unauthorized(res, "Anmeldung erforderlich");
+    return;
+  }
+
+  if (!isEducationTrainer(req)) {
+    forbidden(res, "Ausbilder- oder Admin-Berechtigung erforderlich");
+    return;
+  }
+
+  next();
+}
+
+export function canViewEducationForSelf(req: Request): boolean {
+  if (!req.user) return false;
+  if (isEducationTrainer(req)) return true;
+  return req.user.trainingEnabled;
 }
 
 /**

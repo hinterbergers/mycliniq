@@ -50,6 +50,15 @@ import type {
   Message,
   TrainingVideo,
   TrainingPresentation,
+  EducationProgram,
+  EducationModule,
+  EducationRequirement,
+  EducationProgress,
+  EducationImportUpload,
+  EducationMentorAssignment,
+  EducationProfile,
+  EducationEvent,
+  EducationEventRequest,
 } from "@shared/schema";
 import { readAuthToken } from "./authToken";
 import { getApiBase } from "./apiBase";
@@ -176,6 +185,81 @@ export type DashboardRecentChange = {
   subtitle: string | null;
   actorName?: string | null;
   targetUrl?: string | null;
+};
+
+export type EducationCatalogRequirement = EducationRequirement;
+
+export type EducationCatalogModule = EducationModule & {
+  requirements: EducationCatalogRequirement[];
+};
+
+export type EducationCatalogProgram = EducationProgram & {
+  modules: EducationCatalogModule[];
+};
+
+export type EducationTrainerPerson = {
+  id: number;
+  firstName: string | null;
+  lastName: string | null;
+  role: string | null;
+  appRole: string;
+};
+
+export type EducationTrainerTrainee = EducationTrainerPerson & {
+  summary: {
+    completed: number;
+    verified: number;
+    totalRequired: number;
+    completionPercent: number;
+  };
+};
+
+export type EducationTrainerOverview = {
+  trainees: EducationTrainerTrainee[];
+  trainers: EducationTrainerPerson[];
+  assignments: EducationMentorAssignment[];
+  catalog: EducationCatalogProgram[];
+  progress: EducationProgress[];
+};
+
+export type EducationProfileOverview = {
+  employee: {
+    id: number;
+    firstName: string | null;
+    lastName: string | null;
+    role: string | null;
+    appRole: string;
+  };
+  profile: EducationProfile | null;
+};
+
+export type EducationEventRequestOverview = EducationEventRequest & {
+  event: EducationEvent;
+  employee?: {
+    id: number;
+    firstName: string | null;
+    lastName: string | null;
+    role: string | null;
+  } | null;
+  metrics: {
+    consumedFortbildungDays: number;
+    absentInPeriodCount: number;
+    approvedCount: number;
+  };
+};
+
+export type EducationSelfOverview = {
+  catalog: EducationCatalogProgram[];
+  progress: EducationProgress[];
+  uploads: EducationImportUpload[];
+  events: EducationEvent[];
+  eventRequests: EducationEventRequest[];
+  summary: {
+    completed: number;
+    verified: number;
+    totalRequired: number;
+    completionPercent: number;
+  };
 };
 
 export type GlobalSearchDocumentHit = {
@@ -1047,6 +1131,267 @@ export const trainingApi = {
       method: "DELETE",
     });
     return handleResponse<void>(response);
+  },
+};
+
+export const educationApi = {
+  getCatalog: async (): Promise<EducationCatalogProgram[]> => {
+    const response = await apiFetch(`${API_BASE}/education/catalog`);
+    return handleResponse<EducationCatalogProgram[]>(response);
+  },
+
+  getMyOverview: async (): Promise<EducationSelfOverview> => {
+    const response = await apiFetch(`${API_BASE}/education/me`);
+    return handleResponse<EducationSelfOverview>(response);
+  },
+
+  getTrainerOverview: async (): Promise<EducationTrainerOverview> => {
+    const response = await apiFetch(`${API_BASE}/education/trainees`);
+    return handleResponse<EducationTrainerOverview>(response);
+  },
+
+  getEvents: async (): Promise<EducationEvent[]> => {
+    const response = await apiFetch(`${API_BASE}/education/events`);
+    return handleResponse<EducationEvent[]>(response);
+  },
+
+  getEventRequests: async (): Promise<EducationEventRequestOverview[]> => {
+    const response = await apiFetch(`${API_BASE}/education/event-requests`);
+    return handleResponse<EducationEventRequestOverview[]>(response);
+  },
+
+  getProfiles: async (): Promise<EducationProfileOverview[]> => {
+    const response = await apiFetch(`${API_BASE}/education/profiles`);
+    return handleResponse<EducationProfileOverview[]>(response);
+  },
+
+  getMentorAssignments: async (): Promise<EducationMentorAssignment[]> => {
+    const response = await apiFetch(`${API_BASE}/education/mentor-assignments`);
+    return handleResponse<EducationMentorAssignment[]>(response);
+  },
+
+  createProgram: async (payload: {
+    title: string;
+    slug?: string;
+    description?: string;
+    targetRole?: string;
+    isActive?: boolean;
+  }): Promise<EducationProgram> => {
+    const response = await apiFetch(`${API_BASE}/education/programs`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<EducationProgram>(response);
+  },
+
+  updateProgram: async (
+    id: number,
+    payload: Partial<{
+      title: string;
+      slug: string;
+      description: string;
+      targetRole: string;
+      isActive: boolean;
+    }>,
+  ): Promise<EducationProgram> => {
+    const response = await apiFetch(`${API_BASE}/education/programs/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<EducationProgram>(response);
+  },
+
+  createModule: async (payload: {
+    programId: number;
+    title: string;
+    slug?: string;
+    description?: string;
+    sortOrder?: number;
+    isActive?: boolean;
+  }): Promise<EducationModule> => {
+    const response = await apiFetch(`${API_BASE}/education/modules`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<EducationModule>(response);
+  },
+
+  updateModule: async (
+    id: number,
+    payload: Partial<{
+      programId: number;
+      title: string;
+      slug: string;
+      description: string;
+      sortOrder: number;
+      isActive: boolean;
+    }>,
+  ): Promise<EducationModule> => {
+    const response = await apiFetch(`${API_BASE}/education/modules/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<EducationModule>(response);
+  },
+
+  createRequirement: async (payload: {
+    moduleId: number;
+    title: string;
+    code?: string;
+    description?: string;
+    category?: string;
+    requiredCount: number;
+    unitLabel?: string;
+    matchingHints?: string[];
+    sourceReference?: string;
+    sortOrder?: number;
+    isActive?: boolean;
+  }): Promise<EducationRequirement> => {
+    const response = await apiFetch(`${API_BASE}/education/requirements`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<EducationRequirement>(response);
+  },
+
+  updateRequirement: async (
+    id: number,
+    payload: Partial<{
+      moduleId: number;
+      title: string;
+      code: string;
+      description: string;
+      category: string;
+      requiredCount: number;
+      unitLabel: string;
+      matchingHints: string[];
+      sourceReference: string;
+      sortOrder: number;
+      isActive: boolean;
+    }>,
+  ): Promise<EducationRequirement> => {
+    const response = await apiFetch(`${API_BASE}/education/requirements/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<EducationRequirement>(response);
+  },
+
+  upsertProgress: async (payload: {
+    employeeId: number;
+    requirementId: number;
+    completedCount: number;
+    verifiedCount: number;
+    notes?: string;
+    lastEntryLabel?: string;
+  }): Promise<EducationProgress> => {
+    const response = await apiFetch(`${API_BASE}/education/progress`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<EducationProgress>(response);
+  },
+
+  upsertMentorAssignment: async (payload: {
+    trainerEmployeeId: number;
+    traineeEmployeeId: number;
+    notes?: string;
+    isActive?: boolean;
+  }): Promise<EducationMentorAssignment> => {
+    const response = await apiFetch(`${API_BASE}/education/mentor-assignments`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<EducationMentorAssignment>(response);
+  },
+
+  createEvent: async (payload: {
+    title: string;
+    eventType?: string;
+    location?: string;
+    externalUrl?: string;
+    description?: string;
+    targetRole?: string;
+    startsAt: string;
+    endsAt: string;
+    maxApprovals?: number | null;
+    status?: "draft" | "published" | "archived";
+  }): Promise<EducationEvent> => {
+    const response = await apiFetch(`${API_BASE}/education/events`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<EducationEvent>(response);
+  },
+
+  updateEvent: async (
+    id: number,
+    payload: Partial<{
+      title: string;
+      eventType: string;
+      location: string;
+      externalUrl: string;
+      description: string;
+      targetRole: string;
+      startsAt: string;
+      endsAt: string;
+      maxApprovals: number | null;
+      status: "draft" | "published" | "archived";
+    }>,
+  ): Promise<EducationEvent> => {
+    const response = await apiFetch(`${API_BASE}/education/events/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<EducationEvent>(response);
+  },
+
+  requestEventInterest: async (
+    eventId: number,
+    payload?: { interestNote?: string },
+  ): Promise<EducationEventRequest> => {
+    const response = await apiFetch(
+      `${API_BASE}/education/events/${eventId}/request`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload ?? {}),
+      },
+    );
+    return handleResponse<EducationEventRequest>(response);
+  },
+
+  decideEventRequest: async (
+    requestId: number,
+    payload: {
+      status: "approved" | "rejected";
+      decisionNote?: string;
+      costCoveredByDepartment?: boolean;
+    },
+  ): Promise<EducationEventRequest> => {
+    const response = await apiFetch(
+      `${API_BASE}/education/event-requests/${requestId}/decision`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+    return handleResponse<EducationEventRequest>(response);
+  },
+
+  upsertProfile: async (payload: {
+    employeeId: number;
+    trainingStartDate?: string | null;
+    basicTrainingCompleted?: boolean;
+    expectedTrainingEndDate?: string | null;
+    examDate?: string | null;
+    examPassed?: boolean;
+    notes?: string;
+  }): Promise<EducationProfile> => {
+    const response = await apiFetch(`${API_BASE}/education/profiles`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<EducationProfile>(response);
   },
 };
 

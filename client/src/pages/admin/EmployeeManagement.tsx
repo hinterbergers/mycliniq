@@ -129,7 +129,12 @@ const normalizeRoleValue = (role?: string | null): Employee["role"] | "" => {
   return role as Employee["role"];
 };
 
-const APP_ROLE_OPTIONS: Employee["appRole"][] = ["Admin", "Editor", "User"];
+const APP_ROLE_OPTIONS: Employee["appRole"][] = [
+  "Admin",
+  "Ausbilder",
+  "Editor",
+  "User",
+];
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const isValidEmail = (value: string) =>
@@ -458,6 +463,10 @@ const PERMISSION_FALLBACK = [
   { key: "perm.project_delete", label: "Kann Aufgaben loeschen" },
   { key: "perm.message_group_manage", label: "Kann Gruppen verwalten" },
   { key: "training.edit", label: "Kann Ausbildungsplan bearbeiten" },
+  {
+    key: "training.supervise",
+    label: "Kann Ausbildungsfortschritte als Ausbilder einsehen",
+  },
 ];
 
 export default function EmployeeManagement() {
@@ -1962,6 +1971,13 @@ export default function EmployeeManagement() {
           <Badge className="bg-blue-100 text-blue-700 border-blue-200 gap-1">
             <Shield className="w-3 h-3" />
             Editor
+          </Badge>
+        );
+      case "Ausbilder":
+        return (
+          <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 gap-1">
+            <Shield className="w-3 h-3" />
+            Ausbilder
           </Badge>
         );
       default:

@@ -227,6 +227,11 @@ async function seed() {
         label: "Kann Ausbildungsplan bearbeiten",
         scope: "department",
       },
+      {
+        key: "training.supervise",
+        label: "Kann Ausbildungsfortschritte als Ausbilder einsehen",
+        scope: "department",
+      },
     ];
 
     for (const perm of permissionData) {

@@ -27,12 +27,16 @@ import Tasks from "@/pages/Tasks";
 import PersonCard from "@/pages/PersonCard";
 import TrainingVideos from "@/pages/training/TrainingVideos";
 import TrainingPresentations from "@/pages/training/TrainingPresentations";
+import EducationOverview from "@/pages/education/EducationOverview";
+import EducationCatalogEditor from "@/pages/education/EducationCatalogEditor";
+import EducationTrainerCockpit from "@/pages/education/EducationTrainerCockpit";
 import PublicWeeklyPlan from "@/pages/PublicWeeklyPlan";
 import PublicRosterPlan from "@/pages/PublicRosterPlan";
 import PrivacyPolicy from "@/pages/PrivacyPolicy";
 import Support from "@/pages/Support";
 import { Loader2 } from "lucide-react";
 import { TrainingRoute } from "@/components/training/TrainingRoute";
+import { EducationRoute } from "@/components/education/EducationRoute";
 import { useEffect } from "react";
 import { App as CapacitorApp } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
@@ -153,6 +157,19 @@ function Router() {
       <Route path="/fortbildung/presentations">
         {() => (
           <TrainingRoute component={TrainingPresentations} />
+        )}
+      </Route>
+      <Route path="/ausbildung">
+        {() => <EducationRoute component={EducationOverview} />}
+      </Route>
+      <Route path="/ausbildung/cockpit">
+        {() => (
+          <EducationRoute component={EducationTrainerCockpit} mode="trainer" />
+        )}
+      </Route>
+      <Route path="/ausbildung/katalog">
+        {() => (
+          <EducationRoute component={EducationCatalogEditor} mode="catalog" />
         )}
       </Route>
       <Route path="/projekte/:id">

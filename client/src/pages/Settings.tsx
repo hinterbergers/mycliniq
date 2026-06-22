@@ -361,7 +361,12 @@ export default function Settings() {
     isSuperuser,
   } = useAuth();
 
-  const APP_ROLE_OPTIONS: Employee["appRole"][] = ["Admin", "User"];
+  const APP_ROLE_OPTIONS: Employee["appRole"][] = [
+    "Admin",
+    "Ausbilder",
+    "Editor",
+    "User",
+  ];
 
   const PERMISSION_FALLBACK = [
     { key: "users.manage", label: "Kann Benutzer anlegen / verwalten" },
@@ -379,6 +384,10 @@ export default function Settings() {
     { key: "perm.project_delete", label: "Kann Aufgaben loeschen" },
     { key: "perm.message_group_manage", label: "Kann Gruppen verwalten" },
     { key: "training.edit", label: "Kann Ausbildungsplan bearbeiten" },
+    {
+      key: "training.supervise",
+      label: "Kann Ausbildungsfortschritte als Ausbilder einsehen",
+    },
   ];
 
   const viewingUserId = params.userId

@@ -1,0 +1,438 @@
+import { useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Layout } from "@/components/layout/Layout";
+import { educationApi } from "@/lib/api";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Loader2, Save } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+
+type DraftRow = {
+  completedCount: string;
+  verifiedCount: string;
+  lastEntryLabel: string;
+};
+
+type TraineeRoleFilter = "all" | "assistenz" | "facharzt" | "turnus";
+
+const roleMatchesFilter = (role: string | null | undefined, filter: TraineeRoleFilter) => {
+  const normalized = String(role ?? "").toLowerCase();
+  if (filter === "all") return true;
+  if (filter === "assistenz") return normalized.includes("assistenz");
+  if (filter === "facharzt") return normalized.includes("facharzt");
+  if (filter === "turnus")
+    return (
+      normalized.includes("turnus") ||
+      normalized.includes("kpj") ||
+      normalized.includes("famul")
+    );
+  return true;
+};
+
+export default function EducationTrainerCockpit() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { data, isLoading } = useQuery({
+    queryKey: ["education", "trainer"],
+    queryFn: () => educationApi.getTrainerOverview(),
+  });
+
+  const [selectedTraineeId, setSelectedTraineeId] = useState<number | null>(null);
+  const [selectedTrainerId, setSelectedTrainerId] = useState<string>("");
+  const [drafts, setDrafts] = useState<Record<number, DraftRow>>({});
+  const [savingRequirementId, setSavingRequirementId] = useState<number | null>(null);
+  const [roleFilter, setRoleFilter] = useState<TraineeRoleFilter>("all");
+
+  const filteredTrainees = useMemo(
+    () =>
+      (data?.trainees ?? []).filter((trainee) =>
+        roleMatchesFilter(trainee.role, roleFilter),
+      ),
+    [data?.trainees, roleFilter],
+  );
+
+  useEffect(() => {
+    if (!selectedTraineeId && filteredTrainees.length > 0) {
+      setSelectedTraineeId(filteredTrainees[0]?.id ?? null);
+    }
+  }, [filteredTrainees, selectedTraineeId]);
+
+  useEffect(() => {
+    if (
+      selectedTraineeId &&
+      !filteredTrainees.some((trainee) => trainee.id === selectedTraineeId)
+    ) {
+      setSelectedTraineeId(filteredTrainees[0]?.id ?? null);
+    }
+  }, [filteredTrainees, selectedTraineeId]);
+
+  const selectedTrainee = useMemo(
+    () =>
+      filteredTrainees.find((trainee) => trainee.id === selectedTraineeId) ??
+      null,
+    [filteredTrainees, selectedTraineeId],
+  );
+
+  const selectedAssignment = useMemo(
+    () =>
+      (data?.assignments ?? []).find(
+        (assignment) => assignment.traineeEmployeeId === selectedTraineeId,
+      ) ?? null,
+    [data?.assignments, selectedTraineeId],
+  );
+
+  useEffect(() => {
+    setSelectedTrainerId(
+      selectedAssignment ? String(selectedAssignment.trainerEmployeeId) : "",
+    );
+  }, [selectedAssignment]);
+
+  const requirementRows = useMemo(() => {
+    const progressMap = new Map(
+      (data?.progress ?? [])
+        .filter((row) => row.employeeId === selectedTraineeId)
+        .map((row) => [row.requirementId, row]),
+    );
+
+    return (data?.catalog ?? []).flatMap((program) =>
+      program.modules.flatMap((module) =>
+        module.requirements.map((requirement) => ({
+          programTitle: program.title,
+          moduleTitle: module.title,
+          requirement,
+          progress: progressMap.get(requirement.id) ?? null,
+        })),
+      ),
+    );
+  }, [data?.catalog, data?.progress, selectedTraineeId]);
+
+  const setDraftField = (
+    requirementId: number,
+    field: keyof DraftRow,
+    value: string,
+  ) => {
+    setDrafts((current) => ({
+      ...current,
+      [requirementId]: {
+        completedCount:
+          current[requirementId]?.completedCount ??
+          String(
+            requirementRows.find((row) => row.requirement.id === requirementId)?.progress
+              ?.completedCount ?? 0,
+          ),
+        verifiedCount:
+          current[requirementId]?.verifiedCount ??
+          String(
+            requirementRows.find((row) => row.requirement.id === requirementId)?.progress
+              ?.verifiedCount ?? 0,
+          ),
+        lastEntryLabel:
+          current[requirementId]?.lastEntryLabel ??
+          (requirementRows.find((row) => row.requirement.id === requirementId)?.progress
+            ?.lastEntryLabel ??
+            ""),
+        [field]: value,
+      },
+    }));
+  };
+
+  const saveAssignment = async () => {
+    if (!selectedTraineeId || !selectedTrainerId) return;
+    await educationApi.upsertMentorAssignment({
+      traineeEmployeeId: selectedTraineeId,
+      trainerEmployeeId: Number(selectedTrainerId),
+    });
+    await queryClient.invalidateQueries({ queryKey: ["education", "trainer"] });
+    toast({ title: "Ausbilder zugeordnet" });
+  };
+
+  const saveProgress = async (requirementId: number) => {
+    if (!selectedTraineeId) return;
+    const row = requirementRows.find((item) => item.requirement.id === requirementId);
+    if (!row) return;
+    const draft = drafts[requirementId];
+    setSavingRequirementId(requirementId);
+    try {
+      await educationApi.upsertProgress({
+        employeeId: selectedTraineeId,
+        requirementId,
+        completedCount: Number(draft?.completedCount ?? row.progress?.completedCount ?? 0),
+        verifiedCount: Number(draft?.verifiedCount ?? row.progress?.verifiedCount ?? 0),
+        lastEntryLabel: draft?.lastEntryLabel ?? row.progress?.lastEntryLabel ?? "",
+      });
+      await queryClient.invalidateQueries({ queryKey: ["education", "trainer"] });
+      toast({ title: "Fortschritt gespeichert" });
+    } finally {
+      setSavingRequirementId(null);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <Layout title="Ausbilder-Cockpit">
+        <div className="flex min-h-[40vh] items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </Layout>
+    );
+  }
+
+  return (
+    <Layout title="Ausbilder-Cockpit">
+      <div className="space-y-6">
+        <div className="grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
+          <Card className="border-none kabeg-shadow">
+            <CardHeader>
+              <CardTitle>Ausbildungsprofile</CardTitle>
+              <CardDescription>
+                Fortschritt ueber alle aktuell angelegten Soll-Leistungen.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant={roleFilter === "all" ? "default" : "outline"}
+                  onClick={() => setRoleFilter("all")}
+                >
+                  Alle
+                </Button>
+                <Button
+                  size="sm"
+                  variant={roleFilter === "assistenz" ? "default" : "outline"}
+                  onClick={() => setRoleFilter("assistenz")}
+                >
+                  Assistenz
+                </Button>
+                <Button
+                  size="sm"
+                  variant={roleFilter === "facharzt" ? "default" : "outline"}
+                  onClick={() => setRoleFilter("facharzt")}
+                >
+                  Facharzt
+                </Button>
+                <Button
+                  size="sm"
+                  variant={roleFilter === "turnus" ? "default" : "outline"}
+                  onClick={() => setRoleFilter("turnus")}
+                >
+                  Turnus
+                </Button>
+              </div>
+
+              {filteredTrainees.map((trainee) => (
+                <button
+                  type="button"
+                  key={trainee.id}
+                  onClick={() => setSelectedTraineeId(trainee.id)}
+                  className={`w-full rounded-xl border p-4 text-left transition-colors ${
+                    trainee.id === selectedTraineeId
+                      ? "border-primary bg-primary/5"
+                      : "hover:bg-secondary/30"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="font-semibold">
+                        {[trainee.lastName, trainee.firstName].filter(Boolean).join(" ")}
+                      </div>
+                      <div className="text-sm text-muted-foreground">{trainee.role}</div>
+                    </div>
+                    <Badge>{trainee.summary.completionPercent}%</Badge>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    <Progress value={trainee.summary.completionPercent} />
+                    <div className="text-xs text-muted-foreground">
+                      Bestaetigt {trainee.summary.verified} von{" "}
+                      {trainee.summary.totalRequired}
+                    </div>
+                  </div>
+                </button>
+              ))}
+              {filteredTrainees.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  Keine Profile fuer den gewaelten Filter gefunden.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                {selectedTrainee
+                  ? `Detailstand: ${[selectedTrainee.lastName, selectedTrainee.firstName]
+                      .filter(Boolean)
+                      .join(" ")}`
+                  : "Detailstand"}
+              </CardTitle>
+              <CardDescription>
+                Einzelne Soll-Leistungen koennen hier manuell gepflegt und
+                bestaetigt werden.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-end">
+                <div className="w-full max-w-sm">
+                  <div className="mb-2 text-sm font-medium">Zugeordneter Ausbilder</div>
+                  <Select
+                    value={selectedTrainerId}
+                    onValueChange={setSelectedTrainerId}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Ausbilder waehlen" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(data?.trainers ?? []).map((trainer) => (
+                        <SelectItem key={trainer.id} value={String(trainer.id)}>
+                          {[trainer.lastName, trainer.firstName]
+                            .filter(Boolean)
+                            .join(" ")}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={saveAssignment}
+                  disabled={!selectedTraineeId || !selectedTrainerId}
+                >
+                  Zuordnung speichern
+                </Button>
+              </div>
+
+              <div className="rounded-xl border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Katalogpunkt</TableHead>
+                      <TableHead>Soll</TableHead>
+                      <TableHead>Erfasst</TableHead>
+                      <TableHead>Bestaetigt</TableHead>
+                      <TableHead>Letzter Eintrag</TableHead>
+                      <TableHead className="w-[120px]" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {requirementRows.map((row) => {
+                      const draft = drafts[row.requirement.id];
+                      return (
+                        <TableRow key={row.requirement.id}>
+                          <TableCell>
+                            <div className="font-medium">{row.requirement.title}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {row.programTitle} / {row.moduleTitle}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {row.requirement.requiredCount} {row.requirement.unitLabel}
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              min="0"
+                              value={
+                                draft?.completedCount ??
+                                String(row.progress?.completedCount ?? 0)
+                              }
+                              onChange={(event) =>
+                                setDraftField(
+                                  row.requirement.id,
+                                  "completedCount",
+                                  event.target.value,
+                                )
+                              }
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              min="0"
+                              value={
+                                draft?.verifiedCount ??
+                                String(row.progress?.verifiedCount ?? 0)
+                              }
+                              onChange={(event) =>
+                                setDraftField(
+                                  row.requirement.id,
+                                  "verifiedCount",
+                                  event.target.value,
+                                )
+                              }
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              value={
+                                draft?.lastEntryLabel ??
+                                row.progress?.lastEntryLabel ??
+                                ""
+                              }
+                              onChange={(event) =>
+                                setDraftField(
+                                  row.requirement.id,
+                                  "lastEntryLabel",
+                                  event.target.value,
+                                )
+                              }
+                              placeholder="z. B. OP-Liste Mai"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              size="sm"
+                              onClick={() => saveProgress(row.requirement.id)}
+                              disabled={!selectedTraineeId}
+                            >
+                              {savingRequirementId === row.requirement.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Save className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                    {requirementRows.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-muted-foreground">
+                          Noch keine Katalogeintraege vorhanden.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </Layout>
+  );
+}

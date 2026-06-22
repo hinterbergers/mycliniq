@@ -75,6 +75,11 @@ const DEFAULT_PERMISSION_CATALOG = [
     scope: "department",
   },
   {
+    key: "training.supervise",
+    label: "Kann Ausbildungsfortschritte als Ausbilder einsehen",
+    scope: "department",
+  },
+  {
     key: "widgets.manage",
     label: "Kann Dashboard-Widgets verwalten",
     scope: "department",
