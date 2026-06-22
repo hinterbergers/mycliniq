@@ -78,6 +78,8 @@ export interface AuthContextType {
   isTechnicalAdminActual: boolean;
 
   // Admin-Ansicht als Benutzer simulieren
+  viewMode: "default" | "user" | "trainer";
+  setViewMode: (value: "default" | "user" | "trainer") => void;
   viewAsUser: boolean;
   setViewAsUser: (value: boolean) => void;
 
@@ -103,7 +105,7 @@ export interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 // const ADMIN_ROLES = ["Primararzt", "1. Oberarzt", "Sekretariat"] as const;
-const VIEW_AS_USER_KEY = "cliniq_view_as_user";
+const VIEW_MODE_KEY = "cliniq_view_mode";
 
 // Legacy helper used by some admin pages
 export function getAuthToken() {
@@ -157,7 +159,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [viewAsUser, setViewAsUserState] = useState(false);
+  const [viewMode, setViewModeState] = useState<"default" | "user" | "trainer">(
+    "default",
+  );
+  const viewAsUser = viewMode === "user";
 
   // ✅ WICHTIG: nicht mehr employee als Gatekeeper verwenden
   const isAuthenticated = useMemo(() => !!token && !!user, [token, user]);
@@ -173,7 +178,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return user.systemRole !== "employee";
   }, [user]);
 
-  const canUseViewAsUserMode = useMemo(() => {
+  const canUseViewMode = useMemo(() => {
     if (!user) return false;
     return (
       isAdminActual ||
@@ -183,24 +188,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user, isAdminActual]);
 
   const isAdmin = useMemo(
-    () => isAdminActual && !viewAsUser,
-    [isAdminActual, viewAsUser],
+    () => isAdminActual && viewMode === "default",
+    [isAdminActual, viewMode],
   );
 
   const isTechnicalAdmin = useMemo(
-    () => isTechnicalAdminActual && !viewAsUser,
-    [isTechnicalAdminActual, viewAsUser],
+    () => isTechnicalAdminActual && viewMode === "default",
+    [isTechnicalAdminActual, viewMode],
   );
 
   const effectiveCapabilities = useMemo(
-    () => (viewAsUser ? [] : capabilities),
-    [capabilities, viewAsUser],
+    () => (viewMode === "user" ? [] : capabilities),
+    [capabilities, viewMode],
   );
   const isSuperuser = useMemo(() => {
     if (!user) return false;
     const actual = user.isAdmin || user.systemRole !== "employee";
-    return actual && !viewAsUser;
-  }, [user, viewAsUser]);
+    return actual && viewMode === "default";
+  }, [user, viewMode]);
 
   const trainingEnabledFromEmployee = useMemo(
     () => Boolean(employee?.trainingEnabled),
@@ -213,8 +218,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const isTrainerRole = useMemo(
-    () => user?.appRole === "Ausbilder",
-    [user?.appRole],
+    () => user?.appRole === "Ausbilder" || viewMode === "trainer",
+    [user?.appRole, viewMode],
   );
 
   const isEducationParticipantRole = useMemo(() => {
@@ -283,12 +288,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ],
   );
 
+  const setViewMode = useCallback(
+    (value: "default" | "user" | "trainer") => {
+      if (!canUseViewMode) return;
+      setViewModeState(value);
+    },
+    [canUseViewMode],
+  );
+
   const setViewAsUser = useCallback(
     (value: boolean) => {
-      if (!canUseViewAsUserMode) return;
-      setViewAsUserState(value);
+      if (!canUseViewMode) return;
+      setViewModeState(value ? "user" : "default");
     },
-    [canUseViewAsUserMode],
+    [canUseViewMode],
   );
 
   const resetAuthState = () => {
@@ -297,9 +310,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setEmployee(null);
     setUser(null);
     setCapabilities([]);
-    setViewAsUserState(false);
+    setViewModeState("default");
     try {
-      localStorage.removeItem(VIEW_AS_USER_KEY);
+      localStorage.removeItem(VIEW_MODE_KEY);
     } catch {
       // ignore
     }
@@ -477,13 +490,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     try {
-      const stored = localStorage.getItem(VIEW_AS_USER_KEY);
+      const stored = localStorage.getItem(VIEW_MODE_KEY);
       if (stored === null) {
-        setViewAsUserState(
-          user?.appRole === "Editor" || user?.appRole === "Ausbilder",
+        setViewModeState(
+          user?.appRole === "Editor" || user?.appRole === "Ausbilder"
+            ? "user"
+            : "default",
         );
       } else {
-        setViewAsUserState(stored === "1");
+        setViewModeState(
+          stored === "user" || stored === "trainer" ? stored : "default",
+        );
       }
     } catch {
       // ignore
@@ -491,18 +508,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user?.appRole]);
 
   useEffect(() => {
-    if (!canUseViewAsUserMode && viewAsUser) {
-      setViewAsUserState(false);
+    if (!canUseViewMode && viewMode !== "default") {
+      setViewModeState("default");
     }
-  }, [canUseViewAsUserMode, viewAsUser]);
+  }, [canUseViewMode, viewMode]);
 
   useEffect(() => {
     try {
-      localStorage.setItem(VIEW_AS_USER_KEY, viewAsUser ? "1" : "0");
+      localStorage.setItem(VIEW_MODE_KEY, viewMode);
     } catch {
       // ignore
     }
-  }, [viewAsUser]);
+  }, [viewMode]);
 
   useEffect(() => {
     if (!token || !isAuthenticated || !Capacitor.isNativePlatform()) return;
@@ -640,6 +657,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isTechnicalAdmin,
       isAdminActual,
       isTechnicalAdminActual,
+      viewMode,
+      setViewMode,
       viewAsUser,
       setViewAsUser,
       capabilities: effectiveCapabilities,
@@ -664,6 +683,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isTechnicalAdmin,
       isAdminActual,
       isTechnicalAdminActual,
+      viewMode,
+      setViewMode,
       viewAsUser,
       setViewAsUser,
       effectiveCapabilities,

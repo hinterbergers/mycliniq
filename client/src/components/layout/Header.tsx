@@ -9,7 +9,13 @@ import {
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   HoverCard,
   HoverCardContent,
@@ -65,8 +71,9 @@ export function Header({
     isAdmin,
     isTechnicalAdmin,
     isAdminActual,
+    viewMode,
+    setViewMode,
     viewAsUser,
-    setViewAsUser,
   } = useAuth();
   const [location, setLocation] = useLocation();
   const [serviceLines, setServiceLines] = useState<ServiceLine[]>([]);
@@ -620,8 +627,22 @@ export function Header({
 
         {canUseViewAsUserToggle && (
           <div className="hidden md:flex items-center gap-2 text-white/80">
-            <span className="text-xs">Als User</span>
-            <Switch checked={viewAsUser} onCheckedChange={setViewAsUser} />
+            <span className="text-xs">Ansicht</span>
+            <Select
+              value={viewMode}
+              onValueChange={(value) =>
+                setViewMode(value as "default" | "user" | "trainer")
+              }
+            >
+              <SelectTrigger className="h-8 w-36 border-white/20 bg-white/10 text-white">
+                <SelectValue placeholder="Ansicht" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="default">Standard</SelectItem>
+                <SelectItem value="user">User</SelectItem>
+                <SelectItem value="trainer">Ausbilder</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         )}
 
