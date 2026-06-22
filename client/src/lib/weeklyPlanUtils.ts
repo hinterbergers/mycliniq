@@ -318,6 +318,28 @@ export const isEmployeeEligibleForRoom = (
   return employeeMatchesCompetencies(employee, room.requiredCompetencies || []);
 };
 
+export const doesEmployeeContributeToRoom = (
+  employee: Employee,
+  room: WeeklyPlanRoom,
+  assignedEmployees: Employee[] = [],
+): boolean => {
+  if (isEmployeeEligibleForRoom(employee, room)) return true;
+
+  const currentEmployees = assignedEmployees.filter(
+    (assigned) => assigned.id !== employee.id,
+  );
+  const nextEmployees = [...currentEmployees, employee];
+
+  const currentStatus = getRoomAssignmentCompetencyStatus(room, currentEmployees);
+  const nextStatus = getRoomAssignmentCompetencyStatus(room, nextEmployees);
+
+  if (currentStatus === "missing" && nextStatus === "partial") return true;
+  if (currentStatus === "partial" && nextStatus === "fulfilled") return true;
+  if (currentStatus === "missing" && nextStatus === "fulfilled") return true;
+
+  return false;
+};
+
 type IsoWeekday = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 export const getWeekdayIndex = (date: Date): IsoWeekday =>

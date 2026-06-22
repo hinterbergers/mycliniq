@@ -97,6 +97,7 @@ import {
   getRecurringUnavailableWeekdays,
   getRoomAssignmentCompetencyStatus,
   getRoomSettingForDate,
+  doesEmployeeContributeToRoom,
   isEmployeeAbsentOnDate,
   isEmployeeEligibleForRoom,
   isEmployeeOnDutyDate,
@@ -2238,7 +2239,9 @@ export default function WeeklyPlan() {
       const room = roomsById.get(slot.roomId);
       if (!room) return [];
       const available = availabilityByWeekday.get(slot.weekday) ?? [];
-      return available.filter((employee) => isEmployeeEligibleForRoom(employee, room));
+      return available.filter((employee) =>
+        doesEmployeeContributeToRoom(employee, room, []),
+      );
     },
     [availabilityByWeekday, roomsById],
   );
@@ -3275,9 +3278,20 @@ export default function WeeklyPlan() {
                     .filter((id): id is number => typeof id === "number"),
                 );
 
+                const assignedEmployees = employeeAssignments
+                  .map((assignment) =>
+                    assignment.employeeId
+                      ? employeesById.get(assignment.employeeId)
+                      : null,
+                  )
+                  .filter((employee): employee is Employee => Boolean(employee));
                 const availableForRoom = visibleAvailableEmployeesOrdered.filter(
                   (employee) =>
-                  isEmployeeEligibleForRoom(employee, room),
+                    doesEmployeeContributeToRoom(
+                      employee,
+                      room,
+                      assignedEmployees,
+                    ),
                 );
                 const remainingEligible = availableForRoom.filter(
                   (employee) => !assignedEmployeeIds.has(employee.id),
@@ -3287,13 +3301,6 @@ export default function WeeklyPlan() {
                   0,
                   remainingEligible.length - previewEligibleEmployees.length,
                 );
-                const assignedEmployees = employeeAssignments
-                  .map((assignment) =>
-                    assignment.employeeId
-                      ? employeesById.get(assignment.employeeId)
-                      : null,
-                  )
-                  .filter((employee): employee is Employee => Boolean(employee));
 
                 const competencyStatus = getRoomAssignmentCompetencyStatus(
                   room,
