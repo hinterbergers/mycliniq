@@ -9,11 +9,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { SegmentedProgress } from "@/components/ui/segmented-progress";
 import {
   ChevronDown,
   ChevronRight,
@@ -27,6 +27,79 @@ import {
   formatRequirementTarget,
   getRequirementProgressSummary,
 } from "@/lib/education";
+
+const CHECKBOX_EVALUATION_TYPES = new Set([
+  "binary_signoff",
+  "certificate",
+  "course",
+  "exam",
+]);
+
+const isCheckboxRequirement = (requirement: {
+  evaluationType?: string | null;
+  targetLevel?: number | null;
+}) =>
+  CHECKBOX_EVALUATION_TYPES.has(requirement.evaluationType ?? "") &&
+  typeof requirement.targetLevel !== "number";
+
+const getOwnRequirementProgressSummary = (
+  requirement: {
+    requiredCount?: number | null;
+    unitLabel?: string | null;
+    targetLevel?: number | null;
+  },
+  progress?: {
+    completedCount?: number | null;
+    currentLevel?: number | null;
+    status?: string | null;
+  } | null,
+) => {
+  const requiredCount = Math.max(0, Number(requirement.requiredCount ?? 0));
+  const completedCount = Math.max(0, Number(progress?.completedCount ?? 0));
+  const targetLevel =
+    typeof requirement.targetLevel === "number" ? requirement.targetLevel : null;
+  const currentLevel =
+    typeof progress?.currentLevel === "number" ? progress.currentLevel : null;
+
+  let completedParts = 0;
+  let targetParts = 0;
+
+  if (requiredCount > 0) {
+    targetParts += 1;
+    completedParts += Math.min(1, completedCount / requiredCount);
+  }
+  if (targetLevel !== null && targetLevel > 0) {
+    targetParts += 1;
+    completedParts += Math.min(1, (currentLevel ?? 0) / targetLevel);
+  }
+  if (targetParts === 0) {
+    targetParts = 1;
+    completedParts =
+      progress?.status === "bestaetigt" || progress?.status === "ziel_erreicht" ? 1 : 0;
+  }
+
+  const detailBits: string[] = [];
+  if (requiredCount > 0) {
+    detailBits.push(`${completedCount}/${requiredCount} ${requirement.unitLabel ?? "Einträge"}`);
+  }
+  if (targetLevel !== null) {
+    detailBits.push(`Level ${currentLevel ?? 0}/${targetLevel}`);
+  }
+
+  const statusLabel =
+    progress?.status === "bestaetigt"
+      ? "Bestätigt"
+      : progress?.status === "ziel_erreicht"
+        ? "Erledigt"
+        : progress?.status === "begonnen"
+          ? "Begonnen"
+          : "Offen";
+
+  return {
+    percent: Math.round(Math.min(1, completedParts / targetParts) * 100),
+    detailLabel: detailBits.join(" · ") || statusLabel,
+  };
+};
 
 export default function EducationOverview() {
   const queryClient = useQueryClient();
@@ -129,29 +202,36 @@ export default function EducationOverview() {
     const summary = requirements.reduce(
       (acc, requirement) => {
         const progress = progressByRequirement.get(requirement.id);
-        const rowSummary = getRequirementProgressSummary(requirement, progress);
+        const rowSummary = getOwnRequirementProgressSummary(requirement, progress);
         const requiredCount = Math.max(0, Number(requirement.requiredCount ?? 0));
+        const completedCount = Math.max(0, Number(progress?.completedCount ?? 0));
         const verifiedCount = Math.max(0, Number(progress?.verifiedCount ?? 0));
         const targetLevel =
           typeof requirement.targetLevel === "number" ? requirement.targetLevel : null;
         const currentLevel =
           typeof progress?.currentLevel === "number" ? progress.currentLevel : null;
-        const statusComplete =
+        const ownStatusComplete =
           progress?.status === "bestaetigt" || progress?.status === "ziel_erreicht";
-        const countComplete = requiredCount > 0 ? verifiedCount >= requiredCount : false;
+        const ownCountComplete = requiredCount > 0 ? completedCount >= requiredCount : false;
+        const verifiedCountComplete = requiredCount > 0 ? verifiedCount >= requiredCount : false;
         const levelComplete =
           targetLevel !== null && targetLevel > 0
             ? (currentLevel ?? 0) >= targetLevel
             : false;
-        const requirementComplete =
+        const ownRequirementComplete =
           requiredCount > 0 || (targetLevel !== null && targetLevel > 0)
-            ? countComplete || levelComplete
-            : statusComplete;
+            ? ownCountComplete || levelComplete
+            : ownStatusComplete;
+        const verifiedRequirementComplete =
+          requiredCount > 0 || (targetLevel !== null && targetLevel > 0)
+            ? verifiedCountComplete || levelComplete
+            : progress?.status === "bestaetigt";
 
         acc.totalRequired += 1;
-        acc.completed += requirementComplete ? 1 : 0;
-        acc.verified += requirementComplete ? 1 : 0;
+        acc.completed += ownRequirementComplete ? 1 : 0;
+        acc.verified += verifiedRequirementComplete ? 1 : 0;
         acc.percentParts += rowSummary.percent;
+        acc.verifiedPercentParts += getRequirementProgressSummary(requirement, progress).percent;
         return acc;
       },
       {
@@ -159,6 +239,7 @@ export default function EducationOverview() {
         verified: 0,
         totalRequired: 0,
         percentParts: 0,
+        verifiedPercentParts: 0,
       },
     );
 
@@ -169,6 +250,10 @@ export default function EducationOverview() {
       completionPercent:
         summary.totalRequired > 0
           ? Math.round(summary.percentParts / summary.totalRequired)
+          : 0,
+      verifiedPercent:
+        summary.totalRequired > 0
+          ? Math.round(summary.verifiedPercentParts / summary.totalRequired)
           : 0,
     };
   }, [progressByRequirement, visibleCatalog]);
@@ -242,14 +327,24 @@ export default function EducationOverview() {
     }));
   };
 
-  const saveOwnProgress = async (requirement: (typeof visibleCatalog)[number]["modules"][number]["requirements"][number]) => {
+  const saveOwnProgress = async (
+    requirement: (typeof visibleCatalog)[number]["modules"][number]["requirements"][number],
+  ) => {
     const draft = drafts[requirement.id];
-    const completedCount = Number(draft?.completedCount ?? progressByRequirement.get(requirement.id)?.completedCount ?? 0);
-    const currentLevelValue = draft?.currentLevel ?? String(progressByRequirement.get(requirement.id)?.currentLevel ?? "");
+    const completedCount = Number(
+      draft?.completedCount ??
+        progressByRequirement.get(requirement.id)?.completedCount ??
+        0,
+    );
+    const currentLevelValue =
+      draft?.currentLevel ??
+      String(progressByRequirement.get(requirement.id)?.currentLevel ?? "");
     const currentLevel = currentLevelValue === "" ? null : Number(currentLevelValue);
+    const checkboxRequirement = isCheckboxRequirement(requirement);
     const hasTargetOnlyStatus =
-      (requirement.requiredCount ?? 0) === 0 &&
-      typeof requirement.targetLevel !== "number";
+      checkboxRequirement ||
+      ((requirement.requiredCount ?? 0) === 0 &&
+        typeof requirement.targetLevel !== "number");
 
     setSavingRequirementId(requirement.id);
     try {
@@ -331,7 +426,20 @@ export default function EducationOverview() {
                 </div>
               </div>
             </div>
-            <Progress value={visibleSummary.completionPercent} />
+            <SegmentedProgress
+              completedValue={visibleSummary.completionPercent}
+              verifiedValue={visibleSummary.verifiedPercent}
+            />
+            <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+              <span className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-primary/35" />
+                Eingetragen
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-primary" />
+                Bestätigt
+              </span>
+            </div>
           </CardContent>
         </Card>
 
@@ -511,13 +619,15 @@ export default function EducationOverview() {
                         const progress = progressByRequirement.get(requirement.id);
                         const draft = drafts[requirement.id];
                         const target = formatRequirementTarget(requirement);
-                        const progressSummary = getRequirementProgressSummary(
+                        const progressSummary = getOwnRequirementProgressSummary(
                           requirement,
                           progress,
                         );
-                        const isBinaryOnly =
-                          (requirement.requiredCount ?? 0) === 0 &&
-                          typeof requirement.targetLevel !== "number";
+                        const verificationSummary = getRequirementProgressSummary(
+                          requirement,
+                          progress,
+                        );
+                        const isBinaryOnly = isCheckboxRequirement(requirement);
                         return (
                           <div
                             key={requirement.id}
@@ -535,6 +645,11 @@ export default function EducationOverview() {
                                 <Badge variant="secondary">
                                   {progressSummary.detailLabel}
                                 </Badge>
+                                {verificationSummary.detailLabel !== progressSummary.detailLabel ? (
+                                  <Badge variant="outline">
+                                    Bestätigt: {verificationSummary.detailLabel}
+                                  </Badge>
+                                ) : null}
                                 <Badge>{progressSummary.percent}%</Badge>
                               </div>
                             </div>

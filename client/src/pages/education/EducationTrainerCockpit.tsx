@@ -20,8 +20,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { SegmentedProgress } from "@/components/ui/segmented-progress";
 import {
   Table,
   TableBody,
@@ -487,22 +487,54 @@ export default function EducationTrainerCockpit() {
                       : "hover:bg-secondary/30"
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="font-semibold">
-                        {[trainee.lastName, trainee.firstName].filter(Boolean).join(" ")}
-                      </div>
-                      <div className="text-sm text-muted-foreground">{trainee.role}</div>
-                    </div>
-                    <Badge>{trainee.summary.completionPercent}%</Badge>
-                  </div>
-                  <div className="mt-3 space-y-2">
-                    <Progress value={trainee.summary.completionPercent} />
-                    <div className="text-xs text-muted-foreground">
-                      Bestaetigt {trainee.summary.verified} von{" "}
-                      {trainee.summary.totalRequired}
-                    </div>
-                  </div>
+                  {(() => {
+                    const completedPercent =
+                      trainee.summary.targetParts > 0
+                        ? Math.round(
+                            (trainee.summary.completedParts / trainee.summary.targetParts) *
+                              100,
+                          )
+                        : 0;
+                    const verifiedPercent =
+                      trainee.summary.targetParts > 0
+                        ? Math.round(
+                            (trainee.summary.verifiedParts / trainee.summary.targetParts) *
+                              100,
+                          )
+                        : 0;
+
+                    return (
+                      <>
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="font-semibold">
+                              {[trainee.lastName, trainee.firstName].filter(Boolean).join(" ")}
+                            </div>
+                            <div className="text-sm text-muted-foreground">{trainee.role}</div>
+                          </div>
+                          <Badge>{verifiedPercent}%</Badge>
+                        </div>
+                        <div className="mt-3 space-y-2">
+                          <SegmentedProgress
+                            completedValue={completedPercent}
+                            verifiedValue={verifiedPercent}
+                          />
+                          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                            <span className="flex items-center gap-2">
+                              <span className="h-2 w-2 rounded-full bg-primary/35" />
+                              Eingetragen {trainee.summary.completed} von{" "}
+                              {trainee.summary.totalRequired}
+                            </span>
+                            <span className="flex items-center gap-2">
+                              <span className="h-2 w-2 rounded-full bg-primary" />
+                              Bestätigt {trainee.summary.verified} von{" "}
+                              {trainee.summary.totalRequired}
+                            </span>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </button>
               ))}
               {filteredTrainees.length === 0 && (
