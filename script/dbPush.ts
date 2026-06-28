@@ -306,15 +306,6 @@ CREATE TABLE IF NOT EXISTS education_profiles (
   updated_at timestamp NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS education_profiles_employee_id_idx
-  ON education_profiles (employee_id);
-
-CREATE INDEX IF NOT EXISTS education_profiles_active_program_id_idx
-  ON education_profiles (active_program_id);
-
-CREATE INDEX IF NOT EXISTS education_profiles_exam_date_idx
-  ON education_profiles (exam_date);
-
 ALTER TABLE education_profiles
 ADD COLUMN IF NOT EXISTS active_program_id integer;
 
@@ -335,6 +326,15 @@ BEGIN
     ON DELETE SET NULL;
   END IF;
 END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS education_profiles_employee_id_idx
+  ON education_profiles (employee_id);
+
+CREATE INDEX IF NOT EXISTS education_profiles_active_program_id_idx
+  ON education_profiles (active_program_id);
+
+CREATE INDEX IF NOT EXISTS education_profiles_exam_date_idx
+  ON education_profiles (exam_date);
 
 CREATE TABLE IF NOT EXISTS education_import_uploads (
   id serial PRIMARY KEY,

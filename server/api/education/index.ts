@@ -860,11 +860,32 @@ export function registerEducationRoutes(router: Router) {
   router.get(
     "/mentor-assignments",
     requireEducationTrainer,
-    asyncHandler(async (_req, res) => {
+    asyncHandler(async (req, res) => {
+      if (!req.user?.departmentId) return ok(res, []);
+
       const rows = await db
-        .select()
+        .select({
+          id: educationMentorAssignments.id,
+          trainerEmployeeId: educationMentorAssignments.trainerEmployeeId,
+          traineeEmployeeId: educationMentorAssignments.traineeEmployeeId,
+          assignedById: educationMentorAssignments.assignedById,
+          notes: educationMentorAssignments.notes,
+          isActive: educationMentorAssignments.isActive,
+          createdAt: educationMentorAssignments.createdAt,
+          updatedAt: educationMentorAssignments.updatedAt,
+        })
         .from(educationMentorAssignments)
-        .orderBy(asc(educationMentorAssignments.createdAt));
+        .innerJoin(
+          employees,
+          eq(employees.id, educationMentorAssignments.traineeEmployeeId),
+        )
+        .where(
+          and(
+            eq(employees.departmentId, req.user.departmentId),
+            eq(educationMentorAssignments.isActive, true),
+          ),
+        )
+        .orderBy(desc(educationMentorAssignments.updatedAt), desc(educationMentorAssignments.createdAt));
       return ok(res, rows);
     }),
   );
@@ -875,48 +896,72 @@ export function registerEducationRoutes(router: Router) {
     validateBody(mentorAssignmentSchema),
     asyncHandler(async (req, res) => {
       const payload = req.body as z.infer<typeof mentorAssignmentSchema>;
-      const [existing] = await db
-        .select()
-        .from(educationMentorAssignments)
-        .where(
-          and(
-            eq(
-              educationMentorAssignments.trainerEmployeeId,
-              payload.trainerEmployeeId,
-            ),
-            eq(
-              educationMentorAssignments.traineeEmployeeId,
-              payload.traineeEmployeeId,
-            ),
-          ),
-        )
-        .limit(1);
-
-      if (existing) {
-        const [updated] = await db
+      const now = new Date();
+      const assignment = await db.transaction(async (tx) => {
+        await tx
           .update(educationMentorAssignments)
           .set({
+            isActive: false,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(
+                educationMentorAssignments.traineeEmployeeId,
+                payload.traineeEmployeeId,
+              ),
+              ne(
+                educationMentorAssignments.trainerEmployeeId,
+                payload.trainerEmployeeId,
+              ),
+            ),
+          );
+
+        const [existing] = await tx
+          .select()
+          .from(educationMentorAssignments)
+          .where(
+            and(
+              eq(
+                educationMentorAssignments.trainerEmployeeId,
+                payload.trainerEmployeeId,
+              ),
+              eq(
+                educationMentorAssignments.traineeEmployeeId,
+                payload.traineeEmployeeId,
+              ),
+            ),
+          )
+          .limit(1);
+
+        if (existing) {
+          const [updated] = await tx
+            .update(educationMentorAssignments)
+            .set({
+              notes: payload.notes?.trim() || null,
+              isActive: payload.isActive ?? true,
+              assignedById: req.user?.employeeId,
+              updatedAt: now,
+            })
+            .where(eq(educationMentorAssignments.id, existing.id))
+            .returning();
+          return { row: updated, created: false };
+        }
+
+        const [createdAssignment] = await tx
+          .insert(educationMentorAssignments)
+          .values({
+            trainerEmployeeId: payload.trainerEmployeeId,
+            traineeEmployeeId: payload.traineeEmployeeId,
             notes: payload.notes?.trim() || null,
             isActive: payload.isActive ?? true,
             assignedById: req.user?.employeeId,
-            updatedAt: new Date(),
           })
-          .where(eq(educationMentorAssignments.id, existing.id))
           .returning();
-        return ok(res, updated);
-      }
+        return { row: createdAssignment, created: true };
+      });
 
-      const [createdAssignment] = await db
-        .insert(educationMentorAssignments)
-        .values({
-          trainerEmployeeId: payload.trainerEmployeeId,
-          traineeEmployeeId: payload.traineeEmployeeId,
-          notes: payload.notes?.trim() || null,
-          isActive: payload.isActive ?? true,
-          assignedById: req.user?.employeeId,
-        })
-        .returning();
-      return created(res, createdAssignment);
+      return assignment.created ? created(res, assignment.row) : ok(res, assignment.row);
     }),
   );
 
