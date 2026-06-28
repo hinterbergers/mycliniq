@@ -26,6 +26,7 @@ import {
 import {
   requireAuth,
   requireEducationTrainer,
+  canViewEducationForSelf,
 } from "../middleware/auth";
 
 const evaluationTypeValues = [
@@ -106,6 +107,15 @@ const progressSchema = z.object({
   metadata: z.record(z.string(), z.any()).optional(),
 });
 
+const selfProgressSchema = z.object({
+  requirementId: z.number().int().positive(),
+  completedCount: z.number().int().min(0).optional(),
+  currentLevel: z.number().int().min(0).max(5).nullable().optional(),
+  status: z.enum(["offen", "begonnen", "ziel_erreicht", "abgelaufen"]).optional(),
+  lastEntryLabel: z.string().optional(),
+  lastEntryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+
 const mentorAssignmentSchema = z.object({
   trainerEmployeeId: z.number().int().positive(),
   traineeEmployeeId: z.number().int().positive(),
@@ -128,6 +138,11 @@ const profileSchema = z.object({
   examPassed: z.boolean().optional(),
   notes: z.string().optional(),
 });
+
+type NormalizedProgramAssignment = {
+  programId: number;
+  moduleIds: number[];
+};
 
 const eventSchema = z.object({
   title: z.string().min(1, "Titel erforderlich"),
@@ -284,6 +299,48 @@ const getRequirementProgress = (
   };
 };
 
+const normalizeProgramAssignments = (
+  profile?: {
+    activeProgramId?: number | null;
+    activeModuleIds?: number[] | null;
+    programAssignments?: Array<{ programId: number; moduleIds: number[] }> | null;
+  } | null,
+) => {
+  const rawAssignments =
+    Array.isArray(profile?.programAssignments) && profile.programAssignments.length > 0
+      ? profile.programAssignments
+      : profile?.activeProgramId
+        ? [
+            {
+              programId: Number(profile.activeProgramId),
+              moduleIds: Array.isArray(profile.activeModuleIds)
+                ? profile.activeModuleIds
+                : [],
+            },
+          ]
+        : [];
+
+  const deduped = new Map<number, Set<number>>();
+  rawAssignments.forEach((assignment) => {
+    const programId = Number(assignment?.programId);
+    if (!Number.isInteger(programId) || programId <= 0) return;
+    const moduleIds = Array.isArray(assignment?.moduleIds)
+      ? assignment.moduleIds
+          .map((value) => Number(value))
+          .filter((value) => Number.isInteger(value) && value > 0)
+      : [];
+    if (!deduped.has(programId)) {
+      deduped.set(programId, new Set<number>());
+    }
+    moduleIds.forEach((moduleId) => deduped.get(programId)?.add(moduleId));
+  });
+
+  return Array.from(deduped.entries()).map(([programId, moduleIds]) => ({
+    programId,
+    moduleIds: Array.from(moduleIds),
+  }));
+};
+
 async function readDepartmentEducationEvents(
   departmentId: number,
   includeDraft = false,
@@ -417,25 +474,44 @@ function filterCatalogForProfile(
   profile?: {
     activeProgramId?: number | null;
     activeModuleIds?: number[] | null;
+    programAssignments?: Array<{ programId: number; moduleIds: number[] }> | null;
   } | null,
 ) {
-  const activeProgramId = profile?.activeProgramId ?? null;
-  if (!activeProgramId) return [];
+  const rawAssignments =
+    Array.isArray(profile?.programAssignments) && profile.programAssignments.length > 0
+      ? profile.programAssignments
+      : profile?.activeProgramId
+        ? [
+            {
+              programId: Number(profile.activeProgramId),
+              moduleIds: Array.isArray(profile.activeModuleIds)
+                ? profile.activeModuleIds
+                : [],
+            },
+          ]
+        : [];
 
-  const assignedModuleIds = new Set(
-    Array.isArray(profile?.activeModuleIds)
-      ? profile.activeModuleIds
+  const assignmentMap = new Map<number, Set<number>>();
+  rawAssignments.forEach((assignment) => {
+    const programId = Number(assignment?.programId);
+    if (!Number.isInteger(programId) || programId <= 0) return;
+    const moduleIds = Array.isArray(assignment?.moduleIds)
+      ? assignment.moduleIds
           .map((value) => Number(value))
           .filter((value) => Number.isInteger(value) && value > 0)
-      : [],
-  );
+      : [];
+    assignmentMap.set(programId, new Set(moduleIds));
+  });
 
   return catalog
-    .filter((program) => program.id === activeProgramId)
-    .map((program) => ({
-      ...program,
-      modules: program.modules.filter((module) => assignedModuleIds.has(module.id)),
-    }));
+    .filter((program) => assignmentMap.has(program.id))
+    .map((program) => {
+      const assignedModuleIds = assignmentMap.get(program.id) ?? new Set<number>();
+      return {
+        ...program,
+        modules: program.modules.filter((module) => assignedModuleIds.has(module.id)),
+      };
+    });
 }
 
 export function registerEducationRoutes(router: Router) {
@@ -818,12 +894,28 @@ export function registerEducationRoutes(router: Router) {
         .where(eq(educationProfiles.employeeId, payload.employeeId))
         .limit(1);
 
+      const existingAssignments = normalizeProgramAssignments(existing);
+      let nextAssignments: NormalizedProgramAssignment[] = existingAssignments.filter(
+        (assignment) => assignment.programId !== activeProgramId,
+      );
+
+      if (activeProgramId) {
+        nextAssignments = [
+          ...nextAssignments,
+          {
+            programId: activeProgramId,
+            moduleIds: activeModuleIds,
+          },
+        ];
+      }
+
       if (existing) {
         const [updated] = await db
           .update(educationProfiles)
           .set({
             activeProgramId,
             activeModuleIds,
+            programAssignments: nextAssignments,
             trainingStartDate: payload.trainingStartDate ?? null,
             basicTrainingCompleted: Boolean(payload.basicTrainingCompleted),
             expectedTrainingEndDate: payload.expectedTrainingEndDate ?? null,
@@ -844,6 +936,7 @@ export function registerEducationRoutes(router: Router) {
           employeeId: payload.employeeId,
           activeProgramId,
           activeModuleIds,
+          programAssignments: nextAssignments,
           trainingStartDate: payload.trainingStartDate ?? null,
           basicTrainingCompleted: Boolean(payload.basicTrainingCompleted),
           expectedTrainingEndDate: payload.expectedTrainingEndDate ?? null,
@@ -1020,6 +1113,98 @@ export function registerEducationRoutes(router: Router) {
           metadata: payload.metadata ?? {},
           lastActivityAt: new Date(),
           updatedById: req.user?.employeeId,
+        })
+        .returning();
+      return created(res, createdProgress);
+    }),
+  );
+
+  router.post(
+    "/progress/self",
+    validateBody(selfProgressSchema),
+    asyncHandler(async (req, res) => {
+      if (!req.user || !canViewEducationForSelf(req) || !req.user.departmentId) {
+        return forbidden(res, "Ausbildung ist für diesen Benutzer nicht freigeschaltet");
+      }
+
+      const payload = req.body as z.infer<typeof selfProgressSchema>;
+      const [profile] = await db
+        .select()
+        .from(educationProfiles)
+        .where(eq(educationProfiles.employeeId, req.user.employeeId))
+        .limit(1);
+      const visibleCatalog = filterCatalogForProfile(
+        await readCatalog(req.user.departmentId),
+        profile ?? null,
+      );
+      const visibleRequirementIds = new Set(
+        visibleCatalog.flatMap((program) =>
+          program.modules.flatMap((module) => module.requirements.map((requirement) => requirement.id)),
+        ),
+      );
+
+      if (!visibleRequirementIds.has(payload.requirementId)) {
+        return forbidden(res, "Anforderung ist dieser Person aktuell nicht zugeordnet");
+      }
+
+      const [existing] = await db
+        .select()
+        .from(educationProgress)
+        .where(
+          and(
+            eq(educationProgress.employeeId, req.user.employeeId),
+            eq(educationProgress.requirementId, payload.requirementId),
+          ),
+        )
+        .limit(1);
+
+      const completedCount = Math.max(
+        0,
+        Number(payload.completedCount ?? existing?.completedCount ?? 0),
+      );
+      const currentLevel =
+        typeof payload.currentLevel === "number"
+          ? payload.currentLevel
+          : (existing?.currentLevel ?? null);
+      const inferredStatus =
+        typeof payload.status !== "undefined"
+          ? payload.status
+          : completedCount > 0 || (currentLevel ?? 0) > 0
+            ? "begonnen"
+            : "offen";
+
+      if (existing) {
+        const [updated] = await db
+          .update(educationProgress)
+          .set({
+            completedCount,
+            currentLevel,
+            status: inferredStatus,
+            lastEntryLabel: payload.lastEntryLabel?.trim() || existing.lastEntryLabel || null,
+            lastEntryDate: payload.lastEntryDate ?? existing.lastEntryDate ?? null,
+            lastActivityAt: new Date(),
+            updatedById: req.user.employeeId,
+            updatedAt: new Date(),
+          })
+          .where(eq(educationProgress.id, existing.id))
+          .returning();
+        return ok(res, updated);
+      }
+
+      const [createdProgress] = await db
+        .insert(educationProgress)
+        .values({
+          employeeId: req.user.employeeId,
+          requirementId: payload.requirementId,
+          completedCount,
+          verifiedCount: 0,
+          currentLevel,
+          status: inferredStatus,
+          lastEntryLabel: payload.lastEntryLabel?.trim() || null,
+          lastEntryDate: payload.lastEntryDate ?? null,
+          metadata: {},
+          lastActivityAt: new Date(),
+          updatedById: req.user.employeeId,
         })
         .returning();
       return created(res, createdProgress);

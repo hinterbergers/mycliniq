@@ -312,6 +312,9 @@ ADD COLUMN IF NOT EXISTS active_program_id integer;
 ALTER TABLE education_profiles
 ADD COLUMN IF NOT EXISTS active_module_ids integer[] NOT NULL DEFAULT ARRAY[]::integer[];
 
+ALTER TABLE education_profiles
+ADD COLUMN IF NOT EXISTS program_assignments jsonb NOT NULL DEFAULT '[]'::jsonb;
+
 DO $$
 BEGIN
   IF NOT EXISTS (

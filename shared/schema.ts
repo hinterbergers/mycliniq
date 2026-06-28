@@ -605,6 +605,10 @@ export const educationProfiles = pgTable(
       .array()
       .notNull()
       .default(sql`ARRAY[]::integer[]`),
+    programAssignments: jsonb("program_assignments")
+      .$type<Array<{ programId: number; moduleIds: number[] }>>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     trainingStartDate: date("training_start_date"),
     basicTrainingCompleted: boolean("basic_training_completed")
       .notNull()

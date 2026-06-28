@@ -59,13 +59,27 @@ type ProfileDraft = {
   notes: string;
 };
 
+type SavedProgramAssignment = {
+  programId: number;
+  moduleIds: number[];
+};
+
 type TraineeRoleFilter = "all" | "assistenz" | "facharzt" | "turnus";
 
 const roleMatchesFilter = (role: string | null | undefined, filter: TraineeRoleFilter) => {
   const normalized = String(role ?? "").toLowerCase();
   if (filter === "all") return true;
   if (filter === "assistenz") return normalized.includes("assistenz");
-  if (filter === "facharzt") return normalized.includes("facharzt");
+  if (filter === "facharzt")
+    return (
+      normalized.includes("facharzt") ||
+      normalized.includes("oberarzt") ||
+      normalized.includes("funktionsober") ||
+      normalized.includes("ausbildungsober") ||
+      normalized.includes("1. ober") ||
+      normalized.includes("erster ober") ||
+      normalized.includes("primar")
+    );
   if (filter === "turnus")
     return (
       normalized.includes("turnus") ||
@@ -77,6 +91,50 @@ const roleMatchesFilter = (role: string | null | undefined, filter: TraineeRoleF
 
 const isAssistenzRole = (role: string | null | undefined) =>
   String(role ?? "").toLowerCase().includes("assistenz");
+
+const normalizeSavedAssignments = (
+  profile:
+    | {
+        activeProgramId?: number | null;
+        activeModuleIds?: number[] | null;
+        programAssignments?: Array<{ programId: number; moduleIds: number[] }> | null;
+      }
+    | null
+    | undefined,
+): SavedProgramAssignment[] => {
+  const rawAssignments =
+    Array.isArray(profile?.programAssignments) && profile.programAssignments.length > 0
+      ? profile.programAssignments
+      : profile?.activeProgramId
+        ? [
+            {
+              programId: Number(profile.activeProgramId),
+              moduleIds: Array.isArray(profile.activeModuleIds)
+                ? profile.activeModuleIds
+                : [],
+            },
+          ]
+        : [];
+
+  const assignmentMap = new Map<number, Set<number>>();
+  rawAssignments.forEach((assignment) => {
+    const programId = Number(assignment?.programId);
+    if (!Number.isInteger(programId) || programId <= 0) return;
+    if (!assignmentMap.has(programId)) {
+      assignmentMap.set(programId, new Set<number>());
+    }
+    (assignment.moduleIds ?? []).forEach((moduleId) => {
+      if (Number.isInteger(moduleId) && moduleId > 0) {
+        assignmentMap.get(programId)?.add(moduleId);
+      }
+    });
+  });
+
+  return Array.from(assignmentMap.entries()).map(([programId, moduleIds]) => ({
+    programId,
+    moduleIds: Array.from(moduleIds),
+  }));
+};
 
 export default function EducationTrainerCockpit() {
   const queryClient = useQueryClient();
@@ -160,6 +218,10 @@ export default function EducationTrainerCockpit() {
 
   const activeProgramId = Number(profileDraft?.activeProgramId ?? 0);
   const assignedModuleIds = profileDraft?.moduleIds ?? [];
+  const savedAssignments = useMemo(
+    () => normalizeSavedAssignments(selectedTrainee?.profile),
+    [selectedTrainee?.profile],
+  );
 
   const requirementRows = useMemo(() => {
     const progressMap = new Map(
@@ -168,26 +230,47 @@ export default function EducationTrainerCockpit() {
         .map((row) => [row.requirementId, row]),
     );
 
-    return (data?.catalog ?? [])
-      .filter((program) => (activeProgramId > 0 ? program.id === activeProgramId : false))
-      .flatMap((program) =>
-        program.modules
-          .filter((module) => assignedModuleIds.includes(module.id))
-          .flatMap((module) =>
-            module.requirements.map((requirement) => ({
-              programTitle: program.title,
-              moduleTitle: module.title,
-              requirement,
-              progress: progressMap.get(requirement.id) ?? null,
-            })),
-          ),
-      );
-  }, [activeProgramId, assignedModuleIds, data?.catalog, data?.progress, selectedTraineeId]);
+    return savedAssignments.flatMap((assignment) => {
+      const program = (data?.catalog ?? []).find((entry) => entry.id === assignment.programId);
+      if (!program) return [];
+      return program.modules
+        .filter((module) => assignment.moduleIds.includes(module.id))
+        .flatMap((module) =>
+          module.requirements.map((requirement) => ({
+            programTitle: program.title,
+            moduleTitle: module.title,
+            requirement,
+            progress: progressMap.get(requirement.id) ?? null,
+          })),
+        );
+    });
+  }, [data?.catalog, data?.progress, savedAssignments, selectedTraineeId]);
 
   const modulesForSelectedProgram = useMemo(() => {
     const program = (data?.catalog ?? []).find((entry) => entry.id === activeProgramId);
     return program?.modules ?? [];
   }, [activeProgramId, data?.catalog]);
+
+  const savedProgramSummaries = useMemo(() => {
+    return savedAssignments
+      .map((assignment) => {
+        const program = (data?.catalog ?? []).find((entry) => entry.id === assignment.programId);
+        if (!program) return null;
+        const modules = program.modules.filter((module) =>
+          assignment.moduleIds.includes(module.id),
+        );
+        return {
+          programId: assignment.programId,
+          title: program.title,
+          modules,
+        };
+      })
+      .filter(Boolean) as Array<{
+      programId: number;
+      title: string;
+      modules: Array<(typeof data.catalog)[number]["modules"][number]>;
+    }>;
+  }, [data?.catalog, savedAssignments]);
 
   const examDateIsPast = useMemo(() => {
     if (!profileDraft?.examDate) return false;
@@ -299,6 +382,18 @@ export default function EducationTrainerCockpit() {
     } finally {
       setSavingProfile(false);
     }
+  };
+
+  const loadSavedAssignment = (assignment: SavedProgramAssignment) => {
+    setProfileDraft((current) =>
+      current
+        ? {
+            ...current,
+            activeProgramId: String(assignment.programId),
+            moduleIds: assignment.moduleIds,
+          }
+        : current,
+    );
   };
 
   const saveProgress = async (requirementId: number) => {
@@ -466,7 +561,7 @@ export default function EducationTrainerCockpit() {
               {selectedTrainee && profileDraft ? (
                 <div className="rounded-xl border p-4 space-y-4">
                   <div>
-                    <div className="text-base font-semibold">Mitarbeitergespraech</div>
+                    <div className="text-base font-semibold">Mitarbeitergespräch</div>
                     <div className="text-sm text-muted-foreground">
                       Aktuelle Fakten und naechste Ausbildungsschritte pro Person festlegen.
                     </div>
@@ -628,6 +723,43 @@ export default function EducationTrainerCockpit() {
                       <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
                         Zuerst ein Programm waehlen, dann koennen ein oder mehrere Module
                         zugeordnet werden.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium">Bereits zugeordnete Programme</div>
+                    {savedProgramSummaries.length > 0 ? (
+                      <div className="space-y-3">
+                        {savedProgramSummaries.map((assignment) => (
+                          <button
+                            type="button"
+                            key={assignment.programId}
+                            onClick={() =>
+                              loadSavedAssignment({
+                                programId: assignment.programId,
+                                moduleIds: assignment.modules.map((module) => module.id),
+                              })
+                            }
+                            className="w-full rounded-lg border p-3 text-left transition-colors hover:bg-secondary/20"
+                          >
+                            <div className="font-medium">{assignment.title}</div>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {assignment.modules.map((module) => (
+                                <span
+                                  key={module.id}
+                                  className="rounded-full border px-2 py-1 text-xs text-muted-foreground"
+                                >
+                                  {module.title}
+                                </span>
+                              ))}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+                        Noch keine Programme fuer diese Person gespeichert.
                       </div>
                     )}
                   </div>

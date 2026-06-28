@@ -1371,6 +1371,21 @@ export const educationApi = {
     return handleResponse<EducationProgress>(response);
   },
 
+  upsertSelfProgress: async (payload: {
+    requirementId: number;
+    completedCount?: number;
+    currentLevel?: number | null;
+    status?: "offen" | "begonnen" | "ziel_erreicht" | "abgelaufen";
+    lastEntryLabel?: string;
+    lastEntryDate?: string;
+  }): Promise<EducationProgress> => {
+    const response = await apiFetch(`${API_BASE}/education/progress/self`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<EducationProgress>(response);
+  },
+
   upsertMentorAssignment: async (payload: {
     trainerEmployeeId: number;
     traineeEmployeeId: number;

@@ -12,11 +12,14 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   ChevronDown,
   ChevronRight,
   ExternalLink,
   Loader2,
+  Save,
   Upload,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -39,6 +42,18 @@ export default function EducationOverview() {
   const [collapsedModules, setCollapsedModules] = useState<Record<number, boolean>>(
     {},
   );
+  const [drafts, setDrafts] = useState<
+    Record<
+      number,
+      {
+        completedCount: string;
+        currentLevel: string;
+        status: "offen" | "begonnen" | "ziel_erreicht" | "abgelaufen";
+        lastEntryLabel: string;
+      }
+    >
+  >({});
+  const [savingRequirementId, setSavingRequirementId] = useState<number | null>(null);
 
   const normalizeRole = (value?: string | null) =>
     (value ?? "")
@@ -78,6 +93,9 @@ export default function EducationOverview() {
         requirementId: number;
         completedCount: number;
         verifiedCount: number;
+        currentLevel?: number | null;
+        status?: string | null;
+        lastEntryLabel?: string | null;
       }
     >();
     (data?.progress ?? []).forEach((row) => {
@@ -191,6 +209,69 @@ export default function EducationOverview() {
       toast({ title: "Interesse vorgemerkt" });
     } finally {
       setRequestingEventId(null);
+    }
+  };
+
+  const setDraftField = (
+    requirementId: number,
+    field: "completedCount" | "currentLevel" | "status" | "lastEntryLabel",
+    value: string,
+  ) => {
+    const currentProgress = progressByRequirement.get(requirementId);
+    setDrafts((current) => ({
+      ...current,
+      [requirementId]: {
+        completedCount:
+          current[requirementId]?.completedCount ??
+          String(currentProgress?.completedCount ?? 0),
+        currentLevel:
+          current[requirementId]?.currentLevel ??
+          String(currentProgress?.currentLevel ?? ""),
+        status:
+          current[requirementId]?.status ??
+          ((currentProgress?.status as
+            | "offen"
+            | "begonnen"
+            | "ziel_erreicht"
+            | "abgelaufen"
+            | undefined) ?? "offen"),
+        lastEntryLabel:
+          current[requirementId]?.lastEntryLabel ?? currentProgress?.lastEntryLabel ?? "",
+        [field]: value,
+      },
+    }));
+  };
+
+  const saveOwnProgress = async (requirement: (typeof visibleCatalog)[number]["modules"][number]["requirements"][number]) => {
+    const draft = drafts[requirement.id];
+    const completedCount = Number(draft?.completedCount ?? progressByRequirement.get(requirement.id)?.completedCount ?? 0);
+    const currentLevelValue = draft?.currentLevel ?? String(progressByRequirement.get(requirement.id)?.currentLevel ?? "");
+    const currentLevel = currentLevelValue === "" ? null : Number(currentLevelValue);
+    const hasTargetOnlyStatus =
+      (requirement.requiredCount ?? 0) === 0 &&
+      typeof requirement.targetLevel !== "number";
+
+    setSavingRequirementId(requirement.id);
+    try {
+      await educationApi.upsertSelfProgress({
+        requirementId: requirement.id,
+        completedCount,
+        currentLevel,
+        status:
+          draft?.status ??
+          (hasTargetOnlyStatus
+            ? completedCount > 0 || (currentLevel ?? 0) > 0
+              ? "ziel_erreicht"
+              : "offen"
+            : completedCount > 0 || (currentLevel ?? 0) > 0
+              ? "begonnen"
+              : "offen"),
+        lastEntryLabel: draft?.lastEntryLabel ?? "",
+      });
+      await queryClient.invalidateQueries({ queryKey: ["education", "me"] });
+      toast({ title: "Leistung gespeichert" });
+    } finally {
+      setSavingRequirementId(null);
     }
   };
 
@@ -428,30 +509,134 @@ export default function EducationOverview() {
                     <div className="space-y-2">
                       {module.requirements.map((requirement) => {
                         const progress = progressByRequirement.get(requirement.id);
+                        const draft = drafts[requirement.id];
                         const target = formatRequirementTarget(requirement);
                         const progressSummary = getRequirementProgressSummary(
                           requirement,
                           progress,
                         );
+                        const isBinaryOnly =
+                          (requirement.requiredCount ?? 0) === 0 &&
+                          typeof requirement.targetLevel !== "number";
                         return (
                           <div
                             key={requirement.id}
-                            className="flex flex-col gap-2 rounded-lg bg-secondary/20 p-3 md:flex-row md:items-center md:justify-between"
+                            className="rounded-lg bg-secondary/20 p-3"
                           >
-                            <div>
-                              <div className="font-medium">{requirement.title}</div>
-                              <div className="text-sm text-muted-foreground">
-                                {(requirement.category || "Leistung")} ·{" "}
-                                {target.typeLabel} · {target.targetLabel}
+                            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                              <div>
+                                <div className="font-medium">{requirement.title}</div>
+                                <div className="text-sm text-muted-foreground">
+                                  {(requirement.category || "Leistung")} ·{" "}
+                                  {target.typeLabel} · {target.targetLabel}
+                                </div>
+                              </div>
+                              <div className="flex gap-2 text-sm">
+                                <Badge variant="secondary">
+                                  {progressSummary.detailLabel}
+                                </Badge>
+                                <Badge>{progressSummary.percent}%</Badge>
                               </div>
                             </div>
-                            <div className="flex gap-2 text-sm">
-                              <Badge variant="secondary">
-                                {progressSummary.detailLabel}
-                              </Badge>
-                              <Badge>
-                                {progressSummary.percent}%
-                              </Badge>
+
+                            <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
+                              <div className="space-y-2">
+                                <div className="text-xs uppercase text-muted-foreground">
+                                  Mein Eintrag
+                                </div>
+                                {isBinaryOnly ? (
+                                  <label className="flex items-center gap-3 rounded-lg border bg-background px-3 py-2">
+                                    <Checkbox
+                                      checked={
+                                        (draft?.status ?? progress?.status ?? "offen") !== "offen"
+                                      }
+                                      onCheckedChange={(checked) => {
+                                        setDraftField(
+                                          requirement.id,
+                                          "status",
+                                          checked === true ? "ziel_erreicht" : "offen",
+                                        );
+                                        setDraftField(
+                                          requirement.id,
+                                          "completedCount",
+                                          checked === true ? "1" : "0",
+                                        );
+                                      }}
+                                    />
+                                    <span className="text-sm">Erledigt</span>
+                                  </label>
+                                ) : (
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    value={
+                                      draft?.completedCount ??
+                                      String(progress?.completedCount ?? 0)
+                                    }
+                                    onChange={(event) =>
+                                      setDraftField(
+                                        requirement.id,
+                                        "completedCount",
+                                        event.target.value,
+                                      )
+                                    }
+                                    placeholder="Aktueller Stand"
+                                  />
+                                )}
+                              </div>
+
+                              <div className="space-y-2">
+                                <div className="text-xs uppercase text-muted-foreground">
+                                  Zusatz
+                                </div>
+                                {typeof requirement.targetLevel === "number" ? (
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    value={
+                                      draft?.currentLevel ??
+                                      String(progress?.currentLevel ?? "")
+                                    }
+                                    onChange={(event) =>
+                                      setDraftField(
+                                        requirement.id,
+                                        "currentLevel",
+                                        event.target.value,
+                                      )
+                                    }
+                                    placeholder="Level"
+                                  />
+                                ) : (
+                                  <Input
+                                    value={draft?.lastEntryLabel ?? progress?.lastEntryLabel ?? ""}
+                                    onChange={(event) =>
+                                      setDraftField(
+                                        requirement.id,
+                                        "lastEntryLabel",
+                                        event.target.value,
+                                      )
+                                    }
+                                    placeholder="z. B. aktueller OP-Stand"
+                                  />
+                                )}
+                              </div>
+
+                              <div className="space-y-2">
+                                <div className="text-xs uppercase text-muted-foreground">
+                                  Validierung
+                                </div>
+                                <Button
+                                  onClick={() => void saveOwnProgress(requirement)}
+                                  disabled={savingRequirementId === requirement.id}
+                                >
+                                  {savingRequirementId === requirement.id ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Save className="mr-2 h-4 w-4" />
+                                  )}
+                                  Speichern
+                                </Button>
+                              </div>
                             </div>
                           </div>
                         );
