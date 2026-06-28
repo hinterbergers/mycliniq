@@ -293,6 +293,8 @@ ADD COLUMN IF NOT EXISTS metadata jsonb NOT NULL DEFAULT '{}'::jsonb;
 CREATE TABLE IF NOT EXISTS education_profiles (
   id serial PRIMARY KEY,
   employee_id integer NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  active_program_id integer REFERENCES education_programs(id) ON DELETE SET NULL,
+  active_module_ids integer[] NOT NULL DEFAULT ARRAY[]::integer[],
   training_start_date date,
   basic_training_completed boolean NOT NULL DEFAULT false,
   expected_training_end_date date,
@@ -307,8 +309,32 @@ CREATE TABLE IF NOT EXISTS education_profiles (
 CREATE UNIQUE INDEX IF NOT EXISTS education_profiles_employee_id_idx
   ON education_profiles (employee_id);
 
+CREATE INDEX IF NOT EXISTS education_profiles_active_program_id_idx
+  ON education_profiles (active_program_id);
+
 CREATE INDEX IF NOT EXISTS education_profiles_exam_date_idx
   ON education_profiles (exam_date);
+
+ALTER TABLE education_profiles
+ADD COLUMN IF NOT EXISTS active_program_id integer;
+
+ALTER TABLE education_profiles
+ADD COLUMN IF NOT EXISTS active_module_ids integer[] NOT NULL DEFAULT ARRAY[]::integer[];
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'education_profiles_active_program_id_education_programs_id_fk'
+  ) THEN
+    ALTER TABLE education_profiles
+    ADD CONSTRAINT education_profiles_active_program_id_education_programs_id_fk
+    FOREIGN KEY (active_program_id)
+    REFERENCES education_programs(id)
+    ON DELETE SET NULL;
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS education_import_uploads (
   id serial PRIMARY KEY,

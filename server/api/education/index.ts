@@ -115,6 +115,8 @@ const mentorAssignmentSchema = z.object({
 
 const profileSchema = z.object({
   employeeId: z.number().int().positive(),
+  activeProgramId: z.number().int().positive().nullable().optional(),
+  moduleIds: z.array(z.number().int().positive()).optional(),
   trainingStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   basicTrainingCompleted: z.boolean().optional(),
   expectedTrainingEndDate: z
@@ -158,8 +160,6 @@ const slugify = (value: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "")
     .slice(0, 80);
-
-const traineeRoleMatchers = ["assistenz", "turnus", "kpj", "famul"];
 
 const overlapsDateRange = (
   leftStart: string | Date,
@@ -412,80 +412,30 @@ async function readCatalog(departmentId: number) {
   }));
 }
 
-async function readProgressSummary(
-  employeeIds: number[],
-  requirements: Array<{
-    id: number;
-    requiredCount?: number | null;
-    targetLevel?: number | null;
-    evaluationType?: string | null;
-    requiresTrainerSignoff?: boolean | null;
-  }>,
+function filterCatalogForProfile(
+  catalog: Awaited<ReturnType<typeof readCatalog>>,
+  profile?: {
+    activeProgramId?: number | null;
+    activeModuleIds?: number[] | null;
+  } | null,
 ) {
-  const requirementIds = requirements.map((item) => item.id);
-  if (!employeeIds.length || !requirementIds.length) {
-    return new Map<
-      number,
-      {
-        completedParts: number;
-        verifiedParts: number;
-        targetParts: number;
-        completedRequirements: number;
-        verifiedRequirements: number;
-      }
-    >();
-  }
+  const activeProgramId = profile?.activeProgramId ?? null;
+  if (!activeProgramId) return [];
 
-  const progressRows = await db
-    .select()
-    .from(educationProgress)
-    .where(
-      and(
-        inArray(educationProgress.employeeId, employeeIds),
-        inArray(educationProgress.requirementId, requirementIds),
-      ),
-    );
+  const assignedModuleIds = new Set(
+    Array.isArray(profile?.activeModuleIds)
+      ? profile.activeModuleIds
+          .map((value) => Number(value))
+          .filter((value) => Number.isInteger(value) && value > 0)
+      : [],
+  );
 
-  const summary = new Map<
-    number,
-    {
-      completedParts: number;
-      verifiedParts: number;
-      targetParts: number;
-      completedRequirements: number;
-      verifiedRequirements: number;
-    }
-  >();
-
-  employeeIds.forEach((employeeId) => {
-    const current = {
-      completedParts: 0,
-      verifiedParts: 0,
-      targetParts: 0,
-      completedRequirements: 0,
-      verifiedRequirements: 0,
-    };
-
-    requirements.forEach((requirement) => {
-      const progress = progressRows.find(
-        (row) =>
-          row.employeeId === employeeId && row.requirementId === requirement.id,
-      );
-      const requirementProgress = getRequirementProgress(requirement, progress);
-      current.completedParts += requirementProgress.completedParts;
-      current.verifiedParts += requirementProgress.verifiedParts;
-      current.targetParts += requirementProgress.targetParts;
-      if (requirementProgress.completedFraction >= 1) {
-        current.completedRequirements += 1;
-      }
-      if (requirementProgress.verifiedFraction >= 1) {
-        current.verifiedRequirements += 1;
-      }
-    });
-
-    summary.set(employeeId, current);
-  });
-  return summary;
+  return catalog
+    .filter((program) => program.id === activeProgramId)
+    .map((program) => ({
+      ...program,
+      modules: program.modules.filter((module) => assignedModuleIds.has(module.id)),
+    }));
 }
 
 export function registerEducationRoutes(router: Router) {
@@ -820,6 +770,43 @@ export function registerEducationRoutes(router: Router) {
     validateBody(profileSchema),
     asyncHandler(async (req, res) => {
       const payload = req.body as z.infer<typeof profileSchema>;
+      const activeProgramId = payload.activeProgramId ?? null;
+      let activeModuleIds: number[] = [];
+
+      if (activeProgramId) {
+        const [program] = await db
+          .select({
+            id: educationPrograms.id,
+          })
+          .from(educationPrograms)
+          .where(
+            and(
+              eq(educationPrograms.id, activeProgramId),
+              eq(educationPrograms.departmentId, req.user?.departmentId ?? -1),
+            ),
+          )
+          .limit(1);
+
+        if (!program) {
+          return forbidden(res, "Programm passt nicht zur aktuellen Abteilung");
+        }
+      }
+
+      if (activeProgramId && payload.moduleIds?.length) {
+        const allowedModules = await db
+          .select({
+            id: educationModules.id,
+          })
+          .from(educationModules)
+          .where(
+            and(
+              eq(educationModules.programId, activeProgramId),
+              inArray(educationModules.id, payload.moduleIds),
+            ),
+          );
+        activeModuleIds = allowedModules.map((row) => row.id);
+      }
+
       const examDate = payload.examDate ?? null;
       const isPastExam =
         typeof examDate === "string" && new Date(examDate) < new Date(new Date().toDateString());
@@ -835,6 +822,8 @@ export function registerEducationRoutes(router: Router) {
         const [updated] = await db
           .update(educationProfiles)
           .set({
+            activeProgramId,
+            activeModuleIds,
             trainingStartDate: payload.trainingStartDate ?? null,
             basicTrainingCompleted: Boolean(payload.basicTrainingCompleted),
             expectedTrainingEndDate: payload.expectedTrainingEndDate ?? null,
@@ -853,6 +842,8 @@ export function registerEducationRoutes(router: Router) {
         .insert(educationProfiles)
         .values({
           employeeId: payload.employeeId,
+          activeProgramId,
+          activeModuleIds,
           trainingStartDate: payload.trainingStartDate ?? null,
           basicTrainingCompleted: Boolean(payload.basicTrainingCompleted),
           expectedTrainingEndDate: payload.expectedTrainingEndDate ?? null,
@@ -1028,51 +1019,68 @@ export function registerEducationRoutes(router: Router) {
           .where(eq(educationMentorAssignments.isActive, true)),
       ]);
 
-      const allRequirements = catalog.flatMap((program) =>
-        program.modules.flatMap((module) => module.requirements),
-      );
-      const requirementIds = allRequirements.map((item) => item.id);
-      const totalRequirements = allRequirements.length;
-
-      const trainees = traineeRows.filter((row) =>
-        traineeRoleMatchers.some((matcher) =>
-          String(row.role ?? "").toLowerCase().includes(matcher),
-        ),
-      );
+      const trainees = traineeRows;
       const trainers = trainerRows.filter(
         (row) => row.appRole === "Ausbilder" || row.appRole === "Admin",
       );
 
       const traineeIds = trainees.map((row) => row.id);
-      const [summaryMap, progressRows] = await Promise.all([
-        readProgressSummary(traineeIds, allRequirements),
-        traineeIds.length && requirementIds.length
+      const [profileRows, progressRows] = await Promise.all([
+        traineeIds.length
+          ? db
+              .select()
+              .from(educationProfiles)
+              .where(inArray(educationProfiles.employeeId, traineeIds))
+          : Promise.resolve([]),
+        traineeIds.length
           ? db
               .select()
               .from(educationProgress)
-              .where(
-                and(
-                  inArray(educationProgress.employeeId, traineeIds),
-                  inArray(educationProgress.requirementId, requirementIds),
-                ),
-              )
+              .where(inArray(educationProgress.employeeId, traineeIds))
           : Promise.resolve([]),
       ]);
 
+      const profileMap = new Map(profileRows.map((row) => [row.employeeId, row]));
+
       const traineePayload = trainees.map((trainee) => {
-        const summary = summaryMap.get(trainee.id) ?? {
-          completedParts: 0,
-          verifiedParts: 0,
-          targetParts: 0,
-          completedRequirements: 0,
-          verifiedRequirements: 0,
-        };
+        const profile = profileMap.get(trainee.id) ?? null;
+        const visibleCatalog = filterCatalogForProfile(catalog, profile);
+        const visibleRequirements = visibleCatalog.flatMap((program) =>
+          program.modules.flatMap((module) => module.requirements),
+        );
+        const summary = visibleRequirements.reduce(
+          (acc, requirement) => {
+            const progress = progressRows.find(
+              (row) =>
+                row.employeeId === trainee.id && row.requirementId === requirement.id,
+            );
+            const requirementProgress = getRequirementProgress(requirement, progress);
+            acc.completedParts += requirementProgress.completedParts;
+            acc.verifiedParts += requirementProgress.verifiedParts;
+            acc.targetParts += requirementProgress.targetParts;
+            if (requirementProgress.completedFraction >= 1) {
+              acc.completedRequirements += 1;
+            }
+            if (requirementProgress.verifiedFraction >= 1) {
+              acc.verifiedRequirements += 1;
+            }
+            return acc;
+          },
+          {
+            completedParts: 0,
+            verifiedParts: 0,
+            targetParts: 0,
+            completedRequirements: 0,
+            verifiedRequirements: 0,
+          },
+        );
         return {
           ...trainee,
+          profile,
           summary: {
             completed: summary.completedRequirements,
             verified: summary.verifiedRequirements,
-            totalRequired: totalRequirements,
+            totalRequired: visibleRequirements.length,
             completedParts: summary.completedParts,
             verifiedParts: summary.verifiedParts,
             targetParts: summary.targetParts,
@@ -1426,20 +1434,35 @@ export function registerEducationRoutes(router: Router) {
     asyncHandler(async (req, res) => {
       if (!req.user?.departmentId) {
         return ok(res, {
+          profile: null,
           catalog: [],
           progress: [],
           uploads: [],
           events: [],
           eventRequests: [],
-          summary: { completed: 0, verified: 0, totalRequired: 0, completionPercent: 0 },
+          summary: {
+            completed: 0,
+            verified: 0,
+            totalRequired: 0,
+            completedParts: 0,
+            verifiedParts: 0,
+            targetParts: 0,
+            completionPercent: 0,
+          },
         });
       }
 
-      const [catalog, events] = await Promise.all([
+      const [catalog, events, profile] = await Promise.all([
         readCatalog(req.user.departmentId),
         readDepartmentEducationEvents(req.user.departmentId, false),
+        db
+          .select()
+          .from(educationProfiles)
+          .where(eq(educationProfiles.employeeId, req.user.employeeId))
+          .then((rows) => rows[0] ?? null),
       ]);
-      const requirements = catalog.flatMap((program) =>
+      const visibleCatalog = filterCatalogForProfile(catalog, profile);
+      const requirements = visibleCatalog.flatMap((program) =>
         program.modules.flatMap((module) => module.requirements),
       );
       const requirementIds = requirements.map((item) => item.id);
@@ -1488,7 +1511,8 @@ export function registerEducationRoutes(router: Router) {
 
       return ok(res, {
         employeeRole: req.user.role ?? null,
-        catalog,
+        profile,
+        catalog: visibleCatalog,
         progress,
         uploads,
         events,

@@ -598,6 +598,13 @@ export const educationProfiles = pgTable(
     employeeId: integer("employee_id")
       .references(() => employees.id, { onDelete: "cascade" })
       .notNull(),
+    activeProgramId: integer("active_program_id").references(() => educationPrograms.id, {
+      onDelete: "set null",
+    }),
+    activeModuleIds: integer("active_module_ids")
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::integer[]`),
     trainingStartDate: date("training_start_date"),
     basicTrainingCompleted: boolean("basic_training_completed")
       .notNull()
@@ -612,6 +619,7 @@ export const educationProfiles = pgTable(
   },
   (table) => [
     uniqueIndex("education_profiles_employee_id_idx").on(table.employeeId),
+    index("education_profiles_active_program_id_idx").on(table.activeProgramId),
     index("education_profiles_exam_date_idx").on(table.examDate),
   ],
 );

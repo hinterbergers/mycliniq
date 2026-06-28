@@ -206,6 +206,7 @@ export type EducationTrainerPerson = {
 };
 
 export type EducationTrainerTrainee = EducationTrainerPerson & {
+  profile: EducationProfile | null;
   summary: {
     completed: number;
     verified: number;
@@ -253,6 +254,7 @@ export type EducationEventRequestOverview = EducationEventRequest & {
 
 export type EducationSelfOverview = {
   employeeRole: string | null;
+  profile: EducationProfile | null;
   catalog: EducationCatalogProgram[];
   progress: EducationProgress[];
   uploads: EducationImportUpload[];
@@ -1457,6 +1459,8 @@ export const educationApi = {
 
   upsertProfile: async (payload: {
     employeeId: number;
+    activeProgramId?: number | null;
+    moduleIds?: number[];
     trainingStartDate?: string | null;
     basicTrainingCompleted?: boolean;
     expectedTrainingEndDate?: string | null;

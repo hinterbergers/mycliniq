@@ -52,12 +52,10 @@ export default function EducationOverview() {
     if (!role) return "";
     if (role.includes("ausbildungsober")) return "ausbildungsoberarzt";
     if (role.includes("funktionsober")) return "funktionsoberarzt";
-    if (role.includes("1. ober") || role.includes("erster ober")) {
-      return "1. oberarzt";
-    }
+    if (role.includes("1. ober") || role.includes("erster ober")) return "1. oberarzt";
     if (role.includes("primar")) return "primararzt";
-    if (role.includes("oberarzt") || role.includes("oberarztin")) return "oberarzt";
-    if (role.includes("facharzt") || role.includes("facharztin")) return "facharzt";
+    if (role.includes("oberarzt")) return "oberarzt";
+    if (role.includes("facharzt")) return "facharzt";
     if (role.includes("assistenz")) return "assistenzarzt";
     if (role.includes("turnus")) return "turnusarzt";
     if (role.includes("student") || role.includes("kpj") || role.includes("famul")) {
@@ -70,17 +68,8 @@ export default function EducationOverview() {
   const parseTargetRoleKeys = (value?: string | null) =>
     (value ?? "")
       .split(/[,/]| und /i)
-      .map((entry) => entry.trim())
-      .filter(Boolean)
       .map((entry) => getCanonicalRoleKey(entry))
       .filter(Boolean);
-
-  const requiresAdvancedRole = (...values: Array<string | null | undefined>) => {
-    const haystack = values.map((value) => normalizeRole(value)).join(" ");
-    return /(facharztvoraus|fa voraus|nach facharzt|nur facharzt|nur facharztin|ogum ii)/i.test(
-      haystack,
-    );
-  };
 
   const progressByRequirement = useMemo(() => {
     const map = new Map<
@@ -105,73 +94,12 @@ export default function EducationOverview() {
     return map;
   }, [data?.eventRequests]);
 
-  const canAccessByRole = ({
-    currentRole,
-    targetRoles,
-    contextValues = [],
-  }: {
-    currentRole: string | null | undefined;
-    targetRoles: Array<string | null | undefined>;
-    contextValues?: Array<string | null | undefined>;
-  }) => {
-    const currentRoleKey = getCanonicalRoleKey(currentRole);
-    const targetRoleKeys = targetRoles.flatMap((value) => parseTargetRoleKeys(value));
-
-    if (
-      targetRoleKeys.length > 0 &&
-      (!currentRoleKey || !targetRoleKeys.includes(currentRoleKey))
-    ) {
-      return false;
-    }
-
-    if (
-      requiresAdvancedRole(...contextValues, ...targetRoles) &&
-      getCanonicalRoleKey(currentRole) !== "facharzt" &&
-      getCanonicalRoleKey(currentRole) !== "oberarzt" &&
-      getCanonicalRoleKey(currentRole) !== "funktionsoberarzt" &&
-      getCanonicalRoleKey(currentRole) !== "ausbildungsoberarzt" &&
-      getCanonicalRoleKey(currentRole) !== "1. oberarzt" &&
-      getCanonicalRoleKey(currentRole) !== "primararzt"
-    ) {
-      return false;
-    }
-
-    return true;
-  };
-
-  const visibleCatalog = useMemo(() => {
-    const currentRole = data?.employeeRole;
-
-    return (data?.catalog ?? [])
-      .map((program) => ({
-        ...program,
-        modules: program.modules.filter((module) =>
-          canAccessByRole({
-            currentRole,
-            targetRoles: [module.targetRole, program.targetRole],
-            contextValues: [module.title, module.description, program.title, program.description],
-          }),
-        ),
-      }))
-      .filter((program) => {
-        const programAccessible = canAccessByRole({
-          currentRole,
-          targetRoles: [program.targetRole],
-          contextValues: [program.title, program.description],
-        });
-        return programAccessible || program.modules.length > 0;
-      });
-  }, [data?.catalog, data?.employeeRole]);
-
+  const visibleCatalog = useMemo(() => data?.catalog ?? [], [data?.catalog]);
   const visibleEvents = useMemo(() => {
-    const currentRole = data?.employeeRole;
-
+    const currentRoleKey = getCanonicalRoleKey(data?.employeeRole);
     return (data?.events ?? []).filter((event) => {
-      return canAccessByRole({
-        currentRole,
-        targetRoles: [event.targetRole],
-        contextValues: [event.title, event.description],
-      });
+      const targetRoleKeys = parseTargetRoleKeys(event.targetRole);
+      return targetRoleKeys.length === 0 || targetRoleKeys.includes(currentRoleKey);
     });
   }, [data?.employeeRole, data?.events]);
 
@@ -433,6 +361,17 @@ export default function EducationOverview() {
         </Card>
 
         <div className="space-y-4">
+          {visibleCatalog.length === 0 ? (
+            <Card className="border-dashed">
+              <CardHeader>
+                <CardTitle>Noch keine Ausbildung zugeordnet</CardTitle>
+                <CardDescription>
+                  Im Ausbildungscockpit koennen Programm und naechste Module pro Person
+                  hinterlegt werden. Danach erscheinen sie hier in deinem Bereich.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          ) : null}
           {visibleCatalog.map((program) => (
             <Card key={program.id}>
               <CardHeader>

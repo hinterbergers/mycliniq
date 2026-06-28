@@ -11,6 +11,8 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -46,6 +48,17 @@ type DraftRow = {
   lastEntryDate: string;
 };
 
+type ProfileDraft = {
+  activeProgramId: string;
+  moduleIds: number[];
+  trainingStartDate: string;
+  basicTrainingCompleted: boolean;
+  expectedTrainingEndDate: string;
+  examDate: string;
+  examPassed: boolean;
+  notes: string;
+};
+
 type TraineeRoleFilter = "all" | "assistenz" | "facharzt" | "turnus";
 
 const roleMatchesFilter = (role: string | null | undefined, filter: TraineeRoleFilter) => {
@@ -62,6 +75,9 @@ const roleMatchesFilter = (role: string | null | undefined, filter: TraineeRoleF
   return true;
 };
 
+const isAssistenzRole = (role: string | null | undefined) =>
+  String(role ?? "").toLowerCase().includes("assistenz");
+
 export default function EducationTrainerCockpit() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -74,7 +90,9 @@ export default function EducationTrainerCockpit() {
   const [selectedTrainerId, setSelectedTrainerId] = useState<string>("");
   const [drafts, setDrafts] = useState<Record<number, DraftRow>>({});
   const [savingRequirementId, setSavingRequirementId] = useState<number | null>(null);
+  const [savingProfile, setSavingProfile] = useState(false);
   const [roleFilter, setRoleFilter] = useState<TraineeRoleFilter>("all");
+  const [profileDraft, setProfileDraft] = useState<ProfileDraft | null>(null);
 
   const filteredTrainees = useMemo(
     () =>
@@ -120,6 +138,29 @@ export default function EducationTrainerCockpit() {
     );
   }, [selectedAssignment]);
 
+  useEffect(() => {
+    const profile = selectedTrainee?.profile;
+    setProfileDraft(
+      selectedTrainee
+        ? {
+            activeProgramId: profile?.activeProgramId ? String(profile.activeProgramId) : "",
+            moduleIds: Array.isArray(profile?.activeModuleIds)
+              ? profile.activeModuleIds
+              : [],
+            trainingStartDate: String(profile?.trainingStartDate ?? ""),
+            basicTrainingCompleted: Boolean(profile?.basicTrainingCompleted ?? false),
+            expectedTrainingEndDate: String(profile?.expectedTrainingEndDate ?? ""),
+            examDate: String(profile?.examDate ?? ""),
+            examPassed: Boolean(profile?.examPassed ?? false),
+            notes: String(profile?.notes ?? ""),
+          }
+        : null,
+    );
+  }, [selectedTrainee]);
+
+  const activeProgramId = Number(profileDraft?.activeProgramId ?? 0);
+  const assignedModuleIds = profileDraft?.moduleIds ?? [];
+
   const requirementRows = useMemo(() => {
     const progressMap = new Map(
       (data?.progress ?? [])
@@ -127,17 +168,33 @@ export default function EducationTrainerCockpit() {
         .map((row) => [row.requirementId, row]),
     );
 
-    return (data?.catalog ?? []).flatMap((program) =>
-      program.modules.flatMap((module) =>
-        module.requirements.map((requirement) => ({
-          programTitle: program.title,
-          moduleTitle: module.title,
-          requirement,
-          progress: progressMap.get(requirement.id) ?? null,
-        })),
-      ),
-    );
-  }, [data?.catalog, data?.progress, selectedTraineeId]);
+    return (data?.catalog ?? [])
+      .filter((program) => (activeProgramId > 0 ? program.id === activeProgramId : false))
+      .flatMap((program) =>
+        program.modules
+          .filter((module) => assignedModuleIds.includes(module.id))
+          .flatMap((module) =>
+            module.requirements.map((requirement) => ({
+              programTitle: program.title,
+              moduleTitle: module.title,
+              requirement,
+              progress: progressMap.get(requirement.id) ?? null,
+            })),
+          ),
+      );
+  }, [activeProgramId, assignedModuleIds, data?.catalog, data?.progress, selectedTraineeId]);
+
+  const modulesForSelectedProgram = useMemo(() => {
+    const program = (data?.catalog ?? []).find((entry) => entry.id === activeProgramId);
+    return program?.modules ?? [];
+  }, [activeProgramId, data?.catalog]);
+
+  const examDateIsPast = useMemo(() => {
+    if (!profileDraft?.examDate) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return new Date(profileDraft.examDate) < today;
+  }, [profileDraft?.examDate]);
 
   const setDraftField = (
     requirementId: number,
@@ -197,6 +254,51 @@ export default function EducationTrainerCockpit() {
     });
     await queryClient.invalidateQueries({ queryKey: ["education", "trainer"] });
     toast({ title: "Ausbilder zugeordnet" });
+  };
+
+  const toggleAssignedModule = (moduleId: number, checked: boolean) => {
+    setProfileDraft((current) =>
+      current
+        ? {
+            ...current,
+            moduleIds: checked
+              ? Array.from(new Set([...current.moduleIds, moduleId]))
+              : current.moduleIds.filter((id) => id !== moduleId),
+          }
+        : current,
+    );
+  };
+
+  const saveProfile = async () => {
+    if (!selectedTraineeId || !profileDraft) return;
+    setSavingProfile(true);
+    try {
+      await educationApi.upsertProfile({
+        employeeId: selectedTraineeId,
+        activeProgramId: profileDraft.activeProgramId
+          ? Number(profileDraft.activeProgramId)
+          : null,
+        moduleIds: profileDraft.moduleIds,
+        trainingStartDate: profileDraft.trainingStartDate || null,
+        basicTrainingCompleted: profileDraft.basicTrainingCompleted,
+        expectedTrainingEndDate: isAssistenzRole(selectedTrainee?.role)
+          ? profileDraft.expectedTrainingEndDate || null
+          : null,
+        examDate: isAssistenzRole(selectedTrainee?.role)
+          ? profileDraft.examDate || null
+          : null,
+        examPassed:
+          isAssistenzRole(selectedTrainee?.role) && examDateIsPast
+            ? profileDraft.examPassed
+            : false,
+        notes: profileDraft.notes || "",
+      });
+      await queryClient.invalidateQueries({ queryKey: ["education", "trainer"] });
+      await queryClient.invalidateQueries({ queryKey: ["education", "me"] });
+      toast({ title: "Ausbildungsprofil gespeichert" });
+    } finally {
+      setSavingProfile(false);
+    }
   };
 
   const saveProgress = async (requirementId: number) => {
@@ -361,6 +463,199 @@ export default function EducationTrainerCockpit() {
                 </Button>
               </div>
 
+              {selectedTrainee && profileDraft ? (
+                <div className="rounded-xl border p-4 space-y-4">
+                  <div>
+                    <div className="text-base font-semibold">Mitarbeitergespraech</div>
+                    <div className="text-sm text-muted-foreground">
+                      Aktuelle Fakten und naechste Ausbildungsschritte pro Person festlegen.
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <div className="text-sm font-medium">Ausbildungsbeginn</div>
+                      <Input
+                        type="date"
+                        value={profileDraft.trainingStartDate}
+                        onChange={(event) =>
+                          setProfileDraft((current) =>
+                            current
+                              ? { ...current, trainingStartDate: event.target.value }
+                              : current,
+                          )
+                        }
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="text-sm font-medium">Programm</div>
+                      <Select
+                        value={profileDraft.activeProgramId || "__none__"}
+                        onValueChange={(value) =>
+                          setProfileDraft((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  activeProgramId: value === "__none__" ? "" : value,
+                                  moduleIds: [],
+                                }
+                              : current,
+                          )
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Programm waehlen" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">Noch kein Programm</SelectItem>
+                          {(data?.catalog ?? []).map((program) => (
+                            <SelectItem key={program.id} value={String(program.id)}>
+                              {program.title}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {isAssistenzRole(selectedTrainee.role) ? (
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <div className="text-sm font-medium">
+                          Voraussichtliches Ausbildungsende
+                        </div>
+                        <Input
+                          type="date"
+                          value={profileDraft.expectedTrainingEndDate}
+                          onChange={(event) =>
+                            setProfileDraft((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    expectedTrainingEndDate: event.target.value,
+                                  }
+                                : current,
+                            )
+                          }
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="text-sm font-medium">Pruefung</div>
+                        <Input
+                          type="date"
+                          value={profileDraft.examDate}
+                          onChange={(event) =>
+                            setProfileDraft((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    examDate: event.target.value,
+                                    examPassed:
+                                      event.target.value && examDateIsPast
+                                        ? current.examPassed
+                                        : false,
+                                  }
+                                : current,
+                            )
+                          }
+                        />
+                      </div>
+
+                      <label className="flex items-center gap-3 rounded-lg border p-3">
+                        <Checkbox
+                          checked={profileDraft.basicTrainingCompleted}
+                          onCheckedChange={(checked) =>
+                            setProfileDraft((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    basicTrainingCompleted: checked === true,
+                                  }
+                                : current,
+                            )
+                          }
+                        />
+                        <span className="text-sm font-medium">
+                          Basisausbildung abgeschlossen
+                        </span>
+                      </label>
+
+                      {examDateIsPast ? (
+                        <label className="flex items-center gap-3 rounded-lg border p-3">
+                          <Checkbox
+                            checked={profileDraft.examPassed}
+                            onCheckedChange={(checked) =>
+                              setProfileDraft((current) =>
+                                current
+                                  ? { ...current, examPassed: checked === true }
+                                  : current,
+                              )
+                            }
+                          />
+                          <span className="text-sm font-medium">Pruefung bestanden</span>
+                        </label>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium">Naechste Module</div>
+                    {modulesForSelectedProgram.length > 0 ? (
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {modulesForSelectedProgram.map((module) => (
+                          <label
+                            key={module.id}
+                            className="flex items-start gap-3 rounded-lg border p-3"
+                          >
+                            <Checkbox
+                              checked={profileDraft.moduleIds.includes(module.id)}
+                              onCheckedChange={(checked) =>
+                                toggleAssignedModule(module.id, checked === true)
+                              }
+                            />
+                            <div>
+                              <div className="font-medium">{module.title}</div>
+                              <div className="text-sm text-muted-foreground">
+                                {module.description || "Noch keine Modulbeschreibung."}
+                              </div>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+                        Zuerst ein Programm waehlen, dann koennen ein oder mehrere Module
+                        zugeordnet werden.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium">Notizen</div>
+                    <Textarea
+                      value={profileDraft.notes}
+                      onChange={(event) =>
+                        setProfileDraft((current) =>
+                          current ? { ...current, notes: event.target.value } : current,
+                        )
+                      }
+                      placeholder="Ziele, Gespraechsnotizen oder naechste Schritte"
+                    />
+                  </div>
+
+                  <Button onClick={saveProfile} disabled={savingProfile}>
+                    {savingProfile ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Save className="mr-2 h-4 w-4" />
+                    )}
+                    Ausbildungsprofil speichern
+                  </Button>
+                </div>
+              ) : null}
+
               <div className="rounded-xl border">
                 <Table>
                   <TableHeader>
@@ -375,6 +670,14 @@ export default function EducationTrainerCockpit() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
+                    {requirementRows.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-sm text-muted-foreground">
+                          Fuer diese Person sind noch keine Module im aktuellen Programm
+                          zugeordnet.
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
                     {requirementRows.map((row) => {
                       const draft = drafts[row.requirement.id];
                       const target = formatRequirementTarget(row.requirement);
