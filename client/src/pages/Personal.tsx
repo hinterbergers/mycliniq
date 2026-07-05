@@ -3720,6 +3720,10 @@ function WeeklyView({
         row.height = 50;
       });
 
+      const absenceMetaByDay = new Map<
+        string,
+        { bgColor: string; fontColor: string }
+      >();
       const absRow = sheet.addRow([
         "Abwesenheiten",
         ...weekDays.map((day) => {
@@ -3733,22 +3737,42 @@ function WeeklyView({
             current.push(resolveAbsenceName(absence));
             byReason.set(reason, current);
           });
+          const groupedItems = Array.from(byReason.entries())
+            .map(([reason, names]) => ({
+              reason,
+              names: names.slice().sort((a, b) => a.localeCompare(b, "de")),
+            }))
+            .sort((a, b) => compareAbsenceReasons(a.reason, b.reason));
+          const primaryMeta = getAbsenceVisualMeta(groupedItems[0]?.reason);
+          absenceMetaByDay.set(key, {
+            bgColor: primaryMeta.bgHex,
+            fontColor: primaryMeta.textHex,
+          });
           const lines: string[] = [];
-          Array.from(byReason.entries())
-            .sort(([a], [b]) => a.localeCompare(b, "de"))
-            .forEach(([reason, names]) => {
-              lines.push(reason);
-              names
-                .sort((a, b) => a.localeCompare(b, "de"))
-                .forEach((name) => lines.push(`  ${name}`));
-            });
+          groupedItems.forEach((group) => {
+            const meta = getAbsenceVisualMeta(group.reason);
+            lines.push(`${meta.shortLabel} ${meta.label}`);
+            group.names.forEach((name) => lines.push(`  ${name}`));
+          });
           return withExcelTopPadding(lines.join("\n"));
         }),
       ]);
       absRow.eachCell((cell, colNumber) => {
+        if (colNumber === 1) {
+          applyCellStyle(cell, {
+            bgColor: "#F1F5F9",
+            bold: true,
+            indent: 1,
+          });
+          return;
+        }
+        const day = weekDays[colNumber - 2];
+        const key = day ? format(day, "yyyy-MM-dd") : null;
+        const dayMeta = key ? absenceMetaByDay.get(key) : null;
         applyCellStyle(cell, {
-          bgColor: "#F1F5F9",
-          bold: colNumber === 1,
+          bgColor: dayMeta?.bgColor ?? "#F1F5F9",
+          fontColor: dayMeta?.fontColor ?? undefined,
+          bold: Boolean(dayMeta),
           indent: 1,
         });
       });
