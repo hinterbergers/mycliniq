@@ -114,6 +114,10 @@ import {
 } from "@shared/shiftTypes";
 import { getAustrianHoliday } from "@/lib/holidays";
 import {
+  compareAbsenceEntriesByReasonThenName,
+  getAbsenceInlineStyle,
+} from "@/lib/absenceStyles";
+import {
   getWeeklyPlanningReasonLabel,
   getWeeklyPlanningReasonMeta,
 } from "@/lib/weeklyPlanningReasonMap";
@@ -1051,8 +1055,13 @@ export default function RosterPlan() {
           )
       : [];
 
-    return [...plannedEntries, ...longTermEntries, ...legacyEntries].sort(
-      (a, b) => a.name.localeCompare(b.name),
+    return [...plannedEntries, ...longTermEntries, ...legacyEntries].sort((a, b) =>
+      compareAbsenceEntriesByReasonThenName(
+        a.reason,
+        a.name,
+        b.reason,
+        b.name,
+      ),
     );
   };
 
@@ -1140,7 +1149,14 @@ export default function RosterPlan() {
         status: absence.status,
         notes: absence.notes ?? null,
       }))
-      .sort((a, b) => a.name.localeCompare(b.name, "de"));
+      .sort((a, b) =>
+        compareAbsenceEntriesByReasonThenName(
+          a.reason,
+          a.name,
+          b.reason,
+          b.name,
+        ),
+      );
   };
 
   const getAvailableEmployeesForServiceLine = (
@@ -2588,7 +2604,8 @@ export default function RosterPlan() {
                                 {plannedAbsences.map((absence) => (
                                   <div
                                     key={`${line.key}-absence-${absence.employeeId}-${absence.absenceId}`}
-                                    className="text-amber-700"
+                                    className="inline-flex rounded border px-1.5 py-0.5 text-[11px] font-medium"
+                                    style={getAbsenceInlineStyle(absence.reason)}
                                     title={[absence.name, absence.reason, absence.status]
                                       .filter(Boolean)
                                       .join(" · ")}
@@ -2656,7 +2673,8 @@ export default function RosterPlan() {
                               return (
                                 <span
                                   key={`${absence.source}-${absence.employeeId}-${absence.absenceId ?? absence.reason}`}
-                                  className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600"
+                                  className="inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium"
+                                  style={getAbsenceInlineStyle(absence.reason)}
                                   title={titleParts.join(" · ")}
                                 >
                                   <span className="truncate max-w-[120px]">

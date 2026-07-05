@@ -107,6 +107,11 @@ import {
   getWeeklyPlanningReasonLabel,
   getWeeklyPlanningReasonMeta,
 } from "@/lib/weeklyPlanningReasonMap";
+import {
+  compareAbsenceReasons,
+  getAbsenceInlineStyle,
+  getAbsenceVisualMeta,
+} from "@/lib/absenceStyles";
 
 const ROLE_COLORS: Record<string, string> = {
   Primararzt: "bg-purple-100 text-purple-800 border-purple-200",
@@ -2085,10 +2090,23 @@ export default function WeeklyPlan() {
       entries.push(absence);
       grouped.set(reason, entries);
     });
-    return Array.from(grouped.entries()).sort(([a], [b]) =>
-      a.localeCompare(b, "de"),
-    );
-  }, [selectedAbsences]);
+    return Array.from(grouped.entries())
+      .map(([reason, entries]) => [
+        reason,
+        entries
+          .slice()
+          .sort((left, right) => {
+            const leftEmployee = employeesById.get(left.employeeId);
+            const rightEmployee = employeesById.get(right.employeeId);
+            const leftName = leftEmployee?.lastName || leftEmployee?.name || "";
+            const rightName = rightEmployee?.lastName || rightEmployee?.name || "";
+            return leftName.localeCompare(rightName, "de");
+          }),
+      ] as const)
+      .sort(([leftReason], [rightReason]) =>
+        compareAbsenceReasons(leftReason, rightReason),
+      );
+  }, [employeesById, selectedAbsences]);
   const isAssignedEmployeeAbsentForSelectedDay = useCallback(
     (employeeId: number | null | undefined) => {
       if (!employeeId || !selectedDayDate) return false;
@@ -2885,24 +2903,32 @@ export default function WeeklyPlan() {
                         Keine Abwesenheiten
                       </div>
                     ) : (
-                      selectedAbsencesByReason.map(([reason, entries]) => (
-                        <div key={reason} className="space-y-1">
-                          <div className="text-xs font-semibold text-foreground">
-                            {reason} ({entries.length})
-                          </div>
-                          {entries.map((absence, index) => {
-                            const employee = employeesById.get(absence.employeeId);
-                            return (
-                              <div
-                                key={`${reason}-${absence.employeeId}-${index}`}
-                                className="text-xs text-muted-foreground"
+                      selectedAbsencesByReason.map(([reason, entries]) => {
+                        const meta = getAbsenceVisualMeta(reason);
+                        return (
+                          <div key={reason} className="space-y-1">
+                            <div>
+                              <span
+                                className="inline-flex items-center rounded border px-2 py-0.5 text-xs font-semibold"
+                                style={getAbsenceInlineStyle(reason)}
                               >
-                                {employee?.lastName || employee?.name || "Unbekannt"}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ))
+                                {meta.label} ({entries.length})
+                              </span>
+                            </div>
+                            {entries.map((absence, index) => {
+                              const employee = employeesById.get(absence.employeeId);
+                              return (
+                                <div
+                                  key={`${reason}-${absence.employeeId}-${index}`}
+                                  className="text-xs text-muted-foreground"
+                                >
+                                  {employee?.lastName || employee?.name || "Unbekannt"}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })
                     )}
                   </CardContent>
                 </Card>

@@ -2,6 +2,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import {
+  compareAbsenceEntriesByReasonThenName,
+  getAbsenceInlineStyle,
+} from "@/lib/absenceStyles";
 import type { Employee, LongTermAbsence, RosterShift, ServiceLine } from "@shared/schema";
 import { getServiceLineDisplayLabel } from "@shared/shiftTypes";
 import {
@@ -307,7 +311,14 @@ export default function PublicRosterPlan() {
           notes: absence.notes ?? null,
         }),
       )
-      .sort((a, b) => a.name.localeCompare(b.name, "de"));
+      .sort((a, b) =>
+        compareAbsenceEntriesByReasonThenName(
+          a.reason,
+          a.name,
+          b.reason,
+          b.name,
+        ),
+      );
   };
 
   const statusLabel = payload?.planStatus
@@ -488,7 +499,8 @@ export default function PublicRosterPlan() {
                                   {dayAbsences.map((absence) => (
                                     <span
                                       key={`public-mobile-absence-${absence.employeeId}-${absence.absenceId ?? absence.reason}`}
-                                      className="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600"
+                                      className="inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium"
+                                      style={getAbsenceInlineStyle(absence.reason)}
                                     >
                                       {absence.name}
                                     </span>
@@ -601,7 +613,8 @@ export default function PublicRosterPlan() {
                                     {dayAbsences.map((absence) => (
                                       <span
                                         key={`public-desktop-absence-${absence.employeeId}-${absence.absenceId ?? absence.reason}`}
-                                        className="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600"
+                                        className="inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium"
+                                        style={getAbsenceInlineStyle(absence.reason)}
                                       >
                                         {absence.name}
                                       </span>

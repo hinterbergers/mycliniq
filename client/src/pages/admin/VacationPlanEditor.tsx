@@ -109,6 +109,13 @@ import {
   getSchoolHoliday,
   type SchoolHolidayLocation,
 } from "@/lib/schoolHolidays";
+import {
+  compareAbsenceEntriesByReasonThenName,
+  compareAbsenceReasons,
+  getAbsenceInlineStyle,
+  getAbsenceVisualMeta,
+  normalizeAbsenceReason,
+} from "@/lib/absenceStyles";
 import { cn } from "@/lib/utils";
 import type {
   Competency,
@@ -144,23 +151,19 @@ const STATUS_STYLES: Record<string, string> = {
   Abgelehnt: "bg-red-50 text-red-700 border-red-200",
 };
 
-const REASON_STYLES: Record<string, { bg: string; label: string }> = {
-  Urlaub: { bg: "bg-emerald-200", label: "U" },
-  Fortbildung: { bg: "bg-indigo-200", label: "F" },
-  Karenz: { bg: "bg-violet-200", label: "K" },
-  Krankenstand: { bg: "bg-red-200", label: "S" },
-  Zeitausgleich: { bg: "bg-amber-200", label: "Z" },
-  Pflegeurlaub: { bg: "bg-orange-200", label: "P" },
-  Gebührenurlaub: { bg: "bg-lime-200", label: "G" },
-  Sonderurlaub: { bg: "bg-teal-200", label: "S" },
-  Zusatzurlaub: { bg: "bg-cyan-200", label: "Z" },
-  Quarantäne: { bg: "bg-fuchsia-200", label: "Q" },
-  Ruhezeit: { bg: "bg-slate-200", label: "R" },
-};
-
-const SUMMARY_REASON_KEYS = Object.keys(REASON_STYLES) as Array<
-  keyof typeof REASON_STYLES
->;
+const SUMMARY_REASON_KEYS = [
+  "Urlaub",
+  "Sonderurlaub",
+  "Gebührenurlaub",
+  "Zusatzurlaub",
+  "Fortbildung",
+  "Krankenstand",
+  "Pflegeurlaub",
+  "Zeitausgleich",
+  "Ruhezeit",
+  "Karenz",
+  "Quarantäne",
+] as const;
 
 type VacationVisibilityGroup = "OA" | "ASS" | "TA" | "SEK";
 
@@ -234,7 +237,7 @@ type CalendarAbsence = {
   startDate: string;
   endDate: string;
   reason: string;
-  styleKey: keyof typeof REASON_STYLES;
+  styleKey: ReturnType<typeof normalizeAbsenceReason>;
   status?: PlannedAbsenceAdmin["status"] | "Genehmigt";
   notes?: string | null;
   createdAt?: string | null;
@@ -338,19 +341,7 @@ const formatDateTime = (value?: string | null) => {
   return format(parsed, "dd.MM.yyyy HH:mm", { locale: de });
 };
 
-const resolveReasonStyleKey = (reason: string): keyof typeof REASON_STYLES => {
-  if (reason in REASON_STYLES) {
-    return reason as keyof typeof REASON_STYLES;
-  }
-  const normalized = reason.toLowerCase();
-  if (normalized.includes("karenz") || normalized.includes("eltern"))
-    return "Karenz";
-  if (normalized.includes("fortbildung")) return "Fortbildung";
-  if (normalized.includes("urlaub")) return "Urlaub";
-  if (normalized.includes("krank")) return "Krankenstand";
-  if (normalized.includes("zeit")) return "Zeitausgleich";
-  return "Karenz";
-};
+const resolveReasonStyleKey = (reason: string) => normalizeAbsenceReason(reason);
 
 const normalizeRole = (role?: string | null) => {
   if (!role) return "";
@@ -1842,67 +1833,57 @@ export default function VacationPlanEditor({
     () =>
       getDayAbsences(focusDate)
         .slice()
-        .sort((a, b) => {
-          const rankA =
-            ROLE_SORT_ORDER[
-              normalizeRole(employees.find((emp) => emp.id === a.employeeId)?.role)
-            ] ?? 999;
-          const rankB =
-            ROLE_SORT_ORDER[
-              normalizeRole(employees.find((emp) => emp.id === b.employeeId)?.role)
-            ] ?? 999;
-          if (rankA !== rankB) return rankA - rankB;
-          const nameA = employeeNameById.get(a.employeeId) ?? "";
-          const nameB = employeeNameById.get(b.employeeId) ?? "";
-          return nameA.localeCompare(nameB, "de");
-        }),
-    [employeeNameById, employees, focusDate, getDayAbsences],
+        .sort((a, b) =>
+          compareAbsenceEntriesByReasonThenName(
+            a.reason,
+            employeeNameById.get(a.employeeId) ?? "",
+            b.reason,
+            employeeNameById.get(b.employeeId) ?? "",
+          ),
+        ),
+    [employeeNameById, focusDate, getDayAbsences],
   );
 
   const dayViewGroupedAbsences = useMemo(() => {
     const groups = new Map<string, CalendarAbsence[]>();
     dayViewAbsences.forEach((absence) => {
-      const employee = employeeById.get(absence.employeeId);
-      const role = normalizeRole(employee?.role);
-      const key = role || "Sonstige";
+      const key = getAbsenceVisualMeta(absence.reason).label;
       const list = groups.get(key) ?? [];
       list.push(absence);
       groups.set(key, list);
     });
-    return Array.from(groups.entries()).sort((a, b) => {
-      const rankA = ROLE_SORT_ORDER[a[0]] ?? 999;
-      const rankB = ROLE_SORT_ORDER[b[0]] ?? 999;
-      return rankA - rankB;
-    });
-  }, [dayViewAbsences, employeeById]);
+    return Array.from(groups.entries()).sort(([leftReason], [rightReason]) =>
+      compareAbsenceReasons(leftReason, rightReason),
+    );
+  }, [dayViewAbsences]);
 
   const getHierarchicalAbsenceGroups = useCallback(
     (entries: CalendarAbsence[]) => {
       const groups = new Map<string, CalendarAbsence[]>();
       entries.forEach((absence) => {
-        const role = normalizeRole(employeeById.get(absence.employeeId)?.role);
-        const key = role || "Sonstige";
+        const key = getAbsenceVisualMeta(absence.reason).label;
         const list = groups.get(key) ?? [];
         list.push(absence);
         groups.set(key, list);
       });
 
       return Array.from(groups.entries())
-        .sort((a, b) => {
-          const rankA = ROLE_SORT_ORDER[a[0]] ?? 999;
-          const rankB = ROLE_SORT_ORDER[b[0]] ?? 999;
-          return rankA - rankB;
-        })
-        .map(([role, items]) => [
-          role,
-          items.slice().sort((a, b) => {
-            const nameA = employeeNameById.get(a.employeeId) ?? "";
-            const nameB = employeeNameById.get(b.employeeId) ?? "";
-            return nameA.localeCompare(nameB, "de");
-          }),
+        .sort(([leftReason], [rightReason]) =>
+          compareAbsenceReasons(leftReason, rightReason),
+        )
+        .map(([reason, items]) => [
+          reason,
+          items.slice().sort((a, b) =>
+            compareAbsenceEntriesByReasonThenName(
+              a.reason,
+              employeeNameById.get(a.employeeId) ?? "",
+              b.reason,
+              employeeNameById.get(b.employeeId) ?? "",
+            ),
+          ),
         ] as const);
     },
-    [employeeById, employeeNameById],
+    [employeeNameById],
   );
 
   const getDayVisualState = useCallback(
@@ -2009,7 +1990,7 @@ export default function VacationPlanEditor({
                 </div>
                 <div className="space-y-1">
                   {entries.map((absence) => {
-                    const style = REASON_STYLES[absence.styleKey];
+                    const style = getAbsenceInlineStyle(absence.reason); const meta = getAbsenceVisualMeta(absence.reason);
                     return (
                       <div
                         key={absence.id}
@@ -2019,12 +2000,10 @@ export default function VacationPlanEditor({
                           {employeeNameById.get(absence.employeeId) ?? "Unbekannt"}
                         </span>
                         <span
-                          className={cn(
-                            "rounded-full px-2 py-0.5 text-[11px] font-medium text-slate-800",
-                            style?.bg || "bg-slate-200",
-                          )}
+                          className="rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                          style={style}
                         >
-                          {absence.reason}
+                          {meta.label}
                         </span>
                       </div>
                     );
@@ -2611,7 +2590,7 @@ export default function VacationPlanEditor({
                         ) : (
                           <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
                             {selectedDraftOverlappingAbsences.map((absence) => {
-                              const style = REASON_STYLES[absence.styleKey];
+                              const style = getAbsenceInlineStyle(absence.reason); const meta = getAbsenceVisualMeta(absence.reason);
                               const overlapStart =
                                 absence.startDate > absenceDraft.startDate
                                   ? absence.startDate
@@ -2624,7 +2603,8 @@ export default function VacationPlanEditor({
                               return (
                                 <div
                                   key={`draft-overlap-${absence.id}`}
-                                  className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+                                  className="rounded-xl border px-3 py-2"
+                                      style={getAbsenceInlineStyle(absence.reason)}
                                 >
                                   <div className="flex items-start justify-between gap-3">
                                     <div>
@@ -2638,12 +2618,10 @@ export default function VacationPlanEditor({
                                       </div>
                                     </div>
                                     <span
-                                      className={cn(
-                                        "rounded-full px-2 py-0.5 text-[11px] font-medium text-slate-800",
-                                        style?.bg || "bg-slate-200",
-                                      )}
+                                      className="rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                                      style={style}
                                     >
-                                      {absence.reason}
+                                      {meta.label}
                                     </span>
                                   </div>
                                 </div>
@@ -3289,23 +3267,26 @@ export default function VacationPlanEditor({
                                 Keine Abwesenheiten
                               </div>
                             ) : (
-                              groupedAbsencesForDay.map(([role, entries]) => (
-                                <div key={`${formatDateInput(date)}-${role}`} className="space-y-2">
-                                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                                    {role}
+                              groupedAbsencesForDay.map(([reason, entries]) => (
+                                <div key={`${formatDateInput(date)}-${reason}`} className="space-y-2">
+                                  <div>
+                                    <span className="inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold" style={getAbsenceInlineStyle(reason)}>
+                                      {reason}
+                                    </span>
                                   </div>
                                   {entries.map((absence) => (
                                     <div
                                       key={absence.id}
-                                      className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+                                      className="rounded-xl border px-3 py-2"
+                                      style={getAbsenceInlineStyle(absence.reason)}
                                     >
                                       <div className="flex items-start justify-between gap-2">
                                         <div>
                                           <div className="font-medium text-slate-900">
                                             {employeeNameById.get(absence.employeeId) ?? "Unbekannt"}
                                           </div>
-                                          <div className="text-[11px] text-slate-500">
-                                            {absence.reason}
+                                          <div className="text-[11px] font-medium">
+                                            {getAbsenceVisualMeta(absence.reason).label}
                                           </div>
                                         </div>
                                       </div>
@@ -3400,22 +3381,25 @@ export default function VacationPlanEditor({
                       {dayViewGroupedAbsences.length === 0 ? (
                         <div className="text-sm text-slate-400">Keine Abwesenheiten fuer diesen Tag.</div>
                       ) : (
-                        dayViewGroupedAbsences.map(([role, entries]) => (
-                          <div key={role} className="rounded-2xl border border-slate-200 p-3">
-                            <div className="mb-2 text-sm font-semibold text-slate-900">
-                              {role}
+                        dayViewGroupedAbsences.map(([reason, entries]) => (
+                          <div key={reason} className="rounded-2xl border border-slate-200 p-3">
+                            <div className="mb-2">
+                              <span className="inline-flex rounded-full border px-2 py-0.5 text-sm font-semibold" style={getAbsenceInlineStyle(reason)}>
+                                {reason}
+                              </span>
                             </div>
                             <div className="space-y-2">
                               {entries.map((absence) => (
                                 <div
                                   key={absence.id}
-                                  className="flex items-start justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2 text-sm"
+                                  className="flex items-start justify-between gap-3 rounded-xl border px-3 py-2 text-sm"
+                                  style={getAbsenceInlineStyle(absence.reason)}
                                 >
                                   <div>
                                     <div className="font-medium text-slate-900">
                                       {employeeNameById.get(absence.employeeId) ?? "Unbekannt"}
                                     </div>
-                                    <div className="text-slate-500">{absence.reason}</div>
+                                    <div className="font-medium">{getAbsenceVisualMeta(absence.reason).label}</div>
                                   </div>
                                   <span className="rounded-full bg-white px-2 py-0.5 text-xs text-slate-600">
                                     {absence.status ?? "Genehmigt"}
@@ -3433,10 +3417,11 @@ export default function VacationPlanEditor({
             </TooltipProvider>
           )}
           <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-            {Object.entries(REASON_STYLES).map(([reason, style]) => (
+            {SUMMARY_REASON_KEYS.map((reason) => (
               <div key={reason} className="flex items-center gap-1.5">
                 <span
-                  className={cn("inline-flex h-2.5 w-2.5 rounded-sm", style.bg)}
+                  className="inline-flex h-2.5 w-2.5 rounded-sm border"
+                  style={getAbsenceInlineStyle(reason)}
                 />
                 <span>{reason}</span>
               </div>
@@ -3555,9 +3540,12 @@ export default function VacationPlanEditor({
                                       )}
                                     </TableCell>
                                     <TableCell>
-                                      <Badge variant="outline">
-                                        {absence.reason}
-                                      </Badge>
+                                      <span
+                                        className="inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold"
+                                        style={getAbsenceInlineStyle(absence.reason)}
+                                      >
+                                        {getAbsenceVisualMeta(absence.reason).label}
+                                      </span>
                                     </TableCell>
                                     <TableCell>
                                       <Badge
@@ -3712,7 +3700,9 @@ export default function VacationPlanEditor({
                       <TableHead>Mitarbeiter</TableHead>
                       {SUMMARY_REASON_KEYS.map((reason) => (
                         <TableHead key={reason} className="text-center">
-                          {reason}
+                          <span className="inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold" style={getAbsenceInlineStyle(reason)}>
+                            {reason}
+                          </span>
                         </TableHead>
                       ))}
                     </TableRow>
@@ -3729,6 +3719,7 @@ export default function VacationPlanEditor({
                             <TableCell
                               key={`${entry.employee.id}-${reason}`}
                               className="text-center"
+                              style={count > 0 ? getAbsenceInlineStyle(reason) : undefined}
                             >
                               {count > 0 ? count : "-"}
                             </TableCell>

@@ -48,6 +48,13 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getAustrianHoliday } from "@/lib/holidays";
+import {
+  compareAbsenceEntriesByReasonThenName,
+  compareAbsenceReasons,
+  getAbsenceInlineStyle,
+  getAbsenceVisualMeta,
+  normalizeAbsenceReason,
+} from "@/lib/absenceStyles";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   format,
@@ -1958,7 +1965,14 @@ function RosterView({
       );
 
     // Langzeit-Abwesenheiten (long_term / legacy) werden im Dienstplan immer ausgeblendet.
-    return [...plannedEntries].sort((a, b) => a.name.localeCompare(b.name));
+    return [...plannedEntries].sort((a, b) =>
+      compareAbsenceEntriesByReasonThenName(
+        a.reason,
+        a.name,
+        b.reason,
+        b.name,
+      ),
+    );
   };
 
   const myAbsenceCount = useMemo(() => {
@@ -2202,7 +2216,8 @@ function RosterView({
                             {dayAbsences.map((absence) => (
                               <span
                                 key={`mobile-absence-${absence.source}-${absence.employeeId}-${absence.absenceId ?? absence.reason}`}
-                                className="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600"
+                                className="inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium"
+                                style={getAbsenceInlineStyle(absence.reason)}
                               >
                                 {absence.name}
                               </span>
@@ -2384,7 +2399,8 @@ function RosterView({
                                 return (
                                   <span
                                     key={`${absence.source}-${absence.employeeId}-${absence.absenceId ?? absence.reason}`}
-                                    className="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600"
+                                    className="inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium"
+                                    style={getAbsenceInlineStyle(absence.reason)}
                                     title={titleParts.join(" · ")}
                                   >
                                     {absence.name}
@@ -4140,19 +4156,32 @@ function WeeklyView({
                     {weekDays.map((day) => {
                       const key = format(day, "yyyy-MM-dd");
                       const items = absencesByDate.get(key) ?? [];
-                      const groupedItems = items.reduce<
-                        Array<{ reason: string; names: string[] }>
+                      const groupedItemsMap = items.reduce<
+                        Map<
+                          string,
+                          {
+                            reason: string;
+                            names: string[];
+                          }
+                        >
                       >((groups, absence) => {
                         const reason = absence.reason || "Abwesenheit";
-                        const existing = groups.find((group) => group.reason === reason);
+                        const reasonKey = normalizeAbsenceReason(reason);
+                        const existing = groups.get(reasonKey);
                         const name = resolveAbsenceName(absence);
                         if (existing) {
                           existing.names.push(name);
                         } else {
-                          groups.push({ reason, names: [name] });
+                          groups.set(reasonKey, { reason, names: [name] });
                         }
                         return groups;
-                      }, []);
+                      }, new Map());
+                      const groupedItems = Array.from(groupedItemsMap.values())
+                        .map((group) => ({
+                          ...group,
+                          names: group.names.slice().sort((a, b) => a.localeCompare(b, "de")),
+                        }))
+                        .sort((a, b) => compareAbsenceReasons(a.reason, b.reason));
                       return (
                         <td
                           key={`absences-${key}`}
@@ -4164,8 +4193,11 @@ function WeeklyView({
                             <div className="space-y-2">
                               {groupedItems.map((group) => (
                                 <div key={`${key}-${group.reason}`} className="space-y-1">
-                                  <div className="font-medium underline underline-offset-2">
-                                    {group.reason}
+                                  <div
+                                    className="inline-flex rounded border px-2 py-0.5 text-[10px] font-semibold"
+                                    style={getAbsenceInlineStyle(group.reason)}
+                                  >
+                                    {getAbsenceVisualMeta(group.reason).label}
                                   </div>
                                   <div className="space-y-1">
                                     {group.names.map((name, index) => (
