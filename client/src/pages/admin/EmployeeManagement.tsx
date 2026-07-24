@@ -336,13 +336,10 @@ function getEmploymentPercentageValue(
 type EmployeeListView = "active" | "archive";
 type EmployeeVisibilityStatus =
   | "active"
-  | "incomplete_setup"
   | "inactive_window"
   | "employment_expired"
   | "employment_upcoming"
   | "archived";
-
-const INCOMPLETE_ARCHIVE_WINDOW_DAYS = 30;
 
 const toLocalDateOnly = (value: string | Date | null | undefined) => {
   const iso = formatBirthday(value);
@@ -389,29 +386,6 @@ const getEmployeeVisibilityStatus = (
     return "employment_expired";
   }
 
-  const createdAt =
-    employee.createdAt instanceof Date
-      ? employee.createdAt
-      : employee.createdAt
-        ? new Date(employee.createdAt)
-        : null;
-  const hasRecentCreation =
-    createdAt &&
-    !Number.isNaN(createdAt.getTime()) &&
-    today.getTime() - new Date(
-      createdAt.getFullYear(),
-      createdAt.getMonth(),
-      createdAt.getDate(),
-    ).getTime() <=
-      INCOMPLETE_ARCHIVE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
-  const isIncompleteSetup =
-    Boolean(employee.email?.trim()) &&
-    !employee.username?.trim() &&
-    Boolean(hasRecentCreation);
-  if (isIncompleteSetup) {
-    return "incomplete_setup";
-  }
-
   const inactiveFrom = toLocalDateOnly(employee.inactiveFrom);
   const inactiveUntil = toLocalDateOnly(employee.inactiveUntil);
   if (isDateWithinRange(today, inactiveFrom, inactiveUntil)) {
@@ -428,10 +402,6 @@ const EMPLOYEE_STATUS_META: Record<
   archived: {
     label: "Archiviert",
     className: "bg-slate-100 text-slate-700 border-slate-200",
-  },
-  incomplete_setup: {
-    label: "Unvollständig",
-    className: "bg-orange-100 text-orange-800 border-orange-200",
   },
   employment_expired: {
     label: "Befristung abgelaufen",
@@ -2382,7 +2352,7 @@ export default function EmployeeManagement() {
                 </span>
                 {employeeListView === "archive" && (
                   <span className="text-sm text-muted-foreground">
-                    Deaktivierte, abgelaufene und unvollständige Profile bleiben bearbeitbar.
+                    Deaktivierte und abgelaufene Profile bleiben bearbeitbar.
                   </span>
                 )}
 
