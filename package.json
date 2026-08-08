@@ -126,8 +126,5 @@
     "prettier": "^3.7.4",
     "tailwindcss": "^4.1.14",
     "vite": "^7.1.9"
-  },
-  "optionalDependencies": {
-    "bufferutil": "^4.0.8"
   }
 }

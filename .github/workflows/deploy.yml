@@ -17,8 +17,12 @@ jobs:
           script: |
             set -e
             cd /opt/mycliniq
-            git pull origin main
-            npm install
+            git restore -- package-lock.json
+            git pull --ff-only origin main
+            npm ci
+            npm run db:push
             npm run build
             pm2 restart mycliniq --update-env
-            curl -I http://127.0.0.1:3000/
+            curl --fail --silent --show-error \
+              --retry 10 --retry-delay 2 --retry-connrefused \
+              http://127.0.0.1:3000/ > /dev/null
