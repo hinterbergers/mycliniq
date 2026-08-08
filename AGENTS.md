@@ -2,7 +2,7 @@
 
 ## Project Summary
 - Name: mycliniq (Vite + React + wouter frontend, Express backend)
-- Local project path: /Volumes/LaCie/Projects/mycliniq
+- Local project path: /Volumes/Projekte/Projects/mycliniq
 - GitHub publish target: github.com:hinterbergers/mycliniq.git (`origin/main`)
 - Deploy path: /opt/mycliniq on Hetzner Ubuntu
 - Reverse proxy: Nginx -> Node/Express on localhost
@@ -41,7 +41,7 @@
   5. `pm2 restart mycliniq --update-env`
   6. `curl -I http://127.0.0.1:3000/`
 - iPhone app nachziehen commands:
-  1. `cd /Volumes/LaCie/Projects/mycliniq`
+  1. `cd /Volumes/Projekte/Projects/mycliniq`
   2. `git pull origin main`
   3. `npm install`
   4. `npm run build`
