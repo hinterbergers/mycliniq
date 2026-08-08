@@ -3606,6 +3606,29 @@ function WeeklyView({
         }
       };
 
+      const buildWeeklyAssignmentRichText = (
+        entries: Array<{ text: string; isDuty: boolean }>,
+      ) => {
+        const richText: Array<{
+          text: string;
+          font?: { color?: { argb: string } };
+        }> = [{ text: "\n" }];
+
+        entries.forEach((entry, index) => {
+          richText.push({
+            text: entry.text,
+            font: entry.isDuty
+              ? { color: { argb: "FFDC2626" } }
+              : undefined,
+          });
+          if (index < entries.length - 1) {
+            richText.push({ text: "\n" });
+          }
+        });
+
+        return { richText };
+      };
+
       const headerRow = sheet.addRow([
         "Arbeitsplatz",
         ...weekDays.map(
@@ -3624,7 +3647,15 @@ function WeeklyView({
       headerRow.height = 24;
 
       visibleRooms.forEach((room) => {
-        const rowValues: string[] = [room.name];
+        const rowValues: Array<
+          | string
+          | {
+              richText: Array<{
+                text: string;
+                font?: { color?: { argb: string } };
+              }>;
+            }
+        > = [room.name];
 
         weekDays.forEach((day, index) => {
           const weekday = index + 1;
@@ -3668,16 +3699,22 @@ function WeeklyView({
           }
 
           rowValues.push(
-            withExcelTopPadding(
-              employeeAssignments
-                .map((assignment) =>
-                  resolveEmployeeLastName(
-                    assignment.employeeId,
-                    assignment.employeeName,
-                    assignment.employeeLastName,
-                  ),
-                )
-                .join("\n"),
+            buildWeeklyAssignmentRichText(
+              employeeAssignments.map((assignment) => ({
+                text: resolveEmployeeLastName(
+                  assignment.employeeId,
+                  assignment.employeeName,
+                  assignment.employeeLastName,
+                ),
+                isDuty: Boolean(
+                  assignment.employeeId &&
+                    isEmployeeOnDutyDate(
+                      assignment.employeeId,
+                      day,
+                      rosterShifts,
+                    ),
+                ),
+              })),
             ),
           );
         });
