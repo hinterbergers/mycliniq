@@ -50,13 +50,29 @@ async function loadFixture() {
 
 async function upsertKnowledgeEntry(entry: FixtureEntry) {
   return db.transaction(async (tx) => {
-    const [existing] = await tx
+    const [existingExact] = await tx
       .select({
         id: sops.id,
       })
       .from(sops)
       .where(and(eq(sops.category, entry.category), eq(sops.title, entry.title)))
       .limit(1);
+
+    let existing = existingExact;
+
+    if (!existing) {
+      const byTitle = await tx
+        .select({
+          id: sops.id,
+        })
+        .from(sops)
+        .where(eq(sops.title, entry.title))
+        .limit(2);
+
+      if (byTitle.length === 1) {
+        existing = byTitle[0];
+      }
+    }
 
     const baseValues = {
       title: entry.title,
