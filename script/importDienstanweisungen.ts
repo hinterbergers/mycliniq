@@ -42,8 +42,8 @@ const PREVIEW_DIR =
 
 const DRY_RUN = process.argv.includes("--dry-run");
 
-const CREATED_BY_ID = 1;
-const APPROVED_BY_ID = 1;
+const CREATED_BY_ID = 4;
+const APPROVED_BY_ID = 4;
 
 const PDFTOPPM =
   "/Users/stefan/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/override/pdftoppm";
