@@ -15,6 +15,9 @@ type FixtureEntry = {
     | "Aufklärungen"
     | "Checkliste"
     | "Formular"
+    | "Plakat"
+    | "Interdisziplinär"
+    | "Verwaltung / Organisation"
     | "Leitlinie";
   version: string;
   status: "published" | "proposed" | "in_progress" | "review" | "archived";

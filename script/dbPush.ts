@@ -34,6 +34,24 @@ ADD VALUE IF NOT EXISTS 'Ausbilder';
 ALTER TYPE user_app_role
 ADD VALUE IF NOT EXISTS 'Ausbilder';
 
+ALTER TYPE knowledge_category
+ADD VALUE IF NOT EXISTS 'Plakat';
+
+ALTER TYPE knowledge_category
+ADD VALUE IF NOT EXISTS 'Interdisziplinär';
+
+ALTER TYPE sop_category
+ADD VALUE IF NOT EXISTS 'Plakat';
+
+ALTER TYPE sop_category
+ADD VALUE IF NOT EXISTS 'Interdisziplinär';
+
+ALTER TYPE knowledge_category
+ADD VALUE IF NOT EXISTS 'Verwaltung / Organisation';
+
+ALTER TYPE sop_category
+ADD VALUE IF NOT EXISTS 'Verwaltung / Organisation';
+
 ALTER TABLE rooms
 ADD COLUMN IF NOT EXISTS row_color text;
 

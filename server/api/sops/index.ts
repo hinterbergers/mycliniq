@@ -51,6 +51,9 @@ const createSopSchema = z.object({
       "Aufklärungen",
       "Checkliste",
       "Formular",
+      "Plakat",
+      "Interdisziplinär",
+      "Verwaltung / Organisation",
       "Leitlinie",
     ])
     .default("SOP"),
@@ -78,6 +81,9 @@ const updateSopSchema = z.object({
       "Aufklärungen",
       "Checkliste",
       "Formular",
+      "Plakat",
+      "Interdisziplinär",
+      "Verwaltung / Organisation",
       "Leitlinie",
     ])
     .optional(),

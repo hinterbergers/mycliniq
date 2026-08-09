@@ -1,0 +1,15 @@
+{
+  "title": "Selbstzahler Tarife",
+  "category": "Verwaltung / Organisation",
+  "version": "2026",
+  "status": "published",
+  "contentMarkdown": "# Selbstzahler Tarife\n\n## Dokument\n\n- Zahl: 11970/013/2026\n- Betreff: Tarifanpassung Gynaekologie 2026\n- Wirksamkeit: 01.04.2026\n\nSehr geehrtes Krankenanstaltendirektorium,\n\nDie Tarife fuer die folgenden Leistungen wurden zuletzt im Jahr 2023 festgesetzt. Aufgrund der zwischenzeitlich erfolgten Wert- und Preissteigerungen wurden die Tarife neu kalkuliert und werden mit Wirksamkeit 01.04.2026 wie folgt festgelegt:\n\n| Bezeichnung | Gebuehr / EUR |\n| --- | ---: |\n| Prophylaktische Tubektomie beidseits bei Sterilisationsbegehren im Rahmen einer anderen OP | 700,- |\n| Prophylaktische Tubektomie beidseits bei Sterilisationsbegehren | 2.454,- |\n| Induzierter Abort im Rahmen der Fristenloesung | 1.381,- |\n| Induzierter Abort im Rahmen der Fristenloesung mit Kostenuebernahme aus sozialer Indikation | 628,- |\n| First Trimester Screening und Combined Test (inkl. Praeeklampsie-Screening) | 284,- |\n| Organscreening in der 20. Woche | 199,- |\n| 3. Trimesterscreening (SSW 30) | 161,- |\n| Praeeklampsie-Screening (Einzelleistung) | 104,- |\n| NIPT - Nicht invasiver Praenataltest (exkl. externe Laborleistung) | 200,- |\n\n## Hinweis\n\nDer Tarif fuer die Leistung `NIPT - Nichtinvasiver Praenataltest` bezieht sich auf die intramurale Leistungserbringung. Die externe Laborleistung ist vom externen Leistungserbringer direkt an die Patientin zu verrechnen. Es ist sicherzustellen, dass diese Information im Leistungsprozess direkt an die Patientin weitergegeben wird.\n",
+  "createdAt": "2026-04-01T12:00:00.000Z",
+  "publishedAt": "2026-04-01T12:00:00.000Z",
+  "createdById": 38,
+  "approvedById": 4,
+  "versionNumber": 1,
+  "changeNote": "Import als Verwaltungs- und Organisationsformular fuer Selbstzahler-Tarife",
+  "releasedAt": "2026-04-01T12:00:00.000Z",
+  "releasedById": 4
+}

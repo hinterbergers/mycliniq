@@ -58,6 +58,9 @@ const SOP_CATEGORIES = [
   "Dienstanweisung",
   "Formular",
   "Aufklärungen",
+  "Plakat",
+  "Interdisziplinär",
+  "Verwaltung / Organisation",
   "Checkliste",
   "Leitlinie",
 ] as const;
@@ -66,6 +69,9 @@ const CATEGORY_LABELS: Record<(typeof SOP_CATEGORIES)[number], string> = {
   Dienstanweisung: "Dienstanweisung",
   Formular: "Formulare",
   Aufklärungen: "Einwilligung / Aufklärung",
+  Plakat: "Plakat",
+  Interdisziplinär: "Interdisziplinär",
+  "Verwaltung / Organisation": "Verwaltung / Organisation",
   Checkliste: "Checkliste",
   Leitlinie: "Leitlinie",
 };
@@ -74,6 +80,9 @@ const CATEGORY_STYLES: Record<string, string> = {
   Dienstanweisung: "bg-amber-100 text-amber-700 border-amber-200",
   Formular: "bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200",
   Aufklärungen: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  Plakat: "bg-rose-100 text-rose-700 border-rose-200",
+  Interdisziplinär: "bg-slate-200 text-slate-800 border-slate-300",
+  "Verwaltung / Organisation": "bg-orange-100 text-orange-800 border-orange-200",
   Checkliste: "bg-cyan-100 text-cyan-700 border-cyan-200",
   Leitlinie: "bg-violet-100 text-violet-700 border-violet-200",
 };
@@ -456,14 +465,46 @@ export default function Guidelines() {
       ),
     [filteredSops],
   );
+  const posterArticles = useMemo(
+    () =>
+      sortKnowledgeByNewest(
+        filteredSops.filter((entry) => normalizeSopCategory(entry.category) === "Plakat"),
+      ),
+    [filteredSops],
+  );
+  const interdisciplinaryArticles = useMemo(
+    () =>
+      sortKnowledgeByNewest(
+        filteredSops.filter(
+          (entry) => normalizeSopCategory(entry.category) === "Interdisziplinär",
+        ),
+      ),
+    [filteredSops],
+  );
+  const administrationArticles = useMemo(
+    () =>
+      sortKnowledgeByNewest(
+        filteredSops.filter(
+          (entry) =>
+            normalizeSopCategory(entry.category) === "Verwaltung / Organisation",
+        ),
+      ),
+    [filteredSops],
+  );
   const additionalArticles = useMemo(
     () =>
       sortKnowledgeByNewest(
         filteredSops.filter((entry) => {
           const category = normalizeSopCategory(entry.category);
-          return !["SOP", "Dienstanweisung", "Formular", "Aufklärungen"].includes(
-            category,
-          );
+          return ![
+            "SOP",
+            "Dienstanweisung",
+            "Formular",
+            "Aufklärungen",
+            "Plakat",
+            "Interdisziplinär",
+            "Verwaltung / Organisation",
+          ].includes(category);
         }),
       ),
     [filteredSops],
@@ -1577,6 +1618,61 @@ export default function Guidelines() {
                     </div>
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                       {consentArticles.map(renderKnowledgeCard)}
+                    </div>
+                  </section>
+                )}
+
+                {posterArticles.length > 0 && (
+                  <section className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h2 className="text-2xl font-semibold text-primary">Plakate</h2>
+                        <p className="text-sm text-muted-foreground">
+                          Klinische Uebersichten, Algorithmen und visuelle Handlungsplaene.
+                        </p>
+                      </div>
+                      <Badge variant="outline">{posterArticles.length}</Badge>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      {posterArticles.map(renderKnowledgeCard)}
+                    </div>
+                  </section>
+                )}
+
+                {interdisciplinaryArticles.length > 0 && (
+                  <section className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h2 className="text-2xl font-semibold text-primary">
+                          Interdisziplinaer
+                        </h2>
+                        <p className="text-sm text-muted-foreground">
+                          Bereichsuebergreifende Dokumente mit Relevanz ueber die Abteilung hinaus.
+                        </p>
+                      </div>
+                      <Badge variant="outline">{interdisciplinaryArticles.length}</Badge>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      {interdisciplinaryArticles.map(renderKnowledgeCard)}
+                    </div>
+                  </section>
+                )}
+
+                {administrationArticles.length > 0 && (
+                  <section className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h2 className="text-2xl font-semibold text-primary">
+                          Verwaltung / Organisation
+                        </h2>
+                        <p className="text-sm text-muted-foreground">
+                          Verwaltungsunterlagen, Tarife und organisatorische Informationen.
+                        </p>
+                      </div>
+                      <Badge variant="outline">{administrationArticles.length}</Badge>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      {administrationArticles.map(renderKnowledgeCard)}
                     </div>
                   </section>
                 )}

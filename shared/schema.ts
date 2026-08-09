@@ -1786,6 +1786,9 @@ export const knowledgeCategoryEnum = pgEnum("knowledge_category", [
   "Protokoll",
   "Checkliste",
   "Formular",
+  "Plakat",
+  "Interdisziplinär",
+  "Verwaltung / Organisation",
   "Schulung",
   "Sonstiges",
 ]);
@@ -1797,6 +1800,9 @@ export const sopCategoryEnum = pgEnum("sop_category", [
   "Aufklärungen",
   "Checkliste",
   "Formular",
+  "Plakat",
+  "Interdisziplinär",
+  "Verwaltung / Organisation",
   "Leitlinie",
 ]);
 

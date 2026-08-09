@@ -94,6 +94,9 @@ const SOP_CATEGORIES = [
   "Dienstanweisung",
   "Formular",
   "Aufklärungen",
+  "Plakat",
+  "Interdisziplinär",
+  "Verwaltung / Organisation",
   "Checkliste",
   "Leitlinie",
 ] as const;
@@ -103,6 +106,9 @@ const SOP_CATEGORY_LABELS: Record<(typeof SOP_CATEGORIES)[number], string> = {
   Dienstanweisung: "Dienstanweisung",
   Formular: "Formulare",
   Aufklärungen: "Einwilligung / Aufklärung",
+  Plakat: "Plakat",
+  Interdisziplinär: "Interdisziplinär",
+  "Verwaltung / Organisation": "Verwaltung / Organisation",
   Checkliste: "Checkliste",
   Leitlinie: "Leitlinie",
 };
