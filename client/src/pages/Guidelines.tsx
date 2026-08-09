@@ -727,7 +727,7 @@ export default function Guidelines() {
                 {category}
               </Badge>
               <span className="text-xs text-muted-foreground">
-                {formatDate(entry.updatedAt || entry.createdAt)}
+                {formatDate(entry.publishedAt || entry.createdAt)}
               </span>
             </div>
             <div className="space-y-2">
@@ -1196,8 +1196,8 @@ export default function Guidelines() {
                         </span>
                       </div>
                       <div className="flex items-start justify-between gap-4">
-                        <span className="text-muted-foreground">Aktualisiert</span>
-                        <span>{formatDate(detailSop.updatedAt)}</span>
+                        <span className="text-muted-foreground">Stand</span>
+                        <span>{formatDate(detailSop.publishedAt || detailSop.createdAt)}</span>
                       </div>
                       <div className="flex items-start justify-between gap-4">
                         <span className="text-muted-foreground">Nutzung</span>
