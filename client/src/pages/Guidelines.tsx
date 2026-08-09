@@ -380,15 +380,15 @@ export default function Guidelines() {
     });
   }, [searchTerm, selectedCategory, sops]);
 
+  const sortKnowledgeByNewest = (entries: Sop[]) =>
+    [...entries].sort(
+      (a, b) =>
+        new Date(b.publishedAt || b.createdAt).getTime() -
+        new Date(a.publishedAt || a.createdAt).getTime(),
+    );
+
   const newestArticles = useMemo(
-    () =>
-      [...filteredSops]
-        .sort(
-          (a, b) =>
-            new Date(b.updatedAt || b.createdAt).getTime() -
-            new Date(a.updatedAt || a.createdAt).getTime(),
-        )
-        .slice(0, 6),
+    () => sortKnowledgeByNewest(filteredSops).slice(0, 6),
     [filteredSops],
   );
 
@@ -402,21 +402,28 @@ export default function Guidelines() {
   );
 
   const sopArticles = useMemo(
-    () => filteredSops.filter((entry) => normalizeSopCategory(entry.category) === "SOP"),
+    () =>
+      sortKnowledgeByNewest(
+        filteredSops.filter((entry) => normalizeSopCategory(entry.category) === "SOP"),
+      ),
     [filteredSops],
   );
   const directiveArticles = useMemo(
     () =>
-      filteredSops.filter(
-        (entry) => normalizeSopCategory(entry.category) === "Dienstanweisung",
+      sortKnowledgeByNewest(
+        filteredSops.filter(
+          (entry) => normalizeSopCategory(entry.category) === "Dienstanweisung",
+        ),
       ),
     [filteredSops],
   );
   const additionalArticles = useMemo(
     () =>
-      filteredSops.filter(
-        (entry) =>
-          !["SOP", "Dienstanweisung"].includes(normalizeSopCategory(entry.category)),
+      sortKnowledgeByNewest(
+        filteredSops.filter(
+          (entry) =>
+            !["SOP", "Dienstanweisung"].includes(normalizeSopCategory(entry.category)),
+        ),
       ),
     [filteredSops],
   );
