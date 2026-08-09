@@ -163,7 +163,83 @@ const escapeHtml = (value: string) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
-const buildDocxHtml = (title: string, bodyHtml: string) => `<!doctype html>
+const escapeRegExp = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+type DocxVariant = "generic" | "consent";
+
+type DocxBuildOptions = {
+  title: string;
+  bodyHtml: string;
+  category: string | null | undefined;
+  version?: string | null;
+  savedAt?: Date | string | null;
+  filename?: string | null;
+};
+
+const formatDocxDate = (value?: Date | string | null) => {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("de-AT", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
+};
+
+const normalizeDocxMarkdown = (markdown: string) =>
+  markdown
+    .replace(/^\s*-\s+\[ \]\s+/gm, "□ ")
+    .replace(/^\s*-\s+\[x\]\s+/gim, "☑ ")
+    .replace(/\[ \]/g, "□")
+    .replace(/\[x\]/gi, "☑");
+
+const kabegHeaderHtml = `
+  <div style="width: 100%; margin: 0 0 26pt 0; text-align: right;">
+    <div style="display: inline-block; width: 290pt; text-align: right;">
+      <div style="font-size: 34pt; line-height: 1; font-weight: 700; color: #0094d9; letter-spacing: 0.5pt;">KABEG</div>
+      <div style="font-size: 11pt; line-height: 1.1; color: #5a5a5a; letter-spacing: 1pt;">KLINIKUM KLAGENFURT</div>
+      <div style="font-size: 11pt; line-height: 1.1; color: #5a5a5a; letter-spacing: 1pt;">AM WOERTHERSEE</div>
+      <div style="font-size: 9pt; line-height: 1.25; color: #6b6b6b; margin-top: 10pt;">
+        Abteilung fuer Frauenheilkunde und Geburtshilfe<br />
+        Abteilungsleitung Medizin: Prim. PD. Dr. Johannes Lermann<br />
+        9020 Klagenfurt am Woerthersee, Feschnigstrasse 11<br />
+        T +43 463 538 39740<br />
+        F +43 463 538 39626<br />
+        www.kabeg.at
+      </div>
+    </div>
+  </div>
+`;
+
+const buildDocxFooter = ({
+  version,
+  savedAt,
+  filename,
+}: Pick<DocxBuildOptions, "version" | "savedAt" | "filename">) => {
+  const versionLabel = version ? `Version ${escapeHtml(version)}` : "Version";
+  const dateLabel = formatDocxDate(savedAt);
+  const left = dateLabel ? `${versionLabel}, gespeichert am ${escapeHtml(dateLabel)}` : versionLabel;
+  const fileLabel = filename ? escapeHtml(filename) : "Export.docx";
+  return `
+    <table style="width: 100%; border-collapse: collapse; margin-top: 22pt;">
+      <tr>
+        <td style="width: 180pt; border: none; font-size: 9pt; color: #808080; text-align: left;">${left}</td>
+        <td style="width: 180pt; border: none; font-size: 9pt; color: #808080; text-align: center;">Seite 1</td>
+        <td style="width: 180pt; border: none; font-size: 9pt; color: #808080; text-align: right;">${fileLabel}</td>
+      </tr>
+    </table>
+  `;
+};
+
+const buildGenericDocxHtml = ({
+  title,
+  bodyHtml,
+  version,
+  savedAt,
+  filename,
+}: DocxBuildOptions) => `<!doctype html>
 <html lang="de">
   <head>
     <meta charset="utf-8" />
@@ -174,91 +250,142 @@ const buildDocxHtml = (title: string, bodyHtml: string) => `<!doctype html>
         line-height: 1.45;
         color: #222;
       }
-      h1 {
-        font-size: 20pt;
-        line-height: 1.2;
-        font-weight: 700;
-        color: #0f5ba7;
-        margin: 0 0 12pt 0;
-      }
-      h2 {
-        font-size: 14pt;
-        line-height: 1.25;
-        font-weight: 700;
-        color: #0f5ba7;
-        margin: 14pt 0 6pt 0;
-      }
-      h3, h4, h5, h6 {
+    </style>
+  </head>
+  <body>
+    <div style="font-size: 17pt; line-height: 1.2; font-weight: 700; color: #111; margin: 0 0 14pt 0;">
+      ${escapeHtml(title)}
+    </div>
+    ${bodyHtml}
+    ${buildDocxFooter({ version, savedAt, filename })}
+  </body>
+</html>`;
+
+const buildConsentDocxHtml = ({
+  title,
+  bodyHtml,
+  version,
+  savedAt,
+  filename,
+}: DocxBuildOptions) => `<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        font-family: Arial, Helvetica, sans-serif;
         font-size: 12pt;
-        line-height: 1.25;
-        font-weight: 700;
-        color: #0f5ba7;
-        margin: 12pt 0 6pt 0;
-      }
-      p, li {
-        font-size: 11pt;
-        font-weight: 400;
-        color: #222;
-      }
-      p {
-        margin: 0 0 8pt 0;
-      }
-      ul, ol {
-        margin: 0 0 8pt 0;
-        padding-left: 18pt;
-      }
-      li + li {
-        margin-top: 2pt;
-      }
-      strong, b {
-        font-weight: 700;
-      }
-      em, i {
-        font-style: italic;
-      }
-      u {
-        text-decoration: underline;
-      }
-      hr {
-        border: none;
-        border-top: 1px solid #d6dbe3;
-        margin: 10pt 0;
-      }
-      blockquote {
-        margin: 8pt 0;
-        padding-left: 10pt;
-        border-left: 2px solid #d6dbe3;
-        color: #444;
-      }
-      table {
-        border-collapse: collapse;
-        width: 100%;
-        margin: 8pt 0;
-      }
-      th, td {
-        border: 1px solid #d6dbe3;
-        padding: 4pt 6pt;
-        vertical-align: top;
-        font-weight: 400;
-      }
-      th {
-        font-weight: 700;
-        background: #f4f7fb;
-      }
-      code, pre {
-        font-family: "Courier New", Courier, monospace;
-      }
-      pre {
-        background: #f6f8fa;
-        padding: 8pt;
-        border: 1px solid #e2e8f0;
-        white-space: pre-wrap;
+        line-height: 1.5;
+        color: #111;
       }
     </style>
   </head>
   <body>
-    <h1>${escapeHtml(title)}</h1>
+    ${kabegHeaderHtml}
+    <div style="font-size: 18pt; line-height: 1.2; font-weight: 400; color: #111; margin: 0 0 18pt 0;">
+      ${escapeHtml(title)}
+    </div>
     ${bodyHtml}
+    <div style="margin-top: 28pt; font-size: 8.5pt; line-height: 1.2; color: #8a8a8a; text-align: center;">
+      Landeskrankenanstalten-Betriebsgesellschaft - KABEG, UID-Nr.: ATU25802806, DVR-Nr.: 00757209<br />
+      Firmenbuchnummer: FN 71434 a, Firmenbuchgericht: Landes- als Handelsgericht Klagenfurt am Woerthersee<br />
+      Informationen zum Datenschutz: http://www.kabeg.at/datenschutz
+    </div>
+    ${buildDocxFooter({ version, savedAt, filename })}
+  </body>
+</html>`;
+
+const buildTherapyGoalChangeFormHtml = ({
+  title,
+  version,
+  savedAt,
+  filename,
+}: DocxBuildOptions) => `<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 11pt;
+        line-height: 1.3;
+        color: #111;
+      }
+    </style>
+  </head>
+  <body>
+    <div style="width: 100%; margin-bottom: 18pt;">
+      <table style="width: 100%; border-collapse: collapse;">
+        <tr>
+          <td style="width: 280pt; border: none; vertical-align: top; font-size: 10pt;">
+            Quelle: OEGARI <span style="font-size: 8.5pt;">(Ethik in Anaesthesie und Intensivmedizin)</span>
+          </td>
+          <td style="width: 260pt; border: none; vertical-align: top; text-align: right;">
+            <div style="font-size: 25pt; line-height: 1; font-weight: 700; color: #0094d9;">KABEG</div>
+            <div style="font-size: 9pt; line-height: 1.15; color: #666;">KLINIKUM KLAGENFURT</div>
+            <div style="font-size: 9pt; line-height: 1.15; color: #666;">AM WOERTHERSEE</div>
+            <div style="font-size: 8.5pt; line-height: 1.25; color: #777; margin-top: 6pt;">
+              Abteilung fuer Anaesthesiologie und allgemeine Intensivmedizin<br />
+              Vorstand: Prim. Univ. Prof. Dr. Rudolf Likar, MSc
+            </div>
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <div style="width: 240pt; height: 70pt; border: 1.5pt solid #222; margin-bottom: 18pt; padding: 6pt; font-size: 10pt;">
+      <div style="margin-top: 46pt;">Patientenetikette:</div>
+    </div>
+
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 18pt;">
+      <tr>
+        <td style="width: 260pt; border: none; vertical-align: top;">
+          <div style="margin-left: 62pt; width: 290pt; background: #ff1d11; color: #111; font-size: 23pt; text-align: center; padding: 10pt 0; margin-bottom: 4pt;">DNR</div>
+          <div style="margin-left: 92pt; width: 230pt; background: #ffc61a; color: #111; font-size: 23pt; text-align: center; padding: 10pt 0; margin-bottom: 4pt;">DNE</div>
+          <div style="margin-left: 122pt; width: 170pt; background: #ffef00; color: #111; font-size: 23pt; text-align: center; padding: 10pt 0; margin-bottom: 4pt;">RID</div>
+          <div style="margin-left: 152pt; width: 110pt; background: #9bd400; color: #111; font-size: 23pt; text-align: center; padding: 10pt 0;">CTC</div>
+        </td>
+        <td style="width: 280pt; border: none; vertical-align: top; padding-left: 10pt;">
+          <div style="font-size: 12pt; margin: 10pt 0 20pt 0;"><b>DNR:</b> Do Not Resuscitate<br />(mechanisch, medikamentoes, elektrisch)</div>
+          <div style="font-size: 12pt; margin: 0 0 20pt 0;"><b>DNE:</b> Do Not Escalate<br />(Katecholamine, Intubation, Haemofiltration ...)</div>
+          <div style="font-size: 12pt; margin: 0 0 20pt 0;"><b>RID:</b> Reevaluate Indication and Deescalate<br />(Laufende Massnahmen wurden beendet)</div>
+          <div style="font-size: 12pt; margin: 0;"><b>CTC:</b> Comfort Terminal Care<br />(ausschliesslich symptomorientierte Therapie)</div>
+        </td>
+      </tr>
+    </table>
+
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 18pt;">
+      <tr>
+        <td colspan="2" style="border: 1.2pt solid #222; background: #d7d7d7; font-size: 13pt; padding: 8pt 6pt;">Massnahmen:</td>
+      </tr>
+      <tr>
+        <td style="width: 270pt; border: 1.2pt solid #222; padding: 8pt 6pt; font-size: 11pt;">□ <b>DNR</b><span style="display: inline-block; width: 110pt;"></span>Datum:</td>
+        <td style="width: 270pt; border: 1.2pt solid #222; padding: 8pt 6pt; font-size: 11pt;">□ <b>RID</b><span style="display: inline-block; width: 110pt;"></span>Datum:</td>
+      </tr>
+      <tr>
+        <td style="width: 270pt; border: 1.2pt solid #222; padding: 8pt 6pt; font-size: 11pt;">□ <b>DNE</b><span style="display: inline-block; width: 110pt;"></span>Datum:</td>
+        <td style="width: 270pt; border: 1.2pt solid #222; padding: 8pt 6pt; font-size: 11pt;">□ <b>CTC</b><span style="display: inline-block; width: 110pt;"></span>Datum:</td>
+      </tr>
+    </table>
+
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 16pt;">
+      <tr>
+        <td style="border: 1.2pt solid #222; background: #d7d7d7; font-size: 13pt; padding: 8pt 6pt;">Begruendung und Spezifizierung:</td>
+      </tr>
+      <tr>
+        <td style="border: 1.2pt solid #222; height: 380pt;"></td>
+      </tr>
+    </table>
+
+    <div style="font-size: 10pt; line-height: 1.35; margin-bottom: 12pt;">
+      Die Entscheidung ueber die Therapiezielaenderungen muss aerztlich autorisiert, bei Dienstuebergabe mitgeteilt sowie taeglich ueberprueft und in der Tageskurve bzw. in der AIMS-Dokumentation dokumentiert werden.
+    </div>
+
+    ${buildDocxFooter({
+      version,
+      savedAt,
+      filename: filename || `${title}.docx`,
+    })}
   </body>
 </html>`;
 
@@ -281,52 +408,80 @@ const addInlineStyleToTag = (
   });
 };
 
-const withDocxInlineStyles = (html: string): string => {
+const withDocxInlineStyles = (
+  html: string,
+  variant: DocxVariant = "generic",
+): string => {
   let next = html;
   next = addInlineStyleToTag(
     next,
+    "h1",
+    variant === "consent"
+      ? "font-family: Arial, Helvetica, sans-serif; font-size: 18pt; line-height: 1.2; font-weight: 400; color: #111; margin: 0 0 16pt 0;"
+      : "font-family: Arial, Helvetica, sans-serif; font-size: 17pt; line-height: 1.2; font-weight: 700; color: #111; margin: 0 0 14pt 0;",
+  );
+  next = addInlineStyleToTag(
+    next,
     "p",
-    "font-family: Arial, Helvetica, sans-serif; font-size: 11pt; line-height: 1.45; font-weight: 400; color: #222; margin: 0 0 8pt 0;",
+    variant === "consent"
+      ? "font-family: Arial, Helvetica, sans-serif; font-size: 12pt; line-height: 1.5; font-weight: 400; color: #111; margin: 0 0 12pt 0;"
+      : "font-family: Arial, Helvetica, sans-serif; font-size: 11pt; line-height: 1.45; font-weight: 400; color: #222; margin: 0 0 8pt 0;",
   );
   next = addInlineStyleToTag(
     next,
     "li",
-    "font-family: Arial, Helvetica, sans-serif; font-size: 11pt; line-height: 1.45; font-weight: 400; color: #222;",
+    variant === "consent"
+      ? "font-family: Arial, Helvetica, sans-serif; font-size: 12pt; line-height: 1.45; font-weight: 400; color: #111;"
+      : "font-family: Arial, Helvetica, sans-serif; font-size: 11pt; line-height: 1.45; font-weight: 400; color: #222;",
   );
   next = addInlineStyleToTag(
     next,
     "ul",
-    "margin: 0 0 8pt 0; padding-left: 18pt; list-style-type: disc;",
+    variant === "consent"
+      ? "margin: 0 0 12pt 0; padding-left: 16pt; list-style-type: disc;"
+      : "margin: 0 0 8pt 0; padding-left: 18pt; list-style-type: disc;",
   );
   next = addInlineStyleToTag(
     next,
     "ol",
-    "margin: 0 0 8pt 0; padding-left: 18pt; list-style-type: decimal;",
+    variant === "consent"
+      ? "margin: 0 0 12pt 0; padding-left: 18pt; list-style-type: decimal;"
+      : "margin: 0 0 8pt 0; padding-left: 18pt; list-style-type: decimal;",
   );
   next = addInlineStyleToTag(
     next,
     "h2",
-    "font-family: Arial, Helvetica, sans-serif; font-size: 14pt; line-height: 1.25; font-weight: 700; color: #0f5ba7; margin: 14pt 0 6pt 0;",
+    variant === "consent"
+      ? "font-family: Arial, Helvetica, sans-serif; font-size: 12pt; line-height: 1.3; font-weight: 400; color: #111; margin: 18pt 0 10pt 0;"
+      : "font-family: Arial, Helvetica, sans-serif; font-size: 14pt; line-height: 1.25; font-weight: 700; color: #0f5ba7; margin: 14pt 0 6pt 0;",
   );
   next = addInlineStyleToTag(
     next,
     "h3",
-    "font-family: Arial, Helvetica, sans-serif; font-size: 12pt; line-height: 1.25; font-weight: 700; color: #0f5ba7; margin: 12pt 0 6pt 0;",
+    variant === "consent"
+      ? "font-family: Arial, Helvetica, sans-serif; font-size: 12pt; line-height: 1.3; font-weight: 700; color: #111; margin: 16pt 0 8pt 0;"
+      : "font-family: Arial, Helvetica, sans-serif; font-size: 12pt; line-height: 1.25; font-weight: 700; color: #0f5ba7; margin: 12pt 0 6pt 0;",
   );
   next = addInlineStyleToTag(
     next,
     "h4",
-    "font-family: Arial, Helvetica, sans-serif; font-size: 12pt; line-height: 1.25; font-weight: 700; color: #0f5ba7; margin: 12pt 0 6pt 0;",
+    variant === "consent"
+      ? "font-family: Arial, Helvetica, sans-serif; font-size: 12pt; line-height: 1.3; font-weight: 700; color: #111; margin: 16pt 0 8pt 0;"
+      : "font-family: Arial, Helvetica, sans-serif; font-size: 12pt; line-height: 1.25; font-weight: 700; color: #0f5ba7; margin: 12pt 0 6pt 0;",
   );
   next = addInlineStyleToTag(
     next,
     "h5",
-    "font-family: Arial, Helvetica, sans-serif; font-size: 12pt; line-height: 1.25; font-weight: 700; color: #0f5ba7; margin: 12pt 0 6pt 0;",
+    variant === "consent"
+      ? "font-family: Arial, Helvetica, sans-serif; font-size: 12pt; line-height: 1.3; font-weight: 700; color: #111; margin: 16pt 0 8pt 0;"
+      : "font-family: Arial, Helvetica, sans-serif; font-size: 12pt; line-height: 1.25; font-weight: 700; color: #0f5ba7; margin: 12pt 0 6pt 0;",
   );
   next = addInlineStyleToTag(
     next,
     "h6",
-    "font-family: Arial, Helvetica, sans-serif; font-size: 12pt; line-height: 1.25; font-weight: 700; color: #0f5ba7; margin: 12pt 0 6pt 0;",
+    variant === "consent"
+      ? "font-family: Arial, Helvetica, sans-serif; font-size: 12pt; line-height: 1.3; font-weight: 700; color: #111; margin: 16pt 0 8pt 0;"
+      : "font-family: Arial, Helvetica, sans-serif; font-size: 12pt; line-height: 1.25; font-weight: 700; color: #0f5ba7; margin: 12pt 0 6pt 0;",
   );
   next = addInlineStyleToTag(
     next,
@@ -336,17 +491,23 @@ const withDocxInlineStyles = (html: string): string => {
   next = addInlineStyleToTag(
     next,
     "table",
-    "border-collapse: collapse; width: 100%; margin: 8pt 0;",
+    variant === "consent"
+      ? "border-collapse: collapse; width: 100%; margin: 12pt 0;"
+      : "border-collapse: collapse; width: 100%; margin: 8pt 0;",
   );
   next = addInlineStyleToTag(
     next,
     "th",
-    "border: 1px solid #d6dbe3; padding: 4pt 6pt; vertical-align: top; font-family: Arial, Helvetica, sans-serif; font-size: 11pt; font-weight: 700; background: #f4f7fb;",
+    variant === "consent"
+      ? "border: 1px solid #d8d8d8; padding: 6pt 7pt; vertical-align: top; font-family: Arial, Helvetica, sans-serif; font-size: 11pt; font-weight: 700; background: #f7f7f7;"
+      : "border: 1px solid #d6dbe3; padding: 4pt 6pt; vertical-align: top; font-family: Arial, Helvetica, sans-serif; font-size: 11pt; font-weight: 700; background: #f4f7fb;",
   );
   next = addInlineStyleToTag(
     next,
     "td",
-    "border: 1px solid #d6dbe3; padding: 4pt 6pt; vertical-align: top; font-family: Arial, Helvetica, sans-serif; font-size: 11pt; font-weight: 400;",
+    variant === "consent"
+      ? "border: 1px solid #d8d8d8; padding: 6pt 7pt; vertical-align: top; font-family: Arial, Helvetica, sans-serif; font-size: 11pt; font-weight: 400;"
+      : "border: 1px solid #d6dbe3; padding: 4pt 6pt; vertical-align: top; font-family: Arial, Helvetica, sans-serif; font-size: 11pt; font-weight: 400;",
   );
   next = addInlineStyleToTag(
     next,
@@ -363,7 +524,62 @@ const withDocxInlineStyles = (html: string): string => {
     "hr",
     "border: none; border-top: 1px solid #d6dbe3; margin: 10pt 0;",
   );
+  next = addInlineStyleToTag(
+    next,
+    "a",
+    variant === "consent"
+      ? "color: #111; text-decoration: underline;"
+      : "color: #0f5ba7; text-decoration: underline;",
+  );
   return next;
+};
+
+const stripLeadingDocxTitle = (html: string, title: string) => {
+  const pattern = new RegExp(
+    `^\\s*<h1[^>]*>\\s*${escapeRegExp(escapeHtml(title))}\\s*<\\/h1>\\s*`,
+    "i",
+  );
+  return html.replace(pattern, "");
+};
+
+const buildDocxHtml = ({
+  title,
+  bodyHtml,
+  category,
+  version,
+  savedAt,
+  filename,
+}: DocxBuildOptions) => {
+  if (category === "Formular" && title === "Dokumentation Therapiezieländerung") {
+    return buildTherapyGoalChangeFormHtml({
+      title,
+      bodyHtml,
+      category,
+      version,
+      savedAt,
+      filename,
+    });
+  }
+
+  if (category === "Aufklärungen") {
+    return buildConsentDocxHtml({
+      title,
+      bodyHtml,
+      category,
+      version,
+      savedAt,
+      filename,
+    });
+  }
+
+  return buildGenericDocxHtml({
+    title,
+    bodyHtml,
+    category,
+    version,
+    savedAt,
+    filename,
+  });
 };
 
 async function isMember(sopId: number, employeeId: number): Promise<boolean> {
@@ -666,10 +882,14 @@ export function registerSopRoutes(router: Router) {
         .select({
           id: sops.id,
           title: sops.title,
+          category: sops.category,
+          version: sops.version,
           status: sops.status,
           contentMarkdown: sops.contentMarkdown,
           currentVersionId: sops.currentVersionId,
           createdById: sops.createdById,
+          publishedAt: sops.publishedAt,
+          updatedAt: sops.updatedAt,
         })
         .from(sops)
         .where(eq(sops.id, sopId));
@@ -693,6 +913,8 @@ export function registerSopRoutes(router: Router) {
 
       let exportTitle = sop.title;
       let contentMarkdown = sop.contentMarkdown || "";
+      let exportVersion = sop.version || null;
+      let exportSavedAt = sop.publishedAt || sop.updatedAt || null;
       if (!canManage(req) && !owner && !memberRole) {
         const normalized = normalizeSopStatus(sop.status);
         if (
@@ -703,20 +925,38 @@ export function registerSopRoutes(router: Router) {
             .select({
               title: sopVersions.title,
               contentMarkdown: sopVersions.contentMarkdown,
+              versionNumber: sopVersions.versionNumber,
+              releasedAt: sopVersions.releasedAt,
+              createdAt: sopVersions.createdAt,
             })
             .from(sopVersions)
             .where(eq(sopVersions.id, sop.currentVersionId));
           if (version) {
             exportTitle = version.title;
             contentMarkdown = version.contentMarkdown || "";
+            exportVersion = String(version.versionNumber ?? exportVersion ?? "");
+            exportSavedAt = version.releasedAt || version.createdAt || exportSavedAt;
           }
         }
       }
 
-      const htmlBody = await marked.parse(contentMarkdown || "");
-      const html = buildDocxHtml(exportTitle, withDocxInlineStyles(htmlBody));
-      const buffer = await htmlToDocx(html);
       const filename = `${toSafeFilename(exportTitle)}.docx`;
+      const normalizedMarkdown = normalizeDocxMarkdown(contentMarkdown || "");
+      const htmlBody = stripLeadingDocxTitle(
+        await marked.parse(normalizedMarkdown),
+        exportTitle,
+      );
+      const variant: DocxVariant =
+        sop.category === "Aufklärungen" ? "consent" : "generic";
+      const html = buildDocxHtml({
+        title: exportTitle,
+        bodyHtml: withDocxInlineStyles(htmlBody, variant),
+        category: sop.category,
+        version: exportVersion,
+        savedAt: exportSavedAt,
+        filename,
+      });
+      const buffer = await htmlToDocx(html);
       res.setHeader(
         "Content-Type",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
