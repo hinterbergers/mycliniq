@@ -196,19 +196,19 @@ const normalizeDocxMarkdown = (markdown: string) =>
     .replace(/\[x\]/gi, "☑");
 
 const kabegHeaderHtml = `
-  <div style="width: 100%; margin: 0 0 26pt 0; text-align: right;">
-    <div style="display: inline-block; width: 290pt; text-align: right;">
-      <div style="font-size: 34pt; line-height: 1; font-weight: 700; color: #0094d9; letter-spacing: 0.5pt;">KABEG</div>
-      <div style="font-size: 11pt; line-height: 1.1; color: #5a5a5a; letter-spacing: 1pt;">KLINIKUM KLAGENFURT</div>
-      <div style="font-size: 11pt; line-height: 1.1; color: #5a5a5a; letter-spacing: 1pt;">AM WOERTHERSEE</div>
-      <div style="font-size: 9pt; line-height: 1.25; color: #6b6b6b; margin-top: 10pt;">
+  <div style="width: 100%; margin: 0 0 26pt 0;">
+    <div style="margin-left: 300pt; width: 240pt; text-align: right;">
+      <p style="font-family: Arial, Helvetica, sans-serif; font-size: 34pt; line-height: 1; font-weight: 700; color: #0094d9; letter-spacing: 0.5pt; margin: 0;">KABEG</p>
+      <p style="font-family: Arial, Helvetica, sans-serif; font-size: 11pt; line-height: 1.05; font-weight: 400; color: #5a5a5a; letter-spacing: 1pt; margin: 4pt 0 0 0;">KLINIKUM KLAGENFURT</p>
+      <p style="font-family: Arial, Helvetica, sans-serif; font-size: 11pt; line-height: 1.05; font-weight: 400; color: #5a5a5a; letter-spacing: 1pt; margin: 1pt 0 0 0;">AM WOERTHERSEE</p>
+      <p style="font-family: Arial, Helvetica, sans-serif; font-size: 9pt; line-height: 1.2; font-weight: 400; color: #6b6b6b; margin: 10pt 0 0 0;">
         Abteilung fuer Frauenheilkunde und Geburtshilfe<br />
         Abteilungsleitung Medizin: Prim. PD. Dr. Johannes Lermann<br />
         9020 Klagenfurt am Woerthersee, Feschnigstrasse 11<br />
         T +43 463 538 39740<br />
         F +43 463 538 39626<br />
         www.kabeg.at
-      </div>
+      </p>
     </div>
   </div>
 `;
@@ -274,17 +274,17 @@ const buildConsentDocxHtml = ({
     <style>
       body {
         font-family: Arial, Helvetica, sans-serif;
-        font-size: 12pt;
-        line-height: 1.5;
+        font-size: 11pt;
+        line-height: 1.3;
         color: #111;
       }
     </style>
   </head>
   <body>
     ${kabegHeaderHtml}
-    <div style="font-size: 18pt; line-height: 1.2; font-weight: 400; color: #111; margin: 0 0 18pt 0;">
+    <p style="font-family: Arial, Helvetica, sans-serif; font-size: 19pt; line-height: 1.15; font-weight: 400; color: #111; margin: 0 0 18pt 0;">
       ${escapeHtml(title)}
-    </div>
+    </p>
     ${bodyHtml}
     <div style="margin-top: 28pt; font-size: 8.5pt; line-height: 1.2; color: #8a8a8a; text-align: center;">
       Landeskrankenanstalten-Betriebsgesellschaft - KABEG, UID-Nr.: ATU25802806, DVR-Nr.: 00757209<br />
@@ -417,28 +417,28 @@ const withDocxInlineStyles = (
     next,
     "h1",
     variant === "consent"
-      ? "font-family: Arial, Helvetica, sans-serif; font-size: 18pt; line-height: 1.2; font-weight: 400; color: #111; margin: 0 0 16pt 0;"
+      ? "font-family: Arial, Helvetica, sans-serif; font-size: 19pt; line-height: 1.15; font-weight: 400; color: #111; margin: 0 0 18pt 0;"
       : "font-family: Arial, Helvetica, sans-serif; font-size: 17pt; line-height: 1.2; font-weight: 700; color: #111; margin: 0 0 14pt 0;",
   );
   next = addInlineStyleToTag(
     next,
     "p",
     variant === "consent"
-      ? "font-family: Arial, Helvetica, sans-serif; font-size: 12pt; line-height: 1.5; font-weight: 400; color: #111; margin: 0 0 12pt 0;"
+      ? "font-family: Arial, Helvetica, sans-serif; font-size: 11pt; line-height: 1.22; font-weight: 400; color: #111; margin: 0 0 10pt 0;"
       : "font-family: Arial, Helvetica, sans-serif; font-size: 11pt; line-height: 1.45; font-weight: 400; color: #222; margin: 0 0 8pt 0;",
   );
   next = addInlineStyleToTag(
     next,
     "li",
     variant === "consent"
-      ? "font-family: Arial, Helvetica, sans-serif; font-size: 12pt; line-height: 1.45; font-weight: 400; color: #111;"
+      ? "font-family: Arial, Helvetica, sans-serif; font-size: 11pt; line-height: 1.2; font-weight: 400; color: #111;"
       : "font-family: Arial, Helvetica, sans-serif; font-size: 11pt; line-height: 1.45; font-weight: 400; color: #222;",
   );
   next = addInlineStyleToTag(
     next,
     "ul",
     variant === "consent"
-      ? "margin: 0 0 12pt 0; padding-left: 16pt; list-style-type: disc;"
+      ? "margin: 0 0 10pt 0; padding-left: 16pt; list-style-type: disc;"
       : "margin: 0 0 8pt 0; padding-left: 18pt; list-style-type: disc;",
   );
   next = addInlineStyleToTag(
@@ -452,7 +452,7 @@ const withDocxInlineStyles = (
     next,
     "h2",
     variant === "consent"
-      ? "font-family: Arial, Helvetica, sans-serif; font-size: 12pt; line-height: 1.3; font-weight: 400; color: #111; margin: 18pt 0 10pt 0;"
+      ? "font-family: Arial, Helvetica, sans-serif; font-size: 11pt; line-height: 1.2; font-weight: 400; color: #111; margin: 16pt 0 8pt 0;"
       : "font-family: Arial, Helvetica, sans-serif; font-size: 14pt; line-height: 1.25; font-weight: 700; color: #0f5ba7; margin: 14pt 0 6pt 0;",
   );
   next = addInlineStyleToTag(
