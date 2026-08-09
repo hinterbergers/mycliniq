@@ -56,7 +56,7 @@
     "@types/bcryptjs": "^2.4.6",
     "@uiw/react-markdown-preview": "^5.1.5",
     "@uiw/react-md-editor": "^4.0.11",
-    "ajv": "^8.17.1",
+    "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
@@ -70,7 +70,7 @@
     "embla-carousel-react": "^8.6.0",
     "esbuild": "^0.25.0",
     "exceljs": "^4.4.0",
-    "express": "^4.21.2",
+    "express": "^4.22.2",
     "express-session": "^1.18.1",
     "framer-motion": "^12.23.24",
     "html-to-docx": "^1.8.0",
@@ -98,7 +98,7 @@
     "typescript": "5.6.3",
     "vaul": "^1.1.2",
     "wouter": "^3.3.5",
-    "ws": "^8.18.0",
+    "ws": "^8.21.3",
     "zod": "^3.25.76",
     "zod-validation-error": "^3.4.0"
   },
@@ -119,12 +119,12 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@types/ws": "^8.18.1",
-    "@vitejs/plugin-react": "^5.0.4",
+    "@vitejs/plugin-react": "^5.2.0",
     "autoprefixer": "^10.4.21",
     "drizzle-kit": "^0.18.1",
-    "postcss": "^8.5.6",
+    "postcss": "^8.5.26",
     "prettier": "^3.7.4",
     "tailwindcss": "^4.1.14",
-    "vite": "^7.1.9"
+    "vite": "^7.3.6"
   }
 }
