@@ -10,7 +10,7 @@ type AliasTarget = {
 };
 
 const TOKEN_REGEX = /(!?\[[^\]]*]\([^)]+\)|`[^`]*`|<[^>]+>)/g;
-const LETTER_OR_NUMBER = "[\\p{L}\\p{N}]";
+const LETTER_OR_NUMBER = "\\p{L}\\p{N}";
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
