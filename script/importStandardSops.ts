@@ -94,6 +94,10 @@ function cleanLine(value: string) {
   return value
     .replace(/\u00a0/g, " ")
     .replace(/[‐‑–—]/g, "-")
+    .replace(//g, "↑")
+    .replace(//g, "↓")
+    .replace(//g, "→")
+    .replace(/➔/g, "→")
     .replace(/\s+$/g, "")
     .replace(/^\s+/g, "")
     .trimEnd();
