@@ -1103,6 +1103,8 @@ export default function Guidelines() {
           <MarkdownViewer
             value={editorForm.contentMarkdown}
             className="rounded-xl border bg-white p-5"
+            wikiArticles={sops}
+            currentArticleId={detailSop?.id ?? null}
           />
         </div>
 
@@ -1241,6 +1243,8 @@ export default function Guidelines() {
                       <MarkdownViewer
                         value={detailSop.contentMarkdown || "_Noch kein Inhalt hinterlegt._"}
                         className="rounded-2xl border bg-white p-6 lg:p-8"
+                        wikiArticles={sops}
+                        currentArticleId={detailSop.id}
                       />
 
                       {detailSop.awmfLink && (

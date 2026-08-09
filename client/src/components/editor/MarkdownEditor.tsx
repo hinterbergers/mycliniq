@@ -1,6 +1,8 @@
+import { useMemo } from "react";
 import MDEditor, { commands } from "@uiw/react-md-editor";
 import MarkdownPreview from "@uiw/react-markdown-preview";
 import { IndentIncrease, IndentDecrease } from "lucide-react";
+import { buildWikiLinkedMarkdown, type WikiLinkArticle } from "@/lib/knowledgeLinks";
 
 type MarkdownEditorProps = {
   value: string;
@@ -116,12 +118,25 @@ export function MarkdownEditor({
 type MarkdownViewerProps = {
   value?: string | null;
   className?: string;
+  wikiArticles?: WikiLinkArticle[];
+  currentArticleId?: number | null;
 };
 
-export function MarkdownViewer({ value, className }: MarkdownViewerProps) {
+export function MarkdownViewer({
+  value,
+  className,
+  wikiArticles,
+  currentArticleId,
+}: MarkdownViewerProps) {
+  const renderedMarkdown = useMemo(() => {
+    const source = value ?? "";
+    if (!wikiArticles?.length) return source;
+    return buildWikiLinkedMarkdown(source, wikiArticles, currentArticleId);
+  }, [currentArticleId, value, wikiArticles]);
+
   return (
     <div data-color-mode="light" className={className}>
-      <MarkdownPreview source={value ?? ""} />
+      <MarkdownPreview source={renderedMarkdown} />
     </div>
   );
 }
