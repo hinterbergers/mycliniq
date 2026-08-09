@@ -53,11 +53,29 @@ import { useAuth } from "@/lib/auth";
 import { employeeApi, sopApi, type SopDetail } from "@/lib/api";
 
 const KNOWLEDGE_USAGE_KEY = "cliniq_knowledge_usage";
-const SOP_CATEGORIES = ["SOP", "Dienstanweisung", "Aufklärungen"] as const;
+const SOP_CATEGORIES = [
+  "SOP",
+  "Dienstanweisung",
+  "Formular",
+  "Aufklärungen",
+  "Checkliste",
+  "Leitlinie",
+] as const;
+const CATEGORY_LABELS: Record<(typeof SOP_CATEGORIES)[number], string> = {
+  SOP: "SOP",
+  Dienstanweisung: "Dienstanweisung",
+  Formular: "Formulare",
+  Aufklärungen: "Einwilligung / Aufklärung",
+  Checkliste: "Checkliste",
+  Leitlinie: "Leitlinie",
+};
 const CATEGORY_STYLES: Record<string, string> = {
   SOP: "bg-blue-100 text-blue-700 border-blue-200",
   Dienstanweisung: "bg-amber-100 text-amber-700 border-amber-200",
+  Formular: "bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200",
   Aufklärungen: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  Checkliste: "bg-cyan-100 text-cyan-700 border-cyan-200",
+  Leitlinie: "bg-violet-100 text-violet-700 border-violet-200",
 };
 const STATUS_LABELS: Record<string, string> = {
   proposed: "Vorgeschlagen",
@@ -97,6 +115,9 @@ const normalizeSopCategory = (
     ? (value as (typeof SOP_CATEGORIES)[number])
     : "SOP";
 };
+
+const getCategoryLabel = (value?: string | null) =>
+  CATEGORY_LABELS[normalizeSopCategory(value)];
 
 const normalizeSopStatus = (value?: string | null) => {
   const status = (value || "").toLowerCase();
@@ -417,13 +438,33 @@ export default function Guidelines() {
       ),
     [filteredSops],
   );
-  const additionalArticles = useMemo(
+  const formArticles = useMemo(
     () =>
       sortKnowledgeByNewest(
         filteredSops.filter(
-          (entry) =>
-            !["SOP", "Dienstanweisung"].includes(normalizeSopCategory(entry.category)),
+          (entry) => normalizeSopCategory(entry.category) === "Formular",
         ),
+      ),
+    [filteredSops],
+  );
+  const consentArticles = useMemo(
+    () =>
+      sortKnowledgeByNewest(
+        filteredSops.filter(
+          (entry) => normalizeSopCategory(entry.category) === "Aufklärungen",
+        ),
+      ),
+    [filteredSops],
+  );
+  const additionalArticles = useMemo(
+    () =>
+      sortKnowledgeByNewest(
+        filteredSops.filter((entry) => {
+          const category = normalizeSopCategory(entry.category);
+          return !["SOP", "Dienstanweisung", "Formular", "Aufklärungen"].includes(
+            category,
+          );
+        }),
       ),
     [filteredSops],
   );
@@ -724,7 +765,7 @@ export default function Guidelines() {
                   CATEGORY_STYLES[category] || "bg-slate-100 text-slate-700 border-slate-200"
                 }
               >
-                {category}
+                {getCategoryLabel(category)}
               </Badge>
               <span className="text-xs text-muted-foreground">
                 {formatDate(entry.publishedAt || entry.createdAt)}
@@ -1141,7 +1182,7 @@ export default function Guidelines() {
                             "bg-slate-100 text-slate-700 border-slate-200"
                           }
                         >
-                          {normalizeSopCategory(detailSop.category)}
+                          {getCategoryLabel(detailSop.category)}
                         </Badge>
                         <Badge variant="outline">{STATUS_LABELS[currentStatus] || currentStatus}</Badge>
                         <Badge variant="outline">Version {detailSop.version}</Badge>
@@ -1392,7 +1433,7 @@ export default function Guidelines() {
                               }
                               onClick={() => setSelectedCategory(category)}
                             >
-                              {category}
+                              {category === "Alle" ? category : getCategoryLabel(category)}
                             </Button>
                           ))}
                         </div>
@@ -1503,6 +1544,42 @@ export default function Guidelines() {
                     </Card>
                   )}
                 </section>
+
+                {formArticles.length > 0 && (
+                  <section className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h2 className="text-2xl font-semibold text-primary">Formulare</h2>
+                        <p className="text-sm text-muted-foreground">
+                          Dokumentationsboegen, Formblaetter und strukturierte Vorlagen.
+                        </p>
+                      </div>
+                      <Badge variant="outline">{formArticles.length}</Badge>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      {formArticles.map(renderKnowledgeCard)}
+                    </div>
+                  </section>
+                )}
+
+                {consentArticles.length > 0 && (
+                  <section className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h2 className="text-2xl font-semibold text-primary">
+                          Einwilligung / Aufklaerung
+                        </h2>
+                        <p className="text-sm text-muted-foreground">
+                          Aufklaerungsboegen und Einwilligungsunterlagen fuer Patientinnen.
+                        </p>
+                      </div>
+                      <Badge variant="outline">{consentArticles.length}</Badge>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      {consentArticles.map(renderKnowledgeCard)}
+                    </div>
+                  </section>
+                )}
 
                 {additionalArticles.length > 0 && (
                   <section className="space-y-4">

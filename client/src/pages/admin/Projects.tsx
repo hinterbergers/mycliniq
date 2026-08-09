@@ -89,8 +89,23 @@ const createErrorToast = (
   });
 };
 
-const SOP_CATEGORIES = ["SOP", "Dienstanweisung", "Aufklärungen"] as const;
+const SOP_CATEGORIES = [
+  "SOP",
+  "Dienstanweisung",
+  "Formular",
+  "Aufklärungen",
+  "Checkliste",
+  "Leitlinie",
+] as const;
 const ALLOWED_SOP_CATEGORIES = new Set(SOP_CATEGORIES);
+const SOP_CATEGORY_LABELS: Record<(typeof SOP_CATEGORIES)[number], string> = {
+  SOP: "SOP",
+  Dienstanweisung: "Dienstanweisung",
+  Formular: "Formulare",
+  Aufklärungen: "Einwilligung / Aufklärung",
+  Checkliste: "Checkliste",
+  Leitlinie: "Leitlinie",
+};
 const PROJECT_CATEGORIES = [
   { value: "SOP", label: "SOP" },
   { value: "Studie", label: "Studie" },
@@ -156,6 +171,9 @@ const normalizeSopCategory = (value?: string | null) => {
     return value;
   return "SOP";
 };
+
+const getSopCategoryLabel = (value?: string | null) =>
+  SOP_CATEGORY_LABELS[normalizeSopCategory(value) as (typeof SOP_CATEGORIES)[number]] || "SOP";
 
 const hasSopSectionContent = (sections: SopSections) =>
   SOP_SECTION_DEFINITIONS.some((section) => {
@@ -1175,7 +1193,7 @@ export default function AdminProjects() {
               <h4 className="font-semibold">{sop.title}</h4>
               <div className="flex flex-wrap gap-2">
                 <Badge variant="outline" className="text-muted-foreground">
-                  {categoryLabel}
+                  {getSopCategoryLabel(categoryLabel)}
                 </Badge>
                 <Badge
                   className={
@@ -1846,7 +1864,7 @@ export default function AdminProjects() {
                 <SelectContent>
                   {SOP_CATEGORIES.map((category) => (
                     <SelectItem key={category} value={category}>
-                      {category}
+                      {getSopCategoryLabel(category)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -2170,7 +2188,7 @@ export default function AdminProjects() {
                 <h3 className="text-lg font-semibold">{detailSop.title}</h3>
                 <div className="flex flex-wrap gap-2">
                   <Badge variant="outline">
-                    {detailCategory || detailSop.category}
+                    {getSopCategoryLabel(detailCategory || detailSop.category)}
                   </Badge>
                   <Badge
                     className={
