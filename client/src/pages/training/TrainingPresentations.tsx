@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { trainingApi } from "@/lib/api";
+import { dashboardContentApi, trainingApi } from "@/lib/api";
 import type { TrainingPresentation } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
@@ -118,6 +118,10 @@ export default function TrainingPresentations() {
   const [activeTag, setActiveTag] = useState<FilterTag>("all");
   const [selectedPresentation, setSelectedPresentation] =
     useState<TrainingPresentation | null>(null);
+
+  useEffect(() => {
+    if (selectedPresentation?.id) void dashboardContentApi.recordView("presentation", selectedPresentation.id);
+  }, [selectedPresentation?.id]);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [viewMode, setViewMode] = useState<PresentationViewMode>("download");
   const [uploadTitle, setUploadTitle] = useState("");

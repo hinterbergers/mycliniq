@@ -135,6 +135,44 @@ CREATE INDEX IF NOT EXISTS dashboard_seen_items_employee_type_idx
 CREATE UNIQUE INDEX IF NOT EXISTS dashboard_seen_items_employee_type_item_uidx
   ON dashboard_seen_items (employee_id, item_type, item_id);
 
+CREATE TABLE IF NOT EXISTS dashboard_announcements (
+  id serial PRIMARY KEY,
+  title text NOT NULL,
+  summary text NOT NULL,
+  details text,
+  link text,
+  priority text NOT NULL DEFAULT 'normal',
+  status text NOT NULL DEFAULT 'draft',
+  published_at timestamp,
+  created_by_id integer REFERENCES employees(id),
+  created_at timestamp NOT NULL DEFAULT now(),
+  updated_at timestamp NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS dashboard_announcements_status_published_idx
+  ON dashboard_announcements (status, published_at);
+
+CREATE TABLE IF NOT EXISTS dashboard_announcement_reads (
+  id serial PRIMARY KEY,
+  announcement_id integer NOT NULL REFERENCES dashboard_announcements(id) ON DELETE CASCADE,
+  employee_id integer NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  read_at timestamp NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS dashboard_announcement_reads_unique_idx
+  ON dashboard_announcement_reads (announcement_id, employee_id);
+
+CREATE TABLE IF NOT EXISTS content_views (
+  id serial PRIMARY KEY,
+  employee_id integer NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  content_type text NOT NULL,
+  content_id integer NOT NULL,
+  viewed_on date NOT NULL,
+  viewed_at timestamp NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS content_views_daily_unique_idx
+  ON content_views (employee_id, content_type, content_id, viewed_on);
+CREATE INDEX IF NOT EXISTS content_views_popular_idx
+  ON content_views (content_type, viewed_on);
+
 ALTER TABLE weekly_plan_assignments
 ADD COLUMN IF NOT EXISTS created_by_id integer REFERENCES employees(id);
 

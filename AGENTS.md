@@ -169,6 +169,11 @@
 - Favorite group shortcut button in the Nachrichten header is stored per user in localStorage key `cliniq_messages_favorite_group_<employeeId>`
 - Direct threads are de-duplicated: starting a 1:1 with the same user returns the existing thread
 - Thread list ordering follows latest message activity, not only original thread creation time
+- Dashboard Neuerungen:
+  - Technical admins manage manual release notes at `/admin/announcements`
+  - Published notes appear as a compact dismissible dashboard card; reads are stored per employee
+  - The dashboard content feed combines newly published SOPs, training videos, and presentations
+  - `content_views` counts at most one view per employee/content/day and powers the 30-day "Meistgesehen" view
 
 ## Client API Helpers (current approach)
 - `client/src/lib/authToken.ts` centralizes token read/write/clear

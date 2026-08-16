@@ -50,7 +50,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
-import { employeeApi, sopApi, type SopDetail } from "@/lib/api";
+import { dashboardContentApi, employeeApi, sopApi, type SopDetail } from "@/lib/api";
 
 const KNOWLEDGE_USAGE_KEY = "cliniq_knowledge_usage";
 const SOP_CATEGORIES = [
@@ -243,6 +243,10 @@ export default function Guidelines() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailSop, setDetailSop] = useState<SopDetail | null>(null);
   const [selectedSopId, setSelectedSopId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (selectedSopId) void dashboardContentApi.recordView("sop", selectedSopId);
+  }, [selectedSopId]);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("Alle");
   const [usageCounts, setUsageCounts] = useState<Record<number, number>>({});

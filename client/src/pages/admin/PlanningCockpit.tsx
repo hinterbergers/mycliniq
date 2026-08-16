@@ -18,6 +18,7 @@ import {
   CalendarDays,
   SlidersHorizontal,
   GraduationCap,
+  Megaphone,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
@@ -27,6 +28,16 @@ export default function PlanningCockpit() {
   const { canAny, isSuperuser, canManageEducationCatalog } = useAuth();
 
   const modules = [
+    {
+      title: "Neuerungen",
+      description: "Dashboard-Hinweise erstellen, veröffentlichen und archivieren.",
+      icon: Megaphone,
+      action: () => setLocation("/admin/announcements"),
+      color: "text-violet-600",
+      bg: "bg-violet-50",
+      requiredAnyCaps: [],
+      superuserOnly: true,
+    },
     {
       title: "Dienstplan-Editor",
       description: "Monatsdienstplan generieren, prüfen und freigeben.",
@@ -123,6 +134,7 @@ export default function PlanningCockpit() {
   const visibleModules = isSuperuser
     ? modules
     : modules.filter((module) => {
+        if (module.superuserOnly) return false;
         if (module.title === "Ausbildungs-Editor") {
           return canManageEducationCatalog;
         }

@@ -2934,6 +2934,50 @@ export const notificationsApi = {
   },
 };
 
+export type DashboardAnnouncement = {
+  id: number;
+  title: string;
+  summary: string;
+  details?: string | null;
+  link?: string | null;
+  priority: "normal" | "important";
+  status: "draft" | "published" | "archived";
+  publishedAt?: string | null;
+  createdAt: string;
+  isRead?: boolean;
+};
+
+export type DashboardContentItem = {
+  id: number;
+  type: "sop" | "video" | "presentation";
+  title: string;
+  category?: string | null;
+  publishedAt?: string | null;
+  views?: number;
+  url: string;
+};
+
+export const dashboardContentApi = {
+  getAnnouncements: async () =>
+    handleResponse<DashboardAnnouncement[]>(
+      await apiFetch(`${API_BASE}/dashboard-content/announcements`),
+    ),
+  getAdminAnnouncements: async () =>
+    handleResponse<DashboardAnnouncement[]>(
+      await apiFetch(`${API_BASE}/dashboard-content/announcements/admin`),
+    ),
+  createAnnouncement: async (data: Omit<DashboardAnnouncement, "id" | "createdAt" | "publishedAt" | "isRead">) =>
+    handleResponse<DashboardAnnouncement>(await apiFetch(`${API_BASE}/dashboard-content/announcements`, { method: "POST", body: JSON.stringify(data) })),
+  updateAnnouncement: async (id: number, data: Omit<DashboardAnnouncement, "id" | "createdAt" | "publishedAt" | "isRead">) =>
+    handleResponse<DashboardAnnouncement>(await apiFetch(`${API_BASE}/dashboard-content/announcements/${id}`, { method: "PUT", body: JSON.stringify(data) })),
+  markAnnouncementRead: async (id: number) =>
+    handleResponse<{ read: boolean }>(await apiFetch(`${API_BASE}/dashboard-content/announcements/${id}/read`, { method: "POST" })),
+  getContent: async () =>
+    handleResponse<{ newest: DashboardContentItem[]; popular: DashboardContentItem[] }>(await apiFetch(`${API_BASE}/dashboard-content/content`)),
+  recordView: async (contentType: "sop" | "video" | "presentation", contentId: number) =>
+    handleResponse<{ recorded: boolean }>(await apiFetch(`${API_BASE}/dashboard-content/views`, { method: "POST", body: JSON.stringify({ contentType, contentId }) })),
+};
+
 export type OnlineUser = {
   id: number;
   name: string;

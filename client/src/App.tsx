@@ -20,6 +20,7 @@ import AdminProjects from "@/pages/admin/Projects";
 import ProjectDetail from "@/pages/admin/ProjectDetail";
 import ClinicSettings from "@/pages/admin/ClinicSettings";
 import WidgetManagement from "@/pages/admin/WidgetManagement";
+import Announcements from "@/pages/admin/Announcements";
 import Tools from "@/pages/Tools";
 import Messages from "@/pages/Messages";
 import NotFound from "@/pages/not-found";
@@ -229,6 +230,9 @@ function Router() {
       </Route>
       <Route path="/admin/widgets">
         {() => <ProtectedRoute component={WidgetManagement} />}
+      </Route>
+      <Route path="/admin/announcements">
+        {() => <ProtectedRoute component={Announcements} />}
       </Route>
 
       <Route component={NotFound} />

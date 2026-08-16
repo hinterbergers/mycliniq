@@ -2271,6 +2271,75 @@ export const dashboardSeenItems = pgTable(
 
 export type DashboardSeenItem = typeof dashboardSeenItems.$inferSelect;
 
+export const dashboardAnnouncements = pgTable(
+  "dashboard_announcements",
+  {
+    id: serial("id").primaryKey(),
+    title: text("title").notNull(),
+    summary: text("summary").notNull(),
+    details: text("details"),
+    link: text("link"),
+    priority: text("priority").notNull().default("normal"),
+    status: text("status").notNull().default("draft"),
+    publishedAt: timestamp("published_at"),
+    createdById: integer("created_by_id").references(() => employees.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("dashboard_announcements_status_published_idx").on(
+      table.status,
+      table.publishedAt,
+    ),
+  ],
+);
+
+export const dashboardAnnouncementReads = pgTable(
+  "dashboard_announcement_reads",
+  {
+    id: serial("id").primaryKey(),
+    announcementId: integer("announcement_id")
+      .references(() => dashboardAnnouncements.id, { onDelete: "cascade" })
+      .notNull(),
+    employeeId: integer("employee_id")
+      .references(() => employees.id, { onDelete: "cascade" })
+      .notNull(),
+    readAt: timestamp("read_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("dashboard_announcement_reads_unique_idx").on(
+      table.announcementId,
+      table.employeeId,
+    ),
+  ],
+);
+
+export const contentViews = pgTable(
+  "content_views",
+  {
+    id: serial("id").primaryKey(),
+    employeeId: integer("employee_id")
+      .references(() => employees.id, { onDelete: "cascade" })
+      .notNull(),
+    contentType: text("content_type").notNull(),
+    contentId: integer("content_id").notNull(),
+    viewedOn: date("viewed_on").notNull(),
+    viewedAt: timestamp("viewed_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("content_views_daily_unique_idx").on(
+      table.employeeId,
+      table.contentType,
+      table.contentId,
+      table.viewedOn,
+    ),
+    index("content_views_popular_idx").on(
+      table.contentType,
+      table.viewedOn,
+    ),
+  ],
+);
+
 // Messaging threads
 export const messageThreads = pgTable("message_threads", {
   id: serial("id").primaryKey(),

@@ -51,9 +51,14 @@ import {
   Stethoscope,
   Hand,
   AlertTriangle,
+  Sparkles,
+  BookOpen,
+  Eye,
+  X,
 } from "lucide-react";
 import {
   dashboardApi,
+  dashboardContentApi,
   employeeApi,
   notificationsApi,
   plannedAbsencesAdminApi,
@@ -64,6 +69,8 @@ import {
   type DashboardAttendanceMember,
   type DashboardRecentChange,
   type DashboardResponse,
+  type DashboardAnnouncement,
+  type DashboardContentItem,
   type NextPlanningMonth,
   type PlannedAbsenceAdmin,
 } from "@/lib/api";
@@ -409,6 +416,9 @@ export default function Dashboard() {
   const [dashboardData, setDashboardData] = useState<DashboardResponse | null>(
     null,
   );
+  const [announcements, setAnnouncements] = useState<DashboardAnnouncement[]>([]);
+  const [contentFeed, setContentFeed] = useState<{ newest: DashboardContentItem[]; popular: DashboardContentItem[] }>({ newest: [], popular: [] });
+  const [contentFeedMode, setContentFeedMode] = useState<"newest" | "popular">("newest");
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(true);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [isAcceptingZe, setIsAcceptingZe] = useState(false);
@@ -467,6 +477,23 @@ export default function Dashboard() {
   const [wishMonthInfo, setWishMonthInfo] = useState<NextPlanningMonth | null>(
     null,
   );
+  useEffect(() => {
+    void Promise.all([
+      dashboardContentApi.getAnnouncements().then(setAnnouncements),
+      dashboardContentApi.getContent().then(setContentFeed),
+    ]).catch(() => undefined);
+  }, []);
+
+  const dismissAnnouncement = async (id: number) => {
+    await dashboardContentApi.markAnnouncementRead(id);
+    setAnnouncements((current) => current.map((item) => item.id === id ? { ...item, isRead: true } : item));
+  };
+
+  const openContentItem = (item: DashboardContentItem) => {
+    void dashboardContentApi.recordView(item.type, item.id);
+    setLocation(item.url);
+  };
+
   useEffect(() => {
     let cancelled = false;
 
@@ -2259,6 +2286,8 @@ export default function Dashboard() {
   const birthdaySummary = birthdayName
     ? `Heute Geburtstag: ${birthdayName}`
     : null;
+  const activeAnnouncement = announcements.find((item) => !item.isRead) ?? null;
+  const visibleContentItems = contentFeedMode === "newest" ? contentFeed.newest : contentFeed.popular;
 
   return (
     <Layout title="Dashboard">
@@ -2267,6 +2296,21 @@ export default function Dashboard() {
           <div>
             {renderTodayTileContent()}
           </div>
+
+          {activeAnnouncement ? (
+            <Card className={activeAnnouncement.priority === "important" ? "border-violet-300 bg-violet-50/80" : "border-blue-200 bg-blue-50/60"}>
+              <CardContent className="flex items-start gap-3 p-3 sm:p-4">
+                <div className="rounded-full bg-white p-2 text-violet-700 shadow-sm"><Sparkles className="h-4 w-4" /></div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2"><Badge className="bg-violet-600 text-white">Neu</Badge><p className="font-semibold leading-tight">{activeAnnouncement.title}</p></div>
+                  <p className="mt-1 text-sm text-muted-foreground">{activeAnnouncement.summary}</p>
+                  {activeAnnouncement.details ? <details className="mt-2 text-sm"><summary className="cursor-pointer font-medium text-violet-700">Mehr erfahren</summary><p className="mt-2 whitespace-pre-wrap text-muted-foreground">{activeAnnouncement.details}</p></details> : null}
+                  {activeAnnouncement.link ? <Button variant="link" className="mt-1 h-auto p-0 text-xs" onClick={() => setLocation(activeAnnouncement.link as string)}>Öffnen</Button> : null}
+                </div>
+                <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" aria-label="Neuerung als gelesen markieren" onClick={() => void dismissAnnouncement(activeAnnouncement.id)}><X className="h-4 w-4" /></Button>
+              </CardContent>
+            </Card>
+          ) : null}
 
           <div>
             {renderDashboardTile({
@@ -2296,6 +2340,21 @@ export default function Dashboard() {
                   : "neutral",
             })}
           </div>
+
+          <Card className="border-none kabeg-shadow">
+            <CardHeader className="p-4 pb-2">
+              <div className="flex items-center justify-between gap-3">
+                <div><CardTitle className="flex items-center gap-2 text-base"><BookOpen className="h-4 w-4" />Neu veröffentlicht</CardTitle><CardDescription className="text-xs">SOPs, Videos und Präsentationen</CardDescription></div>
+                <div className="flex rounded-lg bg-muted p-0.5"><Button size="sm" variant={contentFeedMode === "newest" ? "default" : "ghost"} className="h-7 px-2 text-xs" onClick={() => setContentFeedMode("newest")}>Neu</Button><Button size="sm" variant={contentFeedMode === "popular" ? "default" : "ghost"} className="h-7 px-2 text-xs" onClick={() => setContentFeedMode("popular")}>Meistgesehen</Button></div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-4 pt-2">
+              <div className="grid gap-2 sm:grid-cols-3">
+                {visibleContentItems.map((item) => <button key={`${item.type}-${item.id}`} type="button" onClick={() => openContentItem(item)} className="rounded-xl border bg-card p-3 text-left transition hover:bg-muted/40"><div className="flex items-center justify-between gap-2"><Badge variant="outline" className="text-[10px]">{item.type === "sop" ? "SOP" : item.type === "video" ? "Video" : "Präsentation"}</Badge>{typeof item.views === "number" ? <span className="flex items-center gap-1 text-[10px] text-muted-foreground"><Eye className="h-3 w-3" />{item.views}</span> : null}</div><p className="mt-2 line-clamp-2 text-xs font-medium">{item.title}</p><p className="mt-1 truncate text-[10px] text-muted-foreground">{item.category ?? "MyCliniQ"}</p></button>)}
+                {visibleContentItems.length === 0 ? <p className="text-xs text-muted-foreground">Noch keine Inhalte vorhanden.</p> : null}
+              </div>
+            </CardContent>
+          </Card>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {weekPreviewEnabled ? (

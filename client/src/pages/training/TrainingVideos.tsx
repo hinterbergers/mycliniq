@@ -30,7 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { trainingApi } from "@/lib/api";
+import { dashboardContentApi, trainingApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import type { TrainingVideo } from "@shared/schema";
@@ -84,6 +84,10 @@ export default function TrainingVideos() {
   });
   const [editKeywords, setEditKeywords] = useState<string[]>([]);
   const [tagInputValue, setTagInputValue] = useState("");
+
+  useEffect(() => {
+    if (selectedVideo?.id) void dashboardContentApi.recordView("video", selectedVideo.id);
+  }, [selectedVideo?.id]);
 
   const addEditKeyword = (value: string) => {
     const keywordsToAdd = splitKeywords(value);
