@@ -1,6 +1,6 @@
 import type { Router } from "express";
 import { z } from "zod";
-import { db, eq, and, asc, inArray, gte, lte, ne } from "../../lib/db";
+import { db, eq, and, or, asc, inArray, gte, lte, ne } from "../../lib/db";
 import { addDays, format, startOfWeek } from "date-fns";
 import {
   ok,
@@ -616,6 +616,10 @@ export function registerWeeklyPlanRoutes(router: Router) {
           lte(plannedAbsences.startDate, to),
           gte(plannedAbsences.endDate, from),
           ne(plannedAbsences.status, "Abgelehnt"),
+          or(
+            ne(plannedAbsences.reason, "Zeitausgleich"),
+            eq(plannedAbsences.status, "Genehmigt"),
+          ),
         ),
       );
 

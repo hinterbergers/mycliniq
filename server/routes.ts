@@ -93,8 +93,16 @@ import {
   mapAbsenceCategory,
   ABSENCE_CATEGORY_ORDER,
 } from "./lib/absence-categories";
+import { ensureDeclinedZeitausgleichAssignment } from "./lib/zeitausgleich";
 
 const rosterShifts = rosterShiftsTable;
+const effectivePlannedAbsenceCondition = and(
+  ne(plannedAbsences.status, "Abgelehnt"),
+  or(
+    ne(plannedAbsences.reason, "Zeitausgleich"),
+    eq(plannedAbsences.status, "Genehmigt"),
+  ),
+);
 const ALLOWED_CLAIM_STATUSES = new Set<DutyPlan["status"]>([
   "Vorläufig",
   "Freigegeben",
@@ -3081,7 +3089,7 @@ export async function registerRoutes(
               .where(
                 and(
                   eq(plannedAbsences.employeeId, user.employeeId),
-                  ne(plannedAbsences.status, "Abgelehnt"),
+                  effectivePlannedAbsenceCondition,
                   lte(plannedAbsences.startDate, endDate),
                   gte(plannedAbsences.endDate, startDate),
                 ),
@@ -3106,7 +3114,7 @@ export async function registerRoutes(
           .from(plannedAbsences)
           .where(
             and(
-              ne(plannedAbsences.status, "Abgelehnt"),
+              effectivePlannedAbsenceCondition,
               lte(plannedAbsences.startDate, endDate),
               gte(plannedAbsences.endDate, startDate),
             ),
@@ -3998,7 +4006,7 @@ const buildAttendanceMembers = (
             .where(
               and(
                 eq(employees.departmentId, departmentId),
-                ne(plannedAbsences.status, "Abgelehnt"),
+                effectivePlannedAbsenceCondition,
                 gte(plannedAbsences.endDate, from),
                 lte(plannedAbsences.startDate, to),
               ),
@@ -4281,6 +4289,12 @@ const buildAttendanceMembers = (
           })
           .where(eq(plannedAbsences.id, zeId))
           .returning();
+
+        await ensureDeclinedZeitausgleichAssignment({
+          employeeId: currentEmployeeId,
+          date: String(updated.startDate),
+          actorId: currentEmployeeId,
+        });
 
         const employeeName =
           formatDisplayName(employeeRow?.firstName, employeeRow?.lastName) ??
@@ -5062,7 +5076,7 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
               .leftJoin(employees, eq(plannedAbsences.employeeId, employees.id))
               .where(
                 and(
-                  ne(plannedAbsences.status, "Abgelehnt"),
+                  effectivePlannedAbsenceCondition,
                   lte(plannedAbsences.startDate, monthEnd),
                   gte(plannedAbsences.endDate, monthStart),
                 ),
@@ -5268,7 +5282,7 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
           .leftJoin(employees, eq(plannedAbsences.employeeId, employees.id))
           .where(
             and(
-              ne(plannedAbsences.status, "Abgelehnt"),
+              effectivePlannedAbsenceCondition,
               lte(plannedAbsences.startDate, to),
               gte(plannedAbsences.endDate, from),
             ),

@@ -375,6 +375,25 @@ type PendingAbsenceNotice = {
   targetUrl: string;
 };
 
+const getPendingZeitausgleichMetadata = (notification: Notification) => {
+  if (!notification.metadata || typeof notification.metadata !== "object") {
+    return null;
+  }
+  const metadata = notification.metadata as Record<string, unknown>;
+  if (
+    metadata.kind !== "zeitausgleich_request" ||
+    typeof metadata.absenceId !== "number" ||
+    typeof metadata.actionType === "string"
+  ) {
+    return null;
+  }
+  return {
+    absenceId: metadata.absenceId,
+    startDate:
+      typeof metadata.startDate === "string" ? metadata.startDate : null,
+  };
+};
+
 export default function Dashboard() {
   const { employee, user, can, token, isAdmin, viewAsUser } = useAuth();
   const [, setLocation] = useLocation();
@@ -821,12 +840,34 @@ export default function Dashboard() {
     Boolean(todayEntry?.ze?.possible) &&
     !Boolean(todayEntry?.ze?.accepted) &&
     !todayEntry?.absenceReason;
-  const handleAcceptZe = async () => {
-    const zeId = todayEntry?.ze?.id;
+  const handleAcceptZe = async (requestedZeId?: number) => {
+    const zeId = requestedZeId ?? todayEntry?.ze?.id;
     if (!zeId) return;
     setIsAcceptingZe(true);
     try {
       await dashboardApi.acceptZeitausgleich(zeId);
+      const requestNotification = notificationsData.find(
+        (notification) =>
+          getPendingZeitausgleichMetadata(notification)?.absenceId === zeId,
+      );
+      if (requestNotification) {
+        const metadata = getPendingZeitausgleichMetadata(requestNotification);
+        const updatedNotification = await notificationsApi.markRead(
+          requestNotification.id,
+          {
+            actionType: "accept",
+            actionLabel: "Bestaetigt",
+            actionDetails: metadata?.startDate
+              ? `Zeitausgleich ${metadata.startDate}`
+              : "Zeitausgleich beantwortet",
+          },
+        );
+        setNotificationsData((current) =>
+          current.map((item) =>
+            item.id === updatedNotification.id ? updatedNotification : item,
+          ),
+        );
+      }
       toast({
         title: "Zeitausgleich bestätigt",
         description: "Der Platz wurde für dich reserviert.",
@@ -848,6 +889,28 @@ export default function Dashboard() {
     setIsAcceptingZe(true);
     try {
       await dashboardApi.declineZeitausgleich(zeId);
+      const requestNotification = notificationsData.find(
+        (notification) =>
+          getPendingZeitausgleichMetadata(notification)?.absenceId === zeId,
+      );
+      if (requestNotification) {
+        const metadata = getPendingZeitausgleichMetadata(requestNotification);
+        const updatedNotification = await notificationsApi.markRead(
+          requestNotification.id,
+          {
+            actionType: "decline",
+            actionLabel: "Abgelehnt",
+            actionDetails: metadata?.startDate
+              ? `Zeitausgleich ${metadata.startDate}`
+              : "Zeitausgleich beantwortet",
+          },
+        );
+        setNotificationsData((current) =>
+          current.map((item) =>
+            item.id === updatedNotification.id ? updatedNotification : item,
+          ),
+        );
+      }
       toast({
         title: "Zeitausgleich abgelehnt",
         description: "Die Planung wurde informiert und kann dich neu einteilen.",
@@ -1024,6 +1087,11 @@ export default function Dashboard() {
       .then(([pendingRows, allRows]) => {
         if (cancelled) return;
         const notices = pendingRows
+          .filter(
+            (absence) =>
+              absence.reason !== "Zeitausgleich" ||
+              absence.employeeId !== employee?.id,
+          )
           .slice()
           .sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)))
           .map((absence) => {
@@ -1058,7 +1126,7 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [canApproveVacation]);
+  }, [canApproveVacation, employee?.id]);
 
   const handleApprovePendingAbsence = useCallback(
     async (absenceId: number) => {
@@ -1099,7 +1167,9 @@ export default function Dashboard() {
 
   const handleMarkAllNotificationsRead = useCallback(async () => {
     const unreadIds = notificationsData
-      .filter((item) => !item.isRead)
+      .filter(
+        (item) => !item.isRead && !getPendingZeitausgleichMetadata(item),
+      )
       .map((item) => item.id);
     const unseenRecentIds = recentChanges
       .map((item) => item.id)
@@ -1157,6 +1227,7 @@ export default function Dashboard() {
     const items: DashboardNoticeItem[] = [];
 
     unreadNotifications.slice(0, 5).forEach((item) => {
+      const zeitausgleich = getPendingZeitausgleichMetadata(item);
       items.push({
         id: `notification-${item.id}`,
         notificationId: item.id,
@@ -1167,6 +1238,7 @@ export default function Dashboard() {
           ? format(new Date(item.createdAt), "dd.MM. HH:mm", { locale: de })
           : null,
         isRead: item.isRead,
+        zeId: zeitausgleich?.absenceId,
       });
     });
 
@@ -1393,7 +1465,7 @@ export default function Dashboard() {
           <button
             type="button"
             className="inline-flex h-8 items-center justify-center rounded-full bg-rose-600 px-3 text-xs font-semibold text-white transition hover:bg-rose-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-200 disabled:cursor-not-allowed disabled:opacity-60"
-            onClick={handleAcceptZe}
+            onClick={() => void handleAcceptZe()}
             disabled={isAcceptingZe}
           >
             Zeitausgleich möglich
@@ -1496,7 +1568,7 @@ export default function Dashboard() {
                         disabled={isAcceptingZe}
                         onClick={(event) => {
                           event.stopPropagation();
-                          void handleAcceptZe();
+                          void handleAcceptZe(item.zeId as number);
                         }}
                       >
                         Annehmen

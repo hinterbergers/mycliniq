@@ -1117,6 +1117,7 @@ export default function WeeklyPlan() {
     return plannedAbsences.filter(
       (absence) =>
         absence.reason === "Zeitausgleich" &&
+        absence.status !== "Abgelehnt" &&
         absence.startDate <= selectedDateKey &&
         absence.endDate >= selectedDateKey,
     );
@@ -3601,6 +3602,9 @@ export default function WeeklyPlan() {
                                   .get(selectedWeekday)
                                   ?.has(assignment.employeeId)
                               : false;
+                            const isDeclinedZeitausgleich =
+                              assignment.note ===
+                              "kein Zeitausgleich gewünscht";
 
                             return (
                               <div
@@ -3610,6 +3614,8 @@ export default function WeeklyPlan() {
                                   isDuplicate && "border-rose-300 bg-rose-50",
                                   assignment.assignmentType !== "Plan" &&
                                     "border-blue-200 bg-blue-50",
+                                  isDeclinedZeitausgleich &&
+                                    "border-amber-300 bg-amber-50",
                                 )}
                                 draggable={!disableAssignmentEditing}
                                 onDragStart={(event) => {
@@ -3666,6 +3672,14 @@ export default function WeeklyPlan() {
                                       className="px-1 py-0 text-[9px] bg-rose-100 text-rose-700 border-rose-200"
                                     >
                                       Doppelt
+                                    </Badge>
+                                  )}
+                                  {isDeclinedZeitausgleich && (
+                                    <Badge
+                                      variant="outline"
+                                      className="px-1 py-0 text-[9px] border-amber-300 bg-amber-100 text-amber-800"
+                                    >
+                                      ZA abgelehnt
                                     </Badge>
                                   )}
                                 </div>

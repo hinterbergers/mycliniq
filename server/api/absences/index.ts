@@ -19,6 +19,7 @@ import {
   notifications,
   rosterSettings,
 } from "@shared/schema";
+import { ensureDeclinedZeitausgleichAssignment } from "../../lib/zeitausgleich";
 
 /**
  * Schema for creating a planned absence
@@ -694,8 +695,7 @@ export function registerAbsenceRoutes(router: Router) {
 
       if (
         reason === "Zeitausgleich" &&
-        req.user?.employeeId &&
-        req.user.employeeId !== employeeId
+        req.user?.employeeId
       ) {
         await db.insert(notifications).values({
           recipientId: employeeId,
@@ -1018,10 +1018,21 @@ export function registerAbsenceRoutes(router: Router) {
           status,
           isApproved,
           approvedById: req.user.employeeId ?? null,
+          accepted: isApproved,
+          acceptedAt: isApproved ? new Date() : null,
+          acceptedById: isApproved ? req.user.employeeId : null,
           updatedAt: new Date(),
         })
         .where(eq(plannedAbsences.id, absenceId))
         .returning();
+
+      if (!isApproved) {
+        await ensureDeclinedZeitausgleichAssignment({
+          employeeId: updated.employeeId,
+          date: String(updated.startDate),
+          actorId: req.user.employeeId,
+        });
+      }
 
       if (isApproved && updated.employeeId !== req.user.employeeId) {
         const [approverEmployee] = await db

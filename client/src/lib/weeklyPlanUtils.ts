@@ -508,7 +508,8 @@ export const isEmployeeAbsentOnDate = (
       absence.employeeId === employee.id &&
       absence.startDate <= dateStr &&
       absence.endDate >= dateStr &&
-      absence.status !== "Abgelehnt",
+      absence.status !== "Abgelehnt" &&
+      (absence.reason !== "Zeitausgleich" || absence.status === "Genehmigt"),
   );
   if (hasPlanned) return true;
 
