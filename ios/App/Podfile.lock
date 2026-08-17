@@ -1,9 +1,9 @@
 PODS:
-  - Capacitor (7.6.0):
+  - Capacitor (7.6.8):
     - CapacitorCordova
   - CapacitorApp (7.1.2):
     - Capacitor
-  - CapacitorCordova (7.6.0)
+  - CapacitorCordova (7.6.8)
   - CapawesomeCapacitorBadge (7.0.1):
     - Capacitor
 
@@ -24,9 +24,9 @@ EXTERNAL SOURCES:
     :path: "../../node_modules/@capawesome/capacitor-badge"
 
 SPEC CHECKSUMS:
-  Capacitor: 6e644e9e3369368ac601c77a0fad57f34b78aaa6
+  Capacitor: ff6bf01336ac353098378828aff465095a89e459
   CapacitorApp: f01a913211780e0718dae9750442c3e23f96e106
-  CapacitorCordova: f163aa2e84b79efc54d6a75b305bc7e05fb80c5d
+  CapacitorCordova: e61ee8c40101b8cd011d0224261606a290c082cf
   CapawesomeCapacitorBadge: 7fc1fa00c920b88eabb8451ddc92bdc75da2cffa
 
 PODFILE CHECKSUM: 0362283493e0e104a262c1c419b4b14f93cc8fc7
