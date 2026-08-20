@@ -465,7 +465,7 @@ export default function PublicWeeklyPlan() {
           <div
             ref={headerScrollRef}
             onScroll={() => syncHorizontalScroll("header")}
-            className="mt-3 overflow-x-auto overscroll-x-contain touch-pan-x touch-pinch-zoom [-webkit-overflow-scrolling:touch]"
+            className="mt-3 overflow-x-auto overscroll-x-contain touch-pinch-zoom [-webkit-overflow-scrolling:touch]"
           >
             <div
               className="grid border-t border-slate-200 border-b border-slate-300 bg-slate-100"
@@ -519,7 +519,7 @@ export default function PublicWeeklyPlan() {
               <div
                 ref={bodyScrollRef}
                 onScroll={() => syncHorizontalScroll("body")}
-                className="overflow-x-auto overscroll-x-contain touch-pan-x touch-pinch-zoom [-webkit-overflow-scrolling:touch]"
+                className="overflow-x-auto overscroll-x-contain touch-pinch-zoom [-webkit-overflow-scrolling:touch]"
               >
                 <table
                   className="w-full table-fixed text-xs print:text-[10px] sm:text-sm"
