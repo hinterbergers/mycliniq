@@ -489,7 +489,10 @@ export default function Personal() {
   const isExternalDuty = user?.accessScope === "external_duty";
   const [unassignedCount, setUnassignedCount] = useState(0);
   const [pendingSwapRequestCount, setPendingSwapRequestCount] = useState(0);
-  const [isHeroExpanded, setIsHeroExpanded] = useState(true);
+  const [isHeroExpanded, setIsHeroExpanded] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return window.innerWidth >= 768;
+  });
   const pageStickyHeaderRef = useRef<HTMLDivElement | null>(null);
   const [pageStickyHeaderHeight, setPageStickyHeaderHeight] = useState(0);
   const [unassignedDebug, setUnassignedDebug] =
@@ -903,13 +906,13 @@ export default function Personal() {
         >
           <div
             ref={pageStickyHeaderRef}
-            className="sticky top-0 z-50 bg-background pb-3"
+            className="sticky top-0 z-50 bg-background pb-2"
           >
-            <div className="space-y-4 rounded-3xl border-none bg-gradient-to-br from-slate-950 via-[#113f72] to-[#0f5ba7] p-5 text-white shadow-xl shadow-primary/15">
+            <div className="space-y-3 rounded-[1.75rem] border-none bg-gradient-to-br from-slate-950 via-[#113f72] to-[#0f5ba7] p-4 text-white shadow-xl shadow-primary/15 sm:p-5">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                    <h1 className="text-3xl font-bold text-white">Dienstpläne</h1>
+                    <h1 className="text-2xl font-bold text-white sm:text-3xl">Dienstpläne</h1>
                     {activeTab === "roster" && rosterHeroMeta && (
                       <div className="flex items-center gap-2 text-xs text-primary-foreground/90 sm:text-sm">
                         <span className="font-medium">{rosterHeroMeta.label}</span>
@@ -992,7 +995,7 @@ export default function Personal() {
                       </div>
                     )}
                   </div>
-                  <p className="hidden text-sm text-primary-foreground/80 lg:block">
+                  <p className="hidden text-xs text-primary-foreground/80 lg:block">
                     Monatsdienstplan, Wochenplan und Urlaubsplanung.
                   </p>
                 </div>
@@ -1000,7 +1003,7 @@ export default function Personal() {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-10 w-10 shrink-0 rounded-full border border-white/15 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
+                  className="h-9 w-9 shrink-0 rounded-full border border-white/15 bg-white/10 text-primary-foreground hover:bg-white/15 hover:text-primary-foreground sm:h-10 sm:w-10"
                   onClick={() => setIsHeroExpanded((current) => !current)}
                   aria-expanded={isHeroExpanded}
                   aria-label={isHeroExpanded ? "Hero einklappen" : "Hero erweitern"}
@@ -1016,7 +1019,7 @@ export default function Personal() {
               </div>
 
               <div className={cn("hidden", isHeroExpanded && "block")}>
-                <p className="text-sm text-primary-foreground/80">
+                <p className="text-xs text-primary-foreground/80 sm:text-sm">
                   Monatsdienstplan, Wochenplan und Urlaubsplanung.
                 </p>
 
@@ -1216,8 +1219,8 @@ export default function Personal() {
                   </div>
                 )}
 
-                <div className="mt-4 flex w-full flex-col items-start gap-3 lg:mt-0 lg:items-end">
-                  <p className="text-sm font-medium text-primary-foreground/95 lg:text-right">
+                <div className="mt-3 flex w-full flex-col items-start gap-2 lg:mt-0 lg:items-end">
+                  <p className="text-xs font-medium text-primary-foreground/95 sm:text-sm lg:text-right">
                     {activeSummaryText}
                   </p>
                   {activeTab === "vacation" && vacationHeroMeta && (
@@ -1276,24 +1279,24 @@ export default function Personal() {
               </div>
 
               <div className={cn("hidden", isHeroExpanded && "block")}>
-                <TabsList className="flex h-auto w-full flex-wrap justify-start gap-2 rounded-2xl border border-white/10 bg-white/10 p-2 text-primary-foreground/80 shadow-none">
+                <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1.5 rounded-2xl border border-white/10 bg-white/10 p-1.5 text-primary-foreground/80 shadow-none">
                   <TabsTrigger
                     value="roster"
-                    className="h-10 min-w-[calc(50%-0.25rem)] flex-1 rounded-xl px-4 text-sm data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-none sm:min-w-0 sm:px-6 sm:text-base"
+                    className="h-9 min-w-[calc(50%-0.25rem)] flex-1 rounded-xl px-3 text-xs data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-none sm:min-w-0 sm:px-6 sm:text-base"
                     data-testid="tab-roster"
                   >
                     Dienstplan
                   </TabsTrigger>
                   <TabsTrigger
                     value="weekly"
-                    className="h-10 min-w-[calc(50%-0.25rem)] flex-1 rounded-xl px-4 text-sm data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-none sm:min-w-0 sm:px-6 sm:text-base"
+                    className="h-9 min-w-[calc(50%-0.25rem)] flex-1 rounded-xl px-3 text-xs data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-none sm:min-w-0 sm:px-6 sm:text-base"
                     data-testid="tab-weekly"
                   >
                     Wochenplan
                   </TabsTrigger>
                   <TabsTrigger
                     value="vacation"
-                    className="h-10 min-w-[calc(50%-0.25rem)] flex-1 rounded-xl px-4 text-sm data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-none sm:min-w-0 sm:px-6 sm:text-base"
+                    className="h-9 min-w-[calc(50%-0.25rem)] flex-1 rounded-xl px-3 text-xs data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-none sm:min-w-0 sm:px-6 sm:text-base"
                     data-testid="tab-vacation"
                   >
                     Urlaubsplanung
@@ -2118,7 +2121,7 @@ function RosterView({
   return (
     <div className="space-y-6">
       <Card className="border-none kabeg-shadow overflow-visible">
-        <div className="space-y-3 p-4 md:hidden">
+        <div className="space-y-2.5 p-3 md:hidden">
           {rosterLoading ? (
             <div className="rounded-xl border border-border bg-background px-4 py-8 text-center text-sm text-muted-foreground">
               Dienstplan wird geladen...
@@ -2151,7 +2154,7 @@ function RosterView({
                 <div
                   key={`mobile-${dateKey}`}
                   className={cn(
-                    "rounded-xl border border-border bg-background p-4 shadow-sm",
+                    "rounded-xl border border-border bg-background p-3 shadow-sm",
                     highlightRow && "border-amber-200 bg-amber-50/50",
                   )}
                 >
@@ -2159,13 +2162,13 @@ function RosterView({
                     <div>
                       <div
                         className={cn(
-                          "text-base font-semibold",
+                          "text-sm font-semibold",
                           highlightRow && "text-rose-600",
                         )}
                       >
                         {dayLabel}, {dateLabel}
                       </div>
-                      <div className="text-xs text-muted-foreground">
+                      <div className="text-[11px] text-muted-foreground">
                         KW {weekNumber}
                         {showKW ? " • Wochenstart" : ""}
                         {holiday ? ` • ${holiday.name}` : ""}
@@ -2173,23 +2176,23 @@ function RosterView({
                     </div>
                     <Badge
                       variant="outline"
-                      className="shrink-0 border-slate-200 bg-slate-50 text-slate-600"
+                      className="shrink-0 border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-600"
                     >
                       {statusLabel}
                     </Badge>
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     {serviceLineDisplay.map((line) => {
                       const shift = dayShifts[line.key];
                       const label = getShiftDisplay(shift);
                       return (
                         <div
                           key={`${dateKey}-${line.key}`}
-                          className="flex items-start justify-between gap-3 text-sm"
+                          className="flex items-start justify-between gap-2 text-xs"
                         >
                           <span className="min-w-0 text-muted-foreground">
-                            {line.label}
+                            {getRosterHeaderShortLabel(line.label, line.key)}
                           </span>
                           <span
                             className={cn(
@@ -2205,7 +2208,7 @@ function RosterView({
                     })}
 
                     {showAbsenceColumn && (
-                      <div className="border-t border-border pt-2 text-sm">
+                      <div className="border-t border-border pt-2 text-xs">
                         <div className="mb-1 text-muted-foreground">
                           Abwesenheiten
                         </div>
@@ -2216,7 +2219,7 @@ function RosterView({
                             {dayAbsences.map((absence) => (
                               <span
                                 key={`mobile-absence-${absence.source}-${absence.employeeId}-${absence.absenceId ?? absence.reason}`}
-                                className="inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium"
+                                className="inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium"
                                 style={getAbsenceInlineStyle(absence.reason)}
                               >
                                 {absence.name}
@@ -3116,6 +3119,10 @@ function WeeklyView({
   const headerScrollRef = useRef<HTMLDivElement | null>(null);
   const bodyScrollRef = useRef<HTMLDivElement | null>(null);
   const syncingScrollRef = useRef<"header" | "body" | null>(null);
+  const firstColumnWidthRem = showFullLabels ? 10.5 : 4.75;
+  const dayColumnWidthRem = showFullLabels ? 6.5 : 6;
+  const firstColumnWidth = `${firstColumnWidthRem}rem`;
+  const dayColumnWidth = `${dayColumnWidthRem}rem`;
 
   const getWeeklyCalendarUrl = useCallback(() => {
     if (!calendarToken || typeof window === "undefined") return null;
@@ -3208,9 +3215,7 @@ function WeeklyView({
     () => eachDayOfInterval({ start: weekStart, end: weekEnd }),
     [weekStart, weekEnd],
   );
-  const firstColumnWidthRem = showFullLabels ? 12 : 6.5;
-  const firstColumnWidth = `${firstColumnWidthRem}rem`;
-  const weeklyPlanMinWidth = `${firstColumnWidthRem + weekDays.length * 7.5}rem`;
+  const weeklyPlanMinWidth = `${firstColumnWidthRem + weekDays.length * dayColumnWidthRem}rem`;
 
   const roomsSorted = useMemo(() => {
     return [...rooms].sort((a, b) => {
@@ -3952,20 +3957,20 @@ function WeeklyView({
           <div
             ref={headerScrollRef}
             onScroll={() => syncHorizontalScroll("header")}
-            className="overflow-x-auto"
+            className="overflow-x-auto overscroll-x-contain touch-pan-x touch-pinch-zoom [-webkit-overflow-scrolling:touch]"
           >
               <div
                 className="grid border-t border-slate-200 border-b border-slate-300 bg-slate-100"
                 style={{
                   minWidth: weeklyPlanMinWidth,
-                  gridTemplateColumns: `${firstColumnWidth} repeat(7, minmax(120px, 1fr))`,
+                  gridTemplateColumns: `${firstColumnWidth} repeat(7, minmax(${dayColumnWidth}, 1fr))`,
                 }}
               >
                 <div
-                  className="sticky left-0 z-40 flex flex-col items-start gap-2 border-b border-slate-300 bg-slate-100 p-2 text-left font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]"
+                  className="sticky left-0 z-40 flex flex-col items-start gap-1.5 border-b border-slate-300 bg-slate-100 px-2 py-1.5 text-left font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]"
                   style={{ width: firstColumnWidth }}
                 >
-                  <span className="leading-tight">
+                  <span className="text-[11px] leading-tight sm:text-xs">
                     {showFullLabels ? "Arbeitsplatz" : "AP"}
                   </span>
                   <Button
@@ -3973,7 +3978,7 @@ function WeeklyView({
                     variant="outline"
                     size="sm"
                     onClick={() => setShowFullLabels((value) => !value)}
-                    className="h-6 px-2 text-[10px] leading-none"
+                    className="h-5 px-1.5 text-[9px] leading-none sm:h-6 sm:px-2 sm:text-[10px]"
                   >
                     {showFullLabels ? "Kurz" : "Lang"}
                   </Button>
@@ -3981,12 +3986,12 @@ function WeeklyView({
                 {weekDays.map((day, index) => (
                   <div
                     key={day.toISOString()}
-                    className="min-w-[120px] bg-slate-100 p-3 text-center font-medium"
+                    className="bg-slate-100 px-1.5 py-2 text-center font-medium"
                   >
-                    <div className="text-xs text-muted-foreground">
+                    <div className="text-[10px] text-muted-foreground sm:text-[11px]">
                       {WEEKDAY_LABELS[index]}
                     </div>
-                    <div className="text-sm" title={WEEKDAY_FULL[index]}>
+                    <div className="text-xs sm:text-sm" title={WEEKDAY_FULL[index]}>
                       {format(day, "dd.MM", { locale: de })}
                     </div>
                   </div>
@@ -4007,10 +4012,10 @@ function WeeklyView({
             <div
               ref={bodyScrollRef}
               onScroll={() => syncHorizontalScroll("body")}
-              className="overflow-x-auto"
+              className="overflow-x-auto overscroll-x-contain touch-pan-x touch-pinch-zoom [-webkit-overflow-scrolling:touch]"
             >
               <table
-                className="w-full table-fixed text-sm"
+                className="w-full table-fixed text-xs print:text-[10px] sm:text-sm"
                 style={{ minWidth: weeklyPlanMinWidth }}
               >
                 <colgroup>
@@ -4018,7 +4023,7 @@ function WeeklyView({
                   {weekDays.map((day) => (
                     <col
                       key={`private-col-${day.toISOString()}`}
-                      style={{ width: "7.5rem" }}
+                      style={{ width: dayColumnWidth }}
                     />
                   ))}
                 </colgroup>
@@ -4034,7 +4039,7 @@ function WeeklyView({
                       }
                     >
                       <td
-                        className="sticky left-0 z-20 border-b border-slate-300 p-3 align-middle shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]"
+                        className="sticky left-0 z-20 border-b border-slate-300 px-2 py-1.5 align-middle shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]"
                         style={
                           room.rowColor
                             ? { backgroundColor: room.rowColor }
@@ -4042,7 +4047,7 @@ function WeeklyView({
                         }
                       >
                         <div
-                          className="text-sm font-medium leading-tight"
+                          className="text-[11px] font-semibold leading-tight sm:text-xs"
                           title={room.name}
                           aria-label={room.name}
                         >
@@ -4058,7 +4063,7 @@ function WeeklyView({
                           return (
                             <td
                               key={`${room.id}-${weekday}`}
-                              className="p-3 text-center text-xs text-muted-foreground"
+                              className="px-2 py-1 text-center text-[11px] text-muted-foreground"
                             >
                               —
                             </td>
@@ -4069,7 +4074,7 @@ function WeeklyView({
                           return (
                             <td
                               key={`${room.id}-${weekday}`}
-                              className="border-b border-slate-300 bg-slate-100/80 p-3 text-center text-xs text-slate-500"
+                              className="border-b border-slate-300 bg-slate-100/80 px-2 py-1 text-center text-[11px] text-slate-500"
                             >
                               {closedReason
                                 ? `Gesperrt: ${closedReason}`
@@ -4119,12 +4124,12 @@ function WeeklyView({
                           <td
                             key={`${room.id}-${weekday}`}
                             className={cn(
-                              "p-3 align-middle",
+                              "px-2 py-1.5 align-middle",
                               isBlockedCell && "bg-slate-100/80",
                             )}
                           >
                             {!isBlockedCell && (setting.usageLabel || timeLabel) && (
-                              <div className="text-[10px] text-muted-foreground mb-1">
+                              <div className="mb-0.5 text-[9px] text-muted-foreground sm:text-[10px]">
                                 {[setting.usageLabel, timeLabel]
                                   .filter(Boolean)
                                   .join(" · ")}
@@ -4133,30 +4138,30 @@ function WeeklyView({
                             {isBlockedCell ? (
                               <div
                                 className={cn(
-                                  "min-h-[72px] w-full flex",
+                                  "min-h-[40px] w-full flex sm:min-h-[48px]",
                                   hasBlockedNotes
                                     ? "flex-col items-center justify-center gap-2"
                                     : "items-center justify-center",
                                 )}
                               >
-                                <div className="inline-flex items-center justify-center rounded px-2 py-0.5 text-[10px] font-semibold bg-slate-300 text-slate-800">
+                                <div className="inline-flex items-center justify-center rounded bg-slate-300 px-1.5 py-0.5 text-[9px] font-semibold text-slate-800 sm:px-2 sm:text-[10px]">
                                   Gesperrt
                                 </div>
                                 {hasBlockedNotes && (
-                                  <div className="text-[10px] text-slate-700 bg-slate-200 border border-slate-300 rounded px-1.5 py-1 w-full">
+                                  <div className="w-full rounded border border-slate-300 bg-slate-200 px-1.5 py-1 text-[9px] text-slate-700 sm:text-[10px]">
                                     {blockedNotes.join(" · ")}
                                   </div>
                                 )}
                               </div>
                             ) : employeeAssignments.length === 0 ? (
-                              <div className="text-xs text-muted-foreground">
+                              <div className="text-[11px] text-muted-foreground">
                                 —
                               </div>
                             ) : (
-                              <div className="space-y-1">
+                              <div className="space-y-0.5">
                                 {employeeAssignments.map((assignment) => {
-                                  const name = resolveEmployeeName(
-                                    assignment.employeeId,
+                                  const name = resolveEmployeeLastName(
+                                    assignment.employeeId ?? null,
                                     assignment.employeeName,
                                     assignment.employeeLastName,
                                   );
@@ -4177,7 +4182,7 @@ function WeeklyView({
                                     <div
                                       key={assignment.id}
                                       className={cn(
-                                        "text-xs",
+                                        "text-[11px] leading-tight sm:text-xs",
                                         isAbsentToday && "line-through opacity-70",
                                         isOnDutyToday &&
                                           "text-red-600 font-semibold",
@@ -4188,7 +4193,7 @@ function WeeklyView({
                                     >
                                       {name}
                                       {assignment.assignmentType !== "Plan" && (
-                                        <span className="text-[10px] text-muted-foreground">
+                                        <span className="text-[9px] text-muted-foreground sm:text-[10px]">
                                           {" "}
                                           ({assignment.assignmentType})
                                         </span>
@@ -4199,7 +4204,7 @@ function WeeklyView({
                               </div>
                             )}
                             {!isBlockedCell && noteEntries.length > 0 && (
-                              <div className="mt-2 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-1">
+                              <div className="mt-1 rounded border border-amber-200 bg-amber-50 px-1.5 py-1 text-[9px] text-amber-700 sm:text-[10px]">
                                 {noteEntries.join(" · ")}
                               </div>
                             )}
@@ -4211,7 +4216,7 @@ function WeeklyView({
                     </tr>
                   ))}
                   <tr className="bg-muted/30 align-top">
-                    <td className="sticky left-0 z-20 bg-muted/30 p-3 text-xs font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]">
+                    <td className="sticky left-0 z-20 bg-muted/30 px-2 py-1.5 text-[11px] font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)] sm:text-xs">
                       Abwesenheiten
                     </td>
                     {weekDays.map((day) => {
@@ -4246,21 +4251,21 @@ function WeeklyView({
                       return (
                         <td
                           key={`absences-${key}`}
-                          className="p-2 text-[10px] text-muted-foreground"
+                          className="px-1.5 py-1 text-[9px] text-muted-foreground sm:text-[10px]"
                         >
                           {items.length === 0 ? (
                             "—"
                           ) : (
-                            <div className="space-y-2">
+                            <div className="space-y-1.5">
                               {groupedItems.map((group) => (
-                                <div key={`${key}-${group.reason}`} className="space-y-1">
+                                <div key={`${key}-${group.reason}`} className="space-y-0.5">
                                   <div
-                                    className="inline-flex rounded border px-2 py-0.5 text-[10px] font-semibold"
+                                    className="inline-flex rounded border px-1.5 py-0.5 text-[9px] font-semibold sm:px-2 sm:text-[10px]"
                                     style={getAbsenceInlineStyle(group.reason)}
                                   >
                                     {getAbsenceVisualMeta(group.reason).label}
                                   </div>
-                                  <div className="space-y-1">
+                                  <div className="space-y-0.5">
                                     {group.names.map((name, index) => (
                                       <div key={`${key}-${group.reason}-${index}`}>{name}</div>
                                     ))}
@@ -4274,7 +4279,7 @@ function WeeklyView({
                     })}
                   </tr>
                   <tr className="bg-muted/30 align-top">
-                    <td className="sticky left-0 z-20 bg-muted/30 p-3 text-xs font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]">
+                    <td className="sticky left-0 z-20 bg-muted/30 px-2 py-1.5 text-[11px] font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)] sm:text-xs">
                       Frei nach Dienst
                     </td>
                     {weekDays.map((day) => {
@@ -4283,12 +4288,12 @@ function WeeklyView({
                       return (
                         <td
                           key={`free-after-duty-${key}`}
-                          className="p-2 text-[10px] text-muted-foreground"
+                          className="px-1.5 py-1 text-[9px] text-muted-foreground sm:text-[10px]"
                         >
                           {items.length === 0 ? (
                             "—"
                           ) : (
-                            <div className="space-y-1">
+                            <div className="space-y-0.5">
                               {items.map((item) => (
                                 <div key={`${key}-${item.serviceType}`}>{item.assignee}</div>
                               ))}

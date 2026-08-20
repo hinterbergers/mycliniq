@@ -63,6 +63,14 @@ const PREVIOUS_DAY_DUTY_SERVICE_LINE_SET: ReadonlySet<string> = new Set(
   PREVIOUS_DAY_DUTY_SERVICE_LINE_ORDER,
 );
 const PUBLIC_WEEKLY_PLAN_ZOOM_STEPS = [0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.4] as const;
+const getWeeklyPlanFirstColumnWidthRem = (showFullLabels: boolean) =>
+  showFullLabels ? 10.5 : 4.75;
+const getWeeklyPlanDayColumnWidthRem = (zoomLevel: number) => {
+  if (zoomLevel <= 0.6) return 5.1;
+  if (zoomLevel <= 0.8) return 5.5;
+  if (zoomLevel <= 1) return 6;
+  return 6.5;
+};
 
 const getQueryWeekDate = (search: string) => {
   const params = new URLSearchParams(search);
@@ -356,9 +364,11 @@ export default function PublicWeeklyPlan() {
   const zoomIndex = PUBLIC_WEEKLY_PLAN_ZOOM_STEPS.indexOf(zoomLevel);
   const canZoomOut = zoomIndex > 0;
   const canZoomIn = zoomIndex < PUBLIC_WEEKLY_PLAN_ZOOM_STEPS.length - 1;
-  const firstColumnWidthRem = showFullLabels ? 12 : 6.5;
+  const firstColumnWidthRem = getWeeklyPlanFirstColumnWidthRem(showFullLabels);
+  const dayColumnWidthRem = getWeeklyPlanDayColumnWidthRem(zoomLevel);
   const firstColumnWidth = `${firstColumnWidthRem}rem`;
-  const weeklyPlanMinWidth = `${firstColumnWidthRem + weekDays.length * 7.5}rem`;
+  const dayColumnWidth = `${dayColumnWidthRem}rem`;
+  const weeklyPlanMinWidth = `${firstColumnWidthRem + weekDays.length * dayColumnWidthRem}rem`;
 
   const handleZoomOut = () => {
     if (!canZoomOut) return;
@@ -372,12 +382,12 @@ export default function PublicWeeklyPlan() {
 
   return (
     <div className="min-h-screen bg-slate-50 print:bg-white">
-      <div className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 print:max-w-none print:px-0 print:py-0">
-        <div className="sticky top-0 z-40 mb-4 bg-white pb-4 print:static">
+      <div className="mx-auto max-w-[1600px] px-3 py-4 sm:px-6 sm:py-6 print:max-w-none print:px-0 print:py-0">
+        <div className="sticky top-0 z-40 mb-3 bg-white pb-3 print:static">
           <div className="flex flex-col gap-3 print:hidden sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h1 className="text-2xl font-semibold text-slate-900">Wochenplan</h1>
-              <p className="text-sm text-slate-600">
+              <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Wochenplan</h1>
+              <p className="text-xs text-slate-600 sm:text-sm">
                 KW {weekNumber} / {weekYear} · {format(weekStart, "dd.MM.yyyy", { locale: de })} bis{" "}
                 {format(weekEnd, "dd.MM.yyyy", { locale: de })}
               </p>
@@ -390,6 +400,7 @@ export default function PublicWeeklyPlan() {
                   setSearch(next.split("?")[1] ? `?${next.split("?")[1]}` : "");
                   setLocation(next);
                 }}
+                className="h-9 px-3 text-xs sm:h-10 sm:px-4 sm:text-sm"
               >
                 <ChevronLeft className="mr-1 h-4 w-4" />
                 Vorwoche
@@ -401,6 +412,7 @@ export default function PublicWeeklyPlan() {
                   setSearch(next.split("?")[1] ? `?${next.split("?")[1]}` : "");
                   setLocation(next);
                 }}
+                className="h-9 px-3 text-xs sm:h-10 sm:px-4 sm:text-sm"
               >
                 Aktuelle Woche
               </Button>
@@ -411,11 +423,15 @@ export default function PublicWeeklyPlan() {
                   setSearch(next.split("?")[1] ? `?${next.split("?")[1]}` : "");
                   setLocation(next);
                 }}
+                className="h-9 px-3 text-xs sm:h-10 sm:px-4 sm:text-sm"
               >
                 Nächste Woche
                 <ChevronRight className="ml-1 h-4 w-4" />
               </Button>
-              <Button onClick={() => window.print()}>
+              <Button
+                onClick={() => window.print()}
+                className="h-9 px-3 text-xs sm:h-10 sm:px-4 sm:text-sm"
+              >
                 <Printer className="mr-2 h-4 w-4" />
                 Drucken
               </Button>
@@ -426,11 +442,11 @@ export default function PublicWeeklyPlan() {
                   size="icon"
                   onClick={handleZoomOut}
                   disabled={!canZoomOut}
-                  className="rounded-r-none border-r border-slate-300"
+                  className="h-9 w-9 rounded-r-none border-r border-slate-300 sm:h-10 sm:w-10"
                 >
                   <Minus className="h-4 w-4" />
                 </Button>
-                <div className="min-w-[4.5rem] px-3 text-center text-sm font-medium text-slate-700">
+                <div className="min-w-[4rem] px-2 text-center text-xs font-medium text-slate-700 sm:min-w-[4.5rem] sm:px-3 sm:text-sm">
                   {Math.round(zoomLevel * 100)}%
                 </div>
                 <Button
@@ -439,7 +455,7 @@ export default function PublicWeeklyPlan() {
                   size="icon"
                   onClick={handleZoomIn}
                   disabled={!canZoomIn}
-                  className="rounded-l-none border-l border-slate-300"
+                  className="h-9 w-9 rounded-l-none border-l border-slate-300 sm:h-10 sm:w-10"
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
@@ -449,27 +465,29 @@ export default function PublicWeeklyPlan() {
           <div
             ref={headerScrollRef}
             onScroll={() => syncHorizontalScroll("header")}
-            className="mt-4 overflow-x-auto"
+            className="mt-3 overflow-x-auto overscroll-x-contain touch-pan-x touch-pinch-zoom [-webkit-overflow-scrolling:touch]"
           >
             <div
               className="grid border-t border-slate-200 border-b border-slate-300 bg-slate-100"
               style={{
                 zoom: zoomLevel,
                 minWidth: weeklyPlanMinWidth,
-                gridTemplateColumns: `${firstColumnWidth} repeat(7, minmax(120px, 1fr))`,
+                gridTemplateColumns: `${firstColumnWidth} repeat(7, minmax(${dayColumnWidth}, 1fr))`,
               }}
             >
               <div
-                className="sticky left-0 z-40 flex flex-col items-start gap-2 border-b border-slate-300 bg-slate-100 p-2 text-left font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]"
+                className="sticky left-0 z-40 flex flex-col items-start gap-1.5 border-b border-slate-300 bg-slate-100 px-2 py-1.5 text-left font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]"
                 style={{ width: firstColumnWidth }}
               >
-                <span className="leading-tight">{showFullLabels ? "Arbeitsplatz" : "AP"}</span>
+                <span className="text-[11px] leading-tight sm:text-xs">
+                  {showFullLabels ? "Arbeitsplatz" : "AP"}
+                </span>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   onClick={() => setShowFullLabels((value) => !value)}
-                  className="h-6 px-2 text-[10px] leading-none"
+                  className="h-5 px-1.5 text-[9px] leading-none sm:h-6 sm:px-2 sm:text-[10px]"
                 >
                   {showFullLabels ? "Kurz" : "Lang"}
                 </Button>
@@ -477,10 +495,12 @@ export default function PublicWeeklyPlan() {
               {weekDays.map((day, index) => (
                 <div
                   key={day.toISOString()}
-                  className="min-w-[120px] bg-slate-100 p-3 text-center font-medium"
+                  className="bg-slate-100 px-1.5 py-2 text-center font-medium"
                 >
-                  <div className="text-xs text-slate-500">{WEEKDAY_LABELS[index]}</div>
-                  <div className="text-sm" title={WEEKDAY_FULL[index]}>
+                  <div className="text-[10px] text-slate-500 sm:text-[11px]">
+                    {WEEKDAY_LABELS[index]}
+                  </div>
+                  <div className="text-xs sm:text-sm" title={WEEKDAY_FULL[index]}>
                     {format(day, "dd.MM", { locale: de })}
                   </div>
                 </div>
@@ -499,16 +519,16 @@ export default function PublicWeeklyPlan() {
               <div
                 ref={bodyScrollRef}
                 onScroll={() => syncHorizontalScroll("body")}
-                className="overflow-x-auto"
+                className="overflow-x-auto overscroll-x-contain touch-pan-x touch-pinch-zoom [-webkit-overflow-scrolling:touch]"
               >
                 <table
-                  className="w-full table-fixed text-sm"
+                  className="w-full table-fixed text-xs print:text-[10px] sm:text-sm"
                   style={{ zoom: zoomLevel, minWidth: weeklyPlanMinWidth }}
                 >
                   <colgroup>
                     <col style={{ width: firstColumnWidth }} />
                     {weekDays.map((day) => (
-                      <col key={`public-col-${day.toISOString()}`} style={{ width: "7.5rem" }} />
+                      <col key={`public-col-${day.toISOString()}`} style={{ width: dayColumnWidth }} />
                     ))}
                   </colgroup>
                   <tbody>
@@ -519,7 +539,7 @@ export default function PublicWeeklyPlan() {
                         style={room.rowColor ? { backgroundColor: room.rowColor } : undefined}
                       >
                         <td
-                          className="sticky left-0 z-20 border-b border-slate-300 p-3 align-middle shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]"
+                          className="sticky left-0 z-20 border-b border-slate-300 px-2 py-1.5 align-middle shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]"
                           style={
                             room.rowColor
                               ? { backgroundColor: room.rowColor }
@@ -527,7 +547,7 @@ export default function PublicWeeklyPlan() {
                           }
                         >
                           <div
-                            className="text-sm font-medium leading-tight text-slate-900"
+                            className="text-[11px] font-semibold leading-tight text-slate-900 sm:text-xs"
                             title={room.name}
                             aria-label={room.name}
                           >
@@ -541,7 +561,7 @@ export default function PublicWeeklyPlan() {
                             return (
                               <td
                                 key={`${room.id}-${weekday}`}
-                                className="border-b border-slate-300 p-3 text-center text-xs text-slate-400"
+                                className="border-b border-slate-300 px-2 py-1 text-center text-[11px] text-slate-400"
                               >
                                 —
                               </td>
@@ -551,7 +571,7 @@ export default function PublicWeeklyPlan() {
                             return (
                               <td
                                 key={`${room.id}-${weekday}`}
-                                className="border-b border-slate-300 bg-slate-100/80 p-3 text-center text-xs text-slate-500"
+                                className="border-b border-slate-300 bg-slate-100/80 px-2 py-1 text-center text-[11px] text-slate-500"
                               >
                                 {"\u00A0"}
                               </td>
@@ -573,21 +593,21 @@ export default function PublicWeeklyPlan() {
                             <td
                               key={`${room.id}-${weekday}`}
                               className={cn(
-                                "border-b border-slate-300 p-3 align-middle",
+                                "border-b border-slate-300 px-2 py-1.5 align-middle",
                                 isBlockedCell && "bg-slate-100/80",
                               )}
                             >
                               {!isBlockedCell && (setting.usageLabel || timeLabel) && (
-                                <div className="mb-1 text-[10px] text-slate-500">
+                                <div className="mb-0.5 text-[9px] text-slate-500 sm:text-[10px]">
                                   {[setting.usageLabel, timeLabel].filter(Boolean).join(" · ")}
                                 </div>
                               )}
                               {isBlockedCell ? (
-                                <div className="min-h-[48px] w-full bg-slate-100/80" />
+                                <div className="min-h-[36px] w-full bg-slate-100/80 sm:min-h-[44px]" />
                               ) : employeeAssignments.length === 0 ? (
-                                <div className="text-xs text-slate-400">—</div>
+                                <div className="text-[11px] text-slate-400">—</div>
                               ) : (
-                                <div className="space-y-1">
+                                <div className="space-y-0.5">
                                   {employeeAssignments.map((assignment) => {
                                     const name = resolveEmployeeLastName(
                                       assignment.employeeId,
@@ -616,14 +636,14 @@ export default function PublicWeeklyPlan() {
                                       <div
                                         key={assignment.id}
                                         className={cn(
-                                          "text-xs text-slate-700",
+                                          "text-[11px] leading-tight text-slate-700 sm:text-xs",
                                           isAbsentToday && "line-through opacity-70",
                                           isOnDutyToday && "font-semibold text-red-600",
                                         )}
                                       >
                                         {name}
                                         {assignment.assignmentType !== "Plan" && (
-                                          <span className="text-[10px] text-slate-500">
+                                          <span className="text-[9px] text-slate-500 sm:text-[10px]">
                                             {" "}
                                             ({assignment.assignmentType})
                                           </span>
@@ -639,7 +659,7 @@ export default function PublicWeeklyPlan() {
                       </tr>
                     ))}
                     <tr className="bg-slate-100/80 align-top">
-                      <td className="sticky left-0 z-20 bg-slate-100/80 p-3 text-xs font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]">
+                      <td className="sticky left-0 z-20 bg-slate-100/80 px-2 py-1.5 text-[11px] font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)] sm:text-xs">
                         Abwesenheiten
                       </td>
                       {weekDays.map((day) => {
@@ -661,18 +681,18 @@ export default function PublicWeeklyPlan() {
                         return (
                           <td
                             key={`absences-${key}`}
-                            className="p-2 text-[10px] text-slate-600"
+                            className="px-1.5 py-1 text-[9px] text-slate-600 sm:text-[10px]"
                           >
                             {items.length === 0 ? (
                               "—"
                             ) : (
-                              <div className="space-y-2">
+                              <div className="space-y-1.5">
                                 {groupedItems.map((group) => (
-                                  <div key={`${key}-${group.reason}`} className="space-y-1">
+                                  <div key={`${key}-${group.reason}`} className="space-y-0.5">
                                     <div className="font-medium underline underline-offset-2">
                                       {group.reason}
                                     </div>
-                                    <div className="space-y-1">
+                                    <div className="space-y-0.5">
                                       {group.names.map((name, index) => (
                                         <div key={`${key}-${group.reason}-${index}`}>{name}</div>
                                       ))}
@@ -686,7 +706,7 @@ export default function PublicWeeklyPlan() {
                       })}
                     </tr>
                     <tr className="bg-slate-100/80 align-top">
-                      <td className="sticky left-0 z-20 bg-slate-100/80 p-3 text-xs font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)]">
+                      <td className="sticky left-0 z-20 bg-slate-100/80 px-2 py-1.5 text-[11px] font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)] sm:text-xs">
                         Frei nach Dienst
                       </td>
                       {weekDays.map((day) => {
@@ -695,12 +715,12 @@ export default function PublicWeeklyPlan() {
                         return (
                           <td
                             key={`free-after-duty-${key}`}
-                            className="p-2 text-[10px] text-slate-600"
+                          className="px-1.5 py-1 text-[9px] text-slate-600 sm:text-[10px]"
                           >
                             {items.length === 0 ? (
                               "—"
                             ) : (
-                              <div className="space-y-1">
+                            <div className="space-y-0.5">
                                 {items.map((item) => (
                                   <div key={`${key}-${item.serviceType}`}>{item.assignee}</div>
                                 ))}

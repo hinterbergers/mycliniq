@@ -327,7 +327,7 @@ export default function PublicRosterPlan() {
 
   return (
     <div className="min-h-screen bg-slate-50 print:bg-white">
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 print:max-w-none print:px-0 print:py-0">
+      <div className="mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6 print:max-w-none print:px-0 print:py-0">
         <div className="sticky top-0 z-40 mb-4 bg-slate-50 pb-4 print:static print:bg-white">
           <div className="flex flex-col gap-3 print:hidden md:flex-row md:items-center md:justify-between">
             <div>
@@ -417,7 +417,7 @@ export default function PublicRosterPlan() {
               <div className="p-8 text-center text-sm text-red-600">{error}</div>
             ) : (
               <>
-                <div className="space-y-3 p-4 md:hidden">
+                <div className="space-y-2.5 p-3 md:hidden">
                   {days.map((day, i) => {
                     const weekNumber = getWeek(day, {
                       weekStartsOn: 1,
@@ -445,7 +445,7 @@ export default function PublicRosterPlan() {
                       <div
                         key={`public-mobile-${dateKey}`}
                         className={cn(
-                          "rounded-xl border border-border bg-background p-4 shadow-sm",
+                          "rounded-xl border border-border bg-background p-3 shadow-sm",
                           highlightRow && "border-amber-200 bg-amber-50/50",
                         )}
                       >
@@ -453,27 +453,27 @@ export default function PublicRosterPlan() {
                           <div>
                             <div
                               className={cn(
-                                "text-base font-semibold",
+                                "text-sm font-semibold",
                                 highlightRow && "text-rose-600",
                               )}
                             >
                               {dayLabel}, {dateLabel}
                             </div>
-                            <div className="text-xs text-muted-foreground">
+                            <div className="text-[11px] text-muted-foreground">
                               KW {weekNumber}
                               {showKW ? " • Wochenstart" : ""}
                               {holiday ? ` • ${holiday.name}` : ""}
                             </div>
                           </div>
                         </div>
-                        <div className="space-y-2">
+                        <div className="space-y-1.5">
                           {serviceLineDisplay.map((line) => {
                             const shift = dayShifts[line.key];
                             const label = getShiftDisplay(shift);
                             return (
                               <div
                                 key={`${dateKey}-${line.key}`}
-                                className="flex items-start justify-between gap-3 text-sm"
+                                className="flex items-start justify-between gap-2 text-xs"
                               >
                                 <span className="min-w-0 text-muted-foreground">
                                   {line.label}
@@ -490,7 +490,7 @@ export default function PublicRosterPlan() {
                             );
                           })}
                           {showAbsenceColumn && (
-                            <div className="border-t border-border pt-2 text-sm">
+                            <div className="border-t border-border pt-2 text-xs">
                               <div className="mb-1 text-muted-foreground">Abwesenheiten</div>
                               {dayAbsences.length === 0 ? (
                                 <span className="text-muted-foreground">-</span>
@@ -499,7 +499,7 @@ export default function PublicRosterPlan() {
                                   {dayAbsences.map((absence) => (
                                     <span
                                       key={`public-mobile-absence-${absence.employeeId}-${absence.absenceId ?? absence.reason}`}
-                                      className="inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium"
+                                      className="inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium"
                                       style={getAbsenceInlineStyle(absence.reason)}
                                     >
                                       {absence.name}
