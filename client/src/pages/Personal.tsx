@@ -489,10 +489,7 @@ export default function Personal() {
   const isExternalDuty = user?.accessScope === "external_duty";
   const [unassignedCount, setUnassignedCount] = useState(0);
   const [pendingSwapRequestCount, setPendingSwapRequestCount] = useState(0);
-  const [isHeroExpanded, setIsHeroExpanded] = useState(() => {
-    if (typeof window === "undefined") return true;
-    return window.innerWidth >= 768;
-  });
+  const [isHeroExpanded, setIsHeroExpanded] = useState(false);
   const pageStickyHeaderRef = useRef<HTMLDivElement | null>(null);
   const [pageStickyHeaderHeight, setPageStickyHeaderHeight] = useState(0);
   const [unassignedDebug, setUnassignedDebug] =
