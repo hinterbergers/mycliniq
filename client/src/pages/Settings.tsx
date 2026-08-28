@@ -1556,7 +1556,7 @@ export default function Settings() {
                   <SelectTrigger className="w-64" data-testid="select-user">
                     <SelectValue placeholder="Benutzer wählen" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="max-h-[min(60vh,24rem)]">
                     {sortedEmployees.map((emp) => (
                       <SelectItem key={emp.id} value={emp.id.toString()}>
                         {emp.name} - {getRoleLabel(emp.role)}
