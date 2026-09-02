@@ -4237,7 +4237,7 @@ function WeeklyView({
                   ))}
                   <tr className="bg-muted/30 align-top">
                     <td className="sticky left-0 z-20 bg-muted/30 px-2 py-1.5 text-[11px] font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)] sm:text-xs">
-                      Abwesenheiten
+                      {showFullLabels ? "Abwesenheiten" : "Abw."}
                     </td>
                     {weekDays.map((day) => {
                       const key = format(day, "yyyy-MM-dd");
@@ -4300,7 +4300,7 @@ function WeeklyView({
                   </tr>
                   <tr className="bg-muted/30 align-top">
                     <td className="sticky left-0 z-20 bg-muted/30 px-2 py-1.5 text-[11px] font-medium shadow-[4px_0_12px_-10px_rgba(15,23,42,0.35)] sm:text-xs">
-                      Frei nach Dienst
+                      {showFullLabels ? "Frei nach Dienst" : "ND"}
                     </td>
                     {weekDays.map((day) => {
                       const key = format(day, "yyyy-MM-dd");
