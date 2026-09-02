@@ -3971,7 +3971,7 @@ function WeeklyView({
     <div className="space-y-6">
       <Card className="border-none kabeg-shadow overflow-visible">
         <CardHeader
-          className="sticky z-40 bg-white pb-2 shadow-sm"
+          className="sticky z-40 bg-white p-0 pb-2 shadow-sm"
           style={{ top: `${stickyTopOffset}px` }}
         >
           <div
