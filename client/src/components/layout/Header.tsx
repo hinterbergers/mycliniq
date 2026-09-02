@@ -17,10 +17,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from "@/components/ui/hover-card";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   rosterSettingsApi,
@@ -519,7 +519,7 @@ export function Header({
   return (
     <>
       <header
-        className="min-h-16 kabeg-header sticky top-0 z-30 px-4 md:px-6 pt-[env(safe-area-inset-top)] flex items-center justify-between shadow-sm"
+        className="min-h-16 kabeg-header sticky top-0 z-[70] px-4 md:px-6 pt-[env(safe-area-inset-top)] flex items-center justify-between shadow-sm"
       >
       <div className="flex items-center gap-2 min-w-0">
         <Button
@@ -600,18 +600,19 @@ export function Header({
         </div>
 
         {canSeeOnlineUsers && (
-          <HoverCard>
-            <HoverCardTrigger asChild>
+          <Popover>
+            <PopoverTrigger asChild>
               <Button
                 variant="ghost"
                 size="sm"
                 className="flex gap-2 text-white/80 hover:text-white hover:bg-white/10"
+                aria-label={`${onlineCount} Benutzer online anzeigen`}
               >
                 <Users className="w-4 h-4" />
                 <span>{onlineCount}</span>
               </Button>
-            </HoverCardTrigger>
-            <HoverCardContent align="end" className="w-80">
+            </PopoverTrigger>
+            <PopoverContent align="end" className="z-[100] w-80">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">
                 Online ({onlineCount})
               </p>
@@ -638,8 +639,8 @@ export function Header({
                   })}
                 </div>
               )}
-            </HoverCardContent>
-          </HoverCard>
+            </PopoverContent>
+          </Popover>
         )}
 
         {canUseViewAsUserToggle && (
