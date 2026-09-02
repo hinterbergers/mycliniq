@@ -180,12 +180,7 @@ export default function PublicWeeklyPlan() {
     setLocation(next);
   }, [search, setLocation]);
 
-  const currentDate = useMemo(() => {
-    if (isStandaloneWebApp()) {
-      return startOfWeek(new Date(), { weekStartsOn: 1 });
-    }
-    return getQueryWeekDate(search);
-  }, [search]);
+  const currentDate = useMemo(() => getQueryWeekDate(search), [search]);
 
   const weekStart = useMemo(
     () => startOfWeek(currentDate, { weekStartsOn: 1 }),
@@ -383,16 +378,16 @@ export default function PublicWeeklyPlan() {
   return (
     <div className="min-h-screen bg-slate-50 print:bg-white">
       <div className="mx-auto max-w-[1600px] px-3 py-4 sm:px-6 sm:py-6 print:max-w-none print:px-0 print:py-0">
-        <div className="sticky top-0 z-40 mb-3 bg-white pb-3 print:static">
-          <div className="flex flex-col gap-3 print:hidden sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Wochenplan</h1>
-              <p className="text-xs text-slate-600 sm:text-sm">
+        <div className="sticky top-0 z-40 mb-2 bg-white pb-2 print:static">
+          <div className="flex flex-col gap-2 print:hidden sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+            <div className="min-w-0">
+              <h1 className="text-lg font-semibold text-slate-900 sm:text-2xl">Wochenplan</h1>
+              <p className="text-[11px] leading-tight text-slate-600 sm:text-sm">
                 KW {weekNumber} / {weekYear} · {format(weekStart, "dd.MM.yyyy", { locale: de })} bis{" "}
                 {format(weekEnd, "dd.MM.yyyy", { locale: de })}
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-[2.25rem_minmax(0,1fr)_2.25rem_2.25rem] gap-1.5 sm:flex sm:flex-wrap sm:gap-2">
               <Button
                 variant="outline"
                 onClick={() => {
@@ -400,10 +395,12 @@ export default function PublicWeeklyPlan() {
                   setSearch(next.split("?")[1] ? `?${next.split("?")[1]}` : "");
                   setLocation(next);
                 }}
-                className="h-9 px-3 text-xs sm:h-10 sm:px-4 sm:text-sm"
+                className="h-9 w-9 px-0 text-xs sm:h-10 sm:w-auto sm:px-4 sm:text-sm"
+                aria-label="Vorwoche"
+                title="Vorwoche"
               >
-                <ChevronLeft className="mr-1 h-4 w-4" />
-                Vorwoche
+                <ChevronLeft className="h-4 w-4 sm:mr-1" />
+                <span className="hidden sm:inline">Vorwoche</span>
               </Button>
               <Button
                 variant="outline"
@@ -412,9 +409,10 @@ export default function PublicWeeklyPlan() {
                   setSearch(next.split("?")[1] ? `?${next.split("?")[1]}` : "");
                   setLocation(next);
                 }}
-                className="h-9 px-3 text-xs sm:h-10 sm:px-4 sm:text-sm"
+                className="h-9 min-w-0 px-2 text-xs sm:h-10 sm:px-4 sm:text-sm"
               >
-                Aktuelle Woche
+                <span className="sm:hidden">Heute</span>
+                <span className="hidden sm:inline">Aktuelle Woche</span>
               </Button>
               <Button
                 variant="outline"
@@ -423,19 +421,23 @@ export default function PublicWeeklyPlan() {
                   setSearch(next.split("?")[1] ? `?${next.split("?")[1]}` : "");
                   setLocation(next);
                 }}
-                className="h-9 px-3 text-xs sm:h-10 sm:px-4 sm:text-sm"
+                className="h-9 w-9 px-0 text-xs sm:h-10 sm:w-auto sm:px-4 sm:text-sm"
+                aria-label="Nächste Woche"
+                title="Nächste Woche"
               >
-                Nächste Woche
-                <ChevronRight className="ml-1 h-4 w-4" />
+                <span className="hidden sm:inline">Nächste Woche</span>
+                <ChevronRight className="h-4 w-4 sm:ml-1" />
               </Button>
               <Button
                 onClick={() => window.print()}
-                className="h-9 px-3 text-xs sm:h-10 sm:px-4 sm:text-sm"
+                className="h-9 w-9 px-0 text-xs sm:h-10 sm:w-auto sm:px-4 sm:text-sm"
+                aria-label="Drucken"
+                title="Drucken"
               >
-                <Printer className="mr-2 h-4 w-4" />
-                Drucken
+                <Printer className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Drucken</span>
               </Button>
-              <div className="flex items-center rounded-md border border-slate-300 bg-white">
+              <div className="col-span-4 flex items-center justify-center rounded-md border border-slate-300 bg-white sm:col-auto">
                 <Button
                   type="button"
                   variant="ghost"
