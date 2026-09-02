@@ -47,7 +47,7 @@ export function Layout({ children, title, disableMotion }: LayoutProps) {
   }, [desktopSidebarCollapsed]);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
+    <div className="flex min-h-dvh bg-background md:h-screen md:overflow-hidden">
       <div
         className={`hidden md:block overflow-hidden transition-[width] duration-300 ease-out ${
           desktopSidebarCollapsed ? "w-0" : "w-64"
@@ -55,7 +55,7 @@ export function Layout({ children, title, disableMotion }: LayoutProps) {
       >
         <Sidebar collapsed={desktopSidebarCollapsed} />
       </div>
-      <main className="flex-1 min-h-0 flex flex-col min-w-0">
+      <main className="flex-1 min-w-0 flex flex-col md:min-h-0">
         <Header
           title={title}
           onToggleMobileNav={() => setMobileNavOpen((prev) => !prev)}
@@ -64,7 +64,7 @@ export function Layout({ children, title, disableMotion }: LayoutProps) {
             setDesktopSidebarCollapsed((prev) => !prev)
           }
         />
-        <div className="flex-1 min-h-0 p-6 overflow-y-auto">
+        <div className="flex-1 p-4 pb-6 sm:p-6 md:min-h-0 md:overflow-y-auto">
           <div className={contentClassName}>{children}</div>
         </div>
         <SiteFooter />
