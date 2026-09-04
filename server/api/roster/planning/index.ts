@@ -12,11 +12,18 @@ import {
 } from "../../../../shared/schema";
 import { assertValidPlanningOutput } from "../validation/planningSchemas";
 import { buildPlanningInput } from "./buildPlanningInput";
-import { hasCapability, isTechnicalAdmin, requireAuth } from "../../middleware/auth";
+import {
+  hasCapability,
+  isTechnicalAdmin,
+  requireAuth,
+} from "../../middleware/auth";
 
 type JsonValue = Record<string, unknown>;
 
-export async function getLocks(year: number, month: number): Promise<RosterPlanningLock[]> {
+export async function getLocks(
+  year: number,
+  month: number,
+): Promise<RosterPlanningLock[]> {
   return db
     .select()
     .from(rosterPlanningLocks)
@@ -194,6 +201,22 @@ const normalizeIdArray = (values: unknown): number[] => {
 
 const SOLVER_ROLES = ["gyn", "kreiszimmer", "turnus"];
 const REQUIRED_SERVICE_ROLES = new Set(["gyn", "kreiszimmer"]);
+const WEEKDAY_SHORT = [
+  "Sun",
+  "Mon",
+  "Tue",
+  "Wed",
+  "Thu",
+  "Fri",
+  "Sat",
+] as const;
+
+type PlannerLongTermRule = {
+  kind: "ALWAYS_OFF" | "PREFER_ON" | "AVOID_ON" | "MAX_SHIFTS_PER_MONTH";
+  weekday: (typeof WEEKDAY_SHORT)[number];
+  strength: "SOFT" | "HARD";
+  serviceType?: string;
+};
 
 type PlannerEmployeeState = {
   id: string;
@@ -207,6 +230,8 @@ type PlannerEmployeeState = {
   assignedPerWeek: Record<number, number>;
   assignedDates: Set<string>;
   assignedWeekends: number;
+  assignedWeekendDays: Record<"Fri" | "Sat" | "Sun", number>;
+  longTermRules: PlannerLongTermRule[];
   preferences: {
     preferDates: Set<string>;
     avoidDates: Set<string>;
@@ -216,9 +241,30 @@ type PlannerEmployeeState = {
   };
 };
 
-const buildEmployeeStates = (employees: Array<{ id: string; capabilities: { canRoleIds: string[] }; constraints: any }>) => {
+const normalizeLongTermRules = (value: unknown): PlannerLongTermRule[] => {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (rule): rule is PlannerLongTermRule =>
+      typeof rule === "object" &&
+      rule !== null &&
+      ["ALWAYS_OFF", "PREFER_ON", "AVOID_ON", "MAX_SHIFTS_PER_MONTH"].includes(
+        (rule as any).kind,
+      ) &&
+      WEEKDAY_SHORT.includes((rule as any).weekday) &&
+      ["SOFT", "HARD"].includes((rule as any).strength),
+  );
+};
+
+const buildEmployeeStates = (input: {
+  employees: Array<{
+    id: string;
+    capabilities: { canRoleIds: string[] };
+    constraints: any;
+  }>;
+  history?: { recentAssignments?: Array<{ employeeId: string; date: string }> };
+}) => {
   const states = new Map<string, PlannerEmployeeState>();
-  for (const employee of employees) {
+  for (const employee of input.employees) {
     const limits = employee.constraints?.limits ?? {};
     const hard = employee.constraints?.hard ?? {};
     const soft = employee.constraints?.soft ?? {};
@@ -233,7 +279,9 @@ const buildEmployeeStates = (employees: Array<{ id: string; capabilities: { canR
     )
       ? limits.maxWeekendSlotsInPeriod
       : Number.MAX_SAFE_INTEGER;
-    const banDates = new Set<string>(normalizeStringArray(hard?.banDates ?? []));
+    const banDates = new Set<string>(
+      normalizeStringArray(hard?.banDates ?? []),
+    );
     const banWeekdays = new Set<number>(
       Array.isArray(hard?.banWeekdays)
         ? hard.banWeekdays
@@ -267,17 +315,31 @@ const buildEmployeeStates = (employees: Array<{ id: string; capabilities: { canR
       canRoleIds,
       banDates,
       banWeekdays,
-      maxSlots: maxSlots > 0 ? maxSlots : Number.MAX_SAFE_INTEGER,
+      maxSlots: maxSlots >= 0 ? maxSlots : Number.MAX_SAFE_INTEGER,
       maxSlotsPerWeek:
-        maxSlotsPerWeek > 0 ? maxSlotsPerWeek : Number.MAX_SAFE_INTEGER,
+        maxSlotsPerWeek >= 0 ? maxSlotsPerWeek : Number.MAX_SAFE_INTEGER,
       maxWeekendSlots:
-        maxWeekendSlots > 0 ? maxWeekendSlots : Number.MAX_SAFE_INTEGER,
+        maxWeekendSlots >= 0 ? maxWeekendSlots : Number.MAX_SAFE_INTEGER,
       assignedCount: 0,
       assignedPerWeek: {},
       assignedDates: new Set(),
       assignedWeekends: 0,
+      assignedWeekendDays: { Fri: 0, Sat: 0, Sun: 0 },
+      longTermRules: normalizeLongTermRules(
+        hard?.longTermRules ?? soft?.longTermRules,
+      ),
       preferences,
     });
+  }
+
+  // Published services from the preceding month only constrain the new plan;
+  // they are never edited or counted toward the new month's total.
+  for (const assignment of input.history?.recentAssignments ?? []) {
+    const state = states.get(String(assignment.employeeId));
+    if (!state || !/^\d{4}-\d{2}-\d{2}$/.test(assignment.date)) continue;
+    state.assignedDates.add(assignment.date);
+    const isoWeek = getISOWeek(parseISO(assignment.date));
+    state.assignedPerWeek[isoWeek] = (state.assignedPerWeek[isoWeek] ?? 0) + 1;
   }
   return states;
 };
@@ -293,6 +355,10 @@ const recordAssignment = (
   state.assignedPerWeek[isoWeek] = (state.assignedPerWeek[isoWeek] ?? 0) + 1;
   if (isWeekend) {
     state.assignedWeekends += 1;
+    const weekday = WEEKDAY_SHORT[parseISO(slotDate).getDay()];
+    if (weekday === "Fri" || weekday === "Sat" || weekday === "Sun") {
+      state.assignedWeekendDays[weekday] += 1;
+    }
   }
 };
 
@@ -328,14 +394,33 @@ const evaluateEmployeeForSlot = (
   if (state.banWeekdays.has(weekday)) {
     reasons.add("BAN_WEEKDAY");
   }
+  const weekdayShort = WEEKDAY_SHORT[weekday];
+  if (
+    state.longTermRules.some((rule) => {
+      if (rule.strength !== "HARD") return false;
+      if (rule.kind !== "ALWAYS_OFF" && rule.kind !== "AVOID_ON") return false;
+      if (rule.weekday !== weekdayShort) return false;
+      return (
+        !rule.serviceType ||
+        rule.serviceType === "any" ||
+        rule.serviceType === slot.roleId
+      );
+    })
+  ) {
+    reasons.add("LONG_TERM_RULE");
+  }
   if (state.assignedDates.has(slot.date)) {
     reasons.add("ALREADY_ASSIGNED");
   }
-  const prevDate = formatISO(addDays(slotDateObj, -1), { representation: "date" });
+  const prevDate = formatISO(addDays(slotDateObj, -1), {
+    representation: "date",
+  });
   if (state.assignedDates.has(prevDate)) {
     reasons.add("CONSECUTIVE_DAY");
   }
-  const nextDate = formatISO(addDays(slotDateObj, 1), { representation: "date" });
+  const nextDate = formatISO(addDays(slotDateObj, 1), {
+    representation: "date",
+  });
   if (state.assignedDates.has(nextDate)) {
     reasons.add("CONSECUTIVE_DAY");
   }
@@ -363,6 +448,20 @@ const scoreCandidateForSlot = (
   if (state.preferences.avoidDates.has(slot.date)) score -= 100;
   if (state.preferences.preferServiceTypes.has(slot.roleId)) score += 30;
   if (state.preferences.avoidServiceTypes.has(slot.roleId)) score -= 30;
+  const weekdayShort = WEEKDAY_SHORT[slotDate.getDay()];
+  for (const rule of state.longTermRules) {
+    if (rule.strength !== "SOFT" || rule.weekday !== weekdayShort) continue;
+    if (
+      rule.serviceType &&
+      rule.serviceType !== "any" &&
+      rule.serviceType !== slot.roleId
+    ) {
+      continue;
+    }
+    if (rule.kind === "PREFER_ON") score += 45;
+    if (rule.kind === "AVOID_ON") score -= 45;
+    if (rule.kind === "ALWAYS_OFF") score -= 100;
+  }
   if (
     state.preferences.preferFridayBeforeSunday &&
     slotDate.getDay() === 0 &&
@@ -371,6 +470,15 @@ const scoreCandidateForSlot = (
     )
   ) {
     score += 40;
+  }
+  if (
+    weekdayShort === "Fri" ||
+    weekdayShort === "Sat" ||
+    weekdayShort === "Sun"
+  ) {
+    // Balance the full Friday-Sunday weekend as well as each weekday share.
+    score -= state.assignedWeekends * 8;
+    score -= state.assignedWeekendDays[weekdayShort] * 8;
   }
   score -= state.assignedCount * 0.5;
   return score;
@@ -382,7 +490,7 @@ const createAssignments = (
   fixedPreferredEmployees: number[],
   noDutyEmployeeIds: number[],
 ) => {
-  const employeeStates = buildEmployeeStates(input.employees);
+  const employeeStates = buildEmployeeStates(input);
   const fixedEmployeeIds = new Set((fixedPreferredEmployees ?? []).map(String));
   const noDutyEmployeeSet = new Set((noDutyEmployeeIds ?? []).map(String));
   const assignments: PlanningAssignment[] = [];
@@ -481,9 +589,7 @@ const createAssignments = (
           : fallbackRoles;
       const candidateRoles = preferenceRoles
         .filter((role) => state.canRoleIds.has(role))
-        .sort(
-          (a, b) => SOLVER_ROLES.indexOf(a) - SOLVER_ROLES.indexOf(b),
-        );
+        .sort((a, b) => SOLVER_ROLES.indexOf(a) - SOLVER_ROLES.indexOf(b));
       const normalizedRoles = candidateRoles.length
         ? candidateRoles
         : fallbackRoles;
@@ -606,12 +712,7 @@ const createAssignments = (
       return a.state.id.localeCompare(b.state.id);
     });
     const winner = candidates[0];
-    recordAssignment(
-      winner.state,
-      slot.date,
-      isoWeek,
-      Boolean(slot.isWeekend),
-    );
+    recordAssignment(winner.state, slot.date, isoWeek, Boolean(slot.isWeekend));
     assignments.push({ slotId: slot.id, employeeId: winner.state.id });
     assignedSlotIds.add(slot.id);
   }
@@ -625,9 +726,7 @@ const createAssignments = (
   }).length;
 
   const summary = {
-    score: requiredSlotCount
-      ? filledRequiredCount / requiredSlotCount
-      : 1,
+    score: requiredSlotCount ? filledRequiredCount / requiredSlotCount : 1,
     coverage: {
       filled: filledRequiredCount,
       required: requiredSlotCount,
@@ -675,11 +774,7 @@ const buildPlanningOutput = async (
   return { output, seed: runSeed };
 };
 
-export {
-  evaluateEmployeeForSlot,
-  scoreCandidateForSlot,
-  createAssignments,
-};
+export { evaluateEmployeeForSlot, scoreCandidateForSlot, createAssignments };
 export type { PlannerEmployeeState };
 
 export function registerPlanningRoutes(router: Router) {
@@ -694,7 +789,12 @@ export function registerPlanningRoutes(router: Router) {
   const parseYearMonth = (req: Request, res: Response) => {
     const year = Number(req.params.year);
     const month = Number(req.params.month);
-    if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+    if (
+      !Number.isInteger(year) ||
+      !Number.isInteger(month) ||
+      month < 1 ||
+      month > 12
+    ) {
       res.status(400).json({ error: "Ungültiges Jahr/Monat" });
       return null;
     }
@@ -704,7 +804,12 @@ export function registerPlanningRoutes(router: Router) {
   const parseYearMonthQuery = (req: Request, res: Response) => {
     const year = Number(req.query.year);
     const month = Number(req.query.month);
-    if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+    if (
+      !Number.isInteger(year) ||
+      !Number.isInteger(month) ||
+      month < 1 ||
+      month > 12
+    ) {
       res.status(400).json({ error: "Ungültiges Jahr/Monat" });
       return null;
     }
@@ -736,11 +841,15 @@ export function registerPlanningRoutes(router: Router) {
       (employee) => employee.takesShifts !== false,
     ).length;
     const missingCount = Math.max(0, totalEmployees - submittedCount);
-    const lastRunAt = latestRun?.createdAt ? latestRun.createdAt.toISOString() : null;
+    const lastRunAt = latestRun?.createdAt
+      ? latestRun.createdAt.toISOString()
+      : null;
     const isDirty =
       !latestRun ||
       locks.some((lock) =>
-        latestRun.createdAt ? new Date(lock.updatedAt) > latestRun.createdAt : true,
+        latestRun.createdAt
+          ? new Date(lock.updatedAt) > latestRun.createdAt
+          : true,
       );
     return {
       submittedCount,
@@ -840,7 +949,11 @@ export function registerPlanningRoutes(router: Router) {
     }
   });
 
-  const respondWithState = async (res: Response, year: number, month: number) => {
+  const respondWithState = async (
+    res: Response,
+    year: number,
+    month: number,
+  ) => {
     try {
       const state = await buildStateResponse(year, month);
       res.json(state);
@@ -849,16 +962,26 @@ export function registerPlanningRoutes(router: Router) {
     }
   };
 
-  const respondWithInputSummary = async (res: Response, year: number, month: number) => {
+  const respondWithInputSummary = async (
+    res: Response,
+    year: number,
+    month: number,
+  ) => {
     try {
       const summary = await buildInputSummaryResponse(year, month);
       res.json(summary);
     } catch (error) {
-      res.status(500).json({ error: "Fehler beim Erzeugen der Input-Zusammenfassung" });
+      res
+        .status(500)
+        .json({ error: "Fehler beim Erzeugen der Input-Zusammenfassung" });
     }
   };
 
-  const respondWithLocks = async (res: Response, year: number, month: number) => {
+  const respondWithLocks = async (
+    res: Response,
+    year: number,
+    month: number,
+  ) => {
     try {
       const locks = await buildLocksResponse(year, month);
       res.json(locks);
@@ -909,8 +1032,8 @@ export function registerPlanningRoutes(router: Router) {
         employeeId === null
           ? null
           : typeof employeeId === "number"
-          ? employeeId
-          : Number(employeeId);
+            ? employeeId
+            : Number(employeeId);
       if (resolvedEmployeeId !== null && Number.isNaN(resolvedEmployeeId)) {
         return res.status(400).json({ error: "Ungültige employeeId" });
       }
@@ -970,7 +1093,9 @@ export function registerPlanningRoutes(router: Router) {
       });
     } catch (error) {
       console.error("planning run failed", error);
-      res.status(500).json({ error: "Fehler beim Ausführen des Planning-Laufs" });
+      res
+        .status(500)
+        .json({ error: "Fehler beim Ausführen des Planning-Laufs" });
     }
   });
 }

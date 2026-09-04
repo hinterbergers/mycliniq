@@ -12,7 +12,9 @@ const assert = (condition: boolean, message: string) => {
   }
 };
 
-const createState = (overrides: Partial<PlannerEmployeeState> = {}): PlannerEmployeeState => ({
+const createState = (
+  overrides: Partial<PlannerEmployeeState> = {},
+): PlannerEmployeeState => ({
   id: "1",
   canRoleIds: new Set(["gyn", "kreiszimmer"]),
   banDates: new Set(),
@@ -24,6 +26,8 @@ const createState = (overrides: Partial<PlannerEmployeeState> = {}): PlannerEmpl
   assignedPerWeek: {},
   assignedDates: new Set(),
   assignedWeekends: 0,
+  assignedWeekendDays: { Fri: 0, Sat: 0, Sun: 0 },
+  longTermRules: [],
   preferences: {
     preferDates: new Set(),
     avoidDates: new Set(),
@@ -176,11 +180,58 @@ const testFixedPreferredAssignment = () => {
   assert(assignment?.locked, "fixed assignment should be marked locked");
 };
 
+const testBoundaryAssignmentBlocksFirstDayOfMonth = () => {
+  const input = {
+    meta: {
+      timezone: "Europe/Vienna",
+      createdAt: new Date().toISOString(),
+      planningKind: "MONTHLY_DUTY",
+    },
+    period: {
+      startDate: "2026-04-01",
+      endDate: "2026-04-01",
+      year: 2026,
+      month: 4,
+    },
+    roles: [{ id: "gyn", label: "Gynäkologie (OA)" }],
+    slots: [
+      {
+        id: "2026-04-01-gyn",
+        date: "2026-04-01",
+        roleId: "gyn",
+        required: 1,
+        isWeekend: false,
+      },
+    ],
+    employees: ["1", "2"].map((id) => ({
+      id,
+      name: `Dr. ${id}`,
+      group: "OA",
+      capabilities: { canRoleIds: ["gyn"] },
+      constraints: { limits: { maxSlotsInPeriod: 5 }, hard: {} },
+    })),
+    history: {
+      recentAssignments: [{ employeeId: "1", date: "2026-03-31" }],
+    },
+    rules: { hardRules: [] },
+  };
+
+  const result = createAssignments(input, [], [], []);
+  const assignment = result.assignments.find(
+    (entry) => entry.slotId === "2026-04-01-gyn",
+  );
+  assert(
+    assignment?.employeeId === "2",
+    "a service on the final day of the prior month must block the first day",
+  );
+};
+
 const runTests = () => {
   testScoreRespectsPreferences();
   testSundayPrefersExistingFridayAssignment();
   testBanWeekdayBlocksAssignment();
   testFixedPreferredAssignment();
+  testBoundaryAssignmentBlocksFirstDayOfMonth();
   console.log("Planning solver smoke tests passed");
 };
 

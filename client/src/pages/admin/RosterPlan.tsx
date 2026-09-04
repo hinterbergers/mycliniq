@@ -246,8 +246,10 @@ const RULES_STORAGE_KEY = "mycliniq.roster.aiRules.v1";
 const SPECIAL_RULES_STORAGE_KEY = "mycliniq.roster.specialRules.v1";
 const WISH_COLUMN_VISIBLE_KEY =
   "mycliniq.roster.editor.wishColumnVisibleByService.v1";
-const LONGTERM_ABSENCE_TOGGLE_KEY = "mycliniq.roster.editor.showLongTermAbsences.v1";
-const ABSENCE_COLUMN_VISIBLE_KEY = "mycliniq.roster.editor.absenceColumnVisible.v1";
+const LONGTERM_ABSENCE_TOGGLE_KEY =
+  "mycliniq.roster.editor.showLongTermAbsences.v1";
+const ABSENCE_COLUMN_VISIBLE_KEY =
+  "mycliniq.roster.editor.absenceColumnVisible.v1";
 
 type AiRuleWeights = {
   weekendFairness: number;
@@ -455,8 +457,9 @@ export default function RosterPlan() {
   });
   const [rulesDialogOpen, setRulesDialogOpen] = useState(false);
   const [aiRules, setAiRules] = useState<AiRules>(DEFAULT_AI_RULES);
-  const [specialRules, setSpecialRules] =
-    useState<PlannerSpecialRules>(DEFAULT_SPECIAL_RULES);
+  const [specialRules, setSpecialRules] = useState<PlannerSpecialRules>(
+    DEFAULT_SPECIAL_RULES,
+  );
   const [promptPreviewOpen, setPromptPreviewOpen] = useState(false);
   const [promptPreviewSupported, setPromptPreviewSupported] = useState(true);
   const [promptPreviewData, setPromptPreviewData] =
@@ -516,13 +519,9 @@ export default function RosterPlan() {
             ? parsed.version
             : DEFAULT_AI_RULES.version,
         hard:
-          typeof parsed.hard === "string"
-            ? parsed.hard
-            : DEFAULT_AI_RULES.hard,
+          typeof parsed.hard === "string" ? parsed.hard : DEFAULT_AI_RULES.hard,
         soft:
-          typeof parsed.soft === "string"
-            ? parsed.soft
-            : DEFAULT_AI_RULES.soft,
+          typeof parsed.soft === "string" ? parsed.soft : DEFAULT_AI_RULES.soft,
         weights: {
           weekendFairness: clampWeight(
             typeof weights.weekendFairness === "number"
@@ -558,7 +557,9 @@ export default function RosterPlan() {
     try {
       const parsed = JSON.parse(stored);
       if (!parsed || typeof parsed !== "object") return;
-      const fixedPreferredEmployeeIds = Array.isArray(parsed.fixedPreferredEmployeeIds)
+      const fixedPreferredEmployeeIds = Array.isArray(
+        parsed.fixedPreferredEmployeeIds,
+      )
         ? parsed.fixedPreferredEmployeeIds
             .map((value: unknown) => Number(value))
             .filter((value: number) => Number.isInteger(value))
@@ -1055,13 +1056,14 @@ export default function RosterPlan() {
           )
       : [];
 
-    return [...plannedEntries, ...longTermEntries, ...legacyEntries].sort((a, b) =>
-      compareAbsenceEntriesByReasonThenName(
-        a.reason,
-        a.name,
-        b.reason,
-        b.name,
-      ),
+    return [...plannedEntries, ...longTermEntries, ...legacyEntries].sort(
+      (a, b) =>
+        compareAbsenceEntriesByReasonThenName(
+          a.reason,
+          a.name,
+          b.reason,
+          b.name,
+        ),
     );
   };
 
@@ -1077,7 +1079,10 @@ export default function RosterPlan() {
       const employee = employees.find((emp) => emp.id === wish.employeeId);
       if (!employee) return;
       if (employee.isActive === false || employee.takesShifts === false) return;
-      const supportedTypes = getServiceTypesForEmployee(employee, serviceLineMeta);
+      const supportedTypes = getServiceTypesForEmployee(
+        employee,
+        serviceLineMeta,
+      );
       if (!supportedTypes.includes(serviceType)) return;
 
       const preferredDays = Array.isArray(wish.preferredShiftDays)
@@ -1128,12 +1133,18 @@ export default function RosterPlan() {
     const dateStr = format(date, "yyyy-MM-dd");
 
     return activePlannedAbsences
-      .filter((absence) => absence.startDate <= dateStr && absence.endDate >= dateStr)
+      .filter(
+        (absence) => absence.startDate <= dateStr && absence.endDate >= dateStr,
+      )
       .filter((absence) => {
         const employee = employees.find((emp) => emp.id === absence.employeeId);
         if (!employee) return false;
-        if (employee.isActive === false || employee.takesShifts === false) return false;
-        const supportedTypes = getServiceTypesForEmployee(employee, serviceLineMeta);
+        if (employee.isActive === false || employee.takesShifts === false)
+          return false;
+        const supportedTypes = getServiceTypesForEmployee(
+          employee,
+          serviceLineMeta,
+        );
         return supportedTypes.includes(serviceType);
       })
       .map((absence) => ({
@@ -1168,10 +1179,14 @@ export default function RosterPlan() {
 
     return employees
       .filter((employee) => {
-        if (employee.isActive === false || employee.takesShifts === false) return false;
+        if (employee.isActive === false || employee.takesShifts === false)
+          return false;
         if (isLegacyInactiveOnDate(employee, dateStr)) return false;
 
-        const supportedTypes = getServiceTypesForEmployee(employee, serviceLineMeta);
+        const supportedTypes = getServiceTypesForEmployee(
+          employee,
+          serviceLineMeta,
+        );
         if (!supportedTypes.includes(serviceType)) return false;
 
         const hasPlannedAbsence = activePlannedAbsences.some(
@@ -1191,18 +1206,29 @@ export default function RosterPlan() {
         );
         if (hasLongTermAbsence) return false;
 
-        const wish = shiftWishes.find((item) => item.employeeId === employee.id);
+        const wish = shiftWishes.find(
+          (item) => item.employeeId === employee.id,
+        );
         if (wish) {
-          const avoidDays = Array.isArray(wish.avoidShiftDays) ? wish.avoidShiftDays : [];
-          const avoidWeekdays = Array.isArray(wish.avoidWeekdays) ? wish.avoidWeekdays : [];
-          if (avoidDays.includes(dateStr) || avoidWeekdays.includes(isoWeekday)) {
+          const avoidDays = Array.isArray(wish.avoidShiftDays)
+            ? wish.avoidShiftDays
+            : [];
+          const avoidWeekdays = Array.isArray(wish.avoidWeekdays)
+            ? wish.avoidWeekdays
+            : [];
+          if (
+            avoidDays.includes(dateStr) ||
+            avoidWeekdays.includes(isoWeekday)
+          ) {
             return false;
           }
         }
 
         return true;
       })
-      .map((employee) => resolveEmployeeLastName(employee.id, employee.name, employee.lastName))
+      .map((employee) =>
+        resolveEmployeeLastName(employee.id, employee.name, employee.lastName),
+      )
       .sort((a, b) => a.localeCompare(b, "de"));
   };
 
@@ -1465,11 +1491,23 @@ export default function RosterPlan() {
           },
           {},
         );
+        const weekendDays = empShifts.reduce(
+          (counts, shift) => {
+            const weekday = new Date(`${shift.date}T00:00:00`).getDay();
+            if (weekday === 5) counts.fri += 1;
+            if (weekday === 6) counts.sat += 1;
+            if (weekday === 0) counts.sun += 1;
+            return counts;
+          },
+          { fri: 0, sat: 0, sun: 0 },
+        );
         return {
           ...emp,
           stats: {
             byService,
             sum: empShifts.length,
+            weekendDays,
+            weekendTotal: weekendDays.fri + weekendDays.sat + weekendDays.sun,
             abw: empAbsenceDays,
             desiredMonthTotal:
               shiftWishes.find((wish) => wish.employeeId === emp.id)
@@ -1515,7 +1553,7 @@ export default function RosterPlan() {
     return rows;
   }, [stats]);
 
-  const statsColumnCount = 2 + serviceLineDisplay.length + 3;
+  const statsColumnCount = 2 + serviceLineDisplay.length + 4;
 
   const handleExport = async () => {
     if (!token) {
@@ -1542,7 +1580,8 @@ export default function RosterPlan() {
       if (!response.ok) {
         throw new Error("Export fehlgeschlagen");
       }
-      const contentDisposition = response.headers.get("content-disposition") || "";
+      const contentDisposition =
+        response.headers.get("content-disposition") || "";
       const filenameMatch = contentDisposition.match(
         /filename\*?=(?:UTF-8''|")?([^\";]+)"?/i,
       );
@@ -1566,10 +1605,10 @@ export default function RosterPlan() {
         description: error.message || "Bitte versuchen Sie es erneut.",
         variant: "destructive",
       });
-      } finally {
-        setExporting(false);
-      }
-    };
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const buildGenerationPayload = (
     promptOverride?: string,
@@ -1778,8 +1817,7 @@ export default function RosterPlan() {
   };
 
   const eligibleSpecialRuleEmployees = useMemo(
-    () =>
-      employees.slice().sort((a, b) => a.name.localeCompare(b.name, "de")),
+    () => employees.slice().sort((a, b) => a.name.localeCompare(b.name, "de")),
     [employees],
   );
 
@@ -1874,23 +1912,30 @@ export default function RosterPlan() {
         const trimmedFreeText = assigneeFreeText?.trim() || null;
         const targetDraft = shouldUseDraftData;
         if (shift) {
-          const updated = await rosterApi.update(shift.id, {
-            employeeId,
-            assigneeFreeText: employeeId ? null : trimmedFreeText,
-            isDraft: targetDraft,
-          }, { draft: targetDraft });
+          const updated = await rosterApi.update(
+            shift.id,
+            {
+              employeeId,
+              assigneeFreeText: employeeId ? null : trimmedFreeText,
+              isDraft: targetDraft,
+            },
+            { draft: targetDraft },
+          );
           setShifts((prev) =>
             prev.map((item) => (item.id === updated.id ? updated : item)),
           );
           clearManualDraft(cellKey);
         } else {
-          const created = await rosterApi.create({
-            employeeId,
-            assigneeFreeText: employeeId ? null : trimmedFreeText,
-            date: dateStr,
-            serviceType: type,
-            isDraft: targetDraft,
-          }, { draft: targetDraft });
+          const created = await rosterApi.create(
+            {
+              employeeId,
+              assigneeFreeText: employeeId ? null : trimmedFreeText,
+              date: dateStr,
+              serviceType: type,
+              isDraft: targetDraft,
+            },
+            { draft: targetDraft },
+          );
           setShifts((prev) => [...prev, created]);
           clearManualDraft(cellKey);
         }
@@ -2459,21 +2504,21 @@ export default function RosterPlan() {
 
         {/* Main Roster Table */}
         <Card className="border-none kabeg-shadow overflow-hidden">
-  {manualEditMode && canEdit && (
-    <div className="px-4 py-3 bg-amber-50 border-b border-amber-200 text-sm text-amber-800 flex items-center gap-2">
-      <AlertTriangle className="w-4 h-4" />
-      Manuelle Eingabe aktiv. Konflikte werden markiert, Speicherung
-      bleibt erlaubt.
-    </div>
-  )}
-        <div className="overflow-x-auto overflow-y-visible">
-          {!shifts.length && !isLoading && (
-            <div className="px-4 py-3 text-sm text-muted-foreground border-b border-border">
-              Keine Schichten für{" "}
-              {format(currentDate, "MMMM yyyy", { locale: de })}.
+          {manualEditMode && canEdit && (
+            <div className="px-4 py-3 bg-amber-50 border-b border-amber-200 text-sm text-amber-800 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4" />
+              Manuelle Eingabe aktiv. Konflikte werden markiert, Speicherung
+              bleibt erlaubt.
             </div>
           )}
-          <Table className="border-collapse w-full min-w-[1400px]">
+          <div className="overflow-x-auto overflow-y-visible">
+            {!shifts.length && !isLoading && (
+              <div className="px-4 py-3 text-sm text-muted-foreground border-b border-border">
+                Keine Schichten für{" "}
+                {format(currentDate, "MMMM yyyy", { locale: de })}.
+              </div>
+            )}
+            <Table className="border-collapse w-full min-w-[1400px]">
               <TableHeader>
                 <TableRow className="bg-muted/50 hover:bg-muted/50">
                   <TableHead className="w-12 text-center border-r border-border font-bold">
@@ -2561,87 +2606,113 @@ export default function RosterPlan() {
                       <TableCell
                         className={`border-r border-border ${isWeekendDay || isHoliday ? "text-rose-600 font-bold" : ""}`}
                       >
-            {format(day, "dd.MM.")}
-          </TableCell>
+                        {format(day, "dd.MM.")}
+                      </TableCell>
 
-          {serviceLineDisplay.map((line) => (
-            <TableCell
-              key={line.key}
-              className="border-r border-border p-1 align-top"
-            >
-              <div className="space-y-2">
-                {showWishColumns[line.key] && (
-                  <div className="min-h-6 text-xs leading-5">
-                    {(() => {
-                      const wishes = getWishesForServiceLine(day, line.key);
-                      const plannedAbsences = getPlannedAbsencesForServiceLine(
-                        day,
-                        line.key,
-                      );
+                      {serviceLineDisplay.map((line) => (
+                        <TableCell
+                          key={line.key}
+                          className="border-r border-border p-1 align-top"
+                        >
+                          <div className="space-y-2">
+                            {showWishColumns[line.key] && (
+                              <div className="min-h-6 text-xs leading-5">
+                                {(() => {
+                                  const wishes = getWishesForServiceLine(
+                                    day,
+                                    line.key,
+                                  );
+                                  const plannedAbsences =
+                                    getPlannedAbsencesForServiceLine(
+                                      day,
+                                      line.key,
+                                    );
 
-                      if (!wishes.length && !plannedAbsences.length) {
-                        return <div className="text-slate-300">-</div>;
-                      }
+                                  if (
+                                    !wishes.length &&
+                                    !plannedAbsences.length
+                                  ) {
+                                    return (
+                                      <div className="text-slate-300">-</div>
+                                    );
+                                  }
 
-                      return (
-                        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
-                          <div className="space-y-1">
-                            {wishes.map((wish) => (
-                              <div
-                                key={`${line.key}-${wish.type}-${wish.employeeId}`}
-                                className={
-                                  wish.type === "prefer"
-                                    ? "text-blue-600"
-                                    : "text-red-600"
-                                }
-                              >
-                                {wish.name}
-                              </div>
-                            ))}
+                                  return (
+                                    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
+                                      <div className="space-y-1">
+                                        {wishes.map((wish) => (
+                                          <div
+                                            key={`${line.key}-${wish.type}-${wish.employeeId}`}
+                                            className={
+                                              wish.type === "prefer"
+                                                ? "text-blue-600"
+                                                : "text-red-600"
+                                            }
+                                          >
+                                            {wish.name}
+                                          </div>
+                                        ))}
 
-                            {plannedAbsences.length > 0 && (
-                              <div className="border-t border-slate-200/80 pt-1">
-                                {plannedAbsences.map((absence) => (
-                                  <div
-                                    key={`${line.key}-absence-${absence.employeeId}-${absence.absenceId}`}
-                                    className="inline-flex rounded border px-1.5 py-0.5 text-[11px] font-medium"
-                                    style={getAbsenceInlineStyle(absence.reason)}
-                                    title={[absence.name, absence.reason, absence.status]
-                                      .filter(Boolean)
-                                      .join(" · ")}
-                                  >
-                                    {absence.name}
-                                  </div>
-                                ))}
+                                        {plannedAbsences.length > 0 && (
+                                          <div className="border-t border-slate-200/80 pt-1">
+                                            {plannedAbsences.map((absence) => (
+                                              <div
+                                                key={`${line.key}-absence-${absence.employeeId}-${absence.absenceId}`}
+                                                className="inline-flex rounded border px-1.5 py-0.5 text-[11px] font-medium"
+                                                style={getAbsenceInlineStyle(
+                                                  absence.reason,
+                                                )}
+                                                title={[
+                                                  absence.name,
+                                                  absence.reason,
+                                                  absence.status,
+                                                ]
+                                                  .filter(Boolean)
+                                                  .join(" · ")}
+                                              >
+                                                {absence.name}
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      <div className="border-l border-slate-200/80 pl-2 text-[11px] text-slate-400">
+                                        {(() => {
+                                          const availableEmployees =
+                                            getAvailableEmployeesForServiceLine(
+                                              day,
+                                              line.key,
+                                            );
+
+                                          if (!availableEmployees.length) {
+                                            return (
+                                              <div className="text-slate-300">
+                                                -
+                                              </div>
+                                            );
+                                          }
+
+                                          return availableEmployees.map(
+                                            (name) => (
+                                              <div
+                                                key={`${line.key}-available-${name}`}
+                                              >
+                                                {name}
+                                              </div>
+                                            ),
+                                          );
+                                        })()}
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             )}
+                            {renderAssignmentCell(day, line)}
                           </div>
-
-                          <div className="border-l border-slate-200/80 pl-2 text-[11px] text-slate-400">
-                            {(() => {
-                              const availableEmployees = getAvailableEmployeesForServiceLine(
-                                day,
-                                line.key,
-                              );
-
-                              if (!availableEmployees.length) {
-                                return <div className="text-slate-300">-</div>;
-                              }
-
-                              return availableEmployees.map((name) => (
-                                <div key={`${line.key}-available-${name}`}>{name}</div>
-                              ));
-                            })()}
-                          </div>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
-                {renderAssignmentCell(day, line)}
-              </div>
-            </TableCell>
-          ))}
+                        </TableCell>
+                      ))}
 
                       {/* Absences & Info */}
                       <TableCell
@@ -2745,6 +2816,9 @@ export default function RosterPlan() {
                     <TableHead className="text-center font-bold">
                       Summe
                     </TableHead>
+                    <TableHead className="text-center font-bold bg-violet-50/50 text-violet-900">
+                      WE
+                    </TableHead>
                     <TableHead className="text-center font-bold bg-sky-50/50 text-sky-900">
                       Gewünscht
                     </TableHead>
@@ -2792,6 +2866,22 @@ export default function RosterPlan() {
                         <TableCell className="text-center font-bold">
                           {emp.stats.sum}
                         </TableCell>
+                        <TableCell className="text-center font-semibold bg-violet-50/20 text-violet-900">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="cursor-help underline decoration-dotted underline-offset-2">
+                                {emp.stats.weekendTotal}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <div className="text-xs">
+                                Fr: {emp.stats.weekendDays.fri} · Sa:{" "}
+                                {emp.stats.weekendDays.sat} · So:{" "}
+                                {emp.stats.weekendDays.sun}
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TableCell>
                         <TableCell className="text-center font-semibold bg-sky-50/20 text-sky-900">
                           {emp.stats.desiredMonthTotal ?? "-"}
                         </TableCell>
@@ -2833,7 +2923,8 @@ export default function RosterPlan() {
               <Alert className="bg-primary/5 border-primary/20">
                 <Loader2 className="w-4 h-4 animate-spin" />
                 <AlertDescription>
-                  Dienstplan wird gerade generiert – bitte das Fenster nicht schließen.
+                  Dienstplan wird gerade generiert – bitte das Fenster nicht
+                  schließen.
                 </AlertDescription>
               </Alert>
             ) : null}
@@ -2849,7 +2940,10 @@ export default function RosterPlan() {
                 <Textarea
                   value={aiRules.hard}
                   onChange={(event) =>
-                    setAiRules((prev) => ({ ...prev, hard: event.target.value }))
+                    setAiRules((prev) => ({
+                      ...prev,
+                      hard: event.target.value,
+                    }))
                   }
                   rows={10}
                   className="font-mono text-sm"
@@ -2859,7 +2953,10 @@ export default function RosterPlan() {
                 <Textarea
                   value={aiRules.soft}
                   onChange={(event) =>
-                    setAiRules((prev) => ({ ...prev, soft: event.target.value }))
+                    setAiRules((prev) => ({
+                      ...prev,
+                      soft: event.target.value,
+                    }))
                   }
                   rows={10}
                   className="font-mono text-sm"
@@ -3062,7 +3159,8 @@ export default function RosterPlan() {
             <DialogHeader>
               <DialogTitle>Prompt-Vorschau</DialogTitle>
               <DialogDescription>
-                Überprüfen oder passen Sie den Prompt für die Dienstplan-Generierung an.
+                Überprüfen oder passen Sie den Prompt für die
+                Dienstplan-Generierung an.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -3070,9 +3168,15 @@ export default function RosterPlan() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between gap-4">
                     <div className="text-sm text-muted-foreground">
-                      Modell: <span className="font-semibold">{promptPreviewData.model}</span>
+                      Modell:{" "}
+                      <span className="font-semibold">
+                        {promptPreviewData.model}
+                      </span>
                       <br />
-                      Tokens: <span className="font-semibold">{promptPreviewData.maxOutputTokens}</span>
+                      Tokens:{" "}
+                      <span className="font-semibold">
+                        {promptPreviewData.maxOutputTokens}
+                      </span>
                     </div>
                     <div className="text-sm text-muted-foreground">
                       {promptPreviewData.promptCharCount} Zeichen · ca.{" "}
@@ -3092,7 +3196,12 @@ export default function RosterPlan() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => copyPreviewText(promptPreviewData.system, "Anweisungen")}
+                        onClick={() =>
+                          copyPreviewText(
+                            promptPreviewData.system,
+                            "Anweisungen",
+                          )
+                        }
                       >
                         Anweisungen kopieren
                       </Button>
@@ -3103,13 +3212,17 @@ export default function RosterPlan() {
                     <Textarea
                       className="h-40 font-mono text-xs"
                       value={promptPreviewEdited}
-                      onChange={(event) => setPromptPreviewEdited(event.target.value)}
+                      onChange={(event) =>
+                        setPromptPreviewEdited(event.target.value)
+                      }
                     />
                     <div className="flex gap-2">
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => copyPreviewText(promptPreviewEdited, "Prompt")}
+                        onClick={() =>
+                          copyPreviewText(promptPreviewEdited, "Prompt")
+                        }
                       >
                         Prompt kopieren
                       </Button>
@@ -3187,7 +3300,10 @@ export default function RosterPlan() {
                 </Alert>
               )}
 
-              <Tabs defaultValue="plan" className="flex flex-col gap-3 min-h-0 flex-1 overflow-hidden">
+              <Tabs
+                defaultValue="plan"
+                className="flex flex-col gap-3 min-h-0 flex-1 overflow-hidden"
+              >
                 <TabsList className="w-fit">
                   <TabsTrigger value="plan">Plan</TabsTrigger>
                   <TabsTrigger value="errors">Fehleranzeige</TabsTrigger>
@@ -3212,7 +3328,9 @@ export default function RosterPlan() {
                         </TableHeader>
                         <TableBody>
                           {generatedShifts.map((shift, i) => {
-                            const line = serviceLineLookup.get(shift.serviceType);
+                            const line = serviceLineLookup.get(
+                              shift.serviceType,
+                            );
                             const label = line?.label || shift.serviceType;
                             const badgeClass =
                               line?.style.cell ||
@@ -3223,7 +3341,10 @@ export default function RosterPlan() {
                                   {shift.date}
                                 </TableCell>
                                 <TableCell>
-                                  <Badge variant="outline" className={badgeClass}>
+                                  <Badge
+                                    variant="outline"
+                                    className={badgeClass}
+                                  >
                                     {label}
                                   </Badge>
                                 </TableCell>
@@ -3241,9 +3362,12 @@ export default function RosterPlan() {
                   <div className="border rounded-lg flex flex-col">
                     <div className="p-3 bg-muted/30 border-b flex items-center gap-3">
                       <Badge
-                        variant={generationPublishAllowed ? "default" : "destructive"}
+                        variant={
+                          generationPublishAllowed ? "default" : "destructive"
+                        }
                       >
-                        Publish {generationPublishAllowed ? "erlaubt" : "blockiert"}
+                        Publish{" "}
+                        {generationPublishAllowed ? "erlaubt" : "blockiert"}
                       </Badge>
                       <span className="text-sm text-muted-foreground">
                         Unbesetzte Slots: {generationUnfilledSlots.length}
@@ -3283,14 +3407,16 @@ export default function RosterPlan() {
                               title: "Hard Konflikte",
                               tone: "bg-rose-50 text-rose-700 border-rose-200",
                               slots: groupedGenerationErrors.hardUnfilled,
-                              violations: groupedGenerationErrors.hardViolations,
+                              violations:
+                                groupedGenerationErrors.hardViolations,
                             },
                             {
                               key: "soft" as const,
                               title: "Soft Konflikte",
                               tone: "bg-amber-50 text-amber-700 border-amber-200",
                               slots: groupedGenerationErrors.softUnfilled,
-                              violations: groupedGenerationErrors.softViolations,
+                              violations:
+                                groupedGenerationErrors.softViolations,
                             },
                           ].map((group) => (
                             <div key={group.key} className="space-y-2">
@@ -3325,7 +3451,8 @@ export default function RosterPlan() {
                                       const line = serviceLineLookup.get(
                                         slot.serviceType,
                                       );
-                                      const label = line?.label || slot.serviceType;
+                                      const label =
+                                        line?.label || slot.serviceType;
                                       const reasonCodes = Array.from(
                                         new Set(slot.reasonCodes),
                                       );
@@ -3333,12 +3460,16 @@ export default function RosterPlan() {
                                         new Set(slot.candidatesBlockedBy),
                                       );
                                       return (
-                                        <TableRow key={`${group.key}-${slot.slotId}`}>
+                                        <TableRow
+                                          key={`${group.key}-${slot.slotId}`}
+                                        >
                                           <TableCell className="font-mono text-sm">
                                             {slot.date}
                                           </TableCell>
                                           <TableCell>
-                                            <Badge variant="outline">{label}</Badge>
+                                            <Badge variant="outline">
+                                              {label}
+                                            </Badge>
                                           </TableCell>
                                           <TableCell className="text-sm">
                                             {reasonCodes.length > 0 ? (
@@ -3406,7 +3537,8 @@ export default function RosterPlan() {
                                       .map((violation, idx) => (
                                         <TableRow key={`${group.key}-v-${idx}`}>
                                           <TableCell className="font-mono text-sm">
-                                            {violation.slotId?.slice(0, 10) || "-"}
+                                            {violation.slotId?.slice(0, 10) ||
+                                              "-"}
                                           </TableCell>
                                           <TableCell>
                                             <Badge variant="outline">
@@ -3424,7 +3556,9 @@ export default function RosterPlan() {
                                                     : "bg-amber-50 text-amber-700 border-amber-200"
                                                 }
                                               >
-                                                {violation.hard ? "Hard" : "Soft"}{" "}
+                                                {violation.hard
+                                                  ? "Hard"
+                                                  : "Soft"}{" "}
                                                 ·{" "}
                                                 {getWeeklyPlanningReasonLabel(
                                                   violation.code,

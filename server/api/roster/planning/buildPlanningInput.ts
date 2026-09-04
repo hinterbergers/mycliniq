@@ -1,4 +1,12 @@
-import { formatISO, startOfMonth, endOfMonth, eachDayOfInterval, addDays, parseISO, getISOWeek } from "date-fns";
+import {
+  formatISO,
+  startOfMonth,
+  endOfMonth,
+  eachDayOfInterval,
+  addDays,
+  parseISO,
+  getISOWeek,
+} from "date-fns";
 import { storage } from "../../../storage";
 import { assertValidPlanningInput } from "../validation/planningSchemas";
 import { type ShiftWish } from "@shared/schema";
@@ -15,10 +23,34 @@ type ServiceRole = {
 };
 
 const SERVICE_ROLES: ServiceRole[] = [
-  { id: "kreiszimmer", label: "Kreisszimmerdienst", startTime: "07:30", endTime: "15:30", tags: ["ASS"] },
-  { id: "gyn", label: "Hauptdienst", startTime: "07:30", endTime: "15:30", tags: ["OA"] },
-  { id: "turnus", label: "Turnusdienst", startTime: "07:30", endTime: "15:30", tags: ["TA"] },
-  { id: "overduty", label: "Überdienst", startTime: "18:00", endTime: "07:00", tags: ["OA", "ASS", "TA"] },
+  {
+    id: "kreiszimmer",
+    label: "Kreisszimmerdienst",
+    startTime: "07:30",
+    endTime: "15:30",
+    tags: ["ASS"],
+  },
+  {
+    id: "gyn",
+    label: "Hauptdienst",
+    startTime: "07:30",
+    endTime: "15:30",
+    tags: ["OA"],
+  },
+  {
+    id: "turnus",
+    label: "Turnusdienst",
+    startTime: "07:30",
+    endTime: "15:30",
+    tags: ["TA"],
+  },
+  {
+    id: "overduty",
+    label: "Überdienst",
+    startTime: "18:00",
+    endTime: "07:00",
+    tags: ["OA", "ASS", "TA"],
+  },
 ];
 
 const GROUP_ROLE_MAP: Record<RoleGroup, string[]> = {
@@ -31,9 +63,24 @@ const GROUP_ROLE_MAP: Record<RoleGroup, string[]> = {
 
 const DEFAULT_RULES = {
   hardRules: [
-    { id: "no-consecutive-days", type: "NO_CONSECUTIVE_DAYS", hard: true, params: {} },
-    { id: "max-per-period", type: "MAX_PER_PERIOD", hard: true, params: { limit: 6 } },
-    { id: "max-per-iso-week", type: "MAX_PER_ISO_WEEK", hard: true, params: { limit: 2 } },
+    {
+      id: "no-consecutive-days",
+      type: "NO_CONSECUTIVE_DAYS",
+      hard: true,
+      params: {},
+    },
+    {
+      id: "max-per-period",
+      type: "MAX_PER_PERIOD",
+      hard: true,
+      params: { limit: 6 },
+    },
+    {
+      id: "max-per-iso-week",
+      type: "MAX_PER_ISO_WEEK",
+      hard: true,
+      params: { limit: 2 },
+    },
   ],
   softRules: [],
   weights: {
@@ -46,7 +93,9 @@ const DEFAULT_RULES = {
 };
 
 const timezone =
-  process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Vienna";
+  process.env.TZ ||
+  Intl.DateTimeFormat().resolvedOptions().timeZone ||
+  "Europe/Vienna";
 
 const expandRangeToDates = (start: string, end: string): string[] => {
   const startDate = parseISO(start);
@@ -76,7 +125,8 @@ const mapRoleToGroup = (role?: string | null): RoleGroup => {
   }
   if (normalized.includes("assistenz")) return "ASS";
   if (normalized.includes("turnus")) return "TA";
-  if (normalized.includes("student") || normalized.includes("sekret")) return "OTHER";
+  if (normalized.includes("student") || normalized.includes("sekret"))
+    return "OTHER";
   return "OTHER";
 };
 
@@ -85,7 +135,10 @@ const normalizeStringArray = (values: unknown): string[] => {
   return Array.from(
     new Set(
       values
-        .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+        .filter(
+          (entry): entry is string =>
+            typeof entry === "string" && entry.trim().length > 0,
+        )
         .map((entry) => entry.trim()),
     ),
   );
@@ -135,7 +188,8 @@ const createSlotsForPeriod = (year: number, month: number) => {
     const dateString = formatISO(date, { representation: "date" });
     const isoWeek = getISOWeek(date);
     const weekday = date.getDay();
-    const isWeekend = weekday === 0 || weekday === 6;
+    // Friday through Sunday form one planning weekend for fairness and limits.
+    const isWeekend = weekday === 0 || weekday === 5 || weekday === 6;
     for (const role of SERVICE_ROLES) {
       slots.push({
         id: `${year}-${String(month).padStart(2, "0")}-${date.getDate().toString().padStart(2, "0")}-${role.id}`,
@@ -169,16 +223,40 @@ const normalizeShiftWish = (wish?: ShiftWish) => {
 
 export async function buildPlanningInput(year: number, month: number) {
   const slots = createSlotsForPeriod(year, month);
-  const start = slots.length ? slots[0].date : formatISO(startOfMonth(new Date(year, month - 1, 1)), { representation: "date" });
+  const start = slots.length
+    ? slots[0].date
+    : formatISO(startOfMonth(new Date(year, month - 1, 1)), {
+        representation: "date",
+      });
   const end = slots.length
     ? slots[slots.length - 1].date
-    : formatISO(endOfMonth(new Date(year, month - 1, 1)), { representation: "date" });
+    : formatISO(endOfMonth(new Date(year, month - 1, 1)), {
+        representation: "date",
+      });
 
-  const shiftWishes = await storage.getShiftWishesByMonth(year, month);
-  const approvedLongTermWishes =
-    await storage.getLongTermShiftWishesByStatus("Genehmigt");
-  const absences = await storage.getAbsencesByDateRange(start, end);
-  const plannedAbsences = await storage.getPlannedAbsencesByMonth(year, month);
+  const previousMonthDate = addDays(
+    startOfMonth(new Date(year, month - 1)),
+    -1,
+  );
+  const previousYear = previousMonthDate.getFullYear();
+  const previousMonth = previousMonthDate.getMonth() + 1;
+  const [
+    shiftWishes,
+    approvedLongTermWishes,
+    approvedLongTermAbsences,
+    absences,
+    plannedAbsences,
+    previousPublishedShifts,
+  ] = await Promise.all([
+    storage.getShiftWishesByMonth(year, month),
+    storage.getLongTermShiftWishesByStatus("Genehmigt"),
+    storage.getLongTermAbsencesByStatus("Genehmigt"),
+    storage.getAbsencesByDateRange(start, end),
+    storage.getPlannedAbsencesByMonth(year, month),
+    storage.getRosterShiftsByMonth(previousYear, previousMonth, {
+      finalOnly: true,
+    }),
+  ]);
   const absenceDatesByEmployee = new Map<number, Set<string>>();
 
   const accumulateAbsences = (recordDates: string[], employeeId: number) => {
@@ -191,14 +269,35 @@ export async function buildPlanningInput(year: number, month: number) {
   };
 
   for (const absence of absences) {
-    accumulateAbsences(expandRangeToDates(absence.startDate, absence.endDate), absence.employeeId);
+    accumulateAbsences(
+      expandRangeToDates(absence.startDate, absence.endDate),
+      absence.employeeId,
+    );
   }
   for (const absence of plannedAbsences) {
-    accumulateAbsences(expandRangeToDates(absence.startDate, absence.endDate), absence.employeeId);
+    accumulateAbsences(
+      expandRangeToDates(absence.startDate, absence.endDate),
+      absence.employeeId,
+    );
+  }
+  for (const absence of approvedLongTermAbsences) {
+    const absenceStart = String(absence.startDate).slice(0, 10);
+    const absenceEnd = String(absence.endDate).slice(0, 10);
+    if (absenceStart <= end && absenceEnd >= start) {
+      accumulateAbsences(
+        expandRangeToDates(
+          absenceStart < start ? start : absenceStart,
+          absenceEnd > end ? end : absenceEnd,
+        ),
+        absence.employeeId,
+      );
+    }
   }
 
   const wishesByEmployee = new Map<number, ShiftWish>();
-  for (const wish of shiftWishes) {
+  for (const wish of shiftWishes.filter(
+    (entry) => entry.status === "Eingereicht",
+  )) {
     wishesByEmployee.set(wish.employeeId, wish);
   }
   const longTermMonthlyLimitByEmployee = new Map<number, number>();
@@ -206,19 +305,50 @@ export async function buildPlanningInput(year: number, month: number) {
     const limits = (Array.isArray(wish.rules) ? wish.rules : [])
       .filter((rule) => rule?.kind === "MAX_SHIFTS_PER_MONTH")
       .map((rule) => normalizeOptionalInt(rule.maxShiftsPerMonth, 0, 31))
-      .filter((limit): limit is number => limit !== null);
+      .filter((limit): limit is number => typeof limit === "number");
     if (limits.length) {
       longTermMonthlyLimitByEmployee.set(wish.employeeId, Math.min(...limits));
     }
   }
 
+  const longTermRulesByEmployee = new Map<number, unknown[]>();
+  for (const wish of approvedLongTermWishes) {
+    longTermRulesByEmployee.set(
+      wish.employeeId,
+      Array.isArray(wish.rules) ? wish.rules : [],
+    );
+  }
+
   const allEmployees = await storage.getEmployees();
+  for (const employee of allEmployees) {
+    const inactiveFrom = employee.inactiveFrom
+      ? String(employee.inactiveFrom).slice(0, 10)
+      : null;
+    const inactiveUntil = employee.inactiveUntil
+      ? String(employee.inactiveUntil).slice(0, 10)
+      : null;
+    if (
+      (inactiveFrom || inactiveUntil) &&
+      (!inactiveFrom || inactiveFrom <= end) &&
+      (!inactiveUntil || inactiveUntil >= start)
+    ) {
+      accumulateAbsences(
+        expandRangeToDates(
+          inactiveFrom && inactiveFrom > start ? inactiveFrom : start,
+          inactiveUntil && inactiveUntil < end ? inactiveUntil : end,
+        ),
+        employee.id,
+      );
+    }
+  }
   const activeEmployees = allEmployees.filter(
-    (employee) => employee.takesShifts !== false,
+    (employee) => employee.isActive && employee.takesShifts !== false,
   );
 
   const employees = activeEmployees.map((employee) => {
-    const normalizedWish = normalizeShiftWish(wishesByEmployee.get(employee.id));
+    const normalizedWish = normalizeShiftWish(
+      wishesByEmployee.get(employee.id),
+    );
     const absenceSet = absenceDatesByEmployee.get(employee.id) ?? new Set();
 
     const baseGroup = mapRoleToGroup(employee.role);
@@ -227,13 +357,15 @@ export async function buildPlanningInput(year: number, month: number) {
     );
     const roleIds = Array.from(
       new Set([...GROUP_ROLE_MAP[baseGroup], ...overrideRoles]),
-    );
+    ).filter((roleId) => roleId !== "turnus" || baseGroup === "ASS");
 
     const monthlyWishLimit =
       typeof normalizedWish?.maxShiftsPerMonth === "number"
         ? normalizedWish.maxShiftsPerMonth
         : 6;
-    const longTermMonthlyLimit = longTermMonthlyLimitByEmployee.get(employee.id);
+    const longTermMonthlyLimit = longTermMonthlyLimitByEmployee.get(
+      employee.id,
+    );
     // An approved long-term limit is a permanent cap and can only lower a monthly wish.
     const maxSlotsInPeriod =
       typeof longTermMonthlyLimit === "number"
@@ -255,7 +387,10 @@ export async function buildPlanningInput(year: number, month: number) {
       id: String(employee.id),
       name:
         (employee.name && employee.name.trim()) ||
-        [employee.lastName, employee.firstName].filter(Boolean).join(" ").trim() ||
+        [employee.lastName, employee.firstName]
+          .filter(Boolean)
+          .join(" ")
+          .trim() ||
         `Mitarbeiter ${employee.id}`,
       group: baseGroup,
       capabilities: {
@@ -275,6 +410,7 @@ export async function buildPlanningInput(year: number, month: number) {
           banDates: Array.from(absenceSet),
           banWeekdays: normalizedWish?.avoidWeekdays ?? [],
           banSlotIds: [],
+          longTermRules: longTermRulesByEmployee.get(employee.id) ?? [],
         },
         soft: {
           preferDates: normalizedWish?.preferDates ?? [],
@@ -282,6 +418,7 @@ export async function buildPlanningInput(year: number, month: number) {
           preferServiceTypes: normalizedWish?.preferredServiceTypes ?? [],
           avoidServiceTypes: normalizedWish?.avoidServiceTypes ?? [],
           preferFridayBeforeSunday,
+          longTermRules: longTermRulesByEmployee.get(employee.id) ?? [],
         },
       },
     };
@@ -308,6 +445,15 @@ export async function buildPlanningInput(year: number, month: number) {
     })),
     slots,
     employees,
+    history: {
+      windowMonths: 1,
+      recentAssignments: previousPublishedShifts
+        .filter((shift) => shift.employeeId !== null)
+        .map((shift) => ({
+          employeeId: String(shift.employeeId),
+          date: String(shift.date).slice(0, 10),
+        })),
+    },
     rules: DEFAULT_RULES,
   };
 
