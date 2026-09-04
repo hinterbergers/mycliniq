@@ -1053,6 +1053,47 @@ export default function Settings() {
     ]);
   };
 
+  const handleSaveFridaySundayPreference = async () => {
+    if (!employee || !canEditRosterPreferences) return;
+
+    setSaving(true);
+    try {
+      const currentPreferences =
+        employee.shiftPreferences && typeof employee.shiftPreferences === "object"
+          ? (employee.shiftPreferences as ShiftPreferences)
+          : {};
+      const nextShiftPreferences: ShiftPreferences = { ...currentPreferences };
+
+      if (preferFridayBeforeSunday) {
+        nextShiftPreferences.preferFridayBeforeSunday = true;
+      } else {
+        delete (nextShiftPreferences as { preferFridayBeforeSunday?: boolean })
+          .preferFridayBeforeSunday;
+      }
+
+      const updated = await employeeApi.update(employee.id, {
+        shiftPreferences: nextShiftPreferences,
+      });
+      applyEmployeeState(updated);
+      setAllEmployees((prev) =>
+        prev.map((entry) => (entry.id === updated.id ? updated : entry)),
+      );
+      toast({
+        title: "Gespeichert",
+        description: "Die Fr/So-Präferenz wurde aktualisiert",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Fehler",
+        description:
+          error?.message || "Die Fr/So-Präferenz konnte nicht gespeichert werden",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleUpdateLongTermRule = (
     index: number,
     patch: Partial<LongTermWishRule>,
@@ -2005,25 +2046,6 @@ export default function Settings() {
                   />
                 </div>
 
-                <div className="space-y-3 rounded-lg border border-border p-4">
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <Label>Fr/So Kombination</Label>
-                      <p className="text-xs text-muted-foreground">
-                        Wenn am Sonntag ein Dienst geplant wird, wird der
-                        Freitag davor fuer diese Person bevorzugt.
-                      </p>
-                    </div>
-                    <Switch
-                      checked={preferFridayBeforeSunday}
-                      onCheckedChange={(checked) =>
-                        setPreferFridayBeforeSunday(Boolean(checked))
-                      }
-                      disabled={!canEditRosterPreferences}
-                    />
-                  </div>
-                </div>
-
                 <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
                   Langzeit-Abwesenheiten werden im Reiter "Langzeit-Abwesenheit"
                   eingereicht und freigegeben.
@@ -2410,6 +2432,37 @@ export default function Settings() {
                         Regel hinzufügen
                       </Button>
                     )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border p-4">
+                    <div>
+                      <Label>Fr/So Kombination</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Wenn am Sonntag ein Dienst geplant wird, wird der
+                        Freitag davor fuer diese Person bevorzugt.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Switch
+                        checked={preferFridayBeforeSunday}
+                        onCheckedChange={(checked) =>
+                          setPreferFridayBeforeSunday(Boolean(checked))
+                        }
+                        disabled={!canEditRosterPreferences || saving}
+                      />
+                      {canEditRosterPreferences && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleSaveFridaySundayPreference}
+                          disabled={saving}
+                        >
+                          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                          Speichern
+                        </Button>
+                      )}
+                    </div>
                   </div>
 
                   {longTermRules.length ? (
