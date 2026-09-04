@@ -281,6 +281,7 @@ const LONG_TERM_RULE_KINDS = [
   { value: "ALWAYS_OFF", label: "Immer frei" },
   { value: "PREFER_ON", label: "Bevorzugt" },
   { value: "AVOID_ON", label: "Vermeiden" },
+  { value: "MAX_SHIFTS_PER_MONTH", label: "Maximale Dienste pro Monat" },
 ];
 
 const LONG_TERM_RULE_STRENGTHS = [
@@ -2469,10 +2470,16 @@ export default function Settings() {
                     <div className="space-y-3">
                       {longTermRules.map((rule, index) => {
                         const serviceValue = rule.serviceType || "any";
+                        const isMonthlyLimit =
+                          rule.kind === "MAX_SHIFTS_PER_MONTH";
                         return (
                           <div
                             key={`${rule.kind}-${index}`}
-                            className="grid md:grid-cols-5 gap-3 items-end"
+                            className={
+                              isMonthlyLimit
+                                ? "grid md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 items-end"
+                                : "grid md:grid-cols-5 gap-3 items-end"
+                            }
                           >
                             <div className="space-y-1">
                               <Label>Regel</Label>
@@ -2499,86 +2506,99 @@ export default function Settings() {
                                 </SelectContent>
                               </Select>
                             </div>
-                            <div className="space-y-1">
-                              <Label>Wochentag</Label>
-                              <Select
-                                value={rule.weekday}
-                                onValueChange={(value) =>
-                                  handleUpdateLongTermRule(index, {
-                                    weekday:
-                                      value as LongTermWishRule["weekday"],
-                                  })
-                                }
-                              >
-                                <SelectTrigger disabled={!canEditLongTerm}>
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {LONG_TERM_WEEKDAYS.map((day) => (
-                                    <SelectItem
-                                      key={day.value}
-                                      value={day.value}
-                                    >
-                                      {day.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div className="space-y-1">
-                              <Label>Dienstschiene</Label>
-                              <Select
-                                value={serviceValue}
-                                onValueChange={(value) =>
-                                  handleUpdateLongTermRule(index, {
-                                    serviceType:
-                                      value === "any"
-                                        ? "any"
-                                        : (value as LongTermWishRule["serviceType"]),
-                                  })
-                                }
-                              >
-                                <SelectTrigger disabled={!canEditLongTerm}>
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {longTermServiceOptions.map((option) => (
-                                    <SelectItem
-                                      key={option.value}
-                                      value={option.value}
-                                    >
-                                      {option.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div className="space-y-1">
-                              <Label>Stärke</Label>
-                              <Select
-                                value={rule.strength}
-                                onValueChange={(value) =>
-                                  handleUpdateLongTermRule(index, {
-                                    strength:
-                                      value as LongTermWishRule["strength"],
-                                  })
-                                }
-                              >
-                                <SelectTrigger disabled={!canEditLongTerm}>
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {LONG_TERM_RULE_STRENGTHS.map((option) => (
-                                    <SelectItem
-                                      key={option.value}
-                                      value={option.value}
-                                    >
-                                      {option.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
+                            {isMonthlyLimit ? (
+                              <div className="space-y-1">
+                                <Label>Maximale Dienste</Label>
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  max={31}
+                                  value={rule.maxShiftsPerMonth ?? ""}
+                                  onChange={(event) => {
+                                    const value = event.target.value;
+                                    handleUpdateLongTermRule(index, {
+                                      maxShiftsPerMonth:
+                                        value === "" ? undefined : Number(value),
+                                    });
+                                  }}
+                                  disabled={!canEditLongTerm}
+                                />
+                              </div>
+                            ) : (
+                              <>
+                                <div className="space-y-1">
+                                  <Label>Wochentag</Label>
+                                  <Select
+                                    value={rule.weekday}
+                                    onValueChange={(value) =>
+                                      handleUpdateLongTermRule(index, {
+                                        weekday:
+                                          value as LongTermWishRule["weekday"],
+                                      })
+                                    }
+                                  >
+                                    <SelectTrigger disabled={!canEditLongTerm}>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {LONG_TERM_WEEKDAYS.map((day) => (
+                                        <SelectItem key={day.value} value={day.value}>
+                                          {day.label}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="space-y-1">
+                                  <Label>Dienstschiene</Label>
+                                  <Select
+                                    value={serviceValue}
+                                    onValueChange={(value) =>
+                                      handleUpdateLongTermRule(index, {
+                                        serviceType:
+                                          value === "any"
+                                            ? "any"
+                                            : (value as LongTermWishRule["serviceType"]),
+                                      })
+                                    }
+                                  >
+                                    <SelectTrigger disabled={!canEditLongTerm}>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {longTermServiceOptions.map((option) => (
+                                        <SelectItem key={option.value} value={option.value}>
+                                          {option.label}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="space-y-1">
+                                  <Label>Stärke</Label>
+                                  <Select
+                                    value={rule.strength}
+                                    onValueChange={(value) =>
+                                      handleUpdateLongTermRule(index, {
+                                        strength:
+                                          value as LongTermWishRule["strength"],
+                                      })
+                                    }
+                                  >
+                                    <SelectTrigger disabled={!canEditLongTerm}>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {LONG_TERM_RULE_STRENGTHS.map((option) => (
+                                        <SelectItem key={option.value} value={option.value}>
+                                          {option.label}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </>
+                            )}
                             <div className="flex justify-end">
                               {canEditLongTerm && (
                                 <Button

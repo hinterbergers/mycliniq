@@ -175,6 +175,8 @@ export async function buildPlanningInput(year: number, month: number) {
     : formatISO(endOfMonth(new Date(year, month - 1, 1)), { representation: "date" });
 
   const shiftWishes = await storage.getShiftWishesByMonth(year, month);
+  const approvedLongTermWishes =
+    await storage.getLongTermShiftWishesByStatus("Genehmigt");
   const absences = await storage.getAbsencesByDateRange(start, end);
   const plannedAbsences = await storage.getPlannedAbsencesByMonth(year, month);
   const absenceDatesByEmployee = new Map<number, Set<string>>();
@@ -199,6 +201,16 @@ export async function buildPlanningInput(year: number, month: number) {
   for (const wish of shiftWishes) {
     wishesByEmployee.set(wish.employeeId, wish);
   }
+  const longTermMonthlyLimitByEmployee = new Map<number, number>();
+  for (const wish of approvedLongTermWishes) {
+    const limits = (Array.isArray(wish.rules) ? wish.rules : [])
+      .filter((rule) => rule?.kind === "MAX_SHIFTS_PER_MONTH")
+      .map((rule) => normalizeOptionalInt(rule.maxShiftsPerMonth, 0, 31))
+      .filter((limit): limit is number => limit !== null);
+    if (limits.length) {
+      longTermMonthlyLimitByEmployee.set(wish.employeeId, Math.min(...limits));
+    }
+  }
 
   const allEmployees = await storage.getEmployees();
   const activeEmployees = allEmployees.filter(
@@ -217,10 +229,16 @@ export async function buildPlanningInput(year: number, month: number) {
       new Set([...GROUP_ROLE_MAP[baseGroup], ...overrideRoles]),
     );
 
-    const maxSlotsInPeriod =
+    const monthlyWishLimit =
       typeof normalizedWish?.maxShiftsPerMonth === "number"
         ? normalizedWish.maxShiftsPerMonth
         : 6;
+    const longTermMonthlyLimit = longTermMonthlyLimitByEmployee.get(employee.id);
+    // An approved long-term limit is a permanent cap and can only lower a monthly wish.
+    const maxSlotsInPeriod =
+      typeof longTermMonthlyLimit === "number"
+        ? Math.min(monthlyWishLimit, longTermMonthlyLimit)
+        : monthlyWishLimit;
     const maxSlotsPerWeek =
       typeof normalizedWish?.maxShiftsPerWeek === "number"
         ? normalizedWish.maxShiftsPerWeek

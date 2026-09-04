@@ -7,13 +7,18 @@ export type WeekdayShort =
   | "Fri"
   | "Sat"
   | "Sun";
-export type LongTermRuleKind = "ALWAYS_OFF" | "PREFER_ON" | "AVOID_ON";
+export type LongTermRuleKind =
+  | "ALWAYS_OFF"
+  | "PREFER_ON"
+  | "AVOID_ON"
+  | "MAX_SHIFTS_PER_MONTH";
 export type LongTermRuleStrength = "SOFT" | "HARD";
 export type LongTermWishRule = {
   kind: LongTermRuleKind;
   weekday: WeekdayShort;
   strength: LongTermRuleStrength;
   serviceType?: ServiceType | "any";
+  maxShiftsPerMonth?: number;
 };
 
 export const DEFAULT_SERVICE_TYPES: ServiceType[] = [

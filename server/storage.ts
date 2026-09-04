@@ -89,6 +89,14 @@ const normalizeLongTermWishRules = (
       if (typeof r.serviceType === "string") {
         (out as any).serviceType = r.serviceType;
       }
+      if (
+        typeof r.maxShiftsPerMonth === "number" &&
+        Number.isInteger(r.maxShiftsPerMonth) &&
+        r.maxShiftsPerMonth >= 0 &&
+        r.maxShiftsPerMonth <= 31
+      ) {
+        out.maxShiftsPerMonth = r.maxShiftsPerMonth;
+      }
     return out;
   });
 };
