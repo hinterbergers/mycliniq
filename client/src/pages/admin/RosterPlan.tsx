@@ -155,6 +155,14 @@ type GenerationPayload = {
   promptOverride?: string;
 };
 
+// Retained only for legacy API compatibility while the UI works directly on a
+// service line instead of exposing a global draft/release workflow.
+const PLAN_STATUS_LABELS: Record<DutyPlan["status"], string> = {
+  Entwurf: "Bearbeitung",
+  Vorläufig: "Vorschau",
+  Freigegeben: "Freigabe",
+};
+
 const SERVICE_LINE_PALETTE = [
   {
     header: "bg-pink-50/50 border-pink-100 text-pink-900",
@@ -220,12 +228,6 @@ const FALLBACK_SERVICE_LINES = [
     isActive: true,
   },
 ];
-
-const PLAN_STATUS_LABELS: Record<DutyPlan["status"], string> = {
-  Entwurf: "Bearbeitung",
-  Vorläufig: "Vorschau",
-  Freigegeben: "Freigabe",
-};
 
 const MONTH_NAMES = [
   "Jänner",
@@ -467,11 +469,11 @@ export default function RosterPlan() {
   const [promptPreviewEdited, setPromptPreviewEdited] = useState("");
   const [pendingGenerationPayload, setPendingGenerationPayload] =
     useState<GenerationPayload | null>(null);
+  const [activeServiceLine, setActiveServiceLine] = useState<ServiceType>("gyn");
   const planStatus = dutyPlan?.status ?? "Entwurf";
-  const planStatusLabel = PLAN_STATUS_LABELS[planStatus];
-  const isDraftMode =
-    planStatus === "Entwurf" || latestGenerationMode === "draft";
-  const shouldUseDraftData = isDraftMode || manualEditMode;
+  // Service-line work is written directly to the live monthly roster. The
+  // legacy draft/final state remains only for backwards-compatible data reads.
+  const shouldUseDraftData = false;
 
   const currentPlanningYear = currentDate.getFullYear();
   const currentPlanningMonth = currentDate.getMonth() + 1;
@@ -691,6 +693,46 @@ export default function RosterPlan() {
     return new Map(serviceLineDisplay.map((line) => [line.key, line]));
   }, [serviceLineDisplay]);
 
+  useEffect(() => {
+    if (
+      serviceLineDisplay.length &&
+      !serviceLineDisplay.some((line) => line.key === activeServiceLine)
+    ) {
+      setActiveServiceLine(serviceLineDisplay[0].key);
+    }
+  }, [activeServiceLine, serviceLineDisplay]);
+
+  const visibleServiceLines = useMemo(
+    () =>
+      serviceLineDisplay.filter((line) => line.key === activeServiceLine),
+    [activeServiceLine, serviceLineDisplay],
+  );
+
+  const activeServiceLineWishStatus = useMemo(() => {
+    const eligible = employees.filter(
+      (employee) =>
+        employee.isActive !== false &&
+        employeeDoesShifts(employee, serviceLineMeta) &&
+        getServiceTypesForEmployee(employee, serviceLineMeta).includes(
+          activeServiceLine,
+        ),
+    );
+    const submittedEmployeeIds = new Set(
+      shiftWishes
+        .filter((wish) => wish.status === "Eingereicht")
+        .map((wish) => wish.employeeId),
+    );
+    const submitted = eligible.filter((employee) =>
+      submittedEmployeeIds.has(employee.id),
+    ).length;
+    const total = eligible.length;
+    return {
+      submitted,
+      total,
+      percent: total ? Math.round((submitted / total) * 100) : 0,
+    };
+  }, [activeServiceLine, employees, serviceLineMeta, shiftWishes]);
+
   const groupedGenerationErrors = useMemo(() => {
     const hardUnfilled = generationUnfilledSlots.filter((slot) =>
       slot.reasonCodes.some(
@@ -863,7 +905,7 @@ export default function RosterPlan() {
     return reasons;
   };
 
-  const isPublished = planStatus === "Freigegeben";
+  const isPublished = false;
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -1651,6 +1693,7 @@ export default function RosterPlan() {
     const planningOutput: PlanningOutputV1 =
       await planningRestApi.runPlanningPreview(payload.year, payload.month, {
         specialRules: payload.specialRules,
+        serviceTypes: [activeServiceLine],
       });
     const shifts = planningOutput.assignments
       .map((assignment): GeneratedShift | null => {
@@ -1677,11 +1720,11 @@ export default function RosterPlan() {
     }
     if (planningOutput.unfilledSlots.length > 0) {
       warnings.push(
-        `${planningOutput.unfilledSlots.length} Slots sind unbesetzt (siehe Planning-Vorschau).`,
+        `${planningOutput.unfilledSlots.length} Slots sind unbesetzt (siehe Planvorschlag).`,
       );
     }
 
-    setLatestGenerationMode("draft");
+    setLatestGenerationMode(null);
     setGeneratedShifts(shifts);
     setGenerationReasoning(
       `Engine ${planningOutput.meta.engine}: Pflichtabdeckung ${planningOutput.summary.coverage.filled}/${planningOutput.summary.coverage.required}, publishAllowed=${planningOutput.publishAllowed ? "ja" : "nein"}.`,
@@ -1695,8 +1738,8 @@ export default function RosterPlan() {
     setGenerationDialogOpen(true);
 
     toast({
-      title: "Vorschau berechnet",
-      description: `${shifts.length} Dienste aus dem Solver wurden vorbereitet`,
+      title: "Planvorschlag berechnet",
+      description: `${shifts.length} Dienste für die gewählte Dienstschiene wurden vorbereitet`,
     });
     return true;
   };
@@ -1868,7 +1911,8 @@ export default function RosterPlan() {
         month,
         generatedShifts,
         true,
-        true,
+        false,
+        [activeServiceLine],
       );
 
       if (result.success) {
@@ -2016,10 +2060,6 @@ export default function RosterPlan() {
       return;
     }
 
-    if (planStatus !== "Entwurf") {
-      const switched = await handleUpdatePlanStatus("Entwurf");
-      if (!switched) return;
-    }
     setManualEditMode(true);
   };
 
@@ -2162,19 +2202,6 @@ export default function RosterPlan() {
                   <ArrowRight className="w-4 h-4" />
                 </Button>
               </div>
-              <Badge
-                variant="outline"
-                className={`gap-1 whitespace-nowrap ${
-                  planStatus === "Freigegeben"
-                    ? "bg-green-50 text-green-700 border-green-200"
-                    : planStatus === "Vorläufig"
-                      ? "bg-blue-50 text-blue-700 border-blue-200"
-                      : "bg-amber-50 text-amber-700 border-amber-200"
-                }`}
-              >
-                <Info className="w-3 h-3" />
-                <span>Planungsstatus: {planStatusLabel}</span>
-              </Badge>
             </div>
             <Button
               variant="outline"
@@ -2221,81 +2248,20 @@ export default function RosterPlan() {
               <Button
                 className="gap-2"
                 onClick={() => setRulesDialogOpen(true)}
-                disabled={isGenerating}
+                disabled={isGenerating || activeServiceLineWishStatus.percent < 90}
                 data-testid="button-auto-generate"
+                title={
+                  activeServiceLineWishStatus.percent < 90
+                    ? "Für die Generierung müssen mindestens 90 % der qualifizierten Personen ihre Wünsche abgegeben haben."
+                    : undefined
+                }
               >
                 {isGenerating ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <Sparkles className="w-4 h-4" />
                 )}
-                Dienstplan generieren
-              </Button>
-            )}
-            {canEdit && planStatus === "Entwurf" && (
-              <Button
-                variant="outline"
-                className="gap-2"
-                onClick={() => handleUpdatePlanStatus("Vorläufig")}
-                disabled={isStatusUpdating}
-                data-testid="button-preview-roster"
-              >
-                {isStatusUpdating ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Info className="w-4 h-4" />
-                )}
-                Vorschau
-              </Button>
-            )}
-            {canEdit && planStatus === "Vorläufig" && (
-              <Button
-                variant="outline"
-                className="gap-2"
-                onClick={() => handleUpdatePlanStatus("Entwurf")}
-                disabled={isStatusUpdating}
-                data-testid="button-back-to-draft"
-              >
-                {isStatusUpdating ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Pencil className="w-4 h-4" />
-                )}
-                Bearbeitung
-              </Button>
-            )}
-            {canPublish && planStatus === "Freigegeben" && (
-              <Button
-                variant="outline"
-                className="gap-2"
-                onClick={() => handleUpdatePlanStatus("Entwurf")}
-                disabled={isStatusUpdating}
-                data-testid="button-reopen-roster"
-              >
-                {isStatusUpdating ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Pencil className="w-4 h-4" />
-                )}
-                Bearbeitung
-              </Button>
-            )}
-            {canPublish && (
-              <Button
-                variant={isPublished ? "outline" : "default"}
-                className="gap-2"
-                onClick={() => handleUpdatePlanStatus("Freigegeben")}
-                disabled={
-                  isPublished || planStatus !== "Vorläufig" || isStatusUpdating
-                }
-                data-testid="button-publish-roster"
-              >
-                {isStatusUpdating ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <CheckCircle2 className="w-4 h-4" />
-                )}
-                {isPublished ? "Freigegeben" : "Freigeben"}
+                {serviceLineLookup.get(activeServiceLine)?.label ?? "Dienstschiene"} generieren
               </Button>
             )}
             {canEdit && (
@@ -2309,6 +2275,39 @@ export default function RosterPlan() {
                 Dienstwünsche freigeben
               </Button>
             )}
+          </div>
+          <div className="rounded-lg border border-border bg-muted/30 p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium">Dienstschiene:</span>
+              {serviceLineDisplay.map((line) => (
+                <Button
+                  key={line.key}
+                  type="button"
+                  size="sm"
+                  variant={activeServiceLine === line.key ? "default" : "outline"}
+                  onClick={() => setActiveServiceLine(line.key)}
+                >
+                  {line.label}
+                </Button>
+              ))}
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+              <span className="font-medium">Wunschstand</span>
+              <span>
+                {activeServiceLineWishStatus.submitted} von {activeServiceLineWishStatus.total} qualifizierten Personen ({activeServiceLineWishStatus.percent} %)
+              </span>
+              <div className="h-2 w-40 overflow-hidden rounded-full bg-slate-200" aria-label="Wunschstand">
+                <div
+                  className={`h-full rounded-full ${activeServiceLineWishStatus.percent >= 90 ? "bg-emerald-500" : "bg-amber-500"}`}
+                  style={{ width: `${activeServiceLineWishStatus.percent}%` }}
+                />
+              </div>
+              <span className={activeServiceLineWishStatus.percent >= 90 ? "text-emerald-700" : "text-amber-700"}>
+                {activeServiceLineWishStatus.percent >= 90
+                  ? "Bereit zur Generierung"
+                  : "Für eine belastbare Generierung fehlen noch Wünsche"}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -2532,7 +2531,7 @@ export default function RosterPlan() {
                   </TableHead>
 
                   {/* Service Columns */}
-                  {serviceLineDisplay.map((line) => (
+                  {visibleServiceLines.map((line) => (
                     <TableHead
                       key={line.key}
                       className={`w-48 border-r border-border font-bold text-center ${line.style.header}`}
@@ -2609,7 +2608,7 @@ export default function RosterPlan() {
                         {format(day, "dd.MM.")}
                       </TableCell>
 
-                      {serviceLineDisplay.map((line) => (
+                      {visibleServiceLines.map((line) => (
                         <TableCell
                           key={line.key}
                           className="border-r border-border p-1 align-top"

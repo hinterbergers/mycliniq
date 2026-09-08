@@ -14,7 +14,6 @@ import {
   isNotNull,
   sql,
 } from "./lib/db";
-import { syncDraftFromFinal } from "./lib/roster";
 import { and, eq, isNull } from "drizzle-orm";
 import {
   insertEmployeeSchema,
@@ -121,17 +120,9 @@ const syncUserRosterChangeIntoDraft = async (year: number, month: number) => {
     .where(and(eq(dutyPlans.year, year), eq(dutyPlans.month, month)))
     .limit(1);
 
-  if (!plan) return;
-  if (!ALLOWED_CLAIM_STATUSES.has(plan.status)) return;
-
-  await syncDraftFromFinal(year, month);
-
-  if (plan.status === "Freigegeben") {
-    await db
-      .update(dutyPlans)
-      .set({ status: "Vorläufig" })
-      .where(eq(dutyPlans.id, plan.id));
-  }
+  // Changes now apply directly to the affected service line. Do not create a
+  // global draft copy or downgrade a monthly plan after a user action.
+  if (!plan || !ALLOWED_CLAIM_STATUSES.has(plan.status)) return;
 };
 
 type OpenShiftSlotSource = "final" | "draft";
@@ -410,11 +401,13 @@ async function ensureRequiredDailyShifts({
   year,
   month,
   isDraftFlag,
+  serviceTypes,
 }: {
   clinicId: number | null | undefined;
   year: number;
   month: number;
   isDraftFlag: boolean;
+  serviceTypes?: string[];
 }): Promise<number> {
   if (!clinicId) return 0;
 
@@ -435,7 +428,12 @@ async function ensureRequiredDailyShifts({
 
   if (!requiredLines.length) return 0;
 
-  const requiredKeys = requiredLines.map((line) => line.key);
+  const requestedKeys = Array.isArray(serviceTypes)
+    ? new Set(serviceTypes.filter((key): key is string => typeof key === "string"))
+    : null;
+  const requiredKeys = requiredLines
+    .map((line) => line.key)
+    .filter((key) => !requestedKeys || requestedKeys.has(key));
   const existingRows = await db
     .select({
       date: rosterShifts.date,
@@ -2783,7 +2781,7 @@ export async function registerRoutes(
     "/api/roster/apply-generated",
     async (req: Request, res: Response) => {
       try {
-        const { year, month, shifts, replaceExisting, isDraft } = req.body;
+        const { year, month, shifts, replaceExisting, isDraft, serviceTypes } = req.body;
 
         if (!shifts || !Array.isArray(shifts)) {
           return res.status(400).json({ error: "Keine Dienste zum Speichern" });
@@ -2791,10 +2789,33 @@ export async function registerRoutes(
 
         const overrideIsDraftQuery = String(req.query.draft) === "1";
         const isDraftFlag = overrideIsDraftQuery || isDraft === true;
+        const scopedServiceTypes = Array.isArray(serviceTypes)
+          ? Array.from(
+              new Set(
+                serviceTypes.filter(
+                  (serviceType: unknown): serviceType is string =>
+                    typeof serviceType === "string" && serviceType.trim().length > 0,
+                ),
+              ),
+            )
+          : [];
+
+        if (
+          scopedServiceTypes.length &&
+          shifts.some((shift: any) => !scopedServiceTypes.includes(shift.serviceType))
+        ) {
+          return res.status(400).json({
+            error: "Generierte Dienste passen nicht zur gewählten Dienstschiene",
+          });
+        }
 
         const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
         const monthEndDate = new Date(year, month, 0);
         const monthEnd = `${year}-${String(month).padStart(2, "0")}-${String(monthEndDate.getDate()).padStart(2, "0")}`;
+
+        const serviceTypeScope = scopedServiceTypes.length
+          ? inArray(rosterShifts.serviceType, scopedServiceTypes)
+          : undefined;
 
         if (replaceExisting) {
           const existingRows = await db
@@ -2805,6 +2826,7 @@ export async function registerRoutes(
                 gte(rosterShifts.date, monthStart),
                 lte(rosterShifts.date, monthEnd),
                 eq(rosterShifts.isDraft, isDraftFlag),
+                serviceTypeScope,
               ),
             );
           await db
@@ -2814,6 +2836,7 @@ export async function registerRoutes(
                 gte(rosterShifts.date, monthStart),
                 lte(rosterShifts.date, monthEnd),
                 eq(rosterShifts.isDraft, isDraftFlag),
+                serviceTypeScope,
               ),
             );
           await logRosterShiftAuditEvents(
@@ -2843,6 +2866,7 @@ export async function registerRoutes(
           year,
           month,
           isDraftFlag,
+          serviceTypes: scopedServiceTypes.length ? scopedServiceTypes : undefined,
         });
         const savedCount = results.length + requiredInserted;
         const message = requiredInserted

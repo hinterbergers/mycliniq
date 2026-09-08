@@ -959,6 +959,7 @@ export const rosterApi = {
     shifts: any[],
     replaceExisting: boolean = true,
     isDraft: boolean = true,
+    serviceTypes?: string[],
   ): Promise<{
     success: boolean;
     savedShifts: number;
@@ -967,7 +968,14 @@ export const rosterApi = {
     const response = await apiFetch(`${API_BASE}/roster/apply-generated`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ year, month, shifts, replaceExisting, isDraft }),
+      body: JSON.stringify({
+        year,
+        month,
+        shifts,
+        replaceExisting,
+        isDraft,
+        serviceTypes,
+      }),
     });
     return handleResponse(response);
   },
@@ -3827,6 +3835,7 @@ export const planningRestApi = {
         fixedPreferredEmployeeIds?: number[];
         noDutyEmployeeIds?: number[];
       };
+      serviceTypes?: string[];
     },
   ): Promise<PlanningOutputV1> => {
     const response = await apiFetch(
@@ -3849,6 +3858,7 @@ export const planningRestApi = {
         fixedPreferredEmployeeIds?: number[];
         noDutyEmployeeIds?: number[];
       };
+      serviceTypes?: string[];
     } = {},
   ): Promise<PlanningOutputV1> => {
     return planningRestApi.run(year, month, { ...data, dryRun: true });

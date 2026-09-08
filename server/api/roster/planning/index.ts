@@ -20,6 +20,19 @@ import {
 
 type JsonValue = Record<string, unknown>;
 
+const normalizeServiceTypes = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? Array.from(
+        new Set(
+          value.filter(
+            (serviceType): serviceType is string =>
+              typeof serviceType === "string" &&
+              serviceType.trim().length > 0,
+          ),
+        ),
+      )
+    : [];
+
 export async function getLocks(
   year: number,
   month: number,
@@ -860,8 +873,12 @@ export function registerPlanningRoutes(router: Router) {
     };
   };
 
-  const buildInputSummaryResponse = async (year: number, month: number) => {
-    const input = await buildPlanningInput(year, month);
+  const buildInputSummaryResponse = async (
+    year: number,
+    month: number,
+    serviceTypes?: string[],
+  ) => {
+    const input = await buildPlanningInput(year, month, { serviceTypes });
     return {
       version: input.version,
       meta: input.meta,
@@ -889,13 +906,14 @@ export function registerPlanningRoutes(router: Router) {
         fixedPreferredEmployeeIds?: number[];
         noDutyEmployeeIds?: number[];
       };
+      serviceTypes?: string[];
     },
   ) => {
-    const { dryRun, seed, specialRules } = options;
+    const { dryRun, seed, specialRules, serviceTypes } = options;
     const label = dryRun ? "preview" : "run";
     logPlanningRequest(label, year, month, req.user?.employeeId);
     const [input, locks, settings] = await Promise.all([
-      buildPlanningInput(year, month),
+      buildPlanningInput(year, month, { serviceTypes }),
       getLocks(year, month),
       storage.getRosterSettings(),
     ]);
@@ -942,7 +960,8 @@ export function registerPlanningRoutes(router: Router) {
     try {
       const parsed = parseYearMonth(req, res);
       if (!parsed) return;
-      const input = await buildPlanningInput(parsed.year, parsed.month);
+      const serviceTypes = normalizeServiceTypes(req.query.serviceTypes?.toString().split(","));
+      const input = await buildPlanningInput(parsed.year, parsed.month, { serviceTypes });
       res.json(input);
     } catch (error) {
       res.status(500).json({ error: "Fehler beim Erzeugen der Input-Daten" });
@@ -1069,11 +1088,12 @@ export function registerPlanningRoutes(router: Router) {
     try {
       const parsed = parseYearMonth(req, res);
       if (!parsed) return;
-      const { seed, specialRules } = req.body ?? {};
+      const { seed, specialRules, serviceTypes } = req.body ?? {};
       await executePlanningRun(parsed.year, parsed.month, req, res, {
         dryRun: true,
         seed,
         specialRules,
+        serviceTypes: normalizeServiceTypes(serviceTypes),
       });
     } catch (error) {
       console.error("planning preview failed", error);
@@ -1085,11 +1105,12 @@ export function registerPlanningRoutes(router: Router) {
     try {
       const parsed = parseYearMonth(req, res);
       if (!parsed) return;
-      const { seed, dryRun, specialRules } = req.body ?? {};
+      const { seed, dryRun, specialRules, serviceTypes } = req.body ?? {};
       await executePlanningRun(parsed.year, parsed.month, req, res, {
         dryRun: resolveBooleanValue(dryRun, false),
         seed,
         specialRules,
+        serviceTypes: normalizeServiceTypes(serviceTypes),
       });
     } catch (error) {
       console.error("planning run failed", error);

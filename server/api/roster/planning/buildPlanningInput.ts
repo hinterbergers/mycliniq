@@ -8,6 +8,9 @@ import {
   getISOWeek,
 } from "date-fns";
 import { storage } from "../../../storage";
+import { db } from "../../../lib/db";
+import { serviceLines } from "../../../../shared/schema";
+import { eq } from "drizzle-orm";
 import { assertValidPlanningInput } from "../validation/planningSchemas";
 import { type ShiftWish } from "@shared/schema";
 
@@ -179,7 +182,32 @@ const normalizeOptionalInt = (
 
 const normalizeBoolean = (value: unknown): boolean => value === true;
 
-const createSlotsForPeriod = (year: number, month: number) => {
+const serviceLineTags = (roleGroup?: string | null): string[] => {
+  switch ((roleGroup ?? "").toUpperCase()) {
+    case "OA":
+      return ["OA"];
+    case "ASS":
+      return ["ASS"];
+    case "TA":
+    case "TURNUS":
+      return ["TA"];
+    case "PRIM":
+      return ["PRIM"];
+    case "ALL":
+    default:
+      return ["OA", "ASS", "TA"];
+  }
+};
+
+const createSlotsForPeriod = (
+  year: number,
+  month: number,
+  serviceRoles: ServiceRole[],
+  serviceTypes?: string[],
+) => {
+  const selectedServiceTypes = serviceTypes?.length
+    ? new Set(serviceTypes)
+    : null;
   const start = startOfMonth(new Date(year, month - 1, 1));
   const end = endOfMonth(start);
   const days = eachDayOfInterval({ start, end });
@@ -190,7 +218,8 @@ const createSlotsForPeriod = (year: number, month: number) => {
     const weekday = date.getDay();
     // Friday through Sunday form one planning weekend for fairness and limits.
     const isWeekend = weekday === 0 || weekday === 5 || weekday === 6;
-    for (const role of SERVICE_ROLES) {
+    for (const role of serviceRoles) {
+      if (selectedServiceTypes && !selectedServiceTypes.has(role.id)) continue;
       slots.push({
         id: `${year}-${String(month).padStart(2, "0")}-${date.getDate().toString().padStart(2, "0")}-${role.id}`,
         date: dateString,
@@ -221,8 +250,38 @@ const normalizeShiftWish = (wish?: ShiftWish) => {
   };
 };
 
-export async function buildPlanningInput(year: number, month: number) {
-  const slots = createSlotsForPeriod(year, month);
+export async function buildPlanningInput(
+  year: number,
+  month: number,
+  options: { serviceTypes?: string[] } = {},
+) {
+  const configuredLines = await db
+    .select({
+      key: serviceLines.key,
+      label: serviceLines.label,
+      startTime: serviceLines.startTime,
+      endTime: serviceLines.endTime,
+      roleGroup: serviceLines.roleGroup,
+    })
+    .from(serviceLines)
+    .where(eq(serviceLines.isActive, true));
+  const serviceRoles: ServiceRole[] = configuredLines.length
+    ? configuredLines.map((line) => ({
+        id: line.key,
+        label: line.label,
+        startTime: line.startTime ?? "07:30",
+        endTime: line.endTime ?? "15:30",
+        tags: serviceLineTags(line.roleGroup),
+      }))
+    : SERVICE_ROLES;
+  const selectedServiceTypes = Array.from(
+    new Set(
+      (options.serviceTypes ?? []).filter((serviceType) =>
+        serviceRoles.some((role) => role.id === serviceType),
+      ),
+    ),
+  );
+  const slots = createSlotsForPeriod(year, month, serviceRoles, selectedServiceTypes);
   const start = slots.length
     ? slots[0].date
     : formatISO(startOfMonth(new Date(year, month - 1, 1)), {
@@ -247,6 +306,7 @@ export async function buildPlanningInput(year: number, month: number) {
     absences,
     plannedAbsences,
     previousPublishedShifts,
+    currentPublishedShifts,
   ] = await Promise.all([
     storage.getShiftWishesByMonth(year, month),
     storage.getLongTermShiftWishesByStatus("Genehmigt"),
@@ -256,6 +316,7 @@ export async function buildPlanningInput(year: number, month: number) {
     storage.getRosterShiftsByMonth(previousYear, previousMonth, {
       finalOnly: true,
     }),
+    storage.getRosterShiftsByMonth(year, month, { finalOnly: true }),
   ]);
   const absenceDatesByEmployee = new Map<number, Set<string>>();
 
@@ -356,7 +417,13 @@ export async function buildPlanningInput(year: number, month: number) {
       (employee.shiftPreferences as any)?.serviceTypeOverrides,
     );
     const roleIds = Array.from(
-      new Set([...GROUP_ROLE_MAP[baseGroup], ...overrideRoles]),
+      new Set([
+        ...serviceRoles
+          .filter((serviceRole) => serviceRole.tags?.includes(baseGroup))
+          .map((serviceRole) => serviceRole.id),
+        ...GROUP_ROLE_MAP[baseGroup],
+        ...overrideRoles,
+      ]),
     ).filter((roleId) => roleId !== "turnus" || baseGroup === "ASS");
 
     const monthlyWishLimit =
@@ -438,7 +505,9 @@ export async function buildPlanningInput(year: number, month: number) {
       year,
       month,
     },
-    roles: SERVICE_ROLES.map((role) => ({
+    roles: serviceRoles.filter(
+      (role) => !selectedServiceTypes.length || selectedServiceTypes.includes(role.id),
+    ).map((role) => ({
       id: role.id,
       label: role.label,
       tags: role.tags,
@@ -447,7 +516,14 @@ export async function buildPlanningInput(year: number, month: number) {
     employees,
     history: {
       windowMonths: 1,
-      recentAssignments: previousPublishedShifts
+      recentAssignments: [...previousPublishedShifts, ...currentPublishedShifts]
+        // Existing assignments in other service lines are hard context while a
+        // single line is regenerated. The selected line itself is replaced.
+        .filter(
+          (shift) =>
+            !selectedServiceTypes.length ||
+            !selectedServiceTypes.includes(shift.serviceType),
+        )
         .filter((shift) => shift.employeeId !== null)
         .map((shift) => ({
           employeeId: String(shift.employeeId),
