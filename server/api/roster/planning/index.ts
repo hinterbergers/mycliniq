@@ -212,7 +212,6 @@ const normalizeIdArray = (values: unknown): number[] => {
   return Array.from(unique);
 };
 
-const SOLVER_ROLES = ["gyn", "kreiszimmer", "turnus"];
 const REQUIRED_SERVICE_ROLES = new Set(["gyn", "kreiszimmer"]);
 const WEEKDAY_SHORT = [
   "Sun",
@@ -274,7 +273,13 @@ const buildEmployeeStates = (input: {
     capabilities: { canRoleIds: string[] };
     constraints: any;
   }>;
-  history?: { recentAssignments?: Array<{ employeeId: string; date: string }> };
+  history?: {
+    recentAssignments?: Array<{
+      employeeId: string;
+      date: string;
+      countsTowardPeriod?: boolean;
+    }>;
+  };
 }) => {
   const states = new Map<string, PlannerEmployeeState>();
   for (const employee of input.employees) {
@@ -345,14 +350,23 @@ const buildEmployeeStates = (input: {
     });
   }
 
-  // Published services from the preceding month only constrain the new plan;
-  // they are never edited or counted toward the new month's total.
+  // Prior-month duties constrain the first days of a month. Existing duties in
+  // other service lines also consume the shared monthly and weekend limits.
   for (const assignment of input.history?.recentAssignments ?? []) {
     const state = states.get(String(assignment.employeeId));
     if (!state || !/^\d{4}-\d{2}-\d{2}$/.test(assignment.date)) continue;
     state.assignedDates.add(assignment.date);
-    const isoWeek = getISOWeek(parseISO(assignment.date));
+    const assignmentDate = parseISO(assignment.date);
+    const isoWeek = getISOWeek(assignmentDate);
     state.assignedPerWeek[isoWeek] = (state.assignedPerWeek[isoWeek] ?? 0) + 1;
+    if (assignment.countsTowardPeriod !== true) continue;
+
+    state.assignedCount += 1;
+    const weekday = WEEKDAY_SHORT[assignmentDate.getDay()];
+    if (weekday === "Fri" || weekday === "Sat" || weekday === "Sun") {
+      state.assignedWeekends += 1;
+      state.assignedWeekendDays[weekday] += 1;
+    }
   }
   return states;
 };
@@ -517,6 +531,9 @@ const createAssignments = (
   const unfilledSlots: PlanningUnfilledSlot[] = [];
   const lockMap = new Map(locks.map((lock) => [lock.slotId, lock]));
   const assignedSlotIds = new Set<string>();
+  const solverRoles: string[] = Array.from(
+    new Set<string>(input.slots.map((slot: any) => String(slot.roleId))),
+  );
 
   for (const employeeId of noDutyEmployeeSet) {
     if (!employeeStates.has(employeeId)) continue;
@@ -579,7 +596,7 @@ const createAssignments = (
 
   const slotsByDate = new Map<string, any[]>();
   for (const slot of input.slots) {
-    if (!SOLVER_ROLES.includes(slot.roleId)) continue;
+    if (!solverRoles.includes(slot.roleId)) continue;
     const existing = slotsByDate.get(slot.date) ?? [];
     existing.push(slot);
     slotsByDate.set(slot.date, existing);
@@ -593,7 +610,7 @@ const createAssignments = (
     for (const date of preferredDates) {
       const daySlots = slotsByDate.get(date);
       if (!daySlots || daySlots.length === 0) continue;
-      const fallbackRoles = SOLVER_ROLES.filter((role) =>
+      const fallbackRoles = solverRoles.filter((role) =>
         state.canRoleIds.has(role),
       );
       const preferenceRoles =
@@ -602,7 +619,7 @@ const createAssignments = (
           : fallbackRoles;
       const candidateRoles = preferenceRoles
         .filter((role) => state.canRoleIds.has(role))
-        .sort((a, b) => SOLVER_ROLES.indexOf(a) - SOLVER_ROLES.indexOf(b));
+        .sort((a, b) => solverRoles.indexOf(a) - solverRoles.indexOf(b));
       const normalizedRoles = candidateRoles.length
         ? candidateRoles
         : fallbackRoles;
@@ -661,7 +678,7 @@ const createAssignments = (
   }
 
   for (const slot of input.slots) {
-    if (!SOLVER_ROLES.includes(slot.roleId)) continue;
+    if (!solverRoles.includes(slot.roleId)) continue;
     if (assignedSlotIds.has(slot.id)) continue;
     const slotDateObj = parseISO(slot.date);
     const isoWeek = getISOWeek(slotDateObj);

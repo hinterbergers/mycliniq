@@ -89,7 +89,8 @@
             "required": ["employeeId", "date"],
             "properties": {
               "employeeId": { "type": "string", "minLength": 1 },
-              "date": { "type": "string", "format": "date" }
+              "date": { "type": "string", "format": "date" },
+              "countsTowardPeriod": { "type": "boolean" }
             }
           }
         },

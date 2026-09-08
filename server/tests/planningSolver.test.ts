@@ -226,12 +226,98 @@ const testBoundaryAssignmentBlocksFirstDayOfMonth = () => {
   );
 };
 
+const testExistingOtherServiceCountsTowardSharedLimits = () => {
+  const input = {
+    meta: {
+      timezone: "Europe/Vienna",
+      createdAt: new Date().toISOString(),
+      planningKind: "MONTHLY_DUTY",
+    },
+    period: {
+      startDate: "2026-04-05",
+      endDate: "2026-04-05",
+      year: 2026,
+      month: 4,
+    },
+    roles: [{ id: "gyn", label: "Gynäkologie (OA)" }],
+    slots: [
+      {
+        id: "2026-04-05-gyn",
+        date: "2026-04-05",
+        roleId: "gyn",
+        required: 1,
+        isWeekend: true,
+      },
+    ],
+    employees: [
+      {
+        id: "1",
+        name: "Dr. 1",
+        group: "OA",
+        capabilities: { canRoleIds: ["gyn"] },
+        constraints: {
+          limits: { maxSlotsInPeriod: 1, maxWeekendSlotsInPeriod: 1 },
+          hard: {},
+        },
+      },
+    ],
+    history: {
+      recentAssignments: [
+        {
+          employeeId: "1",
+          date: "2026-04-03",
+          countsTowardPeriod: true,
+        },
+      ],
+    },
+    rules: { hardRules: [] },
+  };
+
+  const result = createAssignments(input, [], [], []);
+  assert(
+    result.assignments.length === 0,
+    "an existing duty in another service line must consume the monthly limit",
+  );
+  assert(
+    result.unfilledSlots[0]?.candidatesBlockedBy.includes("MAX_SLOTS"),
+    "the shared monthly limit should be reported as the conflict",
+  );
+};
+
+const testExistingOtherServiceCountsTowardWeekendLimit = () => {
+  const input = {
+    meta: { timezone: "Europe/Vienna", createdAt: new Date().toISOString(), planningKind: "MONTHLY_DUTY" },
+    period: { startDate: "2026-04-05", endDate: "2026-04-05", year: 2026, month: 4 },
+    roles: [{ id: "gyn", label: "Gynäkologie (OA)" }],
+    slots: [{ id: "2026-04-05-gyn", date: "2026-04-05", roleId: "gyn", required: 1, isWeekend: true }],
+    employees: [{
+      id: "1",
+      name: "Dr. 1",
+      group: "OA",
+      capabilities: { canRoleIds: ["gyn"] },
+      constraints: { limits: { maxSlotsInPeriod: 2, maxWeekendSlotsInPeriod: 1 }, hard: {} },
+    }],
+    history: {
+      recentAssignments: [{ employeeId: "1", date: "2026-04-03", countsTowardPeriod: true }],
+    },
+    rules: { hardRules: [] },
+  };
+
+  const result = createAssignments(input, [], [], []);
+  assert(
+    result.unfilledSlots[0]?.candidatesBlockedBy.includes("MAX_WEEKEND_SLOTS"),
+    "an existing Friday in another service line must consume the weekend limit",
+  );
+};
+
 const runTests = () => {
   testScoreRespectsPreferences();
   testSundayPrefersExistingFridayAssignment();
   testBanWeekdayBlocksAssignment();
   testFixedPreferredAssignment();
   testBoundaryAssignmentBlocksFirstDayOfMonth();
+  testExistingOtherServiceCountsTowardSharedLimits();
+  testExistingOtherServiceCountsTowardWeekendLimit();
   console.log("Planning solver smoke tests passed");
 };
 

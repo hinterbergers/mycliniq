@@ -516,19 +516,30 @@ export async function buildPlanningInput(
     employees,
     history: {
       windowMonths: 1,
-      recentAssignments: [...previousPublishedShifts, ...currentPublishedShifts]
-        // Existing assignments in other service lines are hard context while a
-        // single line is regenerated. The selected line itself is replaced.
-        .filter(
-          (shift) =>
-            !selectedServiceTypes.length ||
-            !selectedServiceTypes.includes(shift.serviceType),
-        )
-        .filter((shift) => shift.employeeId !== null)
-        .map((shift) => ({
-          employeeId: String(shift.employeeId),
-          date: String(shift.date).slice(0, 10),
-        })),
+      recentAssignments: [
+        // Prior-month duties only constrain consecutive-day and weekly rules.
+        ...previousPublishedShifts
+          .filter((shift) => shift.employeeId !== null)
+          .map((shift) => ({
+            employeeId: String(shift.employeeId),
+            date: String(shift.date).slice(0, 10),
+            countsTowardPeriod: false,
+          })),
+        // Existing assignments in other service lines consume the same limits
+        // as generated duties, but the selected line itself is replaced.
+        ...currentPublishedShifts
+          .filter(
+            (shift) =>
+              shift.employeeId !== null &&
+              (!selectedServiceTypes.length ||
+                !selectedServiceTypes.includes(shift.serviceType)),
+          )
+          .map((shift) => ({
+            employeeId: String(shift.employeeId),
+            date: String(shift.date).slice(0, 10),
+            countsTowardPeriod: true,
+          })),
+      ],
     },
     rules: DEFAULT_RULES,
   };
