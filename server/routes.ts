@@ -890,6 +890,15 @@ const isEligibleForWishMonth = (
   return true;
 };
 
+const isWishMonthReleased = async (year: number, month: number) => {
+  const [plan] = await db
+    .select({ status: dutyPlans.status })
+    .from(dutyPlans)
+    .where(and(eq(dutyPlans.year, year), eq(dutyPlans.month, month)))
+    .limit(1);
+  return plan?.status === "Freigegeben";
+};
+
 const overlapsMonth = (
   employee: { employmentFrom?: string | null; employmentUntil?: string | null },
   monthStart: Date,
@@ -6835,6 +6844,11 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
             "Wunschmonat liegt außerhalb Beschäftigungszeit / Langzeit-Deaktivierung.",
         });
       }
+      if (await isWishMonthReleased(year, month)) {
+        return res.status(409).json({
+          error: "Der Dienstplan ist bereits freigegeben; Wünsche für diesen Monat können nicht mehr geändert werden.",
+        });
+      }
 
       // New flow: a persisted wish is treated as submitted.
       const wish = await storage.createShiftWish({
@@ -6877,6 +6891,11 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
       );
       if (!canManageTarget) {
         return res.status(403).json({ error: "Keine Berechtigung" });
+      }
+      if (await isWishMonthReleased(existing.year, existing.month)) {
+        return res.status(409).json({
+          error: "Der Dienstplan ist bereits freigegeben; Wünsche für diesen Monat können nicht mehr geändert werden.",
+        });
       }
 
       const payload = { ...(req.body as any) };
@@ -6942,6 +6961,11 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
               "Wunschmonat liegt außerhalb Beschäftigungszeit / Langzeit-Deaktivierung.",
           });
         }
+        if (await isWishMonthReleased(existing.year, existing.month)) {
+          return res.status(409).json({
+            error: "Der Dienstplan ist bereits freigegeben; Wünsche für diesen Monat können nicht mehr geändert werden.",
+          });
+        }
 
         const wish = await storage.updateShiftWish(id, {
           status: "Eingereicht",
@@ -6997,6 +7021,11 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
       const isAdmin = Boolean(req.user?.isAdmin || req.user?.appRole === "Admin");
       if (!isAdmin && existing.employeeId !== currentEmployeeId) {
         return res.status(403).json({ error: "Keine Berechtigung" });
+      }
+      if (await isWishMonthReleased(existing.year, existing.month)) {
+        return res.status(409).json({
+          error: "Der Dienstplan ist bereits freigegeben; Wünsche für diesen Monat können nicht mehr geändert werden.",
+        });
       }
 
       if (existing.status === "Eingereicht") {

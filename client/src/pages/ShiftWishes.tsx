@@ -227,6 +227,9 @@ export default function ShiftWishes() {
   const [selectedMonth, setSelectedMonth] = useState<Date>(
     () => startOfMonth(new Date()),
   );
+  const [releasedPlanMonths, setReleasedPlanMonths] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [eligibleEmployeeIds, setEligibleEmployeeIds] = useState<number[]>([]);
 
   const [absenceDialogOpen, setAbsenceDialogOpen] = useState(false);
@@ -255,6 +258,12 @@ export default function ShiftWishes() {
     );
   }, [canViewAll, currentUser, employees, selectedEmployeeId]);
   const activeEmployeeId = activeEmployee?.id ?? null;
+  const selectedMonthKey = format(selectedMonth, "yyyy-MM");
+  const isWishLocked = releasedPlanMonths.has(selectedMonthKey);
+  const minSelectableMonth = useMemo(
+    () => getMinSelectableMonth(currentUser),
+    [currentUser],
+  );
   const serviceLineMeta = useMemo(
     () =>
       serviceLines.map((line) => ({
@@ -626,6 +635,15 @@ export default function ShiftWishes() {
 
       setEmployees(emps);
       setServiceLines(serviceLineData);
+      setReleasedPlanMonths(
+        new Set(
+          dutyPlanList
+            .filter((plan) => plan.status === "Freigegeben")
+            .map((plan) =>
+              format(getPlanMonthDate(plan.year, plan.month), "yyyy-MM"),
+            ),
+        ),
+      );
 
       const planMonths = dutyPlanList
         .map((plan) => getPlanMonthDate(plan.year, plan.month))
@@ -695,6 +713,14 @@ export default function ShiftWishes() {
 
   const upsertSubmittedWish = async () => {
     if (!activeEmployeeId || !selectedMonth) return;
+    if (isWishLocked) {
+      toast({
+        title: "Dienstplan freigegeben",
+        description: "Wünsche können nach der ersten Freigabe nicht mehr geändert werden.",
+        variant: "destructive",
+      });
+      return null;
+    }
 
     try {
       setSaving(true);
@@ -914,6 +940,30 @@ export default function ShiftWishes() {
           </div>
 
           <div className="flex items-center gap-4">
+            <div className="min-w-[172px]">
+              <Label
+                htmlFor="wish-month"
+                className="mb-1 block text-xs text-muted-foreground"
+              >
+                Wunschmonat
+              </Label>
+              <Input
+                id="wish-month"
+                type="month"
+                value={selectedMonthKey}
+                min={format(minSelectableMonth, "yyyy-MM")}
+                onChange={(event) => {
+                  if (!event.target.value) return;
+                  const nextMonth = startOfMonth(
+                    new Date(`${event.target.value}-01T00:00:00`),
+                  );
+                  if (!Number.isNaN(nextMonth.getTime()) && !isBefore(nextMonth, minSelectableMonth)) {
+                    setSelectedMonth(nextMonth);
+                  }
+                }}
+                data-testid="input-wish-month"
+              />
+            </div>
             {canViewAll && deputyOptions.length > 0 && (
               <div className="min-w-[280px]">
                 <Label className="mb-1 block text-xs text-muted-foreground">
@@ -974,7 +1024,12 @@ export default function ShiftWishes() {
                 </Popover>
               </div>
             )}
-            {isSubmitted ? (
+            {isWishLocked ? (
+              <Badge variant="secondary" className="gap-1">
+                <CheckCircle className="w-3 h-3" />
+                Freigegeben
+              </Badge>
+            ) : isSubmitted ? (
               <Badge variant="default" className="gap-1 bg-green-600">
                 <CheckCircle className="w-3 h-3" />
                 Eingereicht
@@ -988,11 +1043,20 @@ export default function ShiftWishes() {
           </div>
         </div>
 
-        <Alert className="bg-blue-50 border-blue-200">
-          <Info className="h-4 w-4 text-blue-600" />
-          <AlertDescription className="text-blue-800">
-            <strong>Planungszeitraum:</strong> Wünsche für {monthName}{" "}
-            {selectedMonth.getFullYear()} sind aktuell freigeschaltet.
+        <Alert
+          className={
+            isWishLocked
+              ? "border-amber-200 bg-amber-50"
+              : "border-blue-200 bg-blue-50"
+          }
+        >
+          <Info className={`h-4 w-4 ${isWishLocked ? "text-amber-600" : "text-blue-600"}`} />
+          <AlertDescription className={isWishLocked ? "text-amber-800" : "text-blue-800"}>
+            {isWishLocked ? (
+              <><strong>Dienstplan freigegeben:</strong> Wünsche für {monthName} {selectedMonth.getFullYear()} können nicht mehr geändert werden.</>
+            ) : (
+              <><strong>Wünsche offen:</strong> Wünsche für {monthName} {selectedMonth.getFullYear()} können bis zur ersten Freigabe des Dienstplans jederzeit angepasst werden.</>
+            )}
           </AlertDescription>
         </Alert>
 
@@ -1083,7 +1147,7 @@ export default function ShiftWishes() {
                                 <button
                                   type="button"
                                   onClick={() => toggleWish(key)}
-                                  disabled={saving}
+                                  disabled={saving || isWishLocked}
                                   className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-blue-200 bg-white/80 text-[10px] text-blue-500 transition disabled:cursor-not-allowed disabled:opacity-40"
                                   aria-label={`Wunsch für ${formattedDate}`}
                                 >
@@ -1092,7 +1156,7 @@ export default function ShiftWishes() {
                                 <button
                                   type="button"
                                   onClick={() => toggleBlocked(key)}
-                                  disabled={saving}
+                                  disabled={saving || isWishLocked}
                                   className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-red-200 bg-white/80 text-[10px] text-red-500 transition disabled:cursor-not-allowed disabled:opacity-40"
                                   aria-label={`Nicht möglich für ${formattedDate}`}
                                 >
@@ -1148,7 +1212,7 @@ export default function ShiftWishes() {
                             : "outline"
                         }
                         size="sm"
-                        disabled={saving}
+                        disabled={saving || isWishLocked}
                         onClick={() => toggleWeekday(day.value)}
                         data-testid={`avoid-weekday-${day.value}`}
                       >
@@ -1173,7 +1237,7 @@ export default function ShiftWishes() {
                         v === "none" ? undefined : parseInt(v, 10),
                       )
                     }
-                    disabled={saving}
+                    disabled={saving || isWishLocked}
                   >
                     <SelectTrigger
                       className="w-48"
@@ -1210,7 +1274,7 @@ export default function ShiftWishes() {
                           value ? parseInt(value, 10) : undefined,
                         );
                       }}
-                      disabled={saving}
+                      disabled={saving || isWishLocked}
                       data-testid="input-max-shifts-month"
                     />
                   </div>
@@ -1227,7 +1291,7 @@ export default function ShiftWishes() {
                           v === "none" ? undefined : parseInt(v, 10),
                         )
                       }
-                      disabled={saving}
+                      disabled={saving || isWishLocked}
                     >
                       <SelectTrigger
                         className="w-48"
@@ -1256,7 +1320,7 @@ export default function ShiftWishes() {
                     onChange={(e) => setNotes(e.target.value)}
                     placeholder="Besondere Wünsche oder Hinweise..."
                     rows={3}
-                    disabled={saving}
+                    disabled={saving || isWishLocked}
                     data-testid="input-notes"
                   />
                 </div>
@@ -1266,7 +1330,7 @@ export default function ShiftWishes() {
             <div className="flex justify-end gap-3">
               <Button
                 onClick={handleSubmit}
-                disabled={saving}
+                disabled={saving || isWishLocked}
                 data-testid="button-submit"
               >
                 {saving ? (
