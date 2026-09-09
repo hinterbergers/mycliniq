@@ -87,6 +87,7 @@ import {
   isBefore,
   isAfter,
   addDays,
+  addMonths,
   isSameDay,
   endOfMonth,
 } from "date-fns";
@@ -263,6 +264,13 @@ export default function ShiftWishes() {
   const minSelectableMonth = useMemo(
     () => getMinSelectableMonth(currentUser),
     [currentUser],
+  );
+  const selectableMonths = useMemo(
+    () =>
+      Array.from({ length: 120 }, (_, index) =>
+        addMonths(minSelectableMonth, index),
+      ),
+    [minSelectableMonth],
   );
   const serviceLineMeta = useMemo(
     () =>
@@ -940,29 +948,30 @@ export default function ShiftWishes() {
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="min-w-[172px]">
-              <Label
-                htmlFor="wish-month"
-                className="mb-1 block text-xs text-muted-foreground"
-              >
+            <div className="min-w-[190px]">
+              <Label className="mb-1 block text-xs text-muted-foreground">
                 Wunschmonat
               </Label>
-              <Input
-                id="wish-month"
-                type="month"
+              <Select
                 value={selectedMonthKey}
-                min={format(minSelectableMonth, "yyyy-MM")}
-                onChange={(event) => {
-                  if (!event.target.value) return;
-                  const nextMonth = startOfMonth(
-                    new Date(`${event.target.value}-01T00:00:00`),
-                  );
-                  if (!Number.isNaN(nextMonth.getTime()) && !isBefore(nextMonth, minSelectableMonth)) {
-                    setSelectedMonth(nextMonth);
-                  }
-                }}
-                data-testid="input-wish-month"
-              />
+                onValueChange={(value) =>
+                  setSelectedMonth(startOfMonth(new Date(`${value}-01T12:00:00`)))
+                }
+              >
+                <SelectTrigger data-testid="select-wish-month">
+                  <SelectValue placeholder="Monat wählen" />
+                </SelectTrigger>
+                <SelectContent>
+                  {selectableMonths.map((month) => {
+                    const value = format(month, "yyyy-MM");
+                    return (
+                      <SelectItem key={value} value={value}>
+                        {format(month, "MMMM yyyy", { locale: de })}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
             </div>
             {canViewAll && deputyOptions.length > 0 && (
               <div className="min-w-[280px]">
