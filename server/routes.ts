@@ -106,11 +106,6 @@ const ALLOWED_CLAIM_STATUSES = new Set<DutyPlan["status"]>([
   "Vorläufig",
   "Freigegeben",
 ]);
-const ALLOWED_UNASSIGNED_STATUSES = new Set<DutyPlan["status"]>([
-  "Vorläufig",
-  "Freigegeben",
-]);
-
 const padTwo = (value: number) => String(value).padStart(2, "0");
 
 const syncUserRosterChangeIntoDraft = async (year: number, month: number) => {
@@ -1809,9 +1804,9 @@ export async function registerRoutes(
           ),
         );
       const planStatus = planRow?.status ?? null;
-      const statusAllowed = planStatus
-        ? ALLOWED_UNASSIGNED_STATUSES.has(planStatus)
-        : false;
+      // Employees can claim an unfilled, eligible service line even before a
+      // monthly plan has been created or globally released.
+      const statusAllowed = true;
 
       const includeDraftParam = parseBoolQueryFlag(
         req.query.includeDraft as string | string[],
@@ -2214,10 +2209,7 @@ export async function registerRoutes(
             eq(dutyPlans.month, planMonth),
           ),
         );
-      if (!planRow || !ALLOWED_CLAIM_STATUSES.has(planRow.status)) {
-        return res.status(400).json({ error: "Dienstplan noch nicht freigegeben" });
-      }
-      const allowDraftFromStatus = planRow.status !== "Freigegeben";
+      const allowDraftFromStatus = planRow?.status !== "Freigegeben";
       const hasDraftPermissions = Boolean(
         req.user?.isAdmin ||
           req.user?.appRole === "Admin" ||

@@ -135,11 +135,6 @@ const PLAN_STATUS_LABELS: Record<DutyPlan["status"], string> = {
   Freigegeben: "Freigabe",
 };
 
-const ALLOWED_UNASSIGNED_STATUSES = new Set<DutyPlan["status"]>([
-  "Vorläufig",
-  "Freigegeben",
-]);
-
 const useCalendarToken = (authToken: string | null | undefined) => {
   const [calendarToken, setCalendarToken] = useState<string | null>(
     authToken ?? null,
@@ -1460,9 +1455,8 @@ function RosterView({
 
   const planStatus = dutyPlan?.status;
   const statusLabel = planStatus ? PLAN_STATUS_LABELS[planStatus] : "Vorschau";
-  const isPlanStatusAllowingUnassigned = planStatus
-    ? ALLOWED_UNASSIGNED_STATUSES.has(planStatus)
-    : false;
+  // Open slots belong to a service line, not to a global monthly release.
+  const isPlanStatusAllowingUnassigned = true;
   const serviceLineDisplay = useMemo(
     () => buildServiceLineDisplay(serviceLines, shifts),
     [serviceLines, shifts],
