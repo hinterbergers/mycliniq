@@ -5,6 +5,7 @@ import {
   scoreCandidateForSlot,
   type PlannerEmployeeState,
 } from "../api/roster/planning/index";
+import { normalizeServiceTime } from "../api/roster/planning/buildPlanningInput";
 
 const assert = (condition: boolean, message: string) => {
   if (!condition) {
@@ -64,6 +65,21 @@ const testScoreRespectsPreferences = () => {
   assert(
     preferScore > avoidScore,
     "preferred service types should score higher than avoided ones",
+  );
+};
+
+const testServiceTimesMatchPlanningSchema = () => {
+  assert(
+    normalizeServiceTime("07:30:00", "00:00") === "07:30",
+    "database time values should drop seconds",
+  );
+  assert(
+    normalizeServiceTime("7:05", "00:00") === "07:05",
+    "single-digit hours should be padded",
+  );
+  assert(
+    normalizeServiceTime("invalid", "07:30") === "07:30",
+    "invalid times should use the service fallback",
   );
 };
 
@@ -311,6 +327,7 @@ const testExistingOtherServiceCountsTowardWeekendLimit = () => {
 };
 
 const runTests = () => {
+  testServiceTimesMatchPlanningSchema();
   testScoreRespectsPreferences();
   testSundayPrefersExistingFridayAssignment();
   testBanWeekdayBlocksAssignment();

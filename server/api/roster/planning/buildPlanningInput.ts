@@ -182,6 +182,18 @@ const normalizeOptionalInt = (
 
 const normalizeBoolean = (value: unknown): boolean => value === true;
 
+// PostgreSQL time columns use HH:mm:ss; planning input intentionally uses HH:mm.
+export const normalizeServiceTime = (value: unknown, fallback: string): string => {
+  if (typeof value !== "string") return fallback;
+  const match = value.trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (!match) return fallback;
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) return fallback;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+};
+
 const serviceLineTags = (roleGroup?: string | null): string[] => {
   switch ((roleGroup ?? "").toUpperCase()) {
     case "OA":
@@ -269,8 +281,8 @@ export async function buildPlanningInput(
     ? configuredLines.map((line) => ({
         id: line.key,
         label: line.label,
-        startTime: line.startTime ?? "07:30",
-        endTime: line.endTime ?? "15:30",
+        startTime: normalizeServiceTime(line.startTime, "07:30"),
+        endTime: normalizeServiceTime(line.endTime, "15:30"),
         tags: serviceLineTags(line.roleGroup),
       }))
     : SERVICE_ROLES;
