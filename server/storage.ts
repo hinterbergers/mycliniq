@@ -1150,6 +1150,9 @@ export class DatabaseStorage implements IStorage {
         ...settings,
         fixedPreferredEmployees: normalizedFixed,
         weeklyRuleProfile: normalizedWeeklyRuleProfile,
+        ...(settings.openClaimMonths === undefined
+          ? {}
+          : { openClaimMonths: settings.openClaimMonths }),
         updatedAt: new Date(),
       };
       const result = await db
@@ -1169,6 +1172,9 @@ export class DatabaseStorage implements IStorage {
         ...settings,
         fixedPreferredEmployees: normalizedFixed,
         weeklyRuleProfile: normalizedWeeklyRuleProfile,
+        ...(settings.openClaimMonths === undefined
+          ? {}
+          : { openClaimMonths: settings.openClaimMonths }),
       };
       const result = await db
         .insert(rosterSettings)

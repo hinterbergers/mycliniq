@@ -58,6 +58,9 @@ ADD COLUMN IF NOT EXISTS row_color text;
 ALTER TABLE roster_settings
 ADD COLUMN IF NOT EXISTS weekly_rule_profile jsonb;
 
+ALTER TABLE roster_settings
+ADD COLUMN IF NOT EXISTS open_claim_months jsonb;
+
 CREATE TABLE IF NOT EXISTS roster_shift_change_logs (
   id serial PRIMARY KEY,
   roster_shift_id integer,

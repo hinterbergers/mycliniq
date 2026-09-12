@@ -3244,6 +3244,10 @@ export type WeeklyRuleProfileResponse = {
   weeklyRuleProfile: Record<string, unknown> | null;
 };
 
+export type OpenClaimMonthsResponse = {
+  months: string[];
+};
+
 export const rosterSettingsApi = {
   get: async (): Promise<RosterSettings> => {
     const response = await apiFetch(`${API_BASE}/roster-settings`);
@@ -3276,6 +3280,27 @@ export const rosterSettingsApi = {
       body: JSON.stringify({ year, month }),
     });
     return handleResponse<RosterSettings>(response);
+  },
+
+  getOpenClaimMonths: async (): Promise<OpenClaimMonthsResponse> => {
+    const response = await apiFetch(
+      `${API_BASE}/roster-settings/open-claim-months`,
+    );
+    return handleResponse<OpenClaimMonthsResponse>(response);
+  },
+
+  setOpenClaimMonths: async (
+    months: string[],
+  ): Promise<OpenClaimMonthsResponse> => {
+    const response = await apiFetch(
+      `${API_BASE}/roster-settings/open-claim-months`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ months }),
+      },
+    );
+    return handleResponse<OpenClaimMonthsResponse>(response);
   },
 
   getWeeklyRuleProfile: async (): Promise<WeeklyRuleProfileResponse> => {

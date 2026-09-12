@@ -106,6 +106,33 @@ const ALLOWED_CLAIM_STATUSES = new Set<DutyPlan["status"]>([
   "Vorläufig",
   "Freigegeben",
 ]);
+
+const DEFAULT_OPEN_CLAIM_MONTHS = Array.from(
+  { length: 11 },
+  (_, index) => `2026-${String(index + 1).padStart(2, "0")}`,
+);
+
+const normalizeOpenClaimMonths = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return DEFAULT_OPEN_CLAIM_MONTHS;
+  return Array.from(
+    new Set(
+      value.filter(
+        (month): month is string =>
+          typeof month === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(month),
+      ),
+    ),
+  ).sort();
+};
+
+const isClaimMonthOpen = (
+  value: unknown,
+  year: number,
+  month: number,
+): boolean =>
+  normalizeOpenClaimMonths(value).includes(
+    `${year}-${String(month).padStart(2, "0")}`,
+  );
+
 const padTwo = (value: number) => String(value).padStart(2, "0");
 
 const syncUserRosterChangeIntoDraft = async (year: number, month: number) => {
@@ -1806,19 +1833,31 @@ export async function registerRoutes(
       const planStatus = planRow?.status ?? null;
       // Employees can claim an unfilled, eligible service line even before a
       // monthly plan has been created or globally released.
-      const statusAllowed = true;
+      const settings = await storage.getRosterSettings();
+      const statusAllowed = isClaimMonthOpen(
+        settings?.openClaimMonths,
+        planYear,
+        planMonth,
+      );
 
       const includeDraftParam = parseBoolQueryFlag(
         req.query.includeDraft as string | string[],
       );
       const allowDraftFromStatus = planStatus && planStatus !== "Freigegeben";
       const includeDraft = includeDraftParam || allowDraftFromStatus;
-      const payload = await buildOpenShiftPayload({
-        clinicId,
-        startDate: finalStart,
-        endDate: finalEnd,
-        includeDraft,
-      });
+      const payload = statusAllowed
+        ? await buildOpenShiftPayload({
+            clinicId,
+            startDate: finalStart,
+            endDate: finalEnd,
+            includeDraft,
+          })
+        : {
+            slots: [],
+            requiredDaily: {},
+            countsByDay: {},
+            missingCounts: {},
+          };
 
       res.json({
         ...payload,
@@ -2209,6 +2248,12 @@ export async function registerRoutes(
             eq(dutyPlans.month, planMonth),
           ),
         );
+      const settings = await storage.getRosterSettings();
+      if (!isClaimMonthOpen(settings?.openClaimMonths, planYear, planMonth)) {
+        return res.status(403).json({
+          error: "Dienstübernahme ist für diesen Monat nicht freigegeben",
+        });
+      }
       const allowDraftFromStatus = planRow?.status !== "Freigegeben";
       const hasDraftPermissions = Boolean(
         req.user?.isAdmin ||
@@ -2223,7 +2268,7 @@ export async function registerRoutes(
         console.log(
           "[claim-debug] plan",
           {
-            planStatus: planRow.status,
+            planStatus: planRow?.status ?? null,
             allowDraftFromStatus,
             hasDraftPermissions,
             targetIsDraft,
@@ -6388,6 +6433,7 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
         vacationLockUntil: null,
         fixedPreferredEmployees: [],
         weeklyRuleProfile: null,
+        openClaimMonths: DEFAULT_OPEN_CLAIM_MONTHS,
       });
     }
       res.json(settings);
@@ -6433,6 +6479,63 @@ const shiftsByDate: ShiftsByDate = allShifts.reduce<ShiftsByDate>(
       res.status(500).json({ error: "Failed to update roster settings" });
     }
   });
+
+  app.get(
+    "/api/roster-settings/open-claim-months",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!canViewPlanningData(req)) {
+        return res.status(403).json({ error: "Keine Berechtigung" });
+      }
+      const settings = await storage.getRosterSettings();
+      return res.json({
+        months: normalizeOpenClaimMonths(settings?.openClaimMonths),
+      });
+    },
+  );
+
+  app.post(
+    "/api/roster-settings/open-claim-months",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        if (!canViewPlanningData(req)) {
+          return res.status(403).json({ error: "Keine Berechtigung" });
+        }
+        const requestedMonths = req.body?.months;
+        if (
+          !Array.isArray(requestedMonths) ||
+          requestedMonths.length > 120 ||
+          requestedMonths.some(
+            (month) =>
+              typeof month !== "string" ||
+              !/^\d{4}-(0[1-9]|1[0-2])$/.test(month),
+          )
+        ) {
+          return res.status(400).json({ error: "Ungültige Monatsauswahl" });
+        }
+
+        const settings = await storage.getRosterSettings();
+        const months = normalizeOpenClaimMonths(requestedMonths);
+        await storage.upsertRosterSettings({
+          lastApprovedYear: settings?.lastApprovedYear ?? 2026,
+          lastApprovedMonth: settings?.lastApprovedMonth ?? 1,
+          wishYear: settings?.wishYear ?? null,
+          wishMonth: settings?.wishMonth ?? null,
+          vacationLockFrom: settings?.vacationLockFrom ?? null,
+          vacationLockUntil: settings?.vacationLockUntil ?? null,
+          fixedPreferredEmployees: settings?.fixedPreferredEmployees ?? [],
+          weeklyRuleProfile: settings?.weeklyRuleProfile ?? null,
+          openClaimMonths: months,
+          updatedById: req.user?.employeeId ?? settings?.updatedById ?? null,
+        });
+        return res.json({ months });
+      } catch (error) {
+        console.error("Failed to update open claim months", error);
+        return res.status(500).json({ error: "Freigaben konnten nicht gespeichert werden" });
+      }
+    },
+  );
 
   app.get(
     "/api/roster-settings/weekly-rule-profile",

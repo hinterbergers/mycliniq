@@ -442,6 +442,10 @@ export default function RosterPlan() {
   );
   const [wishYear, setWishYear] = useState<number>(currentDate.getFullYear());
   const [wishSaving, setWishSaving] = useState(false);
+  const [claimMonthsDialogOpen, setClaimMonthsDialogOpen] = useState(false);
+  const [openClaimMonths, setOpenClaimMonths] = useState<string[]>([]);
+  const [openClaimMonthsDraft, setOpenClaimMonthsDraft] = useState<string[]>([]);
+  const [claimMonthsSaving, setClaimMonthsSaving] = useState(false);
   const [absenceDialogOpen, setAbsenceDialogOpen] = useState(false);
   const [absenceSaving, setAbsenceSaving] = useState(false);
   const [absenceDraft, setAbsenceDraft] = useState<{
@@ -980,6 +984,18 @@ export default function RosterPlan() {
       }
     };
     loadPlanningMonth();
+  }, []);
+
+  useEffect(() => {
+    const loadOpenClaimMonths = async () => {
+      try {
+        const response = await rosterSettingsApi.getOpenClaimMonths();
+        setOpenClaimMonths(response.months);
+      } catch {
+        setOpenClaimMonths([]);
+      }
+    };
+    void loadOpenClaimMonths();
   }, []);
 
   useEffect(() => {
@@ -2085,6 +2101,47 @@ export default function RosterPlan() {
     }
   };
 
+  const claimMonthOptions = useMemo(
+    () =>
+      Array.from({ length: 24 }, (_, index) => {
+        const date = new Date(currentDate.getFullYear(), index, 1);
+        return {
+          key: format(date, "yyyy-MM"),
+          label: format(date, "MMMM yyyy", { locale: de }),
+        };
+      }),
+    [currentDate],
+  );
+
+  const handleOpenClaimMonths = () => {
+    setOpenClaimMonthsDraft(openClaimMonths);
+    setClaimMonthsDialogOpen(true);
+  };
+
+  const handleSaveOpenClaimMonths = async () => {
+    setClaimMonthsSaving(true);
+    try {
+      const response = await rosterSettingsApi.setOpenClaimMonths(
+        openClaimMonthsDraft,
+      );
+      setOpenClaimMonths(response.months);
+      setOpenClaimMonthsDraft(response.months);
+      setClaimMonthsDialogOpen(false);
+      toast({
+        title: "Dienstübernahmen aktualisiert",
+        description: `${response.months.length} Monate sind für Übernahmen geöffnet.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Freigabe fehlgeschlagen",
+        description: error.message || "Bitte später erneut versuchen.",
+        variant: "destructive",
+      });
+    } finally {
+      setClaimMonthsSaving(false);
+    }
+  };
+
   const handleOpenAbsenceDialog = (date: Date) => {
     const dateStr = format(date, "yyyy-MM-dd");
     setAbsenceDraft({
@@ -2275,6 +2332,17 @@ export default function RosterPlan() {
                 Dienstwünsche freigeben
               </Button>
             )}
+            {canEdit && (
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={handleOpenClaimMonths}
+                data-testid="button-open-claim-months"
+              >
+                <Calendar className="w-4 h-4" />
+                Dienstübernahmen freigeben
+              </Button>
+            )}
           </div>
           <div className="rounded-lg border border-border bg-muted/30 p-3">
             <div className="flex flex-wrap items-center gap-2">
@@ -2381,6 +2449,61 @@ export default function RosterPlan() {
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 ) : null}
                 Freigeben
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={claimMonthsDialogOpen}
+          onOpenChange={setClaimMonthsDialogOpen}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Dienstübernahmen freigeben</DialogTitle>
+              <DialogDescription>
+                Nur in geöffneten Monaten können qualifizierte Personen freie
+                Dienste ihrer Dienstschiene übernehmen.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {claimMonthOptions.map((option) => {
+                const checked = openClaimMonthsDraft.includes(option.key);
+                return (
+                  <label
+                    key={option.key}
+                    className="flex cursor-pointer items-center gap-2 rounded-md border p-2 text-sm"
+                  >
+                    <Checkbox
+                      checked={checked}
+                      disabled={claimMonthsSaving}
+                      onCheckedChange={(next) =>
+                        setOpenClaimMonthsDraft((current) =>
+                          next === true
+                            ? [...new Set([...current, option.key])].sort()
+                            : current.filter((month) => month !== option.key),
+                        )
+                      }
+                    />
+                    <span>{option.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setClaimMonthsDialogOpen(false)}
+                disabled={claimMonthsSaving}
+              >
+                Abbrechen
+              </Button>
+              <Button
+                onClick={handleSaveOpenClaimMonths}
+                disabled={claimMonthsSaving}
+              >
+                {claimMonthsSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Speichern
               </Button>
             </DialogFooter>
           </DialogContent>
