@@ -185,6 +185,7 @@
 - `client/src/lib/auth.tsx` supports both /api/me and /api/auth/me response shapes
 
 ## Known Issues / Fixes
+- Xcode 27 beta rejects iOS 14 deployment targets. Keep project/widget and all CocoaPods targets at iOS 15 or newer; Podfile post_install enforces the pod minimum. Validate with the Xcode version actually used in the UI (Xcode-beta.app may differ from xcode-select). App and widget CURRENT_PROJECT_VERSION must match.
 - Build failure in `client/src/lib/auth.tsx` due to stray brace; fixed in commit 2bd1cbf
 - Training presentations (Fortbildung / PPT):
   - Interactive LibreOffice HTML preview now rewrites relative asset URLs with `?token=...` so iframe-loaded PPT previews can load protected CSS/images/scripts.
