@@ -1992,7 +1992,14 @@ export default function VacationPlanEditor({
           role === "Ausbildungsoberarzt"
         );
       });
-      const groupedEntries = getHierarchicalAbsenceGroups(tooltipEntries);
+      const sortedEntries = tooltipEntries.slice().sort((left, right) => {
+        const leftRank = ROLE_SORT_ORDER[normalizeRole(employeeById.get(left.employeeId)?.role)] ?? 999;
+        const rightRank = ROLE_SORT_ORDER[normalizeRole(employeeById.get(right.employeeId)?.role)] ?? 999;
+        return leftRank - rightRank ||
+          (employeeNameById.get(left.employeeId) ?? "").localeCompare(
+            employeeNameById.get(right.employeeId) ?? "", "de",
+          );
+      });
       return (
         <div className="w-full space-y-3 text-xs">
           <div>
@@ -2021,43 +2028,36 @@ export default function VacationPlanEditor({
               )}
             </div>
           </div>
-          {groupedEntries.length === 0 ? (
+          {sortedEntries.length === 0 ? (
             <div className="text-slate-500">Keine Abwesenheiten</div>
           ) : (
-            groupedEntries.map(([role, entries]) => (
-              <div key={`${formatDateInput(date)}-${role}`} className="space-y-1">
-                <div className="font-semibold uppercase tracking-[0.14em] text-slate-500">
-                  {role}
-                </div>
-                <div className="space-y-1">
-                  {entries.map((absence) => {
-                    const style = getAbsenceInlineStyle(absence.styleKey);
-                    const label = absence.source === "post_duty" ? "Außer Dienst" : getAbsenceVisualMeta(absence.reason).label;
-                    return (
-                      <div
-                        key={absence.id}
-                        className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-2 py-1.5"
-                      >
-                        <span className="text-slate-900">
-                          {employeeNameById.get(absence.employeeId) ?? "Unbekannt"}
-                        </span>
-                        <span
-                          className="rounded-full border px-2 py-0.5 text-[11px] font-medium"
-                          style={style}
-                        >
-                          {label}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))
+            <div className="space-y-1">
+              {sortedEntries.map((absence) => {
+                const style = getAbsenceInlineStyle(absence.styleKey);
+                const label = absence.source === "post_duty" ? "Außer Dienst" : getAbsenceVisualMeta(absence.reason).label;
+                return (
+                  <div
+                    key={absence.id}
+                    className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-2 py-1.5"
+                  >
+                    <span className="text-slate-900">
+                      {employeeNameById.get(absence.employeeId) ?? "Unbekannt"}
+                    </span>
+                    <span
+                      className="rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                      style={style}
+                    >
+                      {label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
       );
     },
-    [employeeById, employeeNameById, getAbsenceBreakdown, getDayVisualState, getHierarchicalAbsenceGroups],
+    [employeeById, employeeNameById, getAbsenceBreakdown, getDayVisualState],
   );
 
   const renderQuickAddButton = useCallback(
