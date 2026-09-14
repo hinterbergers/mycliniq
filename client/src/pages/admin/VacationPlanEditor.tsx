@@ -99,6 +99,7 @@ import {
   meApi,
   plannedAbsencesAdminApi,
   rosterSettingsApi,
+  rosterApi,
   vacationRulesApi,
   type PlannedAbsenceAdmin,
   type VacationRuleInput,
@@ -117,11 +118,13 @@ import {
   normalizeAbsenceReason,
 } from "@/lib/absenceStyles";
 import { cn } from "@/lib/utils";
+import { normalizeServiceLineKey } from "@/lib/serviceLineKey";
 import type {
   Competency,
   Employee,
   LongTermAbsence,
   RosterSettings,
+  RosterShift,
   VacationRule,
 } from "@shared/schema";
 
@@ -241,7 +244,7 @@ type CalendarAbsence = {
   status?: PlannedAbsenceAdmin["status"] | "Genehmigt";
   notes?: string | null;
   createdAt?: string | null;
-  source: "planned" | "long_term" | "legacy";
+  source: "planned" | "long_term" | "legacy" | "post_duty";
 };
 
 const ROLE_SORT_ORDER: Record<string, number> = {
@@ -486,6 +489,7 @@ export default function VacationPlanEditor({
   const [savingAbsence, setSavingAbsence] = useState(false);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [competencies, setCompetencies] = useState<Competency[]>([]);
+  const [rosterShifts, setRosterShifts] = useState<RosterShift[]>([]);
   const [absences, setAbsences] = useState<PlannedAbsenceAdmin[]>([]);
   const [longTermAbsences, setLongTermAbsences] = useState<LongTermAbsence[]>(
     [],
@@ -661,6 +665,7 @@ export default function VacationPlanEditor({
         clinicData,
         longTermData,
         settingsData,
+        shiftData,
       ] = await Promise.all([
         employeeApi.getAll(),
         competencyApi.getAll(),
@@ -671,7 +676,13 @@ export default function VacationPlanEditor({
         clinicPromise,
         longTermAbsencesApi.getByStatus("Genehmigt", yearStart, yearEnd),
         rosterSettingsApi.get(),
+        // Include December for rest days on January 1.
+        Promise.all(Array.from({ length: 13 }, (_, index) => {
+          const month = new Date(year, index - 1, 1);
+          return rosterApi.getByMonth(month.getFullYear(), month.getMonth() + 1);
+        })),
       ]);
+      setRosterShifts(shiftData.flat());
       setEmployees(employeeData);
       setCompetencies(competencyData);
       setAbsences(absenceData);
@@ -995,9 +1006,38 @@ export default function VacationPlanEditor({
     return pool;
   }, [visibleEmployeesWithSelectedPeople]);
 
+  const postDutyAbsencesByDate = useMemo(() => {
+    const map = new Map<string, Map<number, CalendarAbsence>>();
+    rosterShifts.forEach((shift) => {
+      // Match the previous-day duty section in the shared weekly plan.
+      if (!shift.employeeId || !visibleEmployeeIds.has(shift.employeeId)) return;
+      if (!["kreiszimmer", "gyn", "turnus"].includes(normalizeServiceLineKey(shift.serviceType))) return;
+      const date = formatDateInput(addDays(toDate(shift.date), 1));
+      const entries = map.get(date) ?? new Map<number, CalendarAbsence>();
+      entries.set(shift.employeeId, {
+        id: `post-duty-${date}-${shift.employeeId}`,
+        employeeId: shift.employeeId,
+        startDate: date,
+        endDate: date,
+        reason: "Außer Dienst",
+        styleKey: "Ruhezeit",
+        source: "post_duty",
+      });
+      map.set(date, entries);
+    });
+    return map;
+  }, [rosterShifts, visibleEmployeeIds]);
+
   const getDayAbsences = useCallback(
-    (date: Date) => yearDayAbsenceMap.get(formatDateInput(date)) ?? [],
-    [yearDayAbsenceMap],
+    (date: Date) => {
+      const key = formatDateInput(date);
+      const entries = yearDayAbsenceMap.get(key) ?? [];
+      const absentIds = new Set(entries.map((entry) => entry.employeeId));
+      const postDuty = Array.from(postDutyAbsencesByDate.get(key)?.values() ?? [])
+        .filter((entry) => !absentIds.has(entry.employeeId));
+      return [...entries, ...postDuty];
+    },
+    [yearDayAbsenceMap, postDutyAbsencesByDate],
   );
 
   const getAbsenceBreakdown = useCallback(
@@ -1847,7 +1887,7 @@ export default function VacationPlanEditor({
   const dayViewGroupedAbsences = useMemo(() => {
     const groups = new Map<string, CalendarAbsence[]>();
     dayViewAbsences.forEach((absence) => {
-      const key = getAbsenceVisualMeta(absence.reason).label;
+      const key = absence.source === "post_duty" ? "Außer Dienst" : getAbsenceVisualMeta(absence.reason).label;
       const list = groups.get(key) ?? [];
       list.push(absence);
       groups.set(key, list);
@@ -1861,7 +1901,7 @@ export default function VacationPlanEditor({
     (entries: CalendarAbsence[]) => {
       const groups = new Map<string, CalendarAbsence[]>();
       entries.forEach((absence) => {
-        const key = getAbsenceVisualMeta(absence.reason).label;
+        const key = absence.source === "post_duty" ? "Außer Dienst" : getAbsenceVisualMeta(absence.reason).label;
         const list = groups.get(key) ?? [];
         list.push(absence);
         groups.set(key, list);
@@ -1935,7 +1975,7 @@ export default function VacationPlanEditor({
     (date: Date) => {
       const state = getDayVisualState(date);
       const tooltipEntries = state.entries.filter(
-        (absence) => absence.source === "planned",
+        (absence) => absence.source === "planned" || absence.source === "post_duty",
       );
       const tooltipBreakdown = getAbsenceBreakdown(tooltipEntries);
       const tooltipPrimarAbsent = tooltipEntries.some(
@@ -1981,7 +2021,7 @@ export default function VacationPlanEditor({
             </div>
           </div>
           {groupedEntries.length === 0 ? (
-            <div className="text-slate-500">Keine planbaren Abwesenheiten</div>
+            <div className="text-slate-500">Keine Abwesenheiten</div>
           ) : (
             groupedEntries.map(([role, entries]) => (
               <div key={`${formatDateInput(date)}-${role}`} className="space-y-1">
@@ -1990,7 +2030,8 @@ export default function VacationPlanEditor({
                 </div>
                 <div className="space-y-1">
                   {entries.map((absence) => {
-                    const style = getAbsenceInlineStyle(absence.reason); const meta = getAbsenceVisualMeta(absence.reason);
+                    const style = getAbsenceInlineStyle(absence.styleKey);
+                    const label = absence.source === "post_duty" ? "Außer Dienst" : getAbsenceVisualMeta(absence.reason).label;
                     return (
                       <div
                         key={absence.id}
@@ -2003,7 +2044,7 @@ export default function VacationPlanEditor({
                           className="rounded-full border px-2 py-0.5 text-[11px] font-medium"
                           style={style}
                         >
-                          {meta.label}
+                          {label}
                         </span>
                       </div>
                     );
@@ -2604,7 +2645,7 @@ export default function VacationPlanEditor({
                                 <div
                                   key={`draft-overlap-${absence.id}`}
                                   className="rounded-xl border px-3 py-2"
-                                      style={getAbsenceInlineStyle(absence.reason)}
+                                      style={getAbsenceInlineStyle(absence.styleKey)}
                                 >
                                   <div className="flex items-start justify-between gap-3">
                                     <div>
@@ -3278,7 +3319,7 @@ export default function VacationPlanEditor({
                                     <div
                                       key={absence.id}
                                       className="rounded-xl border px-3 py-2"
-                                      style={getAbsenceInlineStyle(absence.reason)}
+                                      style={getAbsenceInlineStyle(absence.styleKey)}
                                     >
                                       <div className="flex items-start justify-between gap-2">
                                         <div>
@@ -3286,7 +3327,7 @@ export default function VacationPlanEditor({
                                             {employeeNameById.get(absence.employeeId) ?? "Unbekannt"}
                                           </div>
                                           <div className="text-[11px] font-medium">
-                                            {getAbsenceVisualMeta(absence.reason).label}
+                                            {absence.source === "post_duty" ? "Außer Dienst" : getAbsenceVisualMeta(absence.reason).label}
                                           </div>
                                         </div>
                                       </div>
@@ -3393,13 +3434,13 @@ export default function VacationPlanEditor({
                                 <div
                                   key={absence.id}
                                   className="flex items-start justify-between gap-3 rounded-xl border px-3 py-2 text-sm"
-                                  style={getAbsenceInlineStyle(absence.reason)}
+                                  style={getAbsenceInlineStyle(absence.styleKey)}
                                 >
                                   <div>
                                     <div className="font-medium text-slate-900">
                                       {employeeNameById.get(absence.employeeId) ?? "Unbekannt"}
                                     </div>
-                                    <div className="font-medium">{getAbsenceVisualMeta(absence.reason).label}</div>
+                                    <div className="font-medium">{absence.source === "post_duty" ? "Außer Dienst" : getAbsenceVisualMeta(absence.reason).label}</div>
                                   </div>
                                   <span className="rounded-full bg-white px-2 py-0.5 text-xs text-slate-600">
                                     {absence.status ?? "Genehmigt"}
@@ -3542,9 +3583,9 @@ export default function VacationPlanEditor({
                                     <TableCell>
                                       <span
                                         className="inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold"
-                                        style={getAbsenceInlineStyle(absence.reason)}
+                                        style={getAbsenceInlineStyle(absence.styleKey)}
                                       >
-                                        {getAbsenceVisualMeta(absence.reason).label}
+                                        {absence.source === "post_duty" ? "Außer Dienst" : getAbsenceVisualMeta(absence.reason).label}
                                       </span>
                                     </TableCell>
                                     <TableCell>
