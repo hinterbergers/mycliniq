@@ -1,3 +1,4 @@
+import * as HoverCardPrimitive from "@radix-ui/react-hover-card";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addDays,
@@ -1993,7 +1994,7 @@ export default function VacationPlanEditor({
       });
       const groupedEntries = getHierarchicalAbsenceGroups(tooltipEntries);
       return (
-        <div className="w-[280px] space-y-3 text-xs">
+        <div className="w-full space-y-3 text-xs">
           <div>
             <div className="font-semibold text-slate-900">
               {format(date, "EEEE, dd.MM.yyyy", { locale: de })}
@@ -3021,8 +3022,8 @@ export default function VacationPlanEditor({
                             const inMonth = isSameMonth(date, monthDate);
                             const locked = isDateWithinLock(formatDateInput(date));
                             return (
-                              <Tooltip key={formatDateInput(date)}>
-                                <TooltipTrigger asChild>
+                              <HoverCardPrimitive.Root key={formatDateInput(date)} openDelay={120} closeDelay={300}>
+                                <HoverCardPrimitive.Trigger asChild>
                                   <div
                                     role="button"
                                     tabIndex={0}
@@ -3100,11 +3101,19 @@ export default function VacationPlanEditor({
                                       </div>
                                     )}
                                   </div>
-                                </TooltipTrigger>
-                                <TooltipContent className="bg-white text-foreground border border-border shadow-md">
-                                  {renderDayTooltipContent(date)}
-                                </TooltipContent>
-                              </Tooltip>
+                                </HoverCardPrimitive.Trigger>
+                                <HoverCardPrimitive.Portal>
+                                  <HoverCardPrimitive.Content
+                                    sideOffset={6}
+                                    collisionPadding={12}
+                                    tabIndex={0}
+                                    aria-label="Abwesenheiten des Tages"
+                                    className="z-[2147483647] w-[304px] max-w-[calc(100vw-24px)] max-h-[min(70dvh,var(--radix-hover-card-content-available-height))] overflow-y-auto overscroll-contain rounded-md border border-border bg-white p-3 text-foreground shadow-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  >
+                                    {renderDayTooltipContent(date)}
+                                  </HoverCardPrimitive.Content>
+                                </HoverCardPrimitive.Portal>
+                              </HoverCardPrimitive.Root>
                             );
                           })}
                         </div>
@@ -3131,8 +3140,8 @@ export default function VacationPlanEditor({
                       const inMonth = isSameMonth(date, monthViewStart);
                       const locked = isDateWithinLock(formatDateInput(date));
                       return (
-                        <Tooltip key={formatDateInput(date)}>
-                          <TooltipTrigger asChild>
+                        <HoverCardPrimitive.Root key={formatDateInput(date)} openDelay={120} closeDelay={300}>
+                          <HoverCardPrimitive.Trigger asChild>
                             <div
                               role="button"
                               tabIndex={0}
@@ -3218,11 +3227,19 @@ export default function VacationPlanEditor({
                                 </div>
                               )}
                             </div>
-                          </TooltipTrigger>
-                          <TooltipContent className="bg-white text-foreground border border-border shadow-md">
-                            {renderDayTooltipContent(date)}
-                          </TooltipContent>
-                        </Tooltip>
+                          </HoverCardPrimitive.Trigger>
+                          <HoverCardPrimitive.Portal>
+                            <HoverCardPrimitive.Content
+                              sideOffset={6}
+                              collisionPadding={12}
+                              tabIndex={0}
+                              aria-label="Abwesenheiten des Tages"
+                              className="z-[2147483647] w-[304px] max-w-[calc(100vw-24px)] max-h-[min(70dvh,var(--radix-hover-card-content-available-height))] overflow-y-auto overscroll-contain rounded-md border border-border bg-white p-3 text-foreground shadow-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              {renderDayTooltipContent(date)}
+                            </HoverCardPrimitive.Content>
+                          </HoverCardPrimitive.Portal>
+                        </HoverCardPrimitive.Root>
                       );
                     })}
                   </div>
@@ -3240,8 +3257,8 @@ export default function VacationPlanEditor({
                     const locked = isDateWithinLock(formatDateInput(date));
                     const totalAbsences = absencesForDay.length;
                     return (
-                      <Tooltip key={formatDateInput(date)}>
-                        <TooltipTrigger asChild>
+                      <HoverCardPrimitive.Root key={formatDateInput(date)} openDelay={120} closeDelay={300}>
+                        <HoverCardPrimitive.Trigger asChild>
                           <div
                             className={cn(
                               "relative rounded-2xl border p-4 shadow-sm",
@@ -3342,11 +3359,19 @@ export default function VacationPlanEditor({
                               </div>
                             </div>
                           </div>
-                        </TooltipTrigger>
-                        <TooltipContent className="bg-white text-foreground border border-border shadow-md">
-                          {renderDayTooltipContent(date)}
-                        </TooltipContent>
-                      </Tooltip>
+                        </HoverCardPrimitive.Trigger>
+                        <HoverCardPrimitive.Portal>
+                          <HoverCardPrimitive.Content
+                            sideOffset={6}
+                            collisionPadding={12}
+                            tabIndex={0}
+                            aria-label="Abwesenheiten des Tages"
+                            className="z-[2147483647] w-[304px] max-w-[calc(100vw-24px)] max-h-[min(70dvh,var(--radix-hover-card-content-available-height))] overflow-y-auto overscroll-contain rounded-md border border-border bg-white p-3 text-foreground shadow-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            {renderDayTooltipContent(date)}
+                          </HoverCardPrimitive.Content>
+                        </HoverCardPrimitive.Portal>
+                      </HoverCardPrimitive.Root>
                     );
                   })}
                 </div>
@@ -3583,9 +3608,9 @@ export default function VacationPlanEditor({
                                     <TableCell>
                                       <span
                                         className="inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold"
-                                        style={getAbsenceInlineStyle(absence.styleKey)}
+                                        style={getAbsenceInlineStyle(absence.reason)}
                                       >
-                                        {absence.source === "post_duty" ? "Außer Dienst" : getAbsenceVisualMeta(absence.reason).label}
+                                        {getAbsenceVisualMeta(absence.reason).label}
                                       </span>
                                     </TableCell>
                                     <TableCell>
