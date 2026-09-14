@@ -2470,6 +2470,11 @@ export default function Dashboard() {
                     setHeroAbsenceForm((current) => ({
                       ...current,
                       startDate: event.target.value,
+                      endDate:
+                        event.target.value &&
+                        (!current.endDate || current.endDate < event.target.value)
+                          ? event.target.value
+                          : current.endDate,
                     }))
                   }
                 />
@@ -2479,6 +2484,7 @@ export default function Dashboard() {
                 <Input
                   id="hero-absence-end"
                   type="date"
+                  min={heroAbsenceForm.startDate || undefined}
                   value={heroAbsenceForm.endDate}
                   onChange={(event) =>
                     setHeroAbsenceForm((current) => ({
