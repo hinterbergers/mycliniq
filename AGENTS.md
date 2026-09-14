@@ -6,7 +6,7 @@
 - GitHub publish target: github.com:hinterbergers/mycliniq.git (`origin/main`)
 - Deploy path: /opt/mycliniq on Hetzner Ubuntu
 - Reverse proxy: Nginx -> Node/Express on localhost
-- Process manager: pm2 (app name: mycliniq)
+- Process manager: pm2 (app name: mycliniq), owned by Linux user `deploy`; run pm2 commands as `deploy` (root has a separate empty PM2 instance).
 - Build: `npm run build` runs `script/build.ts` (vite build + esbuild to dist/index.cjs)
 - App distribution path: local Mac build -> Xcode Archive -> App Store Connect / TestFlight
 - Web and app share the same React codebase and routes by default. UI, navigation, dialog behavior, and feature changes implemented for the web app must also be treated as app changes unless a platform-specific exception is explicitly documented.
@@ -30,6 +30,7 @@
 - Local dev script `npm run dev` starts `tsx server/index.ts` without watch mode; backend route changes require a manual restart to become active.
 
 ## Release / Sync Paths
+- `.github/workflows/deploy.yml` automatically deploys pushes to `main` via SSH, including dependency install, schema patches, build, PM2 restart, and a local HTTP health check. Verify completion before starting another deploy.
 - Standard release flow (web/server): local changes -> commit/push to GitHub `main` -> pull on Hetzner `/opt/mycliniq` -> build -> pm2 restart
 - Standard release flow (iPhone app): local changes -> commit/push to GitHub `main` -> local `git pull origin main` on Mac workspace -> `npm install` -> `npm run build` -> `npm run mobile:sync:ios` -> Xcode / TestFlight
 - Shared frontend change policy: when a web UI change affects shared routes/components, treat `npm run mobile:sync:ios` as part of the release follow-up, not as an optional later task.

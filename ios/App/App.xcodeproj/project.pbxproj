@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 71;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -69,7 +69,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		F86AA53A2F5C4171008EBE4C /* Exceptions for "MycliniqTodayWidget" folder in "MycliniqTodayWidgetExtension" target */ = {
+		F86AA53A2F5C4171008EBE4C /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -79,29 +79,8 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		F86AA5262F5C4171008EBE4C /* MycliniqTodayWidget */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				F86AA53A2F5C4171008EBE4C /* Exceptions for "MycliniqTodayWidget" folder in "MycliniqTodayWidgetExtension" target */,
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = MycliniqTodayWidget;
-			sourceTree = "<group>";
-		};
-		F86AA55F2F5C68C4008EBE4C /* MycliniqTodayWidget */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = MycliniqTodayWidget;
-			sourceTree = "<group>";
-		};
+		F86AA5262F5C4171008EBE4C /* MycliniqTodayWidget */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (F86AA53A2F5C4171008EBE4C /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = MycliniqTodayWidget; sourceTree = "<group>"; };
+		F86AA55F2F5C68C4008EBE4C /* MycliniqTodayWidget */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = MycliniqTodayWidget; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -316,8 +295,12 @@
 			);
 			inputFileListPaths = (
 			);
+			inputPaths = (
+			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
