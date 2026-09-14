@@ -53,6 +53,7 @@ import {
   Dialog,
   DialogContent,
   DialogHeader,
+  DialogDescription,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
@@ -505,6 +506,7 @@ export default function VacationPlanEditor({
   );
   const [lockDialogOpen, setLockDialogOpen] = useState(false);
   const [savingLock, setSavingLock] = useState(false);
+  const [vacationLockDialogOpen, setVacationLockDialogOpen] = useState(false);
   const [absenceDialogOpen, setAbsenceDialogOpen] = useState(false);
   const [holidayLocation, setHolidayLocation] = useState<SchoolHolidayLocation>(
     {
@@ -1461,11 +1463,7 @@ export default function VacationPlanEditor({
     } else {
       const dateStr = formatDateInput(date);
       if (!canOverrideLock && isDateWithinLock(dateStr)) {
-        toast({
-          title: "Eintrag gesperrt",
-          description: "Urlaube sind fuer diesen Zeitraum gesperrt.",
-          variant: "destructive",
-        });
+        setVacationLockDialogOpen(true);
         return;
       }
       setAbsenceDraft((prev) => ({
@@ -1488,6 +1486,7 @@ export default function VacationPlanEditor({
       });
       return;
     }
+    setAbsenceDraft(createEmptyAbsenceDraft(defaultEmployeeId));
     openAbsenceDialog(defaultEmployeeId, date);
   };
 
@@ -1516,11 +1515,7 @@ export default function VacationPlanEditor({
       !canOverrideLock &&
       isRangeWithinLock(absenceDraft.startDate, absenceDraft.endDate)
     ) {
-      toast({
-        title: "Eintrag gesperrt",
-        description: "Urlaube sind fuer diesen Zeitraum gesperrt.",
-        variant: "destructive",
-      });
+      setVacationLockDialogOpen(true);
       return;
     }
     setSavingAbsence(true);
@@ -2068,7 +2063,6 @@ export default function VacationPlanEditor({
         <span className="inline-flex">
           <button
             type="button"
-            disabled={locked}
             onClick={(event) => {
               event.stopPropagation();
               openQuickAbsenceDialog(date);
@@ -2076,7 +2070,7 @@ export default function VacationPlanEditor({
             className={cn(
               "flex h-8 w-8 items-center justify-center border border-white/80 bg-white/90 text-slate-700 shadow-sm transition hover:bg-white",
               iconClassName,
-              locked && "cursor-not-allowed border-slate-200 bg-white/70 text-slate-400",
+              locked && "border-amber-200 text-amber-700",
             )}
             aria-label={`Abwesenheit fuer ${format(date, "dd.MM.yyyy")} eintragen`}
           >
@@ -2091,7 +2085,7 @@ export default function VacationPlanEditor({
         <Tooltip>
           <TooltipTrigger asChild>{trigger}</TooltipTrigger>
           <TooltipContent className="max-w-[220px] bg-white text-foreground border border-border shadow-md">
-            Bitte an den Ersten Oberarzt oder Primarius wenden.
+            Urlaubswünsche gesperrt – wenden Sie sich an die Abteilungsleitung.
           </TooltipContent>
         </Tooltip>
       );
@@ -2247,6 +2241,287 @@ export default function VacationPlanEditor({
 
   const content = (
     <div className="space-y-6">
+                <Dialog
+                  open={absenceDialogOpen}
+                  onOpenChange={(open) => {
+                    if (open) {
+                      setAbsenceDialogOpen(true);
+                      return;
+                    }
+                    closeAbsenceDialog();
+                  }}
+                >
+
+                  <DialogContent className="z-[2147483647] flex max-h-[85vh] w-[min(92vw,560px)] flex-col overflow-hidden p-0 sm:max-w-[560px]">
+                    <DialogHeader className="shrink-0 border-b border-slate-200 px-6 py-4">
+                      <DialogTitle>
+                        {editingAbsence
+                          ? "Abwesenheit bearbeiten"
+                          : embedded ? "Urlaubswunsch eintragen" : "Abwesenheit eintragen"}
+                      </DialogTitle>
+                    </DialogHeader>
+                    <div className="flex-1 overflow-y-auto px-6 py-4">
+                      <div className="space-y-4">
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                              Eintrag
+                            </div>
+                            <div className="mt-1 text-lg font-semibold text-slate-900">
+                              {selectedDraftEmployeeName}
+                            </div>
+                            <div className="text-sm text-slate-500">
+                              {selectedDraftEmployee?.role || "Rolle wird nach Auswahl angezeigt"}
+                            </div>
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 shadow-sm">
+                            {editingAbsence ? "Bestehenden Eintrag bearbeiten" : "Neuen Eintrag erfassen"}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label>Mitarbeiter</Label>
+                          {canEditOthers ? (
+                            <Select
+                              value={
+                                absenceDraft.employeeId
+                                  ? String(absenceDraft.employeeId)
+                                  : ""
+                              }
+                              disabled={Boolean(editingAbsence)}
+                              onValueChange={(value) =>
+                                setAbsenceDraft((prev) => ({
+                                  ...prev,
+                                  employeeId: Number(value),
+                                }))
+                              }
+                            >
+                              <SelectTrigger className="rounded-xl">
+                                <SelectValue placeholder="Mitarbeiter waehlen" />
+                              </SelectTrigger>
+                              <SelectContent className="max-h-72">
+                                {visibleEmployees.map((emp) => (
+                                  <SelectItem key={emp.id} value={String(emp.id)}>
+                                    {emp.lastName} {emp.firstName}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <Input
+                              value={`${currentUser?.lastName ?? ""} ${currentUser?.firstName ?? ""}`}
+                              disabled
+                              className="rounded-xl"
+                            />
+                          )}
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Grund</Label>
+                          <Select
+                            value={absenceDraft.reason}
+                            onValueChange={(value) =>
+                              setAbsenceDraft((prev) => ({
+                                ...prev,
+                                reason: value as (typeof ABSENCE_REASONS)[number],
+                              }))
+                            }
+                          >
+                            <SelectTrigger className="rounded-xl">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {ABSENCE_REASONS.map((reason) => (
+                                <SelectItem key={reason} value={reason}>
+                                  {reason}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {absenceDraft.reason === "Urlaub" && (
+                            <p className="text-xs text-muted-foreground">
+                              Urlaub wird gegen den Anspruch gerechnet. Fortbildung ist ausgenommen.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <div className="mb-3 flex items-center gap-2">
+                          <CalendarDays className="h-4 w-4 text-slate-500" />
+                          <div className="text-sm font-semibold text-slate-800">
+                            Zeitraum
+                          </div>
+                        </div>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label>Von</Label>
+                            <Input
+                              type="date"
+                              className="rounded-xl"
+                              value={absenceDraft.startDate}
+                              onChange={(e) =>
+                                setAbsenceDraft((prev) => ({
+                                  ...prev,
+                                  startDate: e.target.value,
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Bis</Label>
+                            <Input
+                              type="date"
+                              className="rounded-xl"
+                              value={absenceDraft.endDate}
+                              onChange={(e) =>
+                                setAbsenceDraft((prev) => ({
+                                  ...prev,
+                                  endDate: e.target.value,
+                                }))
+                              }
+                            />
+                          </div>
+                        </div>
+                        {hasVacationLock && (
+                          <div
+                            className={cn(
+                              "mt-3 rounded-xl border px-3 py-2 text-sm",
+                              selectedDraftRangeLocked && !canOverrideLock
+                                ? "border-amber-300 bg-amber-50 text-amber-900"
+                                : "border-slate-200 bg-slate-50 text-slate-600",
+                            )}
+                          >
+                            <div className="flex items-start gap-2">
+                              <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+                              <div>
+                                <div className="font-medium">
+                                  {selectedDraftRangeLocked && !canOverrideLock
+                                    ? "Selbststaendige Eintragung in diesem Zeitraum gesperrt"
+                                    : "Aktive Eintragssperre vorhanden"}
+                                </div>
+                                {lockWindowLabel ? (
+                                  <div className="text-xs">
+                                    Sperrfenster: {lockWindowLabel}
+                                  </div>
+                                ) : null}
+                                {selectedDraftRangeLocked && !canOverrideLock ? (
+                                  <div className="mt-1 text-xs">
+                                    Urlaubswünsche gesperrt – wenden Sie sich an die Abteilungsleitung.
+                                  </div>
+                                ) : null}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-semibold text-slate-800">
+                              Bereits eingetragen im Zeitraum
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              Planbare Abwesenheiten im gewaehlten Zeitraum.
+                            </div>
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600">
+                            {selectedDraftOverlappingAbsences.length} Eintraege
+                          </div>
+                        </div>
+                        {selectedDraftOverlappingAbsences.length === 0 ? (
+                          <div className="rounded-xl bg-slate-50 px-3 py-3 text-sm text-slate-500">
+                            Keine bestehenden Abwesenheiten im gewaehlten Zeitraum.
+                          </div>
+                        ) : (
+                          <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                            {selectedDraftOverlappingAbsences.map((absence) => {
+                              const style = getAbsenceInlineStyle(absence.reason); const meta = getAbsenceVisualMeta(absence.reason);
+                              const overlapStart =
+                                absence.startDate > absenceDraft.startDate
+                                  ? absence.startDate
+                                  : absenceDraft.startDate;
+                              const overlapEnd =
+                                absence.endDate < absenceDraft.endDate
+                                  ? absence.endDate
+                                  : absenceDraft.endDate;
+                              const employee = employeeById.get(absence.employeeId);
+                              return (
+                                <div
+                                  key={`draft-overlap-${absence.id}`}
+                                  className="rounded-xl border px-3 py-2"
+                                      style={getAbsenceInlineStyle(absence.styleKey)}
+                                >
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                      <div className="font-medium text-slate-900">
+                                        {employeeNameById.get(absence.employeeId) ?? "Unbekannt"}
+                                      </div>
+                                      <div className="text-xs text-slate-500">
+                                        {employee?.role || "Ohne Rolle"} ·{" "}
+                                        {format(toDate(overlapStart), "dd.MM.yyyy")} -{" "}
+                                        {format(toDate(overlapEnd), "dd.MM.yyyy")}
+                                      </div>
+                                    </div>
+                                    <span
+                                      className="rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                                      style={style}
+                                    >
+                                      {meta.label}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Hinweise</Label>
+                        <Textarea
+                          value={absenceDraft.notes}
+                          onChange={(e) =>
+                            setAbsenceDraft((prev) => ({
+                              ...prev,
+                              notes: e.target.value,
+                            }))
+                          }
+                          placeholder="Optional"
+                          className="min-h-24 rounded-xl"
+                        />
+                      </div>
+
+                      <div className="flex justify-end gap-2 border-t border-slate-200 pt-3">
+                        <Button variant="outline" onClick={closeAbsenceDialog}>
+                          Abbrechen
+                        </Button>
+                        <Button
+                          onClick={handleAbsenceSave}
+                          disabled={savingAbsence || !absenceDraft.employeeId}
+                        >
+                          {savingAbsence && (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          )}
+                          {editingAbsence ? "Aktualisieren" : "Speichern"}
+                        </Button>
+                      </div>
+                    </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+      <Dialog open={vacationLockDialogOpen} onOpenChange={setVacationLockDialogOpen}>
+        <DialogContent className="z-[2147483647]">
+          <DialogHeader>
+            <DialogTitle>Urlaubswünsche gesperrt</DialogTitle>
+            <DialogDescription>Wenden Sie sich an die Abteilungsleitung.</DialogDescription>
+          </DialogHeader>
+          <Button onClick={() => setVacationLockDialogOpen(false)}>Verstanden</Button>
+        </DialogContent>
+      </Dialog>
       {embedded && (
         <Popover open={filterPopoverOpen} onOpenChange={setFilterPopoverOpen}>
           <PopoverTrigger asChild>
@@ -2426,286 +2701,16 @@ export default function VacationPlanEditor({
                     </SelectContent>
                   </Select>
                 )}
-                <Dialog
-                  open={absenceDialogOpen}
-                  onOpenChange={(open) => {
-                    if (open) {
-                      setAbsenceDialogOpen(true);
-                      return;
-                    }
-                    closeAbsenceDialog();
-                  }}
-                >
-                  <DialogTrigger asChild>
+
                     <Button
                       className="h-11 justify-start gap-2 rounded-xl sm:col-span-2"
                       disabled={!currentUser}
+                      onClick={() => openAbsenceDialog(currentUser!.id)}
                     >
                       <Plus className="w-4 h-4" />
                       Abwesenheit erfassen
                     </Button>
-                  </DialogTrigger>
-                  <DialogContent className="flex max-h-[85vh] w-[min(92vw,560px)] flex-col overflow-hidden p-0 sm:max-w-[560px]">
-                    <DialogHeader className="shrink-0 border-b border-slate-200 px-6 py-4">
-                      <DialogTitle>
-                        {editingAbsence
-                          ? "Abwesenheit bearbeiten"
-                          : "Abwesenheit eintragen"}
-                      </DialogTitle>
-                    </DialogHeader>
-                    <div className="flex-1 overflow-y-auto px-6 py-4">
-                      <div className="space-y-4">
-                      <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                              Eintrag
-                            </div>
-                            <div className="mt-1 text-lg font-semibold text-slate-900">
-                              {selectedDraftEmployeeName}
-                            </div>
-                            <div className="text-sm text-slate-500">
-                              {selectedDraftEmployee?.role || "Rolle wird nach Auswahl angezeigt"}
-                            </div>
-                          </div>
-                          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 shadow-sm">
-                            {editingAbsence ? "Bestehenden Eintrag bearbeiten" : "Neuen Eintrag erfassen"}
-                          </div>
-                        </div>
-                      </div>
 
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <div className="space-y-2">
-                          <Label>Mitarbeiter</Label>
-                          {canEditOthers ? (
-                            <Select
-                              value={
-                                absenceDraft.employeeId
-                                  ? String(absenceDraft.employeeId)
-                                  : ""
-                              }
-                              disabled={Boolean(editingAbsence)}
-                              onValueChange={(value) =>
-                                setAbsenceDraft((prev) => ({
-                                  ...prev,
-                                  employeeId: Number(value),
-                                }))
-                              }
-                            >
-                              <SelectTrigger className="rounded-xl">
-                                <SelectValue placeholder="Mitarbeiter waehlen" />
-                              </SelectTrigger>
-                              <SelectContent className="max-h-72">
-                                {visibleEmployees.map((emp) => (
-                                  <SelectItem key={emp.id} value={String(emp.id)}>
-                                    {emp.lastName} {emp.firstName}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          ) : (
-                            <Input
-                              value={`${currentUser?.lastName ?? ""} ${currentUser?.firstName ?? ""}`}
-                              disabled
-                              className="rounded-xl"
-                            />
-                          )}
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Grund</Label>
-                          <Select
-                            value={absenceDraft.reason}
-                            onValueChange={(value) =>
-                              setAbsenceDraft((prev) => ({
-                                ...prev,
-                                reason: value as (typeof ABSENCE_REASONS)[number],
-                              }))
-                            }
-                          >
-                            <SelectTrigger className="rounded-xl">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {ABSENCE_REASONS.map((reason) => (
-                                <SelectItem key={reason} value={reason}>
-                                  {reason}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          {absenceDraft.reason === "Urlaub" && (
-                            <p className="text-xs text-muted-foreground">
-                              Urlaub wird gegen den Anspruch gerechnet. Fortbildung ist ausgenommen.
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <div className="mb-3 flex items-center gap-2">
-                          <CalendarDays className="h-4 w-4 text-slate-500" />
-                          <div className="text-sm font-semibold text-slate-800">
-                            Zeitraum
-                          </div>
-                        </div>
-                        <div className="grid gap-4 sm:grid-cols-2">
-                          <div className="space-y-2">
-                            <Label>Von</Label>
-                            <Input
-                              type="date"
-                              className="rounded-xl"
-                              value={absenceDraft.startDate}
-                              onChange={(e) =>
-                                setAbsenceDraft((prev) => ({
-                                  ...prev,
-                                  startDate: e.target.value,
-                                }))
-                              }
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label>Bis</Label>
-                            <Input
-                              type="date"
-                              className="rounded-xl"
-                              value={absenceDraft.endDate}
-                              onChange={(e) =>
-                                setAbsenceDraft((prev) => ({
-                                  ...prev,
-                                  endDate: e.target.value,
-                                }))
-                              }
-                            />
-                          </div>
-                        </div>
-                        {hasVacationLock && (
-                          <div
-                            className={cn(
-                              "mt-3 rounded-xl border px-3 py-2 text-sm",
-                              selectedDraftRangeLocked && !canOverrideLock
-                                ? "border-amber-300 bg-amber-50 text-amber-900"
-                                : "border-slate-200 bg-slate-50 text-slate-600",
-                            )}
-                          >
-                            <div className="flex items-start gap-2">
-                              <Lock className="mt-0.5 h-4 w-4 shrink-0" />
-                              <div>
-                                <div className="font-medium">
-                                  {selectedDraftRangeLocked && !canOverrideLock
-                                    ? "Selbststaendige Eintragung in diesem Zeitraum gesperrt"
-                                    : "Aktive Eintragssperre vorhanden"}
-                                </div>
-                                {lockWindowLabel ? (
-                                  <div className="text-xs">
-                                    Sperrfenster: {lockWindowLabel}
-                                  </div>
-                                ) : null}
-                                {selectedDraftRangeLocked && !canOverrideLock ? (
-                                  <div className="mt-1 text-xs">
-                                    Bitte an den Ersten Oberarzt oder Primarius wenden.
-                                  </div>
-                                ) : null}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <div className="mb-3 flex items-center justify-between gap-3">
-                          <div>
-                            <div className="text-sm font-semibold text-slate-800">
-                              Bereits eingetragen im Zeitraum
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              Planbare Abwesenheiten im gewaehlten Zeitraum.
-                            </div>
-                          </div>
-                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600">
-                            {selectedDraftOverlappingAbsences.length} Eintraege
-                          </div>
-                        </div>
-                        {selectedDraftOverlappingAbsences.length === 0 ? (
-                          <div className="rounded-xl bg-slate-50 px-3 py-3 text-sm text-slate-500">
-                            Keine bestehenden Abwesenheiten im gewaehlten Zeitraum.
-                          </div>
-                        ) : (
-                          <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
-                            {selectedDraftOverlappingAbsences.map((absence) => {
-                              const style = getAbsenceInlineStyle(absence.reason); const meta = getAbsenceVisualMeta(absence.reason);
-                              const overlapStart =
-                                absence.startDate > absenceDraft.startDate
-                                  ? absence.startDate
-                                  : absenceDraft.startDate;
-                              const overlapEnd =
-                                absence.endDate < absenceDraft.endDate
-                                  ? absence.endDate
-                                  : absenceDraft.endDate;
-                              const employee = employeeById.get(absence.employeeId);
-                              return (
-                                <div
-                                  key={`draft-overlap-${absence.id}`}
-                                  className="rounded-xl border px-3 py-2"
-                                      style={getAbsenceInlineStyle(absence.styleKey)}
-                                >
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div>
-                                      <div className="font-medium text-slate-900">
-                                        {employeeNameById.get(absence.employeeId) ?? "Unbekannt"}
-                                      </div>
-                                      <div className="text-xs text-slate-500">
-                                        {employee?.role || "Ohne Rolle"} ·{" "}
-                                        {format(toDate(overlapStart), "dd.MM.yyyy")} -{" "}
-                                        {format(toDate(overlapEnd), "dd.MM.yyyy")}
-                                      </div>
-                                    </div>
-                                    <span
-                                      className="rounded-full border px-2 py-0.5 text-[11px] font-medium"
-                                      style={style}
-                                    >
-                                      {meta.label}
-                                    </span>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label>Hinweise</Label>
-                        <Textarea
-                          value={absenceDraft.notes}
-                          onChange={(e) =>
-                            setAbsenceDraft((prev) => ({
-                              ...prev,
-                              notes: e.target.value,
-                            }))
-                          }
-                          placeholder="Optional"
-                          className="min-h-24 rounded-xl"
-                        />
-                      </div>
-
-                      <div className="flex justify-end gap-2 border-t border-slate-200 pt-3">
-                        <Button variant="outline" onClick={closeAbsenceDialog}>
-                          Abbrechen
-                        </Button>
-                        <Button
-                          onClick={handleAbsenceSave}
-                          disabled={savingAbsence || !absenceDraft.employeeId}
-                        >
-                          {savingAbsence && (
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          )}
-                          {editingAbsence ? "Aktualisieren" : "Speichern"}
-                        </Button>
-                      </div>
-                    </div>
-                    </div>
-                  </DialogContent>
-                </Dialog>
               </div>
             </div>
           </div>
